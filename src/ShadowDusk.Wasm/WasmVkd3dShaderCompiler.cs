@@ -25,10 +25,10 @@ namespace ShadowDusk.Wasm;
 /// <c>Fx2EffectWriter</c> / <c>D3d9BytecodePatcher</c> / CTAB reflection around it
 /// are managed C# that already runs in WASM).</para>
 ///
-/// <para>Request→ABI mapping and error mapping are the SHARED
-/// <see cref="Vkd3dCompileContract"/> — same profile defaults (vs_5_0/ps_5_0),
-/// same SM ≤ 3 routing, same vkd3d compile options (issue #295), same
-/// verbatim-diagnostic surfacing (constraint 5) as the desktop backend. When the WASM
+/// <para>Source preparation, request→ABI mapping and error mapping are the SHARED
+/// <see cref="Vkd3dCompileContract"/> — same prepared source text (issue #319), same
+/// profile defaults (vs_5_0/ps_5_0), same SM ≤ 3 routing, same vkd3d compile options
+/// (issue #295), same verbatim-diagnostic surfacing (constraint 5) as the desktop backend. When the WASM
 /// module itself cannot be loaded (e.g. <c>vkd3d-shader.wasm</c> not restored/hosted yet)
 /// the compile fails loudly with <c>SD1902</c> — the WASM sibling of the desktop's SD0211
 /// native-not-found.</para>
@@ -94,12 +94,19 @@ internal sealed class WasmVkd3dShaderCompiler : IDxbcShaderCompiler
         int[] options = Vkd3dCompileContract.FlattenCompileOptions(
             Vkd3dCompileContract.ResolveCompileOptions(targetType));
 
+        // And so is the text vkd3d gets (issue #319): the desktop's PrepareSource, every #line
+        // directive line blanked with the line count kept. This host used to hand vkd3d
+        // request.HlslSource with the directives in it; vkd3d ignored them for the bytes but
+        // printed one fixme line per directive to the console. The shim and the WASM wrapper
+        // forward the bytes untouched. Never transform the source here.
+        string vkd3dSource = Vkd3dCompileContract.PrepareSource(request.HlslSource);
+
         try
         {
             // Source bytes are UTF-8 and NOT null-terminated (vkd3d_shader_code carries
             // bytes + length); entry/profile/source-name cross as C strings inside the
             // JS glue. Mirrors the desktop marshalling exactly.
-            byte[] sourceBytes = Encoding.UTF8.GetBytes(request.HlslSource);
+            byte[] sourceBytes = Encoding.UTF8.GetBytes(vkd3dSource);
 
             byte[] code = Vkd3dInterop.Compile(
                 sourceBytes,
@@ -159,9 +166,8 @@ internal sealed class WasmVkd3dShaderCompiler : IDxbcShaderCompiler
                 }
             }
 
-            // This host hands vkd3d request.HlslSource unblanked (its preprocessor ignores
-            // the #line lines, which stay in place as blank lines), so the compiled text and
-            // the directive-carrying text are one and the same.
+            // The locator gets the prepared text vkd3d compiled and the directive-carrying
+            // request.HlslSource, line-for-line aligned, exactly as on the desktop.
             //
             // The token goes to the locator, which checks it before every probe (issue #255),
             // the same single check the desktop host gets. On today's single-threaded browser
@@ -170,7 +176,7 @@ internal sealed class WasmVkd3dShaderCompiler : IDxbcShaderCompiler
             // check cannot fire yet; the token is passed so the two hosts stay identical and
             // a multi-threaded WASM runtime is covered without another change.
             ShaderError relocated = Vkd3dSourceLocator.Relocate(
-                primary, request.HlslSource, request.HlslSource, request.SourceFileName, Probe, cancellationToken);
+                primary, vkd3dSource, request.HlslSource, request.SourceFileName, Probe, cancellationToken);
             return Result<PlatformBlob, ShaderError>.Fail(probeTrapped ? primary : relocated);
         }
     }

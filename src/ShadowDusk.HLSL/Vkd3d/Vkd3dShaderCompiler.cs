@@ -2,7 +2,6 @@
 
 using System.Runtime.InteropServices;
 using System.Text;
-using System.Text.RegularExpressions;
 using ShadowDusk.Core;
 using ShadowDusk.HLSL.D3DCompiler;
 using ShadowDusk.HLSL.Dxc;
@@ -29,11 +28,8 @@ namespace ShadowDusk.HLSL.Vkd3d;
 /// </summary>
 public sealed class Vkd3dShaderCompiler : IDxbcShaderCompiler
 {
-    // Matches a whole #line directive line (keeps the trailing newline so blanking it
-    // leaves an empty line, preserving overall line numbering for vkd3d diagnostics).
-    private static readonly Regex LineDirectivePattern =
-        new(@"(?m)^[ \t]*#[ \t]*line\b[^\n]*", RegexOptions.Compiled);
-
+    // The #line blanking that used to live here is Vkd3dCompileContract.PrepareSource, the
+    // one source-preparation step both hosts run (issue #319).
 
     /// <inheritdoc/>
     public Task<Result<PlatformBlob, ShaderError>> CompileAsync(
@@ -76,6 +72,18 @@ public sealed class Vkd3dShaderCompiler : IDxbcShaderCompiler
     /// </summary>
     internal static readonly AsyncLocal<Action<int[]>?> NativeOptionsObserver = new();
 
+    /// <summary>
+    /// Test seam for the SOURCE BYTES the DESKTOP really hands <c>vkd3d_shader_compile</c>: a
+    /// callback set here receives, before every native call made in the setting async flow,
+    /// the bytes read back from the marshalled <c>vkd3d_shader_compile_info.source</c>. The
+    /// tests pin them equal to <see cref="Vkd3dCompileContract.PrepareSource"/> of the
+    /// request's <c>HlslSource</c>, which is what the browser host sends, and
+    /// <c>Vkd3dCorpusProbe</c> records them per compile so the browser gates replay the exact
+    /// text the desktop compiled (issue #319). The real compile is observed first; any later
+    /// call in the same flow is a diagnostic-relocation probe. Production never sets it.
+    /// </summary>
+    internal static readonly AsyncLocal<Action<byte[]>?> NativeSourceObserver = new();
+
     private static Result<PlatformBlob, ShaderError> CompileCore(
         D3DCompileRequest request, CancellationToken cancellationToken) =>
         CompileCore(request, cancellationToken, onNativeCallReturned: NativeCallObserver.Value);
@@ -103,22 +111,13 @@ public sealed class Vkd3dShaderCompiler : IDxbcShaderCompiler
         var targetType    = (Vkd3dTargetType)Vkd3dCompileContract.ResolveTargetType(profile);
         BlobKind blobKind = Vkd3dCompileContract.ResolveBlobKind(profile);
 
-        // vkd3d-shader's HLSL preprocessor does not honor #line directives; it ignores
-        // each one and (at LogLevel >= Warning / VKD3D_DEBUG on) prints
-        // "vkd3d:NNNN:fixme:preproc_yyparse #line directive." to the process stderr, once
-        // per directive. An include-heavy effect (e.g. the MonoGame stock effects, which
-        // pull in Macros.fxh/Structures.fxh/Common.fxh/Lighting.fxh) carries hundreds of
-        // them from the include flattener, so a SUCCESSFUL compile would spew hundreds of
-        // stderr lines and break the mgfxc silent-success contract. (The VKD3D_DEBUG=none
-        // default in Vkd3dLoader does not reliably reach the native getenv at runtime,
-        // which masked this until an include-heavy effect first reached the vkd3d backend.)
-        // Blank every #line directive line before handing the source to vkd3d: it never
-        // used them, and BLANKING (not deleting) keeps the blanked text and
-        // request.HlslSource line-for-line aligned, which is what lets Vkd3dSourceLocator
-        // map vkd3d's coordinates back through the directives below (issue #202). The
-        // DXC/GL and d3dcompiler_47 paths keep their #line directives (those compilers
-        // honor them for diagnostics) — this strip is vkd3d-only.
-        string vkd3dSource = LineDirectivePattern.Replace(request.HlslSource, string.Empty);
+        // The text vkd3d gets is the SHARED Vkd3dCompileContract's too (issue #319): every
+        // #line directive line blanked (vkd3d ignores them and prints a fixme per directive
+        // otherwise), line count preserved so Vkd3dSourceLocator can map vkd3d's coordinates
+        // back through request.HlslSource's directives (issue #202). The browser backend
+        // sends the very same prepared string, so the two hosts cannot hand vkd3d different
+        // text. Never transform the source here.
+        string vkd3dSource = Vkd3dCompileContract.PrepareSource(request.HlslSource);
 
         // On a large-stack worker (issue #306): vkd3d recurses per nesting level too. Measured
         // on the caller's 1.5 MB Windows stack, a chain of 6,400 functions each calling the
@@ -269,6 +268,7 @@ public sealed class Vkd3dShaderCompiler : IDxbcShaderCompiler
             };
 
             NativeOptionsObserver.Value?.Invoke(ReadBackOptions(in compileInfo));
+            NativeSourceObserver.Value?.Invoke(ReadBackSource(in compileInfo));
 
             int rc = Vkd3dNative.Compile(in compileInfo, out Vkd3dShaderCode output, out IntPtr messagesPtr);
             string messages = ReadAndFreeMessages(messagesPtr);
@@ -313,6 +313,19 @@ public sealed class Vkd3dShaderCompiler : IDxbcShaderCompiler
         for (int i = 0; i < read.Length; i++)
             read[i] = Marshal.PtrToStructure<Vkd3dCompileOption>(compileInfo.Options + i * size);
         return Vkd3dCompileContract.FlattenCompileOptions(read);
+    }
+
+    /// <summary>
+    /// The source as vkd3d is about to see it: copied back out of the unmanaged
+    /// <c>vkd3d_shader_code</c> the compile info points at (pointer + size, not the managed
+    /// string that was marshalled in). Only <see cref="NativeSourceObserver"/> uses it.
+    /// </summary>
+    private static byte[] ReadBackSource(in Vkd3dCompileInfo compileInfo)
+    {
+        var bytes = new byte[checked((int)compileInfo.Source.Size)];
+        if (bytes.Length > 0)
+            Marshal.Copy(compileInfo.Source.Code, bytes, 0, bytes.Length);
+        return bytes;
     }
 
     private static string ReadAndFreeMessages(IntPtr messagesPtr)

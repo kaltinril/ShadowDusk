@@ -1,5 +1,6 @@
 #nullable enable
 
+using System.Text.RegularExpressions;
 using ShadowDusk.Core;
 using ShadowDusk.HLSL.D3DCompiler;
 using ShadowDusk.HLSL.Dxc;
@@ -11,10 +12,10 @@ namespace ShadowDusk.HLSL.Vkd3d;
 /// backend host — the desktop P/Invoke backend (<see cref="Vkd3dShaderCompiler"/>)
 /// and the browser/WASM backend (<c>ShadowDusk.Wasm.WasmVkd3dShaderCompiler</c>, via
 /// <c>InternalsVisibleTo</c>). Centralizing it here is what makes the two hosts
-/// semantically one backend (Phase 4.1): same profile defaults, same SM ≤ 3 →
-/// D3D_BYTECODE routing, same vkd3d compile options (issue #295), same diagnostic
-/// fidelity — so the only difference between hosts is HOW the native vkd3d call is
-/// made, never WHAT is asked of it.
+/// semantically one backend (Phase 4.1): same source text handed to vkd3d (issue #319),
+/// same profile defaults, same SM ≤ 3 → D3D_BYTECODE routing, same vkd3d compile
+/// options (issue #295), same diagnostic fidelity — so the only difference between
+/// hosts is HOW the native vkd3d call is made, never WHAT is asked of it.
 ///
 /// <para>No I/O, no interop, no process — unit-testable per the conventions
 /// (<c>Vkd3dCompileContractTests</c>).</para>
@@ -36,6 +37,40 @@ internal static class Vkd3dCompileContract
     /// <see cref="Vkd3dTargetType.DxbcTpf"/>.
     /// </summary>
     public const int TargetTypeDxbcTpf = 5;
+
+    // Matches a whole #line directive line, without its newline, so blanking it leaves an
+    // empty line and the overall line numbering is preserved.
+    private static readonly Regex LineDirectivePattern =
+        new(@"(?m)^[ \t]*#[ \t]*line\b[^\n]*", RegexOptions.Compiled);
+
+    /// <summary>
+    /// The text EVERY host hands <c>vkd3d_shader_compile</c> for a request: the preprocessed
+    /// HLSL with every <c>#line</c> directive line blanked. This is the only place the
+    /// source is prepared for vkd3d; the desktop backend marshals exactly this string and
+    /// the browser backend sends exactly this string through its shim, so the two hosts
+    /// cannot compile different text (issue #319: the browser used to hand vkd3d the
+    /// directives, and vkd3d printed one <c>fixme</c> line per directive to the console).
+    ///
+    /// <para><b>Why blank the directives.</b> vkd3d-shader's HLSL preprocessor does not
+    /// honour <c>#line</c>; it ignores each one and (at log level warning or above) prints
+    /// <c>vkd3d:NNNN:fixme:vkd3d:preproc_yyparse #line directive.</c> to the process's
+    /// stderr (the browser's console), once per directive. An include-heavy effect (the
+    /// MonoGame stock effects pull in Macros.fxh/Structures.fxh/Common.fxh/Lighting.fxh)
+    /// carries hundreds of them from the include flattener, so a SUCCESSFUL compile would
+    /// spew hundreds of lines and break the mgfxc silent-success contract. The
+    /// <c>VKD3D_DEBUG=none</c> default the desktop loader sets does not reliably reach the
+    /// native getenv, and the WASM module has no environment at all.</para>
+    ///
+    /// <para><b>Why blank, not delete.</b> BLANKING keeps the prepared text and the
+    /// request's <c>HlslSource</c> line-for-line aligned, which is what lets
+    /// <see cref="Vkd3dSourceLocator"/> map vkd3d's coordinates back through the directives
+    /// (issue #202). Measured on the 91-compile DX + FNA corpus (issue #319): the bytes
+    /// vkd3d emits and the positions of its diagnostics are identical with and without the
+    /// directives, so this changes only what reaches stderr. The DXC and d3dcompiler_47
+    /// paths keep their directives (those compilers honour them); this step is vkd3d-only.</para>
+    /// </summary>
+    public static string PrepareSource(string hlslSource) =>
+        LineDirectivePattern.Replace(hlslSource, string.Empty);
 
     /// <summary>
     /// Resolves the shader profile for a request: <see cref="D3DCompileRequest.ProfileOverride"/>
