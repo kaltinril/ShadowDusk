@@ -81,8 +81,8 @@ ordinary shader, and the shipped module failed on it with a corrupted instance.
   `Vkd3dCorpusProbe --depth` captures the desktop ground truth for `add` x800, `parens` x200,
   `ternary` x200, `ifnest` x200, `elseif` x400, `calls` x1600; each is replayed through the
   product shims and must be byte-identical; then a trap per module must be discarded and
-  reloaded. The vkd3d depth arm reports NOT RUN while the restored vkd3d module is still the
-  hosted pre-#271 build.
+  reloaded. The vkd3d module is the rebuilt one pinned on `native-vkd3d-wasm-2.1-r2`, so the
+  vkd3d arm always runs.
 * `tests/ShadowDusk.BrowserTests/browser-vkd3d-gate.mjs` (CI): the same trap through the real
   `WasmShaderCompiler` in Chromium must give `SD1907`, then `SD1903` until a reload, then
   manifest-identical bytes.

@@ -17,7 +17,7 @@
 //
 // The emscripten module (./vkd3d/vkd3d-shader.{js,wasm}, MODULARIZE + EXPORT_ES6,
 // `export default` factory) is a RESTORED artifact (release tag
-// native-vkd3d-wasm-2.1; see ./vkd3d/RESTORE.md + tools/restore.*) and is NOT
+// native-vkd3d-wasm-2.1-r2; see ./vkd3d/RESTORE.md + tools/restore.*) and is NOT
 // committed. It exports this C ABI (the Phase 4.1 wrapper contract):
 //
 //   // 0 (VKD3D_OK) on success, negative vkd3d error code on failure.
@@ -38,12 +38,9 @@
 // backend marshals into vkd3d_shader_compile_info and the browser backend hands to
 // compile() below. This shim and the C wrapper only FORWARD that list: neither adds,
 // drops nor defaults an option, so the two hosts cannot compile with different ones.
-// A module built before issue #295 (the one still hosted on native-vkd3d-wasm-2.1)
-// exports only the older sdw_vkd3d_compile, which has no option parameters and always
-// compiled with none; with such a module compile() still works but CANNOT honour the
-// options, warns once on the console, and an SM4+ shader that relies on
-// MAP_SEMANTIC_NAMES (SM1-3 semantics on struct fields) compiles differently from the
-// desktop or is refused with E5013. That path goes away with the re-pinned module.
+// sdw_vkd3d_compile_options is REQUIRED: a module built before issue #295 exports only
+// the older sdw_vkd3d_compile, which cannot take options, so loading it fails (SD1902)
+// instead of compiling differently from the desktop.
 //
 // MESSAGES ON SUCCESS (issue #335). vkd3d's message buffer is populated on a successful
 // compile too (W5300 implicit truncation, W5302 unrecognized attribute, ...), and the
@@ -89,15 +86,12 @@ async function loadVkd3d() {
     }
 
     const mod = await createVkd3dModule();
-    for (const required of ['_sdw_vkd3d_free_code', '_sdw_vkd3d_free_messages', '_malloc', '_free']) {
+    // _sdw_vkd3d_compile_options is required: a module built before issue #295 (only
+    // _sdw_vkd3d_compile, no option parameters) is refused here, surfacing as SD1902.
+    for (const required of ['_sdw_vkd3d_compile_options', '_sdw_vkd3d_free_code', '_sdw_vkd3d_free_messages', '_malloc', '_free']) {
         if (!mod || typeof mod[required] !== 'function') {
             throw new Error(`vkd3d-shader module is missing the required export '${required}'.`);
         }
-    }
-    // The compile entry point: sdw_vkd3d_compile_options (takes the caller's compile
-    // options), or, in a module built before issue #295, only sdw_vkd3d_compile.
-    if (typeof mod._sdw_vkd3d_compile_options !== 'function' && typeof mod._sdw_vkd3d_compile !== 'function') {
-        throw new Error("vkd3d-shader module is missing the required export '_sdw_vkd3d_compile_options'.");
     }
     if (!mod.HEAPU8) {
         throw new Error('vkd3d-shader module does not expose the HEAPU8 memory view.');
@@ -133,21 +127,6 @@ export function ensureReady() {
     }
     return loadPromise;
 }
-
-/**
- * Whether the loaded module can take compile options (it exports
- * sdw_vkd3d_compile_options). false for a module built before issue #295, which
- * compiles with no options whatever compile() is handed. For the gates, so they can
- * tell the two apart; undefined before ensureReady() has resolved.
- * @returns {boolean|undefined}
- */
-export function honoursCompileOptions() {
-    return vkd3dInstance ? typeof vkd3dInstance._sdw_vkd3d_compile_options === 'function' : undefined;
-}
-
-// Set once a pre-#295 module has been asked for options it cannot take (one warning per
-// page, not one per compile).
-let droppedOptionsWarned = false;
 
 // The caller's compile options as 32-bit words: (name, value) pairs, exactly as handed
 // over. A missing or odd-length list is a caller bug and is refused here rather than
@@ -228,14 +207,6 @@ export function compile(sourceUtf8, entryPoint, profile, sourceName, targetType,
     const source = sourceUtf8 instanceof Uint8Array ? sourceUtf8 : new Uint8Array(sourceUtf8 || 0);
     const words = optionWords(options);
     const optionCount = words.length / 2;
-    const takesOptions = typeof mod._sdw_vkd3d_compile_options === 'function';
-    if (!takesOptions && optionCount > 0 && !droppedOptionsWarned) {
-        droppedOptionsWarned = true;
-        console.warn('ShadowDusk: the loaded vkd3d-shader WASM module predates issue #295 and cannot take ' +
-            'vkd3d compile options, so it compiles without them. A DirectX (SM4+) shader with SM1-3 ' +
-            'semantics on struct fields (POSITION0 / COLOR0) compiles differently from the desktop, or ' +
-            'fails with E5013. Restore the current module (tools/restore.*).');
-    }
 
     let srcPtr = 0, entryPtr = 0, profilePtr = 0, namePtr = 0, optsPtr = 0, outPtrs = 0;
     let trapped = false;
@@ -255,7 +226,7 @@ export function compile(sourceUtf8, entryPoint, profile, sourceName, targetType,
         namePtr = allocCString(mod, sourceName);
 
         // The caller's compile options, as (name, value) pairs of 32-bit words.
-        if (takesOptions && optionCount > 0) {
+        if (optionCount > 0) {
             optsPtr = mod._malloc(words.length * 4);
             if (!optsPtr) throw new Error(`vkd3d-shader WASM: _malloc(${words.length * 4}) failed (out of memory).`);
             const view = new DataView(mod.HEAPU8.buffer);
@@ -270,17 +241,11 @@ export function compile(sourceUtf8, entryPoint, profile, sourceName, targetType,
 
         let rc;
         try {
-            rc = takesOptions
-                ? mod._sdw_vkd3d_compile_options(
-                    srcPtr, source.length,
-                    entryPtr, profilePtr, namePtr, targetType | 0,
-                    optsPtr, optionCount,
-                    outCodePtr, outSizePtr, outMsgsPtr)
-                // A module built before issue #295: no option parameters (see the header).
-                : mod._sdw_vkd3d_compile(
-                    srcPtr, source.length,
-                    entryPtr, profilePtr, namePtr, targetType | 0,
-                    outCodePtr, outSizePtr, outMsgsPtr);
+            rc = mod._sdw_vkd3d_compile_options(
+                srcPtr, source.length,
+                entryPtr, profilePtr, namePtr, targetType | 0,
+                optsPtr, optionCount,
+                outCodePtr, outSizePtr, outMsgsPtr);
         } catch (e) {
             // vkd3d reports diagnostics through out_messages, so anything THROWN out of the
             // module is a trap (stack overflow, out-of-bounds access, abort). The instance's
