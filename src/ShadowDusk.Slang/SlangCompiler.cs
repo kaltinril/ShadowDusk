@@ -391,16 +391,25 @@ public sealed class SlangCompiler
         string fxText = AssembleFx(mergedHlsl, entries, sourceName);
 
         Result<CompiledShader, ShaderError[]> downstream = _downstreamCompiler.Compile(fxText, options, cancellationToken);
-        return downstream.IsFailure
-            ? Result<CompiledShader, ShaderError[]>.Fail(RelocateResourceArrayErrors(downstream.Error, slangSource, sourceName))
-            : downstream;
+        if (downstream.IsFailure)
+            return Result<CompiledShader, ShaderError[]>.Fail(RelocateResourceArrayErrors(downstream.Error, slangSource, sourceName));
+        if (downstream.Value.Warnings.Any(w => w.Code == ResourceArrayWarningCode))
+        {
+            return Result<CompiledShader, ShaderError[]>.Ok(downstream.Value with
+            {
+                Warnings = RelocateResourceArrayErrors(downstream.Value.Warnings.ToArray(), slangSource, sourceName),
+            });
+        }
+        return downstream;
     }
 
-    /// <summary>The pipeline's code for an array of textures or samplers on Vulkan (issue #324).</summary>
+    /// <summary>The pipeline's codes for an array of textures or samplers (issue #324): the
+    /// Vulkan error and the DirectX 12 warning.</summary>
     private const string ResourceArrayCode = "SD0221";
+    private const string ResourceArrayWarningCode = "SD0222";
 
-    // The resource name the SD0221 message opens with: "Vulkan target: 'Tex' is ...".
-    private static readonly Regex ResourceArrayName = new(@"^Vulkan target: '(?<name>[^']+)'", RegexOptions.Compiled);
+    // The resource name the SD0221/SD0222 message opens with: "Vulkan target: 'Tex' is ...".
+    private static readonly Regex ResourceArrayName = new(@"^(?:Vulkan|DirectX 12) target: '(?<name>[^']+)'", RegexOptions.Compiled);
 
     /// <summary>
     /// Issue #324: the pipeline's <c>SD0221</c> (an array of textures or samplers on Vulkan) is
@@ -411,7 +420,7 @@ public sealed class SlangCompiler
     /// </summary>
     private static ShaderError[] RelocateResourceArrayErrors(ShaderError[] errors, string slangSource, string sourceName)
     {
-        if (!errors.Any(e => e.Code == ResourceArrayCode))
+        if (!errors.Any(e => e.Code is ResourceArrayCode or ResourceArrayWarningCode))
             return errors;
 
         string masked = SlangSourceMask.Mask(slangSource);
@@ -419,7 +428,7 @@ public sealed class SlangCompiler
         for (int i = 0; i < errors.Length; i++)
         {
             ShaderError e = errors[i];
-            Match name = e.Code == ResourceArrayCode ? ResourceArrayName.Match(e.Message) : Match.Empty;
+            Match name = e.Code is ResourceArrayCode or ResourceArrayWarningCode ? ResourceArrayName.Match(e.Message) : Match.Empty;
             bool atAnAuthorFile = e.File.IndexOfAny(['/', '\\']) >= 0 && e.File != sourceName;
             if (!name.Success || atAnAuthorFile)
             {

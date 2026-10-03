@@ -90,5 +90,13 @@ public sealed class SlangTextureArrayTests
         MgfxSamplerRecord record = effect.Samplers.ShouldHaveSingleItem();
         (record.TextureSlot, record.SamplerSlot, record.Parameter).ShouldBe(((byte)0, (byte)0, (byte)0));
         handWritten.Samplers.ShouldHaveSingleItem();
+
+        // The DirectX 12 warning (SD0222) rides along, relocated to the author's Slang line.
+        ShaderError warning = slang.Value.Warnings.Where(w => w.Code == "SD0222").ShouldHaveSingleItem();
+        warning.Severity.ShouldBe(ShaderErrorSeverity.Warning);
+        warning.Message.ShouldContain("'Comb' is an array of 2 textures", Case.Sensitive);
+        warning.File.ShouldBe("Arrays.slang");
+        warning.Line.ShouldBe(2);
+        warning.Column.ShouldBe(11);
     }
 }

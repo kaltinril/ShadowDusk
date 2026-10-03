@@ -245,16 +245,21 @@ that loads and renders identically to `mgfxc`'s in the real MonoGame/KNI runtime
   `SamplerReflection.ArrayLength`: the `OpTypeArray` length from SPIR-V, `BindCount` from DXIL and
   RDEF), and the Vulkan target refuses an array of textures or samplers with the new **`SD0221`**,
   located at the declaration, naming the resource and the reference compiler's measured behavior,
-  instead of emitting that effect. The real-slangc `.slang` route gets the same code for a
-  `Sampler2D T[N]` (slangc emits a texture array plus a sampler array), relocated from slangc's core
-  module to the author's declaration; on DirectX 12 it keeps the single-parameter table the `.fx`
-  route and `mgfxc` produce. New fixtures `tests/fixtures/shaders/texture-arrays/TextureArray2.fx`
-  and `TextureArray4NoRegister.fx` with `mgfxc` 3.8.5 goldens for DirectX_12 and Vulkan; new
-  render rows `validation/VsDrivenDx12 -- texarr` (both arms in real MonoGame 3.8.5 WindowsDX12,
-  element [1] through `GraphicsDevice.Textures[1]`) and `validation/VsDrivenVulkan -- texarr` (the
-  rejection, plus the golden's empty table; `-- texarr-reference` draws `mgfxc`'s own effect in real
-  DesktopVK as evidence). No emitted byte changes for any shader without a texture or sampler
-  array (whole corpus compiled before and after on all four profiles). DirectX 11 is untouched:
+  instead of emitting that effect. On DirectX 12 the output is unchanged and a new **warning
+  `SD0222`** says what that table means in the engine: measured in real MonoGame 3.8.5 WindowsDX12,
+  element `[1]` reads as zero for `mgfxc`'s build and ShadowDusk's alike, even with
+  `GraphicsDevice.Textures[1]` set, because the shader header sizes the descriptor range for one
+  texture. The real-slangc `.slang` route gets the same codes for a `Sampler2D T[N]` (slangc emits a
+  texture array plus a sampler array), relocated from slangc's core module to the author's
+  declaration; on DirectX 12 it keeps the single-parameter table the `.fx` route and `mgfxc`
+  produce. New fixtures `tests/fixtures/shaders/texture-arrays/TextureArray2.fx` and
+  `TextureArray4NoRegister.fx` with `mgfxc` 3.8.5 goldens for DirectX_12 and Vulkan; new render
+  rows `validation/VsDrivenDx12 -- texarr` (both arms in real MonoGame 3.8.5 WindowsDX12: table
+  equal record for record, maxd 0) and `validation/VsDrivenVulkan -- texarr` (the rejection, plus
+  the golden's empty table; `-- texarr-reference` draws `mgfxc`'s own effect in real DesktopVK:
+  it loads with no `Tex` parameter and draws nothing). No emitted byte changes for any shader
+  without a texture or sampler array (the whole fixture corpus, 656 cells on four profiles,
+  hashed identical before and after). DirectX 11 is untouched:
   there vkd3d/fxc reflect the elements as separate `Tex[0]`, `Tex[1]` bindings and ShadowDusk emits
   one parameter per element where `mgfxc` 3.8.4.1 emits a single `Tex`, a separate divergence
   tracked in its own issue.

@@ -789,11 +789,19 @@ internal sealed class CompilationPipeline
 
                     // Issue #324: an ARRAY of textures or samplers has no representation in
                     // MonoGame's Vulkan effect format (real mgfxc 3.8.5 reflects it as nothing
-                    // at all), and used to be silently dropped here too. Refuse it by name.
+                    // at all), and used to be silently dropped here too. Refuse it by name. On
+                    // DirectX 12 the table is mgfxc's (one parameter on the first slot) and ships
+                    // unchanged, but elements beyond [0] read as zero in the real engine, so the
+                    // consumer is warned.
                     if (options.Target == PlatformTarget.Vulkan
-                        && VulkanResourceArrayRejection.Check(reflected, glCompileSource.Text, sourceFileName) is { } arrayError)
+                        && ResourceArrayDiagnostics.VulkanError(reflected, glCompileSource.Text, sourceFileName) is { } arrayError)
                     {
                         return Fail(arrayError, runWarnings);
+                    }
+                    if (options.Target == PlatformTarget.DirectX12
+                        && ResourceArrayDiagnostics.DirectX12Warning(reflected, glCompileSource.Text, sourceFileName) is { } arrayWarning)
+                    {
+                        AccumulateWarnings(runWarnings, seenWarnings, [arrayWarning]);
                     }
 
                     foreach (ConstantBufferReflection cb in reflected.ConstantBuffers)

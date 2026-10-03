@@ -58,9 +58,13 @@ return await RunAposPhase();
 // Verdict: (1) the candidate's parameter table, sampler records (type, slots, parameter;
 // the record NAME is the known pre-existing DX12 divergence, mgfxc's HLSL sampler name vs
 // ShadowDusk's positional ps_s{slot}) and DX12 header equal the golden's; (2) both arms load
-// and draw; (3) the two renders match (tolerance 1); (4) the candidate matches the CPU
-// expectation of the shader's math, (cat + green) / 2, which proves element [1] was really
-// read through GraphicsDevice.Textures[1] in the real engine rather than left unbound.
+// and draw; (3) the two renders match (tolerance 1). Reported, not asserted: (4) the candidate
+// against the CPU expectation of the shader's math with element [1] green, (cat + green) / 2.
+// MEASURED 2026-10-02 (RTX 3080): maxd 128, i.e. element [1] reads as ZERO for BOTH compilers'
+// effects, because the header sizes the descriptor range for one texture (maxTextureSlot 0),
+// so GraphicsDevice.Textures[1] never reaches the shader. That is the reference compiler's
+// behavior too, which is why ShadowDusk keeps the table and warns (SD0222) instead of
+// changing the output; the number is printed so a change in MonoGame's runtime shows up here.
 // ---------------------------------------------------------------------------------------
 async Task<int> RunTextureArrayPhase()
 {
@@ -168,11 +172,17 @@ if (caps.TryGetValue("candidate-sd", out var cand) && catPixels is { } cat && ca
 
 Console.WriteLine();
 Console.WriteLine($"[texarr-dx12] baseline-vs-candidate maxd: {(maxd == int.MaxValue ? "n/a" : maxd)} (tol 1)");
-Console.WriteLine($"[texarr-dx12] candidate vs CPU (cat + green) / 2 maxd: {(cpuMaxd == int.MaxValue ? "n/a" : cpuMaxd)} (tol 2; element [1] read through GraphicsDevice.Textures[1])");
+Console.WriteLine($"[texarr-dx12] candidate vs CPU (cat + green) / 2 maxd: {(cpuMaxd == int.MaxValue ? "n/a" : cpuMaxd)} " +
+                  $"(informational: element [1] through GraphicsDevice.Textures[1] is {(cpuMaxd <= 2 ? "READ" : "NOT read, as measured for mgfxc's own build; SD0222 tells the consumer")})");
+if (r.IsSuccess)
+{
+    foreach (var w in r.Value.Warnings)
+        Console.WriteLine($"[texarr-dx12] candidate warning {w.Code} {Path.GetFileName(w.File)}({w.Line},{w.Column}): {w.Message[..Math.Min(160, w.Message.Length)]}...");
+}
 
-bool pass = tableOk && both && maxd <= 1 && cpuMaxd <= 2;
+bool pass = tableOk && both && maxd <= 1;
 Console.WriteLine($"\n[texarr-dx12] {(pass ? "PASS" : "FAIL")}: table {(tableOk ? "equal" : "DIFFERS")}, load+render {(both ? "2/2" : "<2")}, " +
-                  $"pixel-match vs golden {(maxd <= 1 ? "OK" : "DIVERGED")}, element [1] {(cpuMaxd <= 2 ? "bound" : "NOT READ")}.");
+                  $"pixel-match vs golden {(maxd <= 1 ? "OK" : "DIVERGED")}.");
 return pass ? 0 : 1;
 }
 

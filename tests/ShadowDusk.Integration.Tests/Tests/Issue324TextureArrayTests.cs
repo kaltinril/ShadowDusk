@@ -174,6 +174,24 @@ public sealed class Issue324TextureArrayTests
         var header = DirectX12ShaderCodeReader.Parse(reader.Shaders.Single().Bytecode);
         header.TextureMaxSlot.ShouldBe(0, "mgfxc's header names slot 0 as the highest texture slot for the whole array");
         header.SamplerMaxSlot.ShouldBe(0);
+
+        // The consumer is told what that table means in the engine (SD0222), once, at the
+        // declaration; a 1-element array is one texture and gets no warning.
+        var warnings = result.Value.Warnings.Where(w => w.Code == "SD0222").ToList();
+        if (elements == 1)
+        {
+            warnings.ShouldBeEmpty();
+        }
+        else
+        {
+            ShaderError warning = warnings.ShouldHaveSingleItem();
+            warning.Severity.ShouldBe(ShaderErrorSeverity.Warning);
+            warning.Message.ShouldContain($"'Tex' is an array of {elements} textures", Case.Sensitive);
+            warning.Message.ShouldContain("GraphicsDevice.Textures[i]", Case.Sensitive);
+            warning.File.ShouldBe("TextureArray.fx");
+            warning.Line.ShouldBe(7);
+            warning.Column.ShouldBe(11);
+        }
     }
 
     // ---- The committed goldens: table equality on DirectX_12, emptiness on Vulkan -----------------
@@ -248,7 +266,12 @@ public sealed class Issue324TextureArrayTests
         error.Message.ShouldContain("'Tex'", Case.Sensitive);
         // The preprocessor's #line marker spells the path its own way; the file name is the contract.
         Path.GetFileName(error.File).ShouldBe(stem + ".fx");
-        error.Line.ShouldBeGreaterThan(0, "located at the declaration, not at line 0");
+        // Located at the DECLARATION, not at the fixture's comment header, which also spells `Tex[N]`.
+        string[] lines = await File.ReadAllLinesAsync(fxPath, cts.Token);
+        int declarationLine = Array.FindIndex(lines, l => l.StartsWith("Texture2D Tex[", StringComparison.Ordinal)) + 1;
+        declarationLine.ShouldBeGreaterThan(1, "the fixture declares Texture2D Tex[N] below its header");
+        error.Line.ShouldBe(declarationLine);
+        error.Column.ShouldBe("Texture2D ".Length + 1);
     }
 
     private static IEnumerable<string> Describe(IEnumerable<MgfxParameterRecord> parameters) =>
