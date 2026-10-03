@@ -317,4 +317,50 @@ public sealed class Vkd3dCompileContractTests
         // must remain reachable (constraint 5), whatever the wrapper shape.
         error.RawDiagnostics!.ShouldContain(messages, Case.Sensitive);
     }
+
+    // -------------------------------------------------------------------------
+    // Warning mapping (issue #335) — a SUCCESSFUL compile's message text, both hosts
+    // -------------------------------------------------------------------------
+
+    [Fact]
+    public void MapCompileWarnings_ParsesVkd3dsOwnWarningLine_Verbatim()
+    {
+        // Exactly what vkd3d 2.1 writes for a float4 assigned to a float3 (measured).
+        const string messages = "user.fx:47:12: W5300: Implicit truncation of vector type.\n";
+
+        IReadOnlyList<ShaderError> warnings = Vkd3dCompileContract.MapCompileWarnings(messages, "user.fx");
+
+        warnings.Count.ShouldBe(1);
+        warnings[0].Severity.ShouldBe(ShaderErrorSeverity.Warning);
+        warnings[0].Code.ShouldBe("W5300");
+        warnings[0].Message.ShouldBe("Implicit truncation of vector type.", customMessage: "constraint 5: vkd3d's text, verbatim");
+        warnings[0].File.ShouldBe("user.fx");
+        warnings[0].Line.ShouldBe(47, customMessage: "vkd3d's OWN coordinates; the caller relocates them (Vkd3dSourceLocator)");
+        warnings[0].Column.ShouldBe(12);
+    }
+
+    [Theory]
+    [InlineData(null)]
+    [InlineData("")]
+    [InlineData("   \n")]
+    public void MapCompileWarnings_NothingSaid_IsNoWarning(string? messages)
+    {
+        Vkd3dCompileContract.MapCompileWarnings(messages, "user.fx").ShouldBeEmpty(
+            "a silent success has no warnings on either host; '' is what the shim and the P/Invoke both hand over for a NULL buffer");
+    }
+
+    [Fact]
+    public void MapCompileWarnings_ErrorSeverityTextOnASuccess_IsNormalizedToWarning_TextKept()
+    {
+        // A successful compile cannot carry an error; whatever vkd3d spelled, the entry is a
+        // warning, with every character of the message kept.
+        IReadOnlyList<ShaderError> warnings = Vkd3dCompileContract.MapCompileWarnings(
+            "user.fx:3:5: error: something vkd3d chose to call an error\nuser.fx:9:1: W5302: Unrecognized attribute 'foo'.", "user.fx");
+
+        warnings.Count.ShouldBe(2);
+        warnings[0].Severity.ShouldBe(ShaderErrorSeverity.Warning);
+        warnings[0].Message.ShouldBe("something vkd3d chose to call an error");
+        warnings[1].Code.ShouldBe("W5302");
+        warnings[1].Message.ShouldBe("Unrecognized attribute 'foo'.");
+    }
 }

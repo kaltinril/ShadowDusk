@@ -115,7 +115,7 @@ internal static class DepthProbe
                     (dx.IsFailure ? string.Join(" | ", dx.Error.Select(e => $"{e.Code}: {e.Message}")) : "no vkd3d compile captured"));
                 return dx.IsFailure && dx.Error.Any(e => e.Code == "SD0211") ? 3 : 1;
             }
-            (D3DCompileRequest request, byte[] nativeSource, int[] options, byte[] dxbc) = vk.Captures[^1];
+            (D3DCompileRequest request, byte[] nativeSource, int[] options, _, byte[] dxbc, _) = vk.Captures[^1];
             string profile = Vkd3dCompileContract.ResolveProfile(request);
 
             File.WriteAllText(Path.Combine(outDir, $"{id}.dxc.hlsl"), dxc.Hlsl!, utf8);

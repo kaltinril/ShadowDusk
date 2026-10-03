@@ -25,6 +25,7 @@
   - **Divergent** (>=1 level): **23**
   - Compile/parse **failures**: **10**
 - Non-golden census cells: **210** (**149** compile, **61** fail with a code)
+- Non-golden census cells: **208** (**149** compile, **59** fail with a code)
 
 ## Golden-backed fixtures — per-level structural verdict
 
@@ -248,6 +249,8 @@ is a CORRECT result, not a defect.
 | AnnotatedTechnique.fx | OpenGL | PASS |  |  |
 | FnaMultiPassStates.fx | DirectX_11 | FAIL | SD0015 | compile target 'vs_2_0' is below the DirectX target's floor — mgfxc rejects it with "Invalid profile 'vs_2_0'. Vertex shader 'MainVS' must be SM 4.0 level 9.1 o... |
 | FnaMultiPassStates.fx | OpenGL | PASS |  |  |
+| ImplicitTruncationWarning.fx | DirectX_11 | PASS |  |  |
+| ImplicitTruncationWarning.fx | OpenGL | PASS |  |  |
 | Minimal.fx | DirectX_11 | PASS |  |  |
 | Minimal.fx | OpenGL | PASS |  |  |
 | MinimalWithInclude.fx | DirectX_11 | FAIL | SD0001 | Cannot find include 'TestHelper.fxh' |

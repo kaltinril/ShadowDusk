@@ -254,12 +254,32 @@ internal static partial class Vkd3dInterop
     /// marshals, so both hosts hand vkd3d the same options (issue #295); the shim and the
     /// wrapper forward it untouched and add none of their own. JS contract:
     /// <c>compile(source: Uint8Array, entryPoint: string, profile: string,
-    /// sourceName: string, targetType: number, options: number[]): Uint8Array</c>; on
-    /// failure the JS side throws an <c>Error</c> whose message carries vkd3d's VERBATIM
-    /// diagnostics (surfaced here as a <see cref="JSException"/>).
+    /// sourceName: string, targetType: number, options: number[]): { code: Uint8Array,
+    /// messages: string }</c>: the bytecode AND vkd3d's verbatim message text, which is
+    /// populated on a successful compile too (non-fatal diagnostics; the desktop reads the
+    /// same buffer from the P/Invoke out-parameter). The shim once returned the bytes alone
+    /// and dropped the text on success, so the browser's <c>CompiledShader.Warnings</c> was
+    /// empty where the desktop's was not (issue #335). On failure the JS side throws an
+    /// <c>Error</c> whose message carries that same verbatim text (surfaced here as a
+    /// <see cref="JSException"/>).
     /// </summary>
+    public static Vkd3dCompileOutcome Compile(
+        byte[] sourceUtf8,
+        string entryPoint,
+        string profile,
+        string sourceName,
+        int targetType,
+        int[] options)
+    {
+        using JSObject result = CompileRaw(sourceUtf8, entryPoint, profile, sourceName, targetType, options);
+        byte[] code = result.GetPropertyAsByteArray("code")
+            ?? throw new InvalidOperationException(
+                "shadowdusk-vkd3d compile() returned no 'code' property; the shim and this binding disagree on the contract.");
+        return new Vkd3dCompileOutcome(code, result.GetPropertyAsString("messages") ?? string.Empty);
+    }
+
     [JSImport("compile", "shadowdusk-vkd3d")]
-    public static partial byte[] Compile(
+    private static partial JSObject CompileRaw(
         byte[] sourceUtf8,
         string entryPoint,
         string profile,
@@ -267,6 +287,14 @@ internal static partial class Vkd3dInterop
         [JSMarshalAs<JSType.Number>] int targetType,
         [JSMarshalAs<JSType.Array<JSType.Number>>] int[] options);
 }
+
+/// <summary>
+/// One successful <c>vkd3d_shader_compile</c> through the browser shim: the bytecode and
+/// vkd3d's verbatim message text (empty when vkd3d said nothing). The browser twin of the
+/// desktop backend's <c>NativeOutcome</c>, so both hosts hand the same two things to the
+/// shared <c>Vkd3dCompileContract</c> (issue #335).
+/// </summary>
+internal readonly record struct Vkd3dCompileOutcome(byte[] Code, string Messages);
 
 /// <summary>
 /// <c>[JSImport]</c> bindings into the SPIRV-Cross JavaScript module. The module

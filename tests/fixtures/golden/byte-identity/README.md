@@ -8,6 +8,16 @@ passes off-Windows, the Linux/macOS bytes are proven equal to the win-x64 bytes 
 transfers the Windows rung-4 render proofs (Phases 17/18/39–40) to those hosts
 byte-for-byte (Core Design Constraint 3: deterministic output).
 
+`warnings-manifest.json` sits beside it (issue #335): the same keys, each mapped to the
+`CompiledShader.Warnings` list the compile produced, one `ShaderError.FxcFormattedMessage` per
+entry (`File(Line,Col-Col): warning CODE: message`), in order; an empty list for the many fixtures
+that warn about nothing. A compiler's non-fatal diagnostics are part of the cross-host contract
+exactly like the bytes: the same tests assert it on every CI OS, and
+`tests/ShadowDusk.BrowserTests/browser-vkd3d-gate.mjs` compares the browser's warnings against it.
+`ImplicitTruncationWarning.fx` is the fixture whose lists are non-empty (vkd3d `W5300` on
+`DirectX_Vkd3d` and `FNA`, DXC's `-Wconversion` text on `OpenGL`), and the tests fail when no entry
+of a target is non-empty, so a host that drops warnings on success can never match the manifest.
+
 ## Key format
 
 `<Target>/<fixture path>` → lowercase SHA-256 hex of the compiled output bytes.
