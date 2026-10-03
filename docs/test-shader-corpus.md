@@ -1,6 +1,6 @@
 # Test Shader Corpus — Provenance & Fresh Examples
 
-**Last updated:** 2026-10-02 — issues #308 and #309 added `SamplerLegacyInclude.fx` (+ `SamplerLegacyInclude.fxh`), `SamplerLegacyMacroDecl.fx` and `SamplerReservationKeywords.fx` (the sampler-register set below, `OpenGL` **and** `DirectX_11` goldens), and the nine vendored MonoGame `Include.fxh` effects now compile for OpenGL. Earlier the same day issue #299 added `SamplerLegacyRegisterIfBranch.fx` and `SamplerLegacyRegisterMacro.fx`, and issue #283 added `SamplerReservationIfBranch.fx` and `SamplerReservationMacro.fx` (the sampler-register set below), all four with `OpenGL` **and** `DirectX_11` goldens. Previously 2026-09-10 — vkd3d 2.1 (Phase 56) reclassified `Reflection.fx` and the Apos.Shapes revisions as FNA-compiling; the `E5017` loop/ternary gaps they sat behind were compiler gaps, not shader-model limits. Previously 2026-09-09: added the Slang input corpus: 17 `.slang` fixtures under
+**Last updated:** 2026-10-02 — issue #324 added the `texture-arrays/` set (`TextureArray2.fx`, `TextureArray4NoRegister.fx`, `DirectX_12` **and** `Vulkan` goldens from `mgfxc` 3.8.5; see §3). Earlier the same day issues #308 and #309 added `SamplerLegacyInclude.fx` (+ `SamplerLegacyInclude.fxh`), `SamplerLegacyMacroDecl.fx` and `SamplerReservationKeywords.fx` (the sampler-register set below, `OpenGL` **and** `DirectX_11` goldens), and the nine vendored MonoGame `Include.fxh` effects now compile for OpenGL. Earlier the same day issue #299 added `SamplerLegacyRegisterIfBranch.fx` and `SamplerLegacyRegisterMacro.fx`, and issue #283 added `SamplerReservationIfBranch.fx` and `SamplerReservationMacro.fx` (the sampler-register set below), all four with `OpenGL` **and** `DirectX_11` goldens. Previously 2026-09-10 — vkd3d 2.1 (Phase 56) reclassified `Reflection.fx` and the Apos.Shapes revisions as FNA-compiling; the `E5017` loop/ternary gaps they sat behind were compiler gaps, not shader-model limits. Previously 2026-09-09: added the Slang input corpus: 17 `.slang` fixtures under
 `slang/`, cross-validated against the real `slangc` compiler (see `docs/validation-matrix.md`
 §8.0 and `validation/SlangCorpus`). Previously 2026-08-02: the issue-#189 fix added
 `SamplerRegisterOrder.fx` and `SamplerRegisterSparse.fx` (the sampler-register set below), both
@@ -525,6 +525,26 @@ column-major matrices, `main` entry point, no `SPV_GOOGLE_*` extensions) or fail
 diagnostic. There is no skip list to quietly grow.
 
 ---
+
+### Texture-array set (`texture-arrays/`, issue #324)
+
+Two project-owned PS-only effects whose only unusual shape is an ARRAY of textures read through
+one `SamplerState`: `TextureArray2.fx` (`Texture2D Tex[2] : register(t0)`, the render-row fixture)
+and `TextureArray4NoRegister.fx` (`Texture2D Tex[4]`, no registers). They live in their own
+subdirectory, outside the root golden corpus, because the reference compiler itself cannot
+build them for every profile: measured 2026-10-02 with `dotnet-mgfxc` 3.8.5 (identical for 1, 2
+and 4 elements, with or without a register),
+
+| Profile | `mgfxc` 3.8.5 | ShadowDusk |
+|---|---|---|
+| `DirectX_12` | one Object parameter `Tex`, one sampler record binding slot 0 to it, header `maxTextureSlot` 0 | the same table (committed golden `tests/fixtures/golden/DirectX_12/<stem>.mgfx`, compared record for record by `Issue324TextureArrayTests`; rendered against it by `validation/VsDrivenDx12 -- texarr`) |
+| `Vulkan` | **no parameter, no sampler record, no descriptor binding** (the SPIR-V still samples the array), so the texture can never be set | refused loudly, `SD0221` at the declaration (the committed golden `tests/fixtures/golden/Vulkan/<stem>.mgfx` is mgfxc's empty-table output, kept as the evidence; `validation/VsDrivenVulkan -- texarr`) |
+| `DirectX_11` | one parameter `Tex` (3.8.4.1 and 3.8.5) | one parameter per element, `Tex[0]`, `Tex[1]` (vkd3d/fxc reflect them as separate bindings); a separate divergence, no golden committed |
+| `OpenGL` | fails (`Sequence contains no matching element`) | fails (`SD0217`) |
+
+The goldens are produced with the mgfxc the DirectX_12/Vulkan proofs use, not the pinned v10
+oracle: `dotnet ~/.nuget/packages/dotnet-mgfxc/3.8.5/tools/net8.0/any/mgfxc.dll <fx> <out> /Profile:DirectX_12`
+(and `/Profile:Vulkan`). `tools/compile-fixtures.ps1` deliberately does not see this directory.
 
 ## 5. Slang input corpus (`slang/`)
 

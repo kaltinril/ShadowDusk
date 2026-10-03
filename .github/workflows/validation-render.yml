@@ -512,6 +512,14 @@ jobs:
         if: ${{ !cancelled() }}
         run: dotnet run --project validation/VsDrivenVulkan -c Release --no-build -- wave
 
+      # Issue #324, EXPECT-DIAGNOSTIC: an ARRAY of textures (Texture2D Tex[2]) has no
+      # representation in MonoGame's Vulkan effect format: real mgfxc 3.8.5 reflects it as no
+      # parameter, no sampler record and no descriptor binding (the committed golden is decoded
+      # to pin that), so ShadowDusk must refuse it with SD0221 at the declaration. No device.
+      - name: Vulkan texture array rejected with SD0221 (issue #324)
+        if: ${{ !cancelled() }}
+        run: dotnet run --project validation/VsDrivenVulkan -c Release --no-build -- texarr
+
       # Own-output proof: mgfxc's Vulkan output for this corpus is unloadable (upstream
       # SlotOffset bug, see compare_vulkan.py), so BaselineVulkan is best-effort and
       # compare_vulkan.py fails only on a CANDIDATE problem. The validation layer is what
