@@ -474,7 +474,7 @@ jobs:
           dotnet test ShadowDusk.slnx --no-build -c Release
           --filter "Category=Integration"
           --settings ShadowDusk.runsettings
-          --blame-hang-timeout 3m --blame-hang-dump-type mini
+          --blame-hang-timeout 45s --blame-hang-dump-type full
           --logger "trx;LogFilePrefix=integration-${{ matrix.os }}"
           --results-directory TestResults/
           -- RunConfiguration.TestSessionTimeout=600000
@@ -528,6 +528,21 @@ jobs:
           New-Item -ItemType File -Force -Path TestResults/load/stop | Out-Null
           Start-Sleep -Seconds 8
           Get-ChildItem TestResults/load -ErrorAction SilentlyContinue | Format-Table Name, Length
+
+      - name: Analyze blame dumps (Windows, diagnostic)
+        if: always() && runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $dumps = Get-ChildItem TestResults -Recurse -Filter *.dmp -ErrorAction SilentlyContinue
+          if (-not $dumps) { Write-Host "no dumps"; exit 0 }
+          dotnet tool install -g dotnet-dump | Out-Null
+          $env:PATH += ";$env:USERPROFILE\.dotnet\tools"
+          foreach ($d in $dumps) {
+            $txt = Join-Path 'TestResults/load' ($d.BaseName + '-analysis.txt')
+            Write-Host "--- $($d.FullName) ($([int]($d.Length/1MB)) MB)"
+            dotnet-dump analyze $d.FullName -c "threads" -c "threadpool" -c "clrstack -all" -c "syncblk" -c "exit" *> $txt
+            Get-Content $txt -TotalCount 400
+          }
 
       - name: Upload the load samples (Windows)
         if: always() && runner.os == 'Windows'
