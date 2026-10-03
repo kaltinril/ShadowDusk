@@ -185,6 +185,10 @@ that loads and renders identically to `mgfxc`'s in the real MonoGame/KNI runtime
 
 ### Changed
 
+- **`SD0620` on macOS older than 26 now says no self-built slangc is planned (issue #237).**
+  The message asks the consumer to open an issue if they need one and points at the built-in
+  `.slang` subset frontend, which runs on any macOS. No behavior change.
+
 - **CI dumps a stalled integration test host from outside the process (issue #312).**
   `tools/ci/hang-watchdog.sh` runs as a sibling shell process on the macOS and Linux integration
   lanes: after five minutes it captures lldb or gdb stacks of every thread, a `sample`, the Linux
