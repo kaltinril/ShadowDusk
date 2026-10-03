@@ -379,4 +379,75 @@ public sealed class Vkd3dShaderCompilerTests
         await Should.ThrowAsync<OperationCanceledException>(
             async () => await compiler.CompileAsync(Issue255FailingRequest(), cts.Token));
     }
+
+    // -------------------------------------------------------------------------
+    // Issue #319 — the desktop hands vkd3d EXACTLY Vkd3dCompileContract.PrepareSource(HlslSource)
+    // -------------------------------------------------------------------------
+
+    /// <summary>
+    /// The bytes the desktop REALLY hands <c>vkd3d_shader_compile</c>, read back from the
+    /// marshalled compile info (<see cref="Vkd3dShaderCompiler.NativeSourceObserver"/>), must be
+    /// the UTF-8 of <see cref="Vkd3dCompileContract.PrepareSource"/> of the request's text: the
+    /// string the browser host sends through its shim. A desktop that transformed the source
+    /// on its own (which is how the browser came to hand vkd3d the <c>#line</c> directives the
+    /// desktop blanks, issue #319) fails here. The source is the include-flattened shape the
+    /// real pipeline produces: macro prelude, main file, an include with its two directives.
+    /// </summary>
+    [Vkd3dFact]
+    public void Compile_HandsVkd3dThePreparedSource_ReadBackFromTheNativeCall_Issue319()
+    {
+        string source =
+            Issue202Prelude +                                              // ends in '#line 1 "user.fx"'
+            "float2 dir;\n" +
+            "#line 1 \"shared/helpers.fxh\"\n" +
+            "float Helper(float2 v) { return v.x + v.y; }\n" +
+            "#line 3 \"user.fx\"\n" +
+            "float4 PS(float2 uv : TEXCOORD0) : COLOR { return Helper(uv) + dir.x; }\n";
+        source.Split('\n').Count(l => l.StartsWith("#line", StringComparison.Ordinal)).ShouldBe(3, "the fixture carries the three directive shapes");
+
+        var observed = new List<byte[]>();
+        Vkd3dShaderCompiler.NativeSourceObserver.Value = bytes => observed.Add(bytes);
+        try
+        {
+            var result = CompileIssue202(source);
+            result.IsSuccess.ShouldBeTrue(result.IsFailure ? result.Error.Message : "a valid SM3 PS");
+        }
+        finally
+        {
+            Vkd3dShaderCompiler.NativeSourceObserver.Value = null;
+        }
+
+        observed.Count.ShouldBe(1, "a successful compile is one native call (no relocation probes)");
+        string handed = Encoding.UTF8.GetString(observed[0]);
+        handed.ShouldBe(Vkd3dCompileContract.PrepareSource(source), customMessage:
+            "the desktop handed vkd3d_shader_compile text other than Vkd3dCompileContract.PrepareSource(HlslSource). " +
+            "The browser backend sends exactly that string, so the two hosts would compile different text " +
+            "(issue #319). Change the preparation in the contract, never in a host.");
+        handed.ShouldNotContain("#line", Case.Sensitive);
+        handed.Split('\n').Length.ShouldBe(source.Split('\n').Length, "blanked, not deleted: the locator needs the alignment");
+        handed.ShouldNotBe(source, "the control: this source does carry directives, so preparation changed it");
+    }
+
+    /// <summary>
+    /// The relocation probes compile the SAME prepared text (with the locator's edits), never
+    /// the directive-carrying request text: no probe may show vkd3d a <c>#line</c> either.
+    /// </summary>
+    [Vkd3dFact]
+    public void Compile_RelocationProbes_NeverShowVkd3dALineDirective_Issue319()
+    {
+        var observed = new List<byte[]>();
+        Vkd3dShaderCompiler.NativeSourceObserver.Value = bytes => observed.Add(bytes);
+        try
+        {
+            CompileIssue202(Issue202Prelude + Issue202User("    float z=;")).IsFailure.ShouldBeTrue();
+        }
+        finally
+        {
+            Vkd3dShaderCompiler.NativeSourceObserver.Value = null;
+        }
+
+        observed.Count.ShouldBeGreaterThan(1, "a failing compile is the real compile plus relocation probes");
+        foreach (byte[] bytes in observed)
+            Encoding.UTF8.GetString(bytes).ShouldNotContain("#line", Case.Sensitive);
+    }
 }
