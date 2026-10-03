@@ -42,6 +42,28 @@ env:
   DOTNET_CLI_TELEMETRY_OPTOUT: '1'
 
 jobs:
+  lock-files:
+    # Issue #291: `dotnet restore ShadowDusk.slnx --locked-mode` below covers only solution
+    # projects. This restores EVERY tracked lock file (validation drivers, browser probes,
+    # phase appendices) in locked mode, so a Directory.Packages.props change that misses an
+    # out-of-solution lock file fails on its own PR instead of later in a label-gated job.
+    name: Lock files (all projects, locked mode)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup .NET 8 + .NET 10
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: |
+            8.0.x
+            10.0.x
+
+      - name: Locked-mode restore of every lock file
+        run: tools/check-lock-files.sh
+
   build-and-test:
     name: Build & Test (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
@@ -249,9 +271,10 @@ jobs:
     name: Integration Tests (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
     needs: build-and-test
-    # Heavier than the unit gate (CLI child-process spawn + native DXC/SPIRV-Cross), but
-    # the runsettings TestSessionTimeout caps the suite at 5 min; 12 is a safe job backstop.
-    timeout-minutes: 12
+    # Heavier than the unit gate (CLI child-process spawn + native DXC/SPIRV-Cross). The test
+    # step caps each assembly's session at 10 min and itself at 14 (see the step); 20 leaves
+    # room for setup, restore, build (about 3 min) and the artifact uploads after a failure.
+    timeout-minutes: 20
     if: |
       github.event_name == 'push' ||
       contains(github.event.pull_request.labels.*.name, 'run-integration')
@@ -291,6 +314,15 @@ jobs:
           path: tools/dxc
           key: dxc-1.7.2212.40-${{ runner.os }}
 
+      # slangc for all four RIDs (ShadowDusk.Slang, issue #227): ~170 MB of release zips to
+      # download otherwise. The restore scripts hash-verify every file, so a stale or corrupt
+      # cache entry self-heals.
+      - name: Cache slangc natives
+        uses: actions/cache@v5
+        with:
+          path: tools/slang
+          key: slang-2026.14.1-${{ runner.os }}
+
       - name: Restore native tools (Linux / macOS)
         if: runner.os != 'Windows'
         run: |
@@ -318,9 +350,17 @@ jobs:
             'tools/vkd3d/osx-x64/libvkd3d-shader.1.dylib' \
             'tools/vkd3d/osx-arm64/libvkd3d-shader.1.dylib' \
             'tools/dxc/osx-x64/libdxcompiler.dylib' \
-            'tools/dxc/osx-arm64/libdxcompiler.dylib' ; do
+            'tools/dxc/osx-arm64/libdxcompiler.dylib' \
+            'tools/slang/win-x64/slangc.exe' \
+            'tools/slang/win-x64/slang-compiler.dll' \
+            'tools/slang/linux-x64/slangc' \
+            'tools/slang/linux-x64/libslang-compiler.so.0.2026.14.1' \
+            'tools/slang/osx-x64/slangc' \
+            'tools/slang/osx-x64/libslang-compiler.0.2026.14.1.dylib' \
+            'tools/slang/osx-arm64/slangc' \
+            'tools/slang/osx-arm64/libslang-compiler.0.2026.14.1.dylib' ; do
               if [ ! -f "$f" ]; then
-                echo "::error::restored native missing: $f — tools/restore.* failed to provision a hosted, pinned asset (download/cache failure). The vkd3d/DXC-gated integration tests would silently skip; failing the job instead."
+                echo "::error::restored native missing: $f — tools/restore.* failed to provision a hosted, pinned asset (download/cache failure). The vkd3d/DXC/slangc integration tests would fail or skip; failing the job here with the real cause instead."
                 missing=1
               fi
           done
@@ -332,23 +372,21 @@ jobs:
       - name: dotnet build
         run: dotnet build ShadowDusk.slnx --no-restore -c Release
 
-      # The suite-level 5-minute TestSessionTimeout guardrail (CLAUDE.md Phase 21 /
-      # ShadowDusk.runsettings) backstops the per-test CancellationToken timeouts so a
-      # cold-AV-scan hang fails fast instead of eating 20+ minutes.
+      # The suite-level TestSessionTimeout guardrail (Phase 21) backstops the per-test
+      # CancellationToken timeouts so a cold-AV-scan hang fails in bounded time instead of
+      # eating 20+ minutes. ShadowDusk.runsettings sets it to 5 minutes, which is right for the
+      # unit lanes; THIS step overrides it to 10 (see the hang-guard note below for why).
       #
       # SHADOWDUSK_REQUIRE_VKD3D / SHADOWDUSK_REQUIRE_DXC (the attribute-level analog
       # of SHADOWDUSK_REQUIRE_GL): the natives were just hard-gated above, so inside
       # the test run a missing native is a FAILURE, never a skip — defense in depth
       # against a probe/loader regression re-opening the skip-as-green hole.
-      # macOS ONLY: cap xUnit's cross-collection parallelism. The integration suite drives a
-      # lot of native DXC compilation, and on the macOS runners (x64 images under Rosetta 2)
-      # running several collections' worth of that concurrently takes the TEST HOST down:
-      # `Test host process crashed`, reproducibly, ~11 s into the assembly run and after a
-      # wildly different number of tests each time (605, then 158) while every test that DID
-      # run passed. That is resource exhaustion under parallelism, not a failing test, and it
-      # is not a ShadowDusk output defect: the same compiles pass on ubuntu, on windows, and
-      # locally, and the emitted bytes are proven identical across hosts by
-      # CrossHostByteIdentityTests. Linux and Windows keep full parallelism.
+      # Full xUnit parallelism on EVERY OS, macOS included. macOS used to run with
+      # MaxParallelThreads=1 on a "resource exhaustion" diagnosis; the real cause was DXC's Unix
+      # support code (LLVM signal handlers over the runtime's, a racy signal-table overflow,
+      # and setlocale deadlocking against fork()), fixed in ShadowDusk.HLSL's
+      # DxcSignalIsolation/DxcForkGate. Capping parallelism only hid it, so do not reintroduce
+      # the cap: a host crash here is a real defect.
       # LogFilePrefix is load-bearing HERE, not cosmetic. The ubuntu lane intermittently
       # aborts with "Test host process crashed" (Phase 51 A9), and the crashed assembly's
       # .trx is exactly the artifact needed to diagnose it — but under the old fixed
@@ -357,17 +395,119 @@ jobs:
       # re-derived from scratch three times from log adjacency alone (and mis-attributed:
       # see project_facts.md). One file per assembly means the next occurrence leaves
       # evidence instead of a guess.
+      # --blame-hang-timeout is the hang guard. A test's CancellationToken cannot interrupt a
+      # native compile (one uninterruptible P/Invoke), so only this can turn a hung native call
+      # into a failure, and it dumps every thread's stack (the host's and its children's) while
+      # doing it. 3m sits above the slowest healthy test (about 100 s at worst on a contended
+      # runner).
+      #
+      # THE TWO TIMEOUTS MUST AGREE (issue #312). The blame timer is an INACTIVITY timer: every
+      # test that starts or finishes anywhere in the assembly resets it, so it fires 3 minutes
+      # after the LAST test event, not 3 minutes after the stuck test began. The session
+      # timeout is absolute, and it aborts the run with NO dump. With the old 5-minute session
+      # cap a dump was only possible for a stall whose last test event came before minute 2,
+      # while a healthy run of this suite takes up to 3.5 minutes on a loaded runner: a late
+      # stall always lost the race (macOS, run 37063450434: stalled 3 min 48 s, no dump). The
+      # rule is
+      #     TestSessionTimeout >= slowest healthy assembly run + blame-hang-timeout + dump time
+      #     10 min             >= 4 min budget                 + 3 min              + 1 min
+      # so any stall in a run that was otherwise on schedule is dumped before the session cap
+      # can pre-empt it. CiHangGuardTests enforces that inequality against this file; change
+      # both numbers together. xunit.runner.json (longRunningTestSeconds) also names every test
+      # that has been running over a minute, so even an undumped stall says which tests it held.
+      #
+      # timeout-minutes on the step, not just the job: a step timeout FAILS the step, so the
+      # `failure()` uploads below still run; a job timeout cancels them. Assemblies run in
+      # parallel, so the step's wall time is about one session (10 min) at worst.
+      # The DXC fork/setlocale probes (DxcConcurrencyStressTests, issue #256) run in a child of
+      # the test host. If one hangs, HangDiagnostics attaches gdb and createdump to it before the
+      # watchdog kills it; --blame-hang only ever dumps the host. Attaching to a sibling needs
+      # ptrace_scope 0, and gdb is installed best-effort (createdump alone still gives a core).
+      - name: Allow hang-probe native stack capture (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          sudo sysctl -w kernel.yama.ptrace_scope=0
+          command -v gdb >/dev/null || sudo apt-get install -y --no-install-recommends gdb \
+            || echo "::warning::gdb unavailable; a probe hang will leave only a createdump core"
+
+      # Issue #312: the blame-hang dump cannot be relied on for the stall shape seen on macOS.
+      # A handful of tests freeze while every other test keeps starting and finishing, so the
+      # blame inactivity timer is reset for as long as the rest of the suite runs; and when it
+      # does fire, VSTest asks the runtime to dump itself, which the runtime does by fork()ing
+      # createdump INSIDE the hung process. On macOS that fork runs the pthread_atfork handlers,
+      # DxcForkGate's included, so a host hung with a compile stuck under that gate can never
+      # dump itself. This sidecar is a separate shell process: after 5 minutes (a healthy
+      # macOS integration assembly finishes in under 2.5, the Slang one in under 3.5) it takes
+      # native stacks (lldb / gdb), a `sample`, and a createdump of every test host still
+      # running, then a second stack snapshot, into TestResults/hang-dumps/. On a healthy run
+      # it finds nothing and exits 0; it can never fail the step. tools/ci/hang-watchdog.sh.
+      - name: Start the stall watchdog (sidecar, issue #312)
+        if: runner.os != 'Windows'
+        shell: bash
+        run: |
+          mkdir -p TestResults/hang-dumps
+          chmod +x tools/ci/hang-watchdog.sh
+          nohup tools/ci/hang-watchdog.sh "$PWD/TestResults/hang-dumps" 300 45 \
+            > TestResults/hang-dumps/watchdog.log 2>&1 &
+          echo $! > TestResults/hang-dumps/watchdog.pid
+          echo "stall watchdog started, pid $(cat TestResults/hang-dumps/watchdog.pid)"
+
       - name: dotnet test (integration)
+        timeout-minutes: 14
         env:
           SHADOWDUSK_REQUIRE_VKD3D: "1"
           SHADOWDUSK_REQUIRE_DXC: "1"
+          SHADOWDUSK_HANG_DUMP_DIR: ${{ github.workspace }}/TestResults/probe-hangs
         run: >
           dotnet test ShadowDusk.slnx --no-build -c Release
           --filter "Category=Integration"
           --settings ShadowDusk.runsettings
+          --blame-hang-timeout 3m --blame-hang-dump-type mini
           --logger "trx;LogFilePrefix=integration-${{ matrix.os }}"
           --results-directory TestResults/
-          ${{ matrix.os == 'macos-latest' && '-- xUnit.MaxParallelThreads=1' || '' }}
+          -- RunConfiguration.TestSessionTimeout=600000
+
+      # The sidecar's log goes into the job log either way, so a healthy run shows "nothing to
+      # capture" and a stalled one shows what was captured. A watchdog still sleeping (the tests
+      # finished first) is stopped here. Never fails.
+      - name: Stop the stall watchdog and show what it captured
+        if: always() && runner.os != 'Windows'
+        shell: bash
+        run: |
+          if [ -f TestResults/hang-dumps/watchdog.pid ]; then
+            pid=$(cat TestResults/hang-dumps/watchdog.pid)
+            if kill -0 "$pid" 2>/dev/null; then
+              # Give a capture in progress a moment to finish writing before stopping it.
+              for _ in $(seq 1 90); do
+                grep -q 'watchdog done' TestResults/hang-dumps/watchdog.log 2>/dev/null && break
+                grep -q 'nothing to capture' TestResults/hang-dumps/watchdog.log 2>/dev/null && break
+                if ! grep -q 'capturing pid' TestResults/hang-dumps/watchdog.log 2>/dev/null; then break; fi
+                sleep 1
+              done
+              kill "$pid" 2>/dev/null || true
+              echo "stall watchdog (pid $pid) stopped"
+            fi
+          fi
+          echo "--- watchdog.log"
+          cat TestResults/hang-dumps/watchdog.log 2>/dev/null || echo "(no watchdog log)"
+          echo "--- TestResults/hang-dumps"
+          ls -la TestResults/hang-dumps 2>/dev/null || true
+          rm -f TestResults/hang-dumps/watchdog.pid
+          # A dump is analyzed HERE, where the matching runtime and the symbol server are at
+          # hand, so the artifact carries the managed stacks and sync blocks as text and never
+          # depends on another machine being able to open a macOS core.
+          shopt -s nullglob
+          dumps=(TestResults/hang-dumps/*.dmp)
+          if [ "${#dumps[@]}" -gt 0 ]; then
+            dotnet tool install -g dotnet-dump >/dev/null 2>&1 || dotnet tool update -g dotnet-dump >/dev/null 2>&1 || true
+            export PATH="$PATH:$HOME/.dotnet/tools"
+            for d in "${dumps[@]}"; do
+              echo "--- dotnet-dump analyze $d"
+              dotnet-dump analyze "$d" -c "threads" -c "clrstack -all" -c "syncblk" -c "exit" \
+                > "${d%.dmp}-managed.txt" 2>&1 || echo "dotnet-dump analyze failed for $d (see ${d%.dmp}-managed.txt)"
+              head -c 20000 "${d%.dmp}-managed.txt"
+            done
+          fi
 
       # Guard the line above: if someone reverts to a fixed LogFileName, the run still goes
       # green while 13 of 14 assemblies' results vanish. The solution always has more than
@@ -394,3 +534,19 @@ jobs:
           name: integration-results-${{ matrix.os }}
           path: TestResults/*.trx
           retention-days: 14
+
+      # cancelled() too: if the job timeout ever does fire, the dumps taken so far still upload.
+      # TestResults/hang-dumps is the sidecar's output (stacks, sample, createdump, its log);
+      # TestResults/probe-hangs holds the probe-child evidence and the test host's own stall hint.
+      - name: Upload hang dumps
+        if: failure() || cancelled()
+        uses: actions/upload-artifact@v7
+        with:
+          name: integration-hang-dumps-${{ matrix.os }}
+          path: |
+            TestResults/**/*.dmp
+            TestResults/**/Sequence_*.xml
+            TestResults/probe-hangs/*.txt
+            TestResults/hang-dumps/**
+          retention-days: 14
+          if-no-files-found: ignore

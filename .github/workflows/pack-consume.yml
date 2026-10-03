@@ -2,7 +2,9 @@
 # Scratch-consumer smoke (Phase 37 verification tail, item 2).
 #
 # Does EXACTLY what a brand-new consumer does, on all three OSes (plus, since Phase 63, a
-# MonoGame 3.8.5 Content Builder consuming ShadowDusk.ContentPipeline the same cold way):
+# MonoGame 3.8.5 Content Builder consuming ShadowDusk.ContentPipeline the same cold way, and,
+# since issue #225, a ShadowDusk.Slang consumer in both the framework-dependent and the
+# self-contained publish shape, via tools/verify-slang-packaging.sh):
 #
 #   dotnet pack  (the four packages ShadowDusk.Compiler pulls)  → ./localfeed
 #   dotnet new console                                          (OUTSIDE the repo tree)
@@ -99,6 +101,12 @@ jobs:
           path: tools/dxc
           key: dxc-1.7.2212.40-${{ runner.os }}
 
+      - name: Cache slangc natives
+        uses: actions/cache@v5
+        with:
+          path: tools/slang
+          key: slang-2026.14.1-${{ runner.os }}
+
       # Download failures only warn inside the script (offline tolerance) — the PACK
       # GATE below is the loud assertion: a package without natives must fail this job
       # red. No `|| true`: a non-zero exit is a genuine script failure (ci.yml ditto).
@@ -163,7 +171,9 @@ jobs:
           pkg=$(find localfeed -maxdepth 1 -name 'ShadowDusk.HLSL.*.nupkg' | head -1)
           echo "Inspecting $pkg"
           py=$(command -v python3 || command -v python)
-          listing=$("$py" -m zipfile -l "$pkg")
+          # EXACT entry names, matched whole-line (grep -x): a substring match once passed a
+          # package holding "native/slangc/slangc" instead of "native/slangc" (issue #225).
+          listing=$("$py" -c 'import sys, zipfile; print("\n".join(zipfile.ZipFile(sys.argv[1]).namelist()))' "$pkg" | tr -d '\r')
           echo "$listing"
           missing=0
           for native in \
@@ -174,8 +184,9 @@ jobs:
             'runtimes/osx-x64/native/libdxcompiler.dylib' \
             'runtimes/osx-arm64/native/libdxcompiler.dylib' \
             'runtimes/android-arm64/native/libdxcompiler.so' \
+            'buildTransitive/ShadowDusk.HLSL.targets' \
             'THIRD-PARTY-NOTICES.txt' ; do
-              if ! grep -qF "$native" <<<"$listing"; then
+              if ! grep -qxF "$native" <<<"$listing"; then
                 echo "::error::$pkg is missing $native — a consumer on that RID gets the 0.2.0 disaster (natives absent from the package). Restore natives before packing (tools/restore.*)."
                 missing=1
               fi
@@ -191,7 +202,7 @@ jobs:
           pkg=$(find localfeed -maxdepth 1 -name 'ShadowDusk.GLSL.*.nupkg' | head -1)
           echo "Inspecting $pkg"
           py=$(command -v python3 || command -v python)
-          if ! "$py" -m zipfile -l "$pkg" | grep -qF 'runtimes/android-arm64/native/libspirv-cross.so'; then
+          if ! "$py" -c 'import sys, zipfile; print("\n".join(zipfile.ZipFile(sys.argv[1]).namelist()))' "$pkg" | tr -d '\r' | grep -qxF 'runtimes/android-arm64/native/libspirv-cross.so'; then
             echo "::error::$pkg is missing runtimes/android-arm64/native/libspirv-cross.so — an on-device Android compile would fail with DllNotFoundException at the SPIR-V to GLSL stage. Restore natives before packing (tools/restore.*)."
             exit 1
           fi
@@ -326,6 +337,20 @@ jobs:
         working-directory: ${{ runner.temp }}/sd-scratch-consumer
         run: dotnet run -c Release
 
+      # ── A consumer whose graph lifts Vortice.Dxc above ShadowDusk's [3.3.4] (issue #282) ──
+      # What an Evergine.DirectX12 + ShadowDusk app gets (measured: Vortice.Dxc 3.8.3, a
+      # different DXC and a binary-incompatible API). The same packed feed, consumed cold three
+      # times: with Vortice.Dxc 3.8.3 the build must WARN SD0220 (never fail: DX11/FNA consumers
+      # keep building) and OpenGL must fail at runtime with SD0219 naming the fix while DirectX 11
+      # and FNA compile; pinning 3.3.4 (the fix the messages name) must clear both; and a
+      # consumer with no Vortice.Dxc reference must see nothing new.
+      - name: Vortice.Dxc version conflict (build warning SD0220 + runtime SD0219, issue #282)
+        shell: bash
+        run: |
+          chmod +x tools/verify-vortice-dxc-conflict.sh
+          ./tools/verify-vortice-dxc-conflict.sh \
+            "$GITHUB_WORKSPACE/localfeed" "${{ steps.version.outputs.smoke }}" "${{ matrix.tfm }}" "$RUNNER_TEMP/sd-vortice-conflict"
+
       # ── ShadowDusk.ContentPipeline consumed cold by a MonoGame 3.8.5 Content Builder ──────
       # (Phase 63, issue #203). Exactly what a 3.8.5 user does: the MonoGame.ContentBuilder.CSharp
       # template's project + `dotnet add package ShadowDusk.ContentPipeline`, then a real
@@ -354,3 +379,19 @@ jobs:
         shell: bash
         working-directory: ${{ runner.temp }}/sd-scratch-contentbuilder
         run: dotnet run -c Release -- DesktopGL Windows
+
+      # ── ShadowDusk.Slang consumed cold (issue #225) ──────────────────────────────────────
+      # Packs Core/HLSL/GLSL/Compiler/Slang into its own feed, gates the Slang nupkg for all
+      # eight slangc natives by EXACT entry name, then runs tools/slang-consumer from a scratch
+      # directory outside the repo in both shapes a consumer builds: a framework-dependent
+      # `dotnet run` (natives under bin/.../runtimes/<rid>/native/) and a RID-specific
+      # self-contained publish (natives flattened next to the app). The consumer asserts slangc
+      # resolved from inside its own output and that genuine Slang (generics over an interface)
+      # and a VS+PS shader compile to MGFX on OpenGL and DirectX. A private NUGET_PACKAGES makes
+      # NuGet extract the package fresh. macos-latest is macOS 26, the upstream slangc's floor.
+      - name: Pack + consume ShadowDusk.Slang (framework-dependent and self-contained)
+        shell: bash
+        run: |
+          chmod +x tools/verify-slang-packaging.sh
+          ./tools/verify-slang-packaging.sh \
+            "${{ steps.version.outputs.smoke }}" "${{ matrix.tfm }}" "$RUNNER_TEMP/sd-slang"

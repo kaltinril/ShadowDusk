@@ -2,6 +2,7 @@
 
 using System.Diagnostics;
 using System.Text.Json;
+using ShadowDusk.Validation.SharedMgfx;
 
 namespace ShadowDusk.Validation.MgcbPluginGate;
 
@@ -21,13 +22,32 @@ namespace ShadowDusk.Validation.MgcbPluginGate;
 /// <list type="number">
 /// <item><c>dotnet mgcb</c> exits 0 and writes the <c>.xnb</c>.</item>
 /// <item>The <c>.mgfx</c> payload inside that <c>.xnb</c> is <b>byte-for-byte</b> what the
-///   ShadowDusk CLI binary emits for the same source and profile.</item>
+///   ShadowDusk CLI binary emits for the same source and profile - with, on an MGFX v11 target
+///   (DirectX 12, Vulkan), only the embedded source-file string different (see below).</item>
 /// <item>The <c>.xnb</c> envelope (header, type-reader manifest, shared-resource count, type id)
 ///   is <b>byte-for-byte</b> the envelope MGCB writes for its OWN stock <c>EffectProcessor</c> -
 ///   so the container a consumer's <c>ContentManager</c> reads is unchanged.</item>
 /// <item>The payload <b>differs</b> from the stock processor's, which is the positive proof that
 ///   ShadowDusk, not MGCB's built-in effect compiler, produced it.</item>
 /// </list>
+///
+/// <para><b>The MGFX v11 source-file string (issue #274).</b> A v11 container stores a
+/// source-file string per shader, and MGCB hands a processor the effect's ABSOLUTE path. The
+/// plugin used to record that path, so every DirectX 12 / Vulkan <c>.xnb</c> carried the build
+/// machine's directory and changed with the checkout location, where MGCB's stock processor
+/// writes <c>&lt;unknown&gt;</c>. For every case whose payload is v11 this gate therefore
+/// asserts: each shader record's string is <c>&lt;unknown&gt;</c> and equal to the stock
+/// build's; the payload names neither the source directory nor the file; the payload is the
+/// CLI's bytes with only that string replaced (the CLI keeps writing the path it was given, as
+/// <c>mgfxc</c> does, and that is asserted too); and the same effect built from a SECOND
+/// directory produces a byte-identical <c>.xnb</c>.</para>
+///
+/// <para><b>Issue #280.</b> Every case also has the ShadowDusk CLI write an <c>.xnb</c> and
+/// requires its payload to equal the plugin's (so on v11 the CLI's <c>.xnb</c> carries
+/// <c>&lt;unknown&gt;</c> too, while its <c>.mgfx</c> keeps the path). Every v11 case also
+/// rebuilds with <c>/config:Debug</c> and the default <c>DebugMode=Auto</c>: the plugin's
+/// <c>.xnb</c> must equal its default-config build, and, where the stock arm runs, stock MGCB's
+/// <c>/config:Debug</c> build must equal its own default build (the premise, re-measured).</para>
 ///
 /// <para><b>Two MGCB versions, on purpose (Phase 63 Area B, issue #203).</b> The tool-manifest
 /// <c>dotnet-mgcb</c> (3.8.4.1) carries MonoGame's ORIGINAL <c>TargetPlatform</c> numbering; the
@@ -38,11 +58,13 @@ namespace ShadowDusk.Validation.MgcbPluginGate;
 /// arm asserts the payload is the CLI's for the target the platform actually is
 /// (<c>Web</c> → OpenGL, <c>DesktopVK</c> → Vulkan, <c>WindowsDX12</c> → DirectX_12), plus the
 /// negative: a <c>V</c>-byte <c>.xnb</c> never carries an OpenGL payload again. The stock
-/// envelope arm is skipped where 3.8.5's own <c>EffectProcessor</c> refuses the corpus fixture
-/// (its Vulkan/DX12 compile rejects the <c>ps_4_0_level_9_1</c> profile these fixtures select
-/// off the platform's defines); the <c>Web</c> and <c>DesktopGL</c> cases keep it.</para>
+/// arm is skipped only where 3.8.5's own <c>EffectProcessor</c> refuses the corpus fixture: its
+/// Vulkan/DX12 compile requires <c>vs_6_0</c>/<c>ps_6_0</c>, which <c>VertexAndPixel.fx</c>
+/// (no <c>#if SM6</c> branch) does not select. <c>Grayscale.fx</c> and
+/// <c>VsTransformColorTexture.fx</c> do, so those DesktopVK / WindowsDX12 cases keep the stock
+/// arm, as do the <c>Web</c> and <c>DesktopGL</c> ones.</para>
 ///
-/// <para><b>The plugin-arm MGCB runs with a DECOY <c>dxcompiler.dll</c> first on <c>PATH</c></b>
+/// <para><b>The plugin-arm MGCB runs with a DECOY <c>dxcompiler.dll</c> and <c>dxil.dll</c> first on <c>PATH</c></b>
 /// (Windows). Inside MGCB, Vortice.Dxc's base-directory probe misses (the base directory is
 /// MGCB's), and before Phase 63 its bare-name fallback then took whatever <c>dxcompiler.dll</c>
 /// the OS search path offered - on a box with the Vulkan SDK installed, a DIFFERENT DXC compiled
@@ -66,6 +88,11 @@ internal static class Program
     /// <param name="StockArm">Whether to also build through MGCB's stock processor and compare envelopes.</param>
     /// <param name="MustNotEqualProfile">A CLI profile whose bytes the payload must NOT equal (the regression's wrong artifact).</param>
     /// <param name="PlatformByte">The expected XNB platform byte, when asserted.</param>
+    /// <param name="ExpectV11">
+    /// Whether the payload must be MGFX v11, the container with the per-shader source-file string
+    /// (issue #274). Stated per case, not just read off the payload: if DirectX 12 or Vulkan ever
+    /// stopped being v11, the source-file assertions would otherwise switch themselves off.
+    /// </param>
     private sealed record Case(
         string Fixture,
         string Platform,
@@ -73,7 +100,8 @@ internal static class Program
         string? MgcbVersion = null,
         bool StockArm = true,
         string? MustNotEqualProfile = null,
-        char? PlatformByte = null);
+        char? PlatformByte = null,
+        bool ExpectV11 = false);
 
     private static readonly Case[] Cases =
     [
@@ -90,10 +118,17 @@ internal static class Program
         // control (its number did not move); the other three are the ones that did.
         new("Grayscale.fx",       "DesktopGL",   "OpenGL",     Mgcb385),
         new("Grayscale.fx",       "Web",         "OpenGL",     Mgcb385),
-        new("Grayscale.fx",       "DesktopVK",   "Vulkan",     Mgcb385, StockArm: false, MustNotEqualProfile: "OpenGL",     PlatformByte: 'V'),
-        new("VertexAndPixel.fx",  "DesktopVK",   "Vulkan",     Mgcb385, StockArm: false, MustNotEqualProfile: "OpenGL",     PlatformByte: 'V'),
-        new("Grayscale.fx",       "WindowsDX12", "DirectX_12", Mgcb385, StockArm: false, MustNotEqualProfile: "DirectX_11"),
-        new("VertexAndPixel.fx",  "WindowsDX12", "DirectX_12", Mgcb385, StockArm: false, MustNotEqualProfile: "DirectX_11"),
+        // The always-MGFX-v11 cases: the ones with a source-file string to get wrong (issue #274).
+        // Grayscale.fx and VsTransformColorTexture.fx carry an `#if SM6` branch, so MGCB's own
+        // stock processor builds them too and is the oracle for that string (one shader record,
+        // and a vertex + pixel pair). VertexAndPixel.fx has no SM6 branch: the stock Vulkan and
+        // DirectX 12 compile refuses its vs_4_0_level_9_1 profile, so it runs without a stock arm.
+        new("Grayscale.fx",               "DesktopVK",   "Vulkan",     Mgcb385, MustNotEqualProfile: "OpenGL",     PlatformByte: 'V', ExpectV11: true),
+        new("VsTransformColorTexture.fx", "DesktopVK",   "Vulkan",     Mgcb385, PlatformByte: 'V', ExpectV11: true),
+        new("VertexAndPixel.fx",          "DesktopVK",   "Vulkan",     Mgcb385, StockArm: false, MustNotEqualProfile: "OpenGL",     PlatformByte: 'V', ExpectV11: true),
+        new("Grayscale.fx",               "WindowsDX12", "DirectX_12", Mgcb385, MustNotEqualProfile: "DirectX_11", ExpectV11: true),
+        new("VsTransformColorTexture.fx", "WindowsDX12", "DirectX_12", Mgcb385, ExpectV11: true),
+        new("VertexAndPixel.fx",          "WindowsDX12", "DirectX_12", Mgcb385, StockArm: false, MustNotEqualProfile: "DirectX_11", ExpectV11: true),
     ];
 
     private static int Main()
@@ -131,8 +166,8 @@ internal static class Program
 
         string? decoyDir = CreateDecoyDxcDirectory(plugin, work);
         Console.WriteLine(decoyDir is null
-            ? "decoy dxcompiler on PATH: (not on Windows - skipped)"
-            : $"decoy dxcompiler on PATH: {decoyDir}");
+            ? "decoy dxcompiler/dxil on PATH: (not on Windows - skipped)"
+            : $"decoy dxcompiler/dxil on PATH: {decoyDir}");
         Console.WriteLine();
 
         int failures = 0;
@@ -167,8 +202,12 @@ internal static class Program
     }
 
     /// <summary>
-    /// A directory holding a <c>dxcompiler.dll</c> that is NOT DXC (the plugin's own
-    /// <c>spirv-cross.dll</c>, renamed), to sit first on the plugin-arm MGCB's <c>PATH</c>.
+    /// A directory holding a <c>dxcompiler.dll</c> and a <c>dxil.dll</c> that are neither DXC nor
+    /// a validator (the plugin's own <c>spirv-cross.dll</c>, renamed), to sit first on the
+    /// plugin-arm MGCB's <c>PATH</c>. The <c>dxil.dll</c> decoy pins the 2026-10-01 fix: DXC binds
+    /// its validator with a bare <c>LoadLibrary("dxil.dll")</c>, and ShadowDusk used to pre-load
+    /// it by bare name too, so a <c>dxil.dll</c> on <c>PATH</c> won and DirectX 12 came out
+    /// unsigned (or, with the Windows SDK's newer one, failed validation outright).
     /// Windows only: the bare-name fallback this guards against is the Win32 search order.
     /// </summary>
     private static string? CreateDecoyDxcDirectory(string plugin, string work)
@@ -183,6 +222,7 @@ internal static class Program
         string decoyDir = Path.Combine(work, "decoy-path");
         Directory.CreateDirectory(decoyDir);
         File.Copy(source, Path.Combine(decoyDir, "dxcompiler.dll"), overwrite: true);
+        File.Copy(source, Path.Combine(decoyDir, "dxil.dll"), overwrite: true);
         return decoyDir;
     }
 
@@ -216,6 +256,52 @@ internal static class Program
                 $"xnb platform byte is '{(char)sdXnb[3]}', expected '{expectedByte}' - MGCB did not build this for /platform:{c.Platform}");
         }
 
+        // MGFX v11 (always DirectX 12 and Vulkan) is the container with a per-shader source-file
+        // string; v10 has none, so the issue-#274 assertions apply to exactly these cases.
+        bool v11 = MgfxSourceFile.Version(sd.Payload) > 10;
+        IReadOnlyList<string> sdSourceFiles = MgfxSourceFile.ReadAll(sd.Payload);
+
+        if (c.ExpectV11 != v11)
+        {
+            throw new InvalidOperationException(
+                $"payload is MGFX v{MgfxSourceFile.Version(sd.Payload)}, but this case expects " +
+                (c.ExpectV11 ? "v11 (the source-file assertions would silently not run)" : "v10"));
+        }
+
+        if (v11)
+        {
+            // The field itself: what MGCB's stock processor writes, in every shader record.
+            if (sdSourceFiles.Count == 0 || sdSourceFiles.Any(f => f != MgfxSourceFile.Stock))
+            {
+                throw new InvalidOperationException(
+                    $"MGFX v11 source-file field is [{string.Join(", ", sdSourceFiles)}], expected " +
+                    $"'{MgfxSourceFile.Stock}' in every shader record (issue #274)");
+            }
+
+            // Nothing else may name the build machine's directory or the file either.
+            foreach (string leak in new[] { fixtures, fixtures.Replace('\\', '/'), c.Fixture })
+            {
+                if (MgfxSourceFile.ContainsUtf8(sd.Payload, leak))
+                    throw new InvalidOperationException($"the payload carries '{leak}' - the source path leaked into the .xnb");
+            }
+
+            // The defect as a consumer meets it: the same effect, built from a different
+            // directory, must be the same .xnb.
+            AssertRelocatedBuildIsIdentical(mgcb, plugin, fixtures, caseDir, c, decoyDir, sdXnb);
+
+            // Issue #280: /config:Debug with the default DebugMode=Auto must build what the
+            // default configuration builds, as MGCB's stock processor does (it turns debug info
+            // on only for an explicit DebugMode=Debug). Debug info would also carry the path.
+            byte[] sdDebugXnb = BuildWithConfig(mgcb, caseDir, c, source, "sddebug", plugin,
+                "ShadowDuskEffectImporter", "ShadowDuskEffectProcessor", decoyDir);
+            if (!sdDebugXnb.AsSpan().SequenceEqual(sdXnb))
+            {
+                throw new InvalidOperationException(
+                    $"the plugin's /config:Debug .xnb ({sdDebugXnb.Length} bytes) differs from its default-config " +
+                    $".xnb ({sdXnb.Length} bytes) with DebugMode=Auto - stock MGCB builds the same bytes (issue #280)");
+            }
+        }
+
         if (c.StockArm)
         {
             // Arm 2: the SAME MGCB with its OWN stock effect processor, as the envelope oracle.
@@ -242,15 +328,78 @@ internal static class Program
             if (sd.Payload.AsSpan().SequenceEqual(stock.Payload))
                 throw new InvalidOperationException(
                     "the plugin's payload equals MGCB's stock compiler's - the build did not go through ShadowDusk");
+
+            // (5) Issue #274: where both builds have the v11 source-file field, ours must hold
+            // what the stock build's holds. Compared as the set of distinct values (the two
+            // compilers need not emit the same NUMBER of shader records).
+            if (v11)
+            {
+                // Issue #280's premise, re-measured on every run: stock MGCB's /config:Debug
+                // build with DebugMode=Auto is byte-identical to its default-config build. If a
+                // future MGCB starts honouring the configuration, this fails and the plugin's
+                // Auto handling has to follow it again.
+                byte[] stockDebugXnb = BuildWithConfig(mgcb, caseDir, c, source, "stockdebug", reference: null,
+                    "EffectImporter", "EffectProcessor", decoyDir: null);
+                if (!stockDebugXnb.AsSpan().SequenceEqual(stockXnb))
+                {
+                    throw new InvalidOperationException(
+                        $"stock MGCB's /config:Debug .xnb ({stockDebugXnb.Length} bytes) differs from its default-config " +
+                        $".xnb ({stockXnb.Length} bytes) - stock Auto no longer ignores the configuration (issue #280)");
+                }
+
+                IReadOnlyList<string> stockSourceFiles = MgfxSourceFile.ReadAll(stock.Payload);
+                if (stockSourceFiles.Count == 0)
+                    throw new InvalidOperationException("the stock build is not MGFX v11 - nothing to compare the source-file field against");
+
+                string[] stockDistinct = stockSourceFiles.Distinct().Order(StringComparer.Ordinal).ToArray();
+                string[] sdDistinct    = sdSourceFiles.Distinct().Order(StringComparer.Ordinal).ToArray();
+                if (!stockDistinct.SequenceEqual(sdDistinct))
+                {
+                    throw new InvalidOperationException(
+                        "MGFX v11 source-file field differs from MGCB's own stock build: " +
+                        $"stock [{string.Join(", ", stockDistinct)}] vs ShadowDusk [{string.Join(", ", sdDistinct)}]");
+                }
+            }
         }
 
         // (2) THE BAR: byte-for-byte the CLI's output for the target this platform actually is.
         byte[] cliBytes = CompileWithCli(cli, source, caseDir, c.Profile);
-        if (!sd.Payload.AsSpan().SequenceEqual(cliBytes))
+        byte[] expected = cliBytes;
+        if (v11)
+        {
+            // The CLI is mgfxc-CLI parity: it writes the source path exactly as it was passed.
+            // That must NOT change (issue #274 is about the content-build route only)...
+            IReadOnlyList<string> cliSourceFiles = MgfxSourceFile.ReadAll(cliBytes);
+            if (cliSourceFiles.Count == 0 || cliSourceFiles.Any(f => f != source))
+            {
+                throw new InvalidOperationException(
+                    $"the CLI's MGFX v11 source-file field is [{string.Join(", ", cliSourceFiles)}], expected the path " +
+                    $"it was passed ('{source}') - CLI behaviour must not change");
+            }
+
+            // ...so the plugin's payload is the CLI's with ONLY that string replaced.
+            expected = MgfxSourceFile.Replace(cliBytes, MgfxSourceFile.Stock);
+        }
+
+        if (!sd.Payload.AsSpan().SequenceEqual(expected))
         {
             throw new InvalidOperationException(
                 $"plugin payload ({sd.Payload.Length} bytes) is NOT byte-identical to the CLI's " +
-                $"({cliBytes.Length} bytes) for /Profile:{c.Profile}");
+                $"({cliBytes.Length} bytes) for /Profile:{c.Profile}" +
+                (v11 ? $" with the source-file string replaced by '{MgfxSourceFile.Stock}'" : string.Empty));
+        }
+
+        // Issue #280: the CLI's own .xnb mode is a content-pipeline replacement, so its payload
+        // must be exactly what this MGCB content build produced - on a v11 target that means
+        // "<unknown>" in the source-file field, not the path the CLI was handed.
+        string cliXnbPath = Path.Combine(caseDir, $"cli_{c.Profile}.xnb");
+        RunProcess(cli, [source, cliXnbPath, $"/Profile:{c.Profile}"], caseDir);
+        XnbEffect cliXnb = XnbEffect.Parse(File.ReadAllBytes(cliXnbPath));
+        if (!cliXnb.Payload.AsSpan().SequenceEqual(sd.Payload))
+        {
+            throw new InvalidOperationException(
+                $"the CLI's .xnb payload ({cliXnb.Payload.Length} bytes) is NOT byte-identical to the plugin's MGCB " +
+                $"payload ({sd.Payload.Length} bytes) for /Profile:{c.Profile} (issue #280)");
         }
 
         // The negative half of Phase 63 Area B: the payload must not be the WRONG target's bytes
@@ -267,6 +416,53 @@ internal static class Program
         }
     }
 
+    /// <summary>
+    /// Builds the case's effect again through the plugin from a COPY in a different, deeper
+    /// directory, and requires the <c>.xnb</c> to be byte-identical to the in-place build's. The
+    /// headers travel with it so <c>#include</c> keeps resolving.
+    /// </summary>
+    private static void AssertRelocatedBuildIsIdentical(
+        string mgcb, string plugin, string fixtures, string caseDir, Case c, string? decoyDir, byte[] inPlaceXnb)
+    {
+        string relocatedDir = Path.Combine(caseDir, "relocated", "another", "checkout");
+        Directory.CreateDirectory(relocatedDir);
+
+        string relocatedSource = Path.Combine(relocatedDir, c.Fixture);
+        File.Copy(Path.Combine(fixtures, c.Fixture), relocatedSource, overwrite: true);
+        foreach (string header in Directory.GetFiles(fixtures, "*.fxh"))
+            File.Copy(header, Path.Combine(relocatedDir, Path.GetFileName(header)), overwrite: true);
+
+        WriteMgcb(Path.Combine(caseDir, "relocated.mgcb"), c.Platform, "binrelocated", "objrelocated", relocatedSource,
+                  reference: plugin,
+                  importer: "ShadowDuskEffectImporter",
+                  processor: "ShadowDuskEffectProcessor");
+        RunMgcb(mgcb, caseDir, "relocated.mgcb", decoyDir);
+
+        byte[] relocatedXnb = File.ReadAllBytes(
+            Path.Combine(caseDir, "binrelocated", Path.GetFileNameWithoutExtension(c.Fixture) + ".xnb"));
+        if (!relocatedXnb.AsSpan().SequenceEqual(inPlaceXnb))
+        {
+            throw new InvalidOperationException(
+                $"the .xnb built from {relocatedDir} ({relocatedXnb.Length} bytes) differs from the one built from " +
+                $"{fixtures} ({inPlaceXnb.Length} bytes) - the output depends on the source directory (issue #274)");
+        }
+    }
+
+    /// <summary>
+    /// Builds the case's effect in place with <c>/config:Debug</c> (processor parameters left at
+    /// their defaults, so <c>DebugMode=Auto</c>) and returns the <c>.xnb</c>.
+    /// </summary>
+    private static byte[] BuildWithConfig(
+        string mgcb, string caseDir, Case c, string source, string name, string? reference,
+        string importer, string processor, string? decoyDir)
+    {
+        WriteMgcb(Path.Combine(caseDir, $"{name}.mgcb"), c.Platform, $"bin{name}", $"obj{name}", source,
+                  reference, importer, processor, config: "Debug");
+        RunMgcb(mgcb, caseDir, $"{name}.mgcb", decoyDir);
+        return File.ReadAllBytes(
+            Path.Combine(caseDir, $"bin{name}", Path.GetFileNameWithoutExtension(c.Fixture) + ".xnb"));
+    }
+
     private static byte[] CompileWithCli(string cli, string source, string caseDir, string profile)
     {
         string cliOut = Path.Combine(caseDir, $"cli_{profile}.mgfx");
@@ -276,14 +472,14 @@ internal static class Program
 
     private static void WriteMgcb(
         string path, string platform, string outputDir, string intermediateDir, string sourcePath,
-        string? reference, string importer, string processor)
+        string? reference, string importer, string processor, string config = "")
     {
         var lines = new List<string>
         {
             $"/outputDir:{outputDir}",
             $"/intermediateDir:{intermediateDir}",
             $"/platform:{platform}",
-            "/config:",
+            $"/config:{config}",
             "/profile:Reach",
             "/compress:False",
             string.Empty,

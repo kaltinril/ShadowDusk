@@ -18,12 +18,114 @@ that loads and renders identically to `mgfxc`'s in the real MonoGame/KNI runtime
   DXC / SPIRV-Cross factories (like `EffectCompiler`), and `WasmShaderCompiler.ConvertToSksl` is the
   synchronous entry point after `InitializeAsync()`. The default desktop path is unchanged.
 
+- **Build-time warning `SD0220` when a consumer's graph lifts Vortice.Dxc (issue #282).**
+  ShadowDusk.HLSL now ships `buildTransitive/ShadowDusk.HLSL.targets`, so a project that references
+  it directly or through ShadowDusk.Compiler / ShadowDusk.ContentPipeline is told AT BUILD TIME when
+  it resolves a Vortice.Dxc other than 3.3.4 (another package raising it, measured with
+  Evergine.DirectX12, which pulls 3.8.3; or the consumer's own reference). The warning names the
+  resolved version, says DirectX 12 / OpenGL / Vulkan will fail at runtime with `SD0219`, and gives
+  the fix (pin `Vortice.Dxc` 3.3.4). A warning, never an error: DirectX 11 and FNA do not use DXC
+  and keep building; `NoWarn` silences it. Before this the only build-time signal was NuGet's
+  generic `NU1608`. Proven end to end by `tools/verify-vortice-dxc-conflict.sh` (a cold consumer of
+  the packed feed with Vortice.Dxc 3.8.3, then pinned to 3.3.4, then with no reference), which
+  `Pack & Consume` now runs on all three OSes and both TFMs.
+- **Android checks the identity of the DXC it loaded (issue #289).** The APK holds no separate file
+  to read a build id from, so `DxcLoader` reads the GNU build id from the image the dynamic linker
+  mapped (`dl_iterate_phdr`, the PT_NOTE segment in memory) and refuses anything but the pinned
+  android-arm64 build with `SD0219`: another package bundling its own `libdxcompiler.so` for the
+  same ABI was previously used without a check. Linux runs the same mapped-image check after its
+  absolute-path load. Measured on a pixel_7 API-34 x86_64 emulator by the new
+  `validation/AndroidGl/run-dxc-identity-checks.ps1`: the pinned build compiles, a copy with one
+  build-id byte changed is refused, and an APK without the library gets `SD0219`, never a raw
+  `DllNotFoundException`.
+
+- **`CompilerOptions.EmbeddedSourceFileName` (issue #274).** The source-file string an MGFX v11
+  container stores per shader can now be set independently of `SourceFileName`, which keeps
+  feeding diagnostics and `#include` resolution. Unset (the default) nothing changes: the string
+  is `SourceFileName` as passed, like `mgfxc`. A build tool that compiles from absolute paths can
+  set it to keep those paths out of DirectX 12 / Vulkan output; ShadowDusk's own content processor
+  sets it to `<unknown>`. Ignored by MGFX v10, KNIFX and FNA, which store no source name.
+- **Full Slang input in the browser (issue #257, Phase 67).** A browser cannot spawn `slangc`, so the
+  pinned slangc v2026.14.1 now also runs inside the page as WebAssembly: the new
+  `src/ShadowDusk.Slang.Wasm` project (`WasmSlangCompiler`, not published as a package yet) loads it
+  and drives `SlangCompiler` through an internal in-process seam, so the argument list, register
+  strip, per-entry merge, `.fx` assembly and the downstream DXC/vkd3d pipeline are the desktop route's
+  own code. Slang stays an input language only: the module emits HLSL and never replaces DXC. The
+  module is linked from upstream's own prebuilt wasm libraries behind a glue that replays slangc's
+  command line (`.wasm-build/slang-wasm/`); upstream's own `slang-wasm.js` was measured unusable for
+  this (its API takes no flags or macros; 0/20 corpus entries matched). Measured: 235/235 slangc runs
+  byte-identical to native slangc (every corpus, entry point and target, failures included), and in
+  real headless Chromium 42/42 corpus artifacts byte-identical to `slang-manifest.json` plus 17/17
+  KNI WebGL renders at maxd 0 against the subset frontend. Two new gates in `wasm.yml`
+  (`node-test-slangc-wasm.mjs`, `browser-slang-gate.mjs`). The ShaderFiddle sample compiles Slang
+  source through it (new "Slang generic blend" example). New codes `SD1904` (slangc module failed to load)
+  and `SD1905` (slangc module trapped; the instance is discarded and reloads), and `SD1903` now also covers a sync compile before the slangc module is loaded. The module links with an 8 MB stack (emscripten's 64 KB default trapped on valid nested shaders native slangc compiles). No emitted byte changes on any existing route.
+- **Android full-Slang measurement (issue #257).** On an API-34 emulator an app can spawn a packaged
+  executable only when native libraries are extracted, which a default Release build does not do,
+  and upstream ships no Android slangc, so full Slang on Android will take the in-process route
+  (designed in Phase 67, not built). `docs/validation-matrix.md` §7 tracks it.
+
+- **Real-engine render gates for `ShadowDusk.Slang` on DirectX 12, Vulkan and FNA (issue #230).**
+  The 21-shader real-slangc corpus goes through `SlangCompiler` and is rendered next to the
+  reference compiler's build of the same assembled `.fx`, in the real engine on the same device:
+  `validation/SlangFullCorpusDx12` (mgfxc 3.8.5 `/Profile:DirectX_12`, MonoGame 3.8.5 WindowsDX12,
+  21/21, max delta 0/255), `validation/SlangFullCorpusVulkan` (mgfxc 3.8.5 `/Profile:Vulkan`, DesktopVK,
+  21/21, max delta 1/255) and `validation/FnaValidation -- slang` (`fxc /T fx_2_0`, FNA 26.06, 21/21,
+  max delta 1/255, plus the `.xnb` Content.Load arm at delta 0). Each runs two positive controls (a
+  swapped-channel pixel shader and a transposed vertex transform) that must diverge, and each now has
+  a slot in `validation/run-windows-render-gates.ps1` (FNA under `-IncludeFna`).
+- **Linux and Slang evidence for the DXC concurrency fix (issue #256).** No emitted byte changes.
+  The fork probe in `DxcConcurrencyStressTests` now also makes real libc `fork()` calls on Linux
+  (`Process.Start` there is `vfork()`, which never exercises the macOS mechanism) and reports what
+  it raced; on ubuntu CI 16 runs raced about 8,200 DXC compiles against 8,100 process starts and 10,000
+  forks with no hang, so `DxcForkGate` stays macOS-only. A new fresh-process `setlocale` audit
+  checks every DXC entry point ShadowDusk uses and fails if any call outside the fork gate starts
+  calling `setlocale` (reflection was measured not to). A probe pinning which hosts' `Process.Start`
+  really forks, and `SlangDxcConcurrencyTests` (slangc spawns racing `.fx` compiles), join it.
+  A hung probe child now leaves native stacks (gdb on Linux, `sample` on macOS) and a
+  `createdump` core in the CI hang-dump artifact; the Linux integration lane lowers
+  `ptrace_scope` so they can attach.
+
+- **The Vulkan render gates run in CI.** `validation-render.yml` gains a `vulkan-render-gates` job
+  (ubuntu, label-gated like the GL and DX jobs) that renders `VsDrivenVulkan` (VS-driven fixture vs the
+  `mgfxc` golden, then the Apos.Shapes gallery) and the `CandidateVulkan` corpus on real MonoGame
+  DesktopVK through Mesa lavapipe. `validation/run-with-vk-validation.sh` forces the Khronos validation
+  layer on and fails the gate on any layer error. Two positive controls in the same job (a wrong shader;
+  SPIR-V stamped 1.3 on MonoGame's Vulkan 1.0 instance) must turn it red, and do. The Vulkan validation
+  drivers now also reference `MonoGame.Runtime.Linux.Vulkan`.
+
+- **Doc-consistency test (issue #218).** `DocConsistencyTests` checks that `plan/plan.md`'s phase index
+  agrees with each phase doc's `**Status:**` glyph, that nothing in `plan/DONE/` claims to be open,
+  that every linked doc exists, and that `docfx/images/pipeline-overview.svg` carries every note
+  from `docs/pipeline-overview.puml`. Unrecognized status glyphs fail, and every `validation/*` driver
+  must appear in `docs/validation-matrix.md` section 6 (added the missing `CandidateDx12` and
+  `CandidateVkd3d` paths). Also corrects Phase 50's status glyph to match its index row.
+- **HLSL → raylib fragment shaders for Raylib-cs (Phase 59, the fragment-only slice).**
+  `ShadowDusk.Compiler.Raylib.RaylibConverter.Convert(fx)` turns a single-pass, pixel-only `.fx`
+  into a `#version 330` fragment shader for `Raylib.LoadShaderFromMemory(null, fs)`, so one
+  post-process source runs on MonoGame and on raylib. Same faithful front half as the OpenGL
+  target (DXC, SPIRV-Cross), branching before the MonoGame rewriter; a convention mapper renames
+  the interface to raylib's fixed names (`TEXCOORD0` → `fragTexCoord`, `COLOR0` → `fragColor`,
+  the output → `finalColor`, the unit-0 sampler → `texture0`) and flattens cbuffers to loose
+  uniforms raylib binds by name. The result is a `RaylibShader` with the binding contract
+  (uniform names and types, samplers, baked sampler state), deliberately not a `CompiledShader`.
+  Anything raylib's model cannot hold is refused by name (`SD0630`–`SD0636`): multi-pass,
+  render states, vertex shaders, interpolants other than `TEXCOORD0`/`COLOR0`, Y-orientation
+  dependent builtins (`SV_Position`, `ddy`), MRT, non-2D textures, matrix/struct uniforms, and
+  names that would collide or bind nothing. `.slang` input works through the existing Slang
+  frontend with no raylib-specific code. **Evidence model: rendered-image fidelity, not
+  `mgfxc`-equivalence** (raylib has no reference compiler): the new `validation/RaylibRoute`
+  gate renders each conversion in real Raylib-cs 8.1.0 (raylib 6.0) and pixel-diffs it against
+  the same `.fx` built for OpenGL in real MonoGame DesktopGL; 13/13 shaders (the 10-shader GL
+  corpus, a CRT and a handheld-LCD effect, Gum's Grayscale) at maxd 0, with three positive
+  controls that must diverge. Runs in the Linux GL CI lane. `glsl100` (web) is not emitted yet.
+
 - **New package: `ShadowDusk.Slang`, a real-slangc compile route for genuine Slang (Phase 66,
-  opt-in, win-x64 today).** A consumer who needs real Slang — `import`, generics, `interface`
+  opt-in; win-x64, linux-x64, osx-x64, osx-arm64).** A consumer who needs real Slang — `import`, generics, `interface`
   conformances, everything real slangc accepts, none of which `ShadowDusk.Compiler`'s built-in
   HLSL-compatible-subset `.slang` frontend can compile — adds this separate package; a consumer
   who does not is completely unaffected (zero size, zero dependency, zero behavior change).
-  `SlangCompiler` drives the packaged real `slangc` (win-x64, Phase 66 A2) as `-target hlsl`,
+  `SlangCompiler` drives the packaged real `slangc` as `-target hlsl`,
   one process invocation per discovered `[shader(...)]` entry point (source piped over
   stdin), merges the per-entry HLSL translation units (deduplicating slangc's redeclared
   shared types/cbuffers), and hands the result to the existing, unchanged `EffectCompiler`
@@ -63,9 +165,818 @@ that loads and renders identically to `mgfxc`'s in the real MonoGame/KNI runtime
   feedback, from the README (new *Community* section), the documentation site's home page and
   footer, and the Contributing guide.
 
+- **`ShadowDusk.Slang` runs on Linux and macOS (issue #227).** The package bundles slangc for
+  win-x64, linux-x64, osx-x64 and osx-arm64 (only the slangc executable + its compiler library
+  per RID, hash-pinned in `tools/restore.*`), so adding the package is the whole setup on every
+  desktop OS. Host floors come from the upstream binaries: Linux needs a GCC 11+ `libstdc++`
+  (Ubuntu 22.04+), macOS needs macOS 26+ (follow-up #237 to lift it); any other host gets
+  `SD0620` naming the reason. A cross-host byte-identity manifest pins the route's output.
+  linux-arm64 and win-arm64 are deliberately not bundled even though upstream publishes them:
+  the core pipeline is not complete on either RID (linux-arm64 has no DXC and no vkd3d native;
+  win-arm64 has DXC and SPIRV-Cross natives but no vkd3d, so no DirectX or FNA, and no CI lane
+  proves it). They follow when the core pipeline does.
+- **`ShadowDusk.Slang` is proven to work from a cold NuGet install (issue #225).**
+  `tools/verify-slang-packaging.sh`, run by `pack-consume.yml` on all three OSes, packs the
+  package, consumes it from a scratch project outside the repo, and compiles real Slang in both
+  the framework-dependent and the self-contained publish shape. Direct `SlangToolPath` tests
+  cover every probe, the repository-root walk-up, and `ResolveOrThrow`'s failures.
+- **The release now publishes `ShadowDusk.Slang` and fails red if any slangc native is missing
+  from it (issue #226).**
+
 ### Changed
 
+- **CI dumps a stalled integration test host from outside the process (issue #312).**
+  `tools/ci/hang-watchdog.sh` runs as a sibling shell process on the macOS and Linux integration
+  lanes: after five minutes it captures lldb or gdb stacks of every thread, a `sample`, the Linux
+  wait channels and a `createdump --withheap` of every test host still running, then a second stack
+  snapshot, into the `integration-hang-dumps-<os>` artifact, and analyzes the dump on the runner
+  with `dotnet-dump` (`threads`, `clrstack -all`, `syncblk`). It exists because the blame hang dump
+  cannot see this stall shape (a few frozen tests among a suite that keeps running never trip its
+  inactivity timer) and, when it does fire, dumps through a `fork()` inside the hung process. The
+  test host also writes a once-a-minute hint of its own after three minutes (thread counts and the
+  fork gate's reader/writer state, nothing spawned). It found the issue #312 deadlock on its first
+  stalled run.
+- **Test child processes leave evidence when they stall (issues #316, #312).** Every test that
+  spawns a process (the CLI, the `dotnet exec` DXC probes, `codesign`, `slangc`, the fallback
+  `dotnet publish`) now goes through one helper, `tests/ShadowDusk.Integration.Tests/ChildProcess.cs`:
+  stdout and stderr are drained concurrently (six of the old per-class copies read stdout to the
+  end before stderr, which deadlocks on a child that fills the stderr pipe first), a timeout kills
+  the whole process tree, and the failure carries the elapsed time, the command line, the child's
+  CPU time and thread states, the output so far and, for .NET children, a dump taken before the
+  kill (`MiniDumpWriteDump` on Windows, `createdump` elsewhere). CI's integration step caps a test
+  session at 10 minutes instead of 5, so `--blame-hang-timeout 3m` (an inactivity timer that every
+  finishing test resets) can still dump a stall that begins late in the run; `CiHangGuardTests`
+  fails if the two numbers drift apart again, and xUnit now names every test running over a
+  minute. Test budgets were sized from measurement: every CLI compile of a minimal fixture measured on Windows at 0.21 s idle, under 1 s with 20 compiles racing on 16 cores and 7.7 s at worst under 4x CPU oversubscription (6,280 runs, no hang), so the two 30 s CLI budgets become 60 s like the rest (a single-spawn test reached 19 s under that load) and the 60 s and 120 s ones stay.
+- **`validation/MgcbPlugin` covers issue #280.** Every case now also has the CLI write an `.xnb`
+  and requires its payload to equal the plugin's MGCB payload, and every `DesktopVK` /
+  `WindowsDX12` case rebuilds with `/config:Debug` (default `DebugMode=Auto`) and requires the
+  same `.xnb` as the default build; where MGCB's stock processor runs, its own `/config:Debug`
+  build is checked against its default build too, so the stock premise is re-measured on every
+  run. Measured red before the fix (6 of 15 cases) and green after (15 of 15).
+- **`validation/MgcbPlugin` and `validation/ContentBuilder` now pin the MGFX v11 source-file string
+  (issue #274).** The MGCB gate grew from 13 to 15 cases: the `DesktopVK` / `WindowsDX12` cases
+  compare the string with MGCB's own stock build's (now possible for the two fixtures with an
+  `#if SM6` branch), require the payload to be the CLI's with only that string replaced, and
+  rebuild the effect from a second directory for a byte-identical `.xnb`. The Content Builder gate
+  gained real `DesktopVK` and `WindowsDX12` Builder passes (7 to 11 assets) with the same
+  assertions and a second Builder run from a different source directory. Both measured red before
+  the fix and green after.
+- **Every release and pack-consume nupkg gate now matches exact entry names** instead of a
+  substring of the listing. A substring match could not tell `runtimes/<rid>/native/slangc`
+  from the mis-packed `runtimes/<rid>/native/slangc/slangc`.
+- **The `ShadowDusk.Slang` nupkg gate is one script, runnable locally (issue #226).**
+  `tools/verify-slang-nupkg.sh <nupkg>` holds the only list of the eight slangc natives (slangc
+  plus its slang-compiler library for win-x64, linux-x64, osx-x64 and osx-arm64) and the
+  Apache-2.0 notice. `release.yml` and `tools/verify-slang-packaging.sh` (pack-consume.yml) both
+  call it, so the two gates can no longer drift apart, and it fails red when the package is
+  missing any entry or was not produced at all.
+
 ### Fixed
+
+- **The raylib and SkSL converters compile a legacy sampler declared in an `#include` or through a
+  macro (issue #327).** `RaylibConverter.Convert` and `SkslConverter.Convert` pre-parse the raw main
+  file and hand its text to the shared DXC seam, so every shape issue #308 fixed on the OpenGL route
+  (a `sampler` / `sampler2D` in an `#include`d file, a register clause or whole declaration that
+  comes out of a macro such as MonoGame's `DECLARE_TEXTURE`, a `tex2D` inside a macro body or an
+  include) was still refused with DXC's own error ("unknown type name 'sampler2D'", "deprecated
+  tex2D intrinsic"). Both converters now run the same recovery `CompilationPipeline.Run` uses
+  (`LegacySamplerRecovery`, one copy of the outcome handling shared by all three callers): after
+  the DXC compile has failed, and only then, the pre-parse is repeated on the preprocessed source
+  and the converter's own validations, seam, sampler-register reading and mapper run again from it.
+  Measured: every one of the 16 include / macro shapes converts to EXACTLY what its directly
+  written twin converts to (fragment shader, uniforms, samplers, warnings; SkSL text, children,
+  synthesized uniforms), and the whole 164-file fixture corpus converted with the fix off and on
+  is byte-identical for everything that converted before (raylib 79/79; SkSL 33/33 by default and
+  69/69 with the varyings opt-in). Eleven fixtures move from "does not convert" to converting
+  (`SamplerLegacyInclude`, `SamplerLegacyMacroDecl`, the nine vendored MonoGame `Include.fxh`
+  effects; on SkSL, `Bevels` now reaches its real `SD0612` refusal instead of DXC's error). The
+  shapes the recovery cannot model are the same `SD0016` as on the OpenGL route, appended after
+  the compiler's own diagnostics. Rung 4 for raylib: `validation/RaylibRoute` gains the
+  `LegacyInclude` and `LegacyMacroDecl` arms (both masks bound by name on units 2 and 3), 15/15 at
+  maxd 0 in real Raylib-cs vs real MonoGame DesktopGL. Cost: nothing for an effect that converts at
+  once (3.6 vs 3.3 ms in-process, noise); a recovered effect pays its failed first DXC compile plus
+  the preprocessed re-parse (about 6 ms against its direct twin's 3.6 ms).
+- **DirectX 11 reflected a texture array as one parameter per element where `mgfxc` reflects one
+  (issue #339).** `Texture2D Tex[2]` came out as parameters `Tex[0]` and `Tex[1]` with one sampler
+  record each, so `effect.Parameters["Tex"]` was null and, measured in real MonoGame WindowsDX, the
+  `Tex[1]` record nulled texture slot 1 at `Apply` (maxd 128 against `mgfxc`'s build). Root cause,
+  measured with d3dcompiler_47 on 2026-10-02: fxc at Shader Model 4 (the author's `ps_4_0`, which
+  `mgfxc` compiles as written) reflects the array as ONE binding `Tex` with `BindCount` N at the
+  array's base register whichever elements are read, while at Shader Model 5 (ShadowDusk's DirectX
+  11 compile model, and vkd3d-shader's convention) the RDEF stores one record per element, which
+  `D3DReflect` reports as stored. `mgfxc` makes one record per texture binding and one parameter per
+  distinct name, hence its single `Tex`. The DXBC reflection extractor now folds the per-element
+  records back into that view (`ResourceArrayBindings`; `RdefReader` stays a faithful view of the
+  RDEF, its D3DReflect parity contract). Measured against `mgfxc` 3.8.4.1 (the pinned v10 oracle)
+  record for record on both DXBC backends for N = 1, 2 and 4, with and without a register, an array
+  declared after another texture, and an array with only element 1 read: one `Tex` parameter, one
+  record at the base slot. In real MonoGame WindowsDX (`validation/VsDrivenDx -- texarr`, new gate
+  row, RTX 3080) both backends render pixel-identical to `mgfxc`'s build (maxd 0), and element `[1]`
+  bound through `GraphicsDevice.Textures[1]` IS read there (unlike WindowsDX12, see `SD0222`), so
+  DirectX 11 emits no array diagnostic. Committed `mgfxc` 3.8.4.1 DirectX_11 goldens for both
+  texture-array fixtures. The whole fixture corpus compiled byte-identical before and after on all
+  four profiles (668 cells); only the two texture-array fixtures moved on DirectX_11, as intended.
+- **A sampler array compiled on DirectX 11 and 12 where `mgfxc` refuses it (issue #340).**
+  `SamplerState S[N]` is refused by `mgfxc` 3.8.4.1 and 3.8.5 on EVERY profile in its own effect
+  parser (`Unexpected token '[' found. Expected Semicolon, Comma, or CloseParenthesis.`), so no
+  reference output exists for the shape. ShadowDusk compiled it anyway, with sampler records keyed on the
+  texture bindings and no record naming a sampler element; it now refuses it with the new error
+  **`SD0224`**, located at the declaration, on both targets (the one DirectX 12 case DXIL cannot
+  distinguish, a 1-element array, is found from the declaration text). Measured first, as
+  evidence (`validation/VsDrivenDx -- samparr <mgfx>`, `VsDrivenDx12 -- samparr <mgfx>`, RTX
+  3080): the pre-fix DirectX 11 and DirectX 12 effects of the new fixture loaded into real
+  WindowsDX and WindowsDX12 and drew with both textures sampled, so the refusal is for parity with
+  the reference compiler (which builds nothing for the shape), not because the engine rejected it. New
+  expect-diagnostic fixture `texture-arrays/SamplerArray2.fx` (no golden: `mgfxc` builds none).
+  `SD0222` now covers texture arrays only. On the real-slangc route an author-written
+  `SamplerState S[N]` is refused the same way, relocated to the author's Slang line, while slangc's
+  own lowering of a combined-sampler array (`Sampler2D T[N]`, a texture array plus
+  `SamplerState T_sampler_0[N]`) stays exempt (an internal seam, `CompilerOptions.
+  SamplerArraysFromCombinedSamplers`): it is one author resource, and its table is the
+  hand-written `Texture2D T[N]; SamplerState S;` one on DirectX 11 (one `T` parameter, now that
+  issue #339 collapsed the per-element records) as it already was on DirectX 12.
+- **A debug SPIR-V compile can no longer hand DXC a `libdxcompiler` that is not ShadowDusk's
+  pinned build (issue #332).** Every OpenGL or Vulkan compile with `Debug` set (`-Zi`) makes DXC's
+  SPIR-V emitter load `libdxcompiler` a second time, by LEAF name, from inside the compile
+  (`clang::spirv::ReadSourceCode` -> `DxcDllSupport::Initialize`, to read the source for
+  `OpSource`): a name search, which `DxcLoader` otherwise never allows, and whose answer is the
+  dynamic linker's. Measured: Windows and dyld on macOS 14+ answer with the already-loaded pinned
+  image (by base name; by its `@rpath/libdxcompiler.dylib` install name), glibc never does (the
+  pinned `SONAME` is `libdxcompiler.so.3.7`) and would load a `libdxcompiler.so` from
+  `LD_LIBRARY_PATH` (where the Vulkan SDK's `setup-env.sh` puts one) and run its initializer
+  inside the compile; dyld on macOS 12/13 would do the same from the working directory or
+  `DYLD_FALLBACK_LIBRARY_PATH`. `DxcLoader` now asks the linker right after the pinned load,
+  without loading anything (`dlopen(leaf, RTLD_NOLOAD)` plus glibc's "found but not loaded"
+  report; `GetModuleHandleW` on Windows; a stat of the dyld-940/1042 directories when dyld does not
+  match), and the debug SPIR-V compiles alone are refused with the new `SD0223`, naming the library
+  the linker would hand DXC and the fix, when it is not the pinned build; a byte copy of the pinned
+  build is the same compiler and is accepted, as at load time. Release compiles, DXIL debug compiles,
+  DirectX 11 and FNA never make the load and are untouched. No emitted byte moves: the probe loads
+  nothing and what DXC's own load returns is unchanged (every scenario's output is hashed against the
+  no-decoy compile in `DxcDebugSpirvLeafNameTests`, which runs the linker's own trace,
+  `LD_DEBUG=libs` / `DYLD_PRINT_SEARCHING`, on the ubuntu and macOS lanes). One-time cost per
+  process: 1 to 1.5 ms on Windows, 2 to 22 ms on the macOS lane, 18 to 92 ms on the ubuntu lane
+  (glibc opens each candidate); nothing per compile beyond an argument check.
+- **Texture arrays reflected a wrong parameter table on Vulkan (issue #324).** `Texture2D Tex[N]`
+  is a pointer to an array of image types in SPIR-V, and the pure-managed reflector matched only
+  a bare image or sampler type, so the texture vanished from the Vulkan effect while its sampler
+  survived: the table held `TexSampler` and nothing a game could set the texture through. Measured
+  against the reference first (`dotnet-mgfxc` 3.8.5, N = 1, 2 and 4, with and without an explicit
+  register, identical for every shape): `/Profile:Vulkan` reflects the array as **no parameter, no
+  sampler record and no descriptor binding at all** (the SPIR-V still samples it), so the effect
+  cannot draw; `/Profile:DirectX_12` reflects **one `Tex` parameter bound to slot 0**, which is what
+  ShadowDusk already emitted there (the issue's "one element" on DirectX 12 is the reference's own
+  table, and the other elements are reachable through `GraphicsDevice.Textures[i]`); `mgfxc` refuses
+  a sampler array (`SamplerState S[N]`) on every profile in its own parser. Both reflectors now
+  report an array with its element count (`TextureReflection.ArrayLength`,
+  `SamplerReflection.ArrayLength`: the `OpTypeArray` length from SPIR-V, `BindCount` from DXIL and
+  RDEF), and the Vulkan target refuses an array of textures or samplers with the new **`SD0221`**,
+  located at the declaration, naming the resource and the reference compiler's measured behavior,
+  instead of emitting that effect. On DirectX 12 the output is unchanged and a new **warning
+  `SD0222`** says what that table means in the engine: measured in real MonoGame 3.8.5 WindowsDX12,
+  element `[1]` reads as zero for `mgfxc`'s build and ShadowDusk's alike, even with
+  `GraphicsDevice.Textures[1]` set, because the shader header sizes the descriptor range for one
+  texture. The real-slangc `.slang` route gets the same codes for a `Sampler2D T[N]` (slangc emits a
+  texture array plus a sampler array), relocated from slangc's core module to the author's
+  declaration; on DirectX 12 it keeps the single-parameter table the `.fx` route and `mgfxc`
+  produce. New fixtures `tests/fixtures/shaders/texture-arrays/TextureArray2.fx` and
+  `TextureArray4NoRegister.fx` with `mgfxc` 3.8.5 goldens for DirectX_12 and Vulkan; new render
+  rows `validation/VsDrivenDx12 -- texarr` (both arms in real MonoGame 3.8.5 WindowsDX12: table
+  equal record for record, maxd 0) and `validation/VsDrivenVulkan -- texarr` (the rejection, plus
+  the golden's empty table; `-- texarr-reference` draws `mgfxc`'s own effect in real DesktopVK:
+  it loads with no `Tex` parameter and draws nothing). No emitted byte changes for any shader
+  without a texture or sampler array (the whole fixture corpus, 656 cells on four profiles,
+  hashed identical before and after). OpenGL already failed on the shape (`SD0217`, as `mgfxc` does
+  with `Sequence contains no matching element`) but called the array "not declared as a separate
+  texture"; the message now names the array. DirectX 11 is untouched:
+  there vkd3d/fxc reflect the elements as separate `Tex[0]`, `Tex[1]` bindings and ShadowDusk emits
+  one parameter per element where `mgfxc` 3.8.4.1 emits a single `Tex`, a separate divergence
+  tracked as issue #339; a sampler array, which `mgfxc` refuses on every profile, still compiles on
+  DirectX 11 and 12 (issue #340).
+- **`ShadowDusk.Slang`: a module's author register survives an entry global spelled like the name's
+  prefix (issue #325).** The issue #292 register pass read a module's `public Texture2D tex_layer_0 :
+  register(t3);` as a resource slangc might have hoisted out of the entry's `Texture2D tex;` (the
+  name has the hoisted shape `<global>_<field>_<n>`), judged it from the entry text and stripped the
+  author's `t3`, silently moving the texture to another slot (measured through real slangc v2026.14.1
+  on DirectX and OpenGL). The hoisted shape now counts as a hoist only for a name NO read text
+  spells: slangc locates an author's global at its own declaration and a hoisted resource in its
+  core module (measured), so a name spelled by the text of the file slangc locates it in is matched
+  verbatim and only verbatim, by that file's own text; an unread file is claimed by nobody's prefix
+  (its verdict waits for the file, or fails as `SD0628`). Found on the way and fixed: a module
+  imported by a RELATIVE path is located by a bare name (`#line 2 "m.slang"`, measured), which the
+  pass mistook for slangc's core module; slangc's core-module file names are now matched by name;
+  and a registered resource declared inside a `namespace` block in a module (or the entry) is a
+  global declaration like any other, where it used to fail as `SD0628`. No extra slangc run for any
+  shape (`SlangRegisterPassCostTests`, plus the same count through real slangc); the Slang corpus
+  bytes are unchanged.
+- **`ShadowDusk.Slang`: two globals of one name in different namespaces fail as the new `SD0643`
+  instead of compiling to a silently merged program or crashing slangc (issue #323).** Measured,
+  slangc v2026.14.1 with `-no-mangle` (adopted in Phase 66 A4 so parameter names reach the effect as
+  written): `namespace A { Texture2D T; } namespace B { Texture2D T; }` is emitted as ONE `T` both
+  reads use; the same for a namespaced global beside a plain one, nested, dotted and `::`
+  namespaces, two combined `Sampler2D`, two samplers, two struct- or `ParameterBlock`-typed globals,
+  two `cbuffer` blocks of one name, two `static`/`static const` (the first initializer wins), a
+  module's `namespace A { T }` beside the entry's `namespace B { T }`, and two modules each declaring
+  a plain `public Texture2D T` used inside themselves; two same-named implicit or `uniform`
+  constant-buffer members crash slangc (`0xC0000005`, empty stderr), which the route could only
+  report as a blank `SD0622`. ShadowDusk cannot fix slangc; it now refuses the pair by name, with
+  both declarations and their file, line and column: from the raw entry text before slangc runs
+  (so the crashing shape never reaches it) when no directive or `-D` value can rewrite that text,
+  confirmed by slangc's own `-E` output otherwise (one run, paid only by a source whose raw text
+  shows a candidate; a pair in mutually exclusive `#if` branches is cleared by it), and on every
+  text the issue #292 register pass read (the entry's `-E` text and the modules reached by
+  quoted-path import), which catches a macro-formed or cross-module pair at no extra run. Same-named
+  functions and types are left alone (slangc prefixes those with the namespace). A slangc crash
+  the texts could not foresee is still loud: `SD0622` names the crash, its exit code and this
+  trigger, keeps slangc's own output verbatim after it, and no longer promotes slangc's warnings to
+  the failure. What no read text can show stays open as issue #337. No existing shape pays an extra
+  slangc run (pinned by `SlangRegisterPassCostTests`); corpus bytes unchanged.
+- **The browser dropped vkd3d's non-fatal diagnostics on a successful DirectX or FNA compile, so
+  `CompiledShader.Warnings` was empty where the desktop's was not (issue #335).** vkd3d's message
+  buffer is populated on success too (both hosts compile at `LOG_WARNING`): the desktop parses it,
+  relocates each entry onto the author's line and returns it as `PlatformBlob.Warnings`, but the
+  browser shim read `out_messages` and used it only in its failure branch, returning the bytes
+  alone. Measured on the new fixture `ImplicitTruncationWarning.fx` (a `float4` assigned to a
+  `float3`): the desktop reports `ImplicitTruncationWarning.fx(47,12): warning W5300: Implicit
+  truncation of vector type.` on DirectX and on FNA; the shim returned 148 bytes and nothing else
+  for the same compile, and the browser `Warnings` list was empty. Identical bytes on both hosts, so
+  no byte-identity gate could see it. The shim's `compile()` now returns `{ code, messages }`,
+  verbatim and unfiltered, and `WasmVkd3dShaderCompiler` runs the same shared path the desktop runs:
+  `Vkd3dCompileContract.MapCompileWarnings` (the one place a successful compile's text becomes
+  warnings) plus `Vkd3dSourceLocator.Relocate`. No module rebuild: every pinned wrapper already set
+  `out_messages` on success. Pinned three ways: `CrossHostByteIdentityTests` now records
+  `CompiledShader.Warnings` per fixture and target in `warnings-manifest.json` beside the hashes
+  (asserted on every CI OS); the node gate requires the shim to hand back the exact message text the
+  desktop got from every one of the 93 corpus compiles (two non-empty, with a control that fails
+  when no corpus compile warns); the real-browser gate compares the relocated `Warnings` from the
+  real `WasmShaderCompiler` against the warnings manifest, sync and async. No byte moved on either
+  host (91/93 + the two issue-#295 expected differences before and after; the three manifest
+  additions are the new fixture). Cost: a string copy per compile; in node the 91 corpus compiles
+  took 129 ms through the new shim against 129 ms before.
+- **Browser DirectX compiles handed vkd3d no compile options, so a shader with SM1-3 semantics on
+  struct fields compiled differently from the desktop, or not at all (issue #295).** Since 0.20.0 the
+  desktop vkd3d backend passes `BACKWARD_COMPATIBILITY`/`MAP_SEMANTIC_NAMES` on the SM4+ target, but
+  the browser module's C wrapper still passed none: a second copy of the option list, and it had
+  drifted. Measured on the new fixture `Sm3SemanticStructs.fx` (a `POSITION0` vertex output and pixel
+  input and a `COLOR0` pixel output, all on struct fields): the desktop names the position
+  `SV_Position` (system value 1) and compiles the pixel shader, as `mgfxc` does; the browser named
+  it `POSITION` (system value 0, so the rasterizer is given no position; 1932 bytes against 1936) and
+  refused the pixel shader with `E5013: Invalid semantic 'COLOR'`. The list now has one owner,
+  `Vkd3dCompileContract.ResolveCompileOptions`: the desktop marshals it, the browser sends the same
+  list through its shim, and the WASM wrapper (`sdw_vkd3d_compile_options`, replacing
+  `sdw_vkd3d_compile`) only forwards what it is handed. The corpus gate could not see the drift
+  because no corpus shader changed a byte with the option; `Sm3SemanticStructs.fx` does, and is now
+  in the node gate (91 compiles, replayed with the options the desktop really passed to the native
+  call, plus a control that the fixture differs without them), in the cross-host byte-identity
+  manifest (so `browser-vkd3d-gate.mjs` compiles it through the real `WasmShaderCompiler`) and
+  checked against `mgfxc` goldens on both profiles. A new test pins the options the desktop hands the
+  native call to the contract's list. **The rebuilt module is verified (91/91, 78/78 in Chromium,
+  18/18 depth cases) but not hosted yet**: until it is uploaded to a new release tag and re-pinned in
+  `tools/restore.*` (one upload now covers this and the #271 stack fix below), the browser keeps the
+  old module and this defect, warns once on the console, and the gates report the fixture as an
+  expected difference keyed on the old module's hash. No emitted byte changes on the desktop.
+- **The browser vkd3d module printed one `vkd3d:NNNN:fixme:vkd3d:preproc_yyparse #line directive.`
+  line to the console per `#line` directive (issue #319).** vkd3d-shader's preprocessor ignores
+  `#line` and reports each one as a fixme on stderr, which emscripten routes to the browser console.
+  The desktop backend blanked every directive line before the native call; the browser host handed
+  vkd3d the directives, a second copy of the source preparation that simply did not exist there.
+  Measured on the 91-compile DirectX + FNA corpus (every fixture carries at least the macro prelude's
+  directive; an include-heavy effect carries one per include boundary): exactly one fixme line per
+  directive (93 on one node gate run), and the output bytes and the diagnostics' positions are the
+  same with and without the directives, so it was console noise, not an output defect. The
+  preparation now has one owner, `Vkd3dCompileContract.PrepareSource` (blank, never delete, so
+  `Vkd3dSourceLocator`'s line alignment holds): the desktop marshals its result and the browser sends
+  its result through the shim; neither host transforms the source itself. Pinned by unit tests on
+  the include-flattened shape, a desktop test that reads the source back out of the marshalled
+  native call (`Vkd3dShaderCompiler.NativeSourceObserver`), the node gate (which now replays the
+  bytes the desktop really handed vkd3d, must see zero fixme lines on an intercepted stderr over the
+  corpus, and replays the directive-carrying text as a control that must give the same bytes and one
+  fixme per directive) and the real-browser gate (zero such console lines over the sync and async
+  corpus passes, with a listener control). No desktop byte moved (91/91 corpus blobs identical before
+  and after) and no browser byte either (they never depended on the directives). Compile time:
+  unchanged on the desktop (the same regex, moved); in node the shim took 131 ms with the directives
+  against 129 ms without over the 89 replayable compiles.
+- **`ShadowDusk.Slang`: a combined `Sampler2D Comb` now reflects as `Comb`, so
+  `effect.Parameters["Comb"]` finds the texture (issue #302).** slangc hoists every resource out of
+  an aggregate under a name it generates, even with `-no-mangle`: `Sampler2D Comb` is emitted as
+  `Comb_texture_0` plus `Comb_sampler_0`, and that generated name was the compiled effect's
+  parameter, so a consumer had to know slangc's suffix to set their own texture. The texture half
+  of a combined sampler declared as a global (every `Sampler1D`/`2D`/`3D`/`Cube`, the `Array` and
+  `Shadow` forms, arrays of them, a global in an imported module) is now renamed to the global's
+  name in slangc's HLSL before the `.fx` is assembled, which is the table the hand-written
+  `Texture2D Comb; SamplerState ...` produces through the `.fx` route on every target and the name
+  `mgfxc` gives the equivalent legacy `sampler2D Comb` (measured, 3.8.4.1). The sampler half keeps
+  slangc's name; nothing sets a sampler by name. A texture hoisted out of anything else, a struct
+  global's field (`gM_t_0`), a texture inside a `cbuffer`/`ParameterBlock`, or an entry-point
+  `uniform Texture2D`, has no name the author wrote and the reference compiler rejects the shape
+  outright (fxc `X3090`), so it now fails as the new `SD0640` at the aggregate's declaration instead
+  of reaching the effect under a generated name; a hoisted SAMPLER alone still compiles. slangc
+  emits an author global spelled like a hoisted name (`Sampler2D Comb; Texture2D Comb_texture_0;`)
+  as two declarations of one name: `SD0641`, as is an author name slangc's output already uses. A
+  name is treated as generated only when the source provably never spells it (the raw text, or
+  slangc's `#line` for an author's own global, or slangc's own `-E` text, reusing what the register
+  pass read); what no read text can explain fails as `SD0642`. No slangc run is added for any shape
+  pinned before (a combined sampler declared plainly still costs one run), and no byte moves on the
+  Slang corpus. Proven in real MonoGame DesktopGL by a new `validation/SlangTexturedGl` row that
+  sets a second texture through `effect.Parameters["Comb"]` and renders (maxd 1), and pinned on
+  DirectX, OpenGL, Vulkan, DirectX12 and FNA by `SlangHoistedTextureNameTests`.
+- **Desktop: an extremely deep but valid shader no longer kills the host process (issue #306).** The
+  native compilers recurse once per nesting level of the source, and they ran on whatever stack the
+  calling thread had: 1.5 MB for a .NET thread on Windows, where an additive chain of 2,168 terms or
+  1,620 `else if` branches (DirectX 12) died inside `dxcompiler.dll` with `0xC00000FD`, and a chain of
+  6,400 functions each calling the next died inside `vkd3d-shader`; the CLI, the MGCB plugin or the game
+  calling `CompileAsync` simply exited, with no diagnostic. Every native compiler call (DXC compile,
+  preprocess and reflection, vkd3d, SPIRV-Cross, the fxc oracle) now runs on a pool of ShadowDusk-owned
+  worker threads with an explicit 64 MB stack (address space, not memory: pages are committed only as a
+  compile actually recurses). Measured ceilings on Windows x64 moved from 2,167 to 94,400 additive
+  terms (OpenGL and DirectX 12; 122,336 on Vulkan), and the else-if and call chains compile at every
+  depth tried (51,200 branches on DirectX 12 in 329 s, 25,600 calls on DirectX in 74 s) with compile
+  time, not the stack, as the practical limit. Source deeper still can still exhaust the 64 MB and the process; a source-level
+  pre-check was measured unreliable (stack per level varies about 5x between shapes, and macro expansion
+  hides the depth), so the ceiling is documented in `project_facts.md` instead. No emitted byte changes:
+  the whole fixture corpus is byte-identical on OpenGL, DirectX, DirectX 12, Vulkan and FNA with the
+  worker on and off, and concurrent compiles stay concurrent. Cost, measured on a 10 ms pixel-shader effect: none measurable through `CompileAsync` (the pool thread
+  hands the whole pipeline to one worker; the Release CLI, one compile per process, gains 2 to 3 ms of
+  one-time thread start and JIT, about 1%), about
+  0.4 ms per effect through the synchronous `Compile` (the pipeline stays on the calling thread and each
+  of its four to six native calls is handed to a worker, about 0.1 ms each). Workers are reused and exit
+  after 5 s idle.
+  New child-process regression tests (`DeepShaderStackTests`) compile the crashing shapes and keep a
+  positive control that still overflows on the caller's stack.
+- **OpenGL, Vulkan and DirectX 12: a legacy sampler declared in an `#include`d file or through a
+  macro now compiles (issue #308).** The pre-parser's SM4 rewrite of D3D9 sampler syntax
+  (`sampler2D` / `sampler_state` / `tex2D` into `Texture2D` + `SamplerState` + `.Sample`) reads the
+  raw tokens of the main file, so a declaration in an include, one whose register clause or whole
+  declaration comes out of a macro (`sampler S SLOT(s1)`, `sampler2D S : SREG(1)`,
+  `DECLARE_TEXTURE(S, 1)`, MonoGame's `Macros.fxh` / `Include.fxh` idiom), a `tex2D` inside a
+  macro body (`SAMPLE_TEXTURE`) or inside an include, and an unused bare `sampler2D U;` all reached
+  DXC unrewritten and were rejected ("unknown type name 'sampler2D'", "Unsupported intrinsic").
+  `mgfxc` 3.8.4.1 compiles every one of them (`ps_s1` on all nine measured shapes). Now, when a DXC
+  shader compile fails and the text DXC was given still holds legacy sampler syntax once
+  preprocessed, the pre-parse is repeated on the PREPROCESSED source (the managed
+  `FxMacroPreprocessor` that already decides the OpenGL sampler registers, in a compiler-input form
+  that keeps one line per source line and passes `#line` / `#pragma` / `#error` through) and the
+  compile runs once more on that text, which is how `mgfxc` itself works (preprocess first, parse
+  second). It runs only after a failure, so an effect that compiled before is compiled from exactly
+  the same text: the whole 160-file corpus for OpenGL and DirectX_11 is byte-identical with the fix
+  off and on (117 + 125 compiled, 34 + 35 fail with the same diagnostics), and the nine vendored
+  MonoGame test effects that use `Include.fxh` (`Bevels`, `BlackOut`, `ColorFlip`,
+  `CustomSpriteBatchEffect`, `Grayscale`, `HighContrast`, `Invert`, `NoEffect`, `RainbowH`) now
+  compile for OpenGL on `mgfxc`'s units. The recovered compile is byte-identical to the directly
+  written declaration on OpenGL, Vulkan and DirectX 12 (pinned by a test); DirectX 11 compiles the
+  syntax natively through vkd3d and never takes the recovery. The managed view was measured
+  token-for-token identical to DXC `-P` on every corpus fixture
+  (`Issue308PreprocessorFidelityCorpusTests`). What the rewrite still cannot model is loud: legacy
+  syntax left after the recovery (a `sampler2D` function parameter), a conditional on a
+  compiler-predefined macro (`__HLSL_VERSION`, `__hlsl_dx_compiler`, …) whose value the managed
+  preprocessor cannot know, or a view that cannot be built is the new `SD0016`, appended after the
+  compiler's own verbatim diagnostics, and a legacy intrinsic with no rewrite hidden in a macro
+  (`texCUBE`) is its own `FX0012` at the author's file and line. Diagnostics on the recovered path
+  keep the author's file and line through the flattener's `#line` directives. New `mgfxc` 3.8.4.1
+  goldens `SamplerLegacyInclude` (+ `SamplerLegacyInclude.fxh`) and `SamplerLegacyMacroDecl`, and
+  two new `validation/SamplerRegisterOrderGl` arms ("legacy-include", "legacy-macro-decl"): red
+  before (the candidate did not compile), maxd 0 against the golden after, in real MonoGame
+  DesktopGL. Cost (Release CLI, `/Profile:OpenGL`, median of 5 after a warm-up, before vs after):
+  unchanged for an effect that compiles at once (`apos-shapes.fx` 437 to 443 ms, `Grayscale.fx`
+  224 to 223 ms, `SamplerLegacyRegisterMacro.fx` 220 to 216 ms); a recovered effect pays the failed
+  first compile plus the view on top of its own compile (`SamplerLegacyInclude.fx` 232 ms against
+  216 ms for its directly written twin).
+- **OpenGL: every sampler type keyword with an explicit `register(sN)` now reserves that unit, not
+  only the exact keyword `SamplerState` (issue #309).** On OpenGL a sampler's explicit register is
+  kept out of circulation and the combined samplers fxc synthesizes for each (texture, sampler)
+  pair read through `Texture.Sample` are allocated around it (issue #189). The reservation matcher
+  only recognised `SamplerState`, so `Texture2D Tex; sampler S : register(s0);` + `Tex.Sample(S, uv)`
+  gave `ps_s0`, the texture on SpriteBatch's unit, where `mgfxc` 3.8.4.1 emits `ps_s1`. Measured
+  against the pinned `mgfxc` (`/Profile:OpenGL`): fxc reserves for every sampler type keyword
+  (`sampler`, `sampler2D`, `samplerCUBE`, `SamplerComparisonState`), bare or with a
+  `sampler_state` block, whether or not anything reads the sampler (an unused
+  `sampler2D U : register(s0)` still moves the one real pair to `ps_s1`), and in every entry point
+  of the effect (a legacy `sampler X : register(s0)` one pixel shader reads through `tex2D` keeps
+  `s0` reserved in a second pixel shader that never reads it: `ps_s1` for that shader's own
+  sampler, where ShadowDusk gave `ps_s0`). The matcher now accepts every sampler type keyword, on
+  the preprocessed view as before, and a legacy sampler a `tex2D` reads is both pinned (its own
+  pair) and reserved (every other pair). A `sampler2D` read through `Texture.Sample`, which `mgfxc`
+  rejects (X3013), still fails here. No existing fixture's bytes moved (the same 160-file sweep).
+  New `mgfxc` golden `SamplerReservationKeywords` and a new `validation/SamplerRegisterOrderGl` arm
+  ("keyword-reservation"): `ps_s0`/`ps_s1` before, `ps_s2`/`ps_s3` and maxd 0 against the golden
+  after.
+- **macOS: a `Process.Start` could deadlock forever against a debug SPIR-V compile (issue #312).**
+  The `DxcForkGate` added earlier in this release (PR #246) made every `fork()` wait, in its
+  `pthread_atfork` prepare handler, for the DXC compiles in flight. libSystem takes dyld's dlopen lock before it runs those
+  handlers, and a `-Zi` compile for the OpenGL or Vulkan target `dlopen`s `libdxcompiler` from
+  inside DXC (its SPIR-V emitter reads the source for `OpSource` through `DxcDllSupport`), so the
+  compile waited for the fork and the fork for the compile. In CI this froze the macOS integration
+  job about one run in two (measured with lldb stacks of the hung host, taken by the new sidecar
+  below; the blame hang dump could not help, because the runtime dumps itself by forking and that
+  fork blocked on the same lock). The gate now covers only DXC's one locale-changing call, a `-P`
+  preprocess `DxcForkGate.SettleLocale` runs before a compile whenever the process locale is not
+  the one DXC leaves behind; ordinary compiles run ungated, which is safe because Apple's
+  `setlocale` allocates under the locale lock only when the locale actually changes, and after
+  that first change every `setlocale` DXC makes is a same-name call. No emitted byte changes (the
+  change is in the locking around the native call, no flag moves; the cross-host byte-identity
+  manifest and goldens pass on all three OSes). `DxcSetlocaleAudit` now also measures that no DXC
+  call changes the locale once it has settled, and the fork probe compiles debug SPIR-V on half
+  its threads, the shape that deadlocked the old gate within seconds.
+- **Browser compiles of nested shaders hung, crashed or miscompiled (issue #271).** The in-browser
+  DXC, SPIRV-Cross and vkd3d WebAssembly modules were linked with emscripten's 64 KB default stack
+  (the desktop natives get 1 MB on Windows, 8 MB on Linux/macOS), and with emscripten's layout an
+  overflow silently corrupts the module instead of trapping. Measured against the desktop pipeline:
+  SPIRV-Cross failed on about a dozen nested `if`s or `else if`s (an ordinary OpenGL shader), DXC
+  hung on a 100-term expression and gave a wrong diagnostic on 200 `else if`s, vkd3d trapped at 75
+  `else if`s. All three now link an 8 MB stack placed below static data, and match the desktop
+  byte-for-byte at every measured depth the desktop compiles, except an 800-branch `else if` chain
+  in SPIRV-Cross, which still exhausts the JS engine's own stack. A module that traps is now
+  discarded and reloaded instead of being reused corrupted, and the compile reports the new code
+  `SD1907` (a synchronous `Compile()` before the reload reports `SD1903`; `CompileAsync` reloads by
+  itself). The rebuilt DXC and SPIRV-Cross modules ship in this release; the rebuilt vkd3d module
+  (DirectX/FNA in the browser) is verified but not hosted yet, so the browser DirectX/FNA path keeps
+  the 64 KB module until it is re-pinned. No emitted byte changes on any corpus. New gate
+  `node-test-wasm-depth.mjs` and a trap scenario in `browser-vkd3d-gate.mjs` (`wasm.yml`); details in
+  `.wasm-build/WASM-STACK-DEPTH.md`. Also: `tools/restore.*` now refresh the packaged
+  `dxcompiler.wasm` by hash instead of size (a relink can change the module and keep its size).
+- **Browser: asking for DirectX 12 now fails with a registered code up front (issue #272).** The browser
+  host has no DX12 path, but a `PlatformTarget.DirectX12` request ran DXC and then failed in the JS shim
+  with an unregistered `X0000: DXC output is not a SPIR-V module (bad magic word)`, on both the `.fx` and
+  the full-Slang route. `WasmShaderCompiler` and `WasmSlangCompiler` now refuse it before any module
+  loads with the new `SD1906`, which names the target, the host and the targets the browser does export
+  (OpenGL, Vulkan, DirectX, FNA). `Metal` keeps the `SD0200` it gets on every host.
+- **Browser builds no longer carry desktop and Android natives (issue #273).** A browser project that
+  reached `ShadowDusk.HLSL`/`ShadowDusk.GLSL` by project reference (the ShaderFiddle sample,
+  `ShadowDusk.Wasm`, `ShadowDusk.Slang.Wasm`) copied vkd3d, DXC and SPIRV-Cross natives for Windows,
+  Linux, macOS and Android (about 130 MB) into its build and publish output, where no browser can load
+  them. A root `Directory.Build.targets` drops them for browser projects only; desktop builds still get
+  every native. NuGet consumers were measured unaffected. `wasm.yml` now fails if one reappears.
+- **OpenGL: which `SamplerState X : register(sN)` declarations reserve a sampler register is now
+  decided on the preprocessed source, like `mgfxc` (issue #283).** On OpenGL a modern
+  `SamplerState` register is a reservation: the combined sampler fxc synthesizes for each texture is
+  allocated around it. The `.fx` route read those registers off the raw source, so a register written
+  only in an inactive `#if` branch still counted (one texture landed on `ps_s1`, off SpriteBatch's
+  unit 0, where `mgfxc` emits `ps_s0`), and registers spelled through a macro
+  (`#define SLOT(n) : register(n)`) or written in an `#include`d file were not seen (`ps_s0`/`ps_s1`
+  where `mgfxc` emits `ps_s2`/`ps_s3`; `ps_s0` where it emits `ps_s1`). The reservation is now read
+  from a preprocessed view built by a small managed C preprocessor (`#if`/`#elif` expressions,
+  object- and function-like macros, `#`, `##`, `__VA_ARGS__`) with the compile's own platform and
+  user macros. It is plain C#, so the answer is the same on every host including the browser, whose
+  DXC build has no preprocess-only export. The raylib converter uses the same view. A directive or
+  expression the view cannot evaluate fails as the new **`SD0009`**, raised only after DXC has
+  accepted the source, so malformed shaders still report DXC's own error. New committed `mgfxc`
+  goldens `SamplerReservationIfBranch` and `SamplerReservationMacro`, and two new arms
+  ("ifbranch", "macro") in `validation/SamplerRegisterOrderGl`, measured RED with the old reading
+  (maxd 255, 4096 px each) and maxd 0 after. A corpus sweep builds the view for all 153 parseable
+  fixtures; no other shader's output moved. The sibling map, an explicit register on a LEGACY
+  `sampler` declaration, is the next entry (issue #299).
+- **OpenGL: an explicit `register(sN)` on a legacy `sampler` declaration is now read from the
+  preprocessed source too, like `mgfxc` (issue #299).** A legacy `sampler X : register(sN)` pins its
+  texture unit (issue #189), and that clause was still read off the raw source after #283. So a
+  register written only in the branch OpenGL does not compile pinned the unit anyway
+  (`#if OPENGL` / `sampler S = sampler_state {…};` / `#else` /
+  `sampler S : register(s1) = sampler_state {…};` gave `ps_s1`, off SpriteBatch's unit 0, where
+  `mgfxc` emits `ps_s0`), the wrong branch's number won when both branches had one (`ps_s1` where
+  `mgfxc` emits the OpenGL branch's `ps_s2`), and a register number spelled through a macro or a
+  `/Defines` value (`#define REG s1` / `sampler S : register(REG);`) was missed (`ps_s0` where
+  `mgfxc` emits `ps_s1`). Measured against the pinned `mgfxc` 3.8.4.1 for `sampler` and `sampler2D`,
+  with a `sampler_state` block, the brace form and the bare form; all now match. A sampler or
+  texture whose NAME is a macro keeps its pin (the names are resolved through the same
+  preprocessor), which also fixes `#define TEX RealTex` / `Texture = <TEX>` (`ps_s0` where `mgfxc`
+  emits `ps_s1`). Both maps are read
+  off the same preprocessed view (`FxPreParser.CollectGlSamplerSlots`), on the OpenGL target and in
+  the raylib converter; an unbuildable view is still `SD0009`. New committed `mgfxc` goldens
+  `SamplerLegacyRegisterIfBranch` and `SamplerLegacyRegisterMacro`, and two new arms
+  ("legacy-ifbranch", "legacy-macro") in `validation/SamplerRegisterOrderGl`, measured RED with the
+  old reading (maxd 255, 4096 px each) and maxd 0 after. Every other fixture is unchanged: the whole
+  160-file OpenGL corpus was compiled with the fix off and on and only the two new fixtures differ
+  (115 byte-identical, 43 fail identically either way), including `VsTransformColorTexture`,
+  `VsWaveQuadIntrinsics` and `apos-shapes-sm6`, whose explicit-slot map does change (their register
+  lived in the dead `#if SM6` arm) but whose units and bytes do not. Two adjacent defects found by
+  the measurement, #308 and #309, are fixed by the two entries at the top of this section.
+- **`ShadowDusk.Slang`: author registers in an `import`ed module and on a combined `Sampler2D` are
+  kept (issue #292).** Both were stripped silently on DirectX and OpenGL. (1) slangc splits
+  `Sampler2D Comb : register(t2)` into `Comb_texture_0 : register(t2)` and a `Comb_sampler_0` it
+  numbers itself, and the strip matched by name, so the author's `t2` went. The split halves now map
+  back to `Comb` together with the register class (`register(t2)` binds the texture half,
+  `register(s3)` the sampler half, `: register(t2) : register(s3)` both), measured for
+  Sampler1D/2D/3D/Cube, the `Array` forms and arrays. (2) `slangc -E` does not expand `import` or
+  `__include`, so a register declared in an imported module was invisible to the pass (and an
+  import-only source skipped it). slangc auto-numbers an imported resource that has no author
+  register (measured), so "keep every register from another file" is no fix either. Each
+  declaration from another file is now judged from slangc's own `-E` output for the MODULE it is
+  in, with the compile's macros (slangc applies `-D` to imported modules too, and a module's
+  macros do not cross an `import`, both measured): a file counts as a module when it is reached
+  through quoted-path imports or opens with a `module`/`implementing` declaration. An `#include`d
+  fragment is read through the module that includes it, never on its own (its includer's macros
+  decide what slangc compiled), and a combined sampler's halves, whose `#line` is slangc's core
+  module, are found through the imports. A declaration no trusted text decides (a file reached
+  only by module name, `import foo;`, that has no `module` declaration; a register spelled through
+  a macro no module defines; modules that disagree; a file the pass cannot open) now fails as
+  the new `SD0628`, naming the declaration and its file and line, instead of being guessed. Same code
+  on both transports through the shared seam (the browser's slangc has no file system, so there an
+  import already fails the compile with slangc's own `E00001`); the node gate gains the
+  combined-`Sampler2D` shape and the missing-file `-E` shapes. Found on the way and fixed the same
+  way: slangc hoists a struct global's resource fields too (`M gM : register(t5)` emits
+  `gM_t_0 : register(t5)`), and that register was also stripped. No corpus byte moves.
+  **Cost, measured and pinned** (win-x64, Release, median of 9; one slangc spawn is about 150 ms):
+  no shape that compiled correctly before pays an extra slangc run (untextured 1 run, registers in
+  the entry file 2, combined `Sampler2D` 2, all as before), and a shader with no texture/sampler
+  register in slangc's output now skips the `-E` pass even when it writes `register(b0)`. An entry
+  that imports modules with registered resources goes from 1 run to 2 (about 165 ms to 310 ms for
+  one import or a chain of three): the entry source and every file slangc names are preprocessed
+  in ONE `slangc -E` invocation. `SlangRegisterPassCostTests` pins the run count per shape on both
+  transports, and a real-slangc test pins the same counts.
+- **A Vortice.Dxc other than 3.3.4 in the process is now `SD0219` on every OS, before any native
+  is touched (issue #282).** Measured: Vortice.Dxc 3.8.3 is not only a different DXC (1.9.2602.17)
+  but a binary-incompatible managed API; with the pinned natives put back in place every DXC call
+  failed with `MissingMethodException` (`IDxcUtils.CreateBlobFromPinned`), reported as a
+  misleading `SD0102` "Reflection failed". On macOS and Android, where ShadowDusk ships its own
+  DXC, that was the ONLY symptom. `DxcLoader` now compares the bound Vortice.Dxc assembly with the
+  pin first and returns `SD0219` naming the resolved version and the fix. The unsupported-OS branch
+  of the loader is now classified by a pure, unit-tested function (issue #289).
+- **The macOS `DYLD_LIBRARY_PATH` decoy test is decisive (issue #289).** With a restamped
+  (different `LC_UUID`) decoy it could not tell "dyld mapped the foreign build and ShadowDusk
+  refused it" from "dyld never mapped it" (the edit invalidates the ad-hoc signature, so Apple
+  silicon refuses to map it). The decoy is now re-signed, the probe reports the image `dladdr`
+  names for ShadowDusk's own handle, and the test requires it to be the decoy and every DXC-backed
+  target to fail with the "dyld mapped" `SD0219`.
+- **FNA / DirectX (vkd3d) errors: the compiler output printed under the summary line still used
+  vkd3d's own line numbers** (issue #202 follow-up). 0.19.0 moved the summary line
+  (`file(line,col)`) onto the author's source, but whenever vkd3d said more than one line, the
+  CLI and the validation report also print vkd3d's complete output under it,
+  and that block kept vkd3d's drifted coordinates. On the reporter's Apos.Shapes file the summary
+  said line 983 while the block under it said 1115 for the same diagnostic, and later lines in
+  the block went up to 3804 in a 3235-line file: the symptom the issue reported. Each
+  `file:line:col:` prefix in that block is now relocated the same way as the summary; vkd3d's
+  code and message text after the prefix are unchanged, and a line that names another file
+  stays as vkd3d wrote it. It is all or nothing: if any line cannot be placed the block is left
+  exactly as vkd3d wrote it, never a mix of the two numberings. The block is not bisected line
+  by line. One extra parse-only compile carries a marker on every statement start (an empty
+  `if` with an attribute vkd3d does not know, which it answers with a located warning that
+  names it), so one compile measures the whole file, and only the few lines the markers cannot
+  pin are bisected. Every probe now also ends with a terminator line, so a probe whose sentinel
+  landed in a skipped `#if` arm stops at the parse instead of running the whole failing compile
+  again. **Measured on the reporter's file** (`tests/fixtures/issues/202/apos-shapes.fx`,
+  `--target-runtime fna`, Release CLI, one Windows desktop, four runs each): 4.9 to 5.3 s
+  before this change (38 of the 4 165 raw lines past the end of the file), 5.1 to 6.1 s after
+  (none), which is 9 more vkd3d calls of a few milliseconds each (22 against 13). A first cut
+  that bisected each of the 934 distinct locations took about twice as long, almost all of it
+  one probe swallowed by the file's `#if VULKAN` arm; `FnaDiagnosticLocationTests` now pins the
+  call count so that cannot come back unnoticed. No emitted byte moves: the relocation only
+  runs on vkd3d's diagnostics, never on the source a real compile receives.
+  `ShaderError.RawDiagnostics` for vkd3d therefore carries relocated prefixes.
+
+- **Stale lock files outside the solution (issues #291, #290).** PR #279's `Vortice.Dxc` `[3.3.4]`
+  pin missed the lock files of `Vkd3dCorpusProbe` (which turned Browser render smoke red on main),
+  `slang-probe`, `dxc-corpus-probe` and `KniXnbContentLoad`'s 4.3.9001 lock (still at 0.18.0), and
+  `FnaValidation`'s lock had lost its `FNA` project entry. All regenerated. New
+  `tools/check-lock-files.sh`, run by a new `Lock files` CI job on every PR, restores every tracked
+  lock file in locked mode, so this class of miss fails on its own PR. The release lock-file rewrite
+  now matches versioned names (`*packages*.lock.json`).
+
+- **`ShadowDusk.Slang`: which registers "the author wrote" is now decided after preprocessing
+  (issue #252 follow-up).** The register strip kept a texture/sampler register only when the Slang
+  source text spelled `register(...)` on that name, and it read the text before the preprocessor
+  ran. Two shapes went wrong. A register that exists only in an inactive branch
+  (`#if OPENGL` / `SamplerState S;` / `#else` / `SamplerState S : register(s0);` / `#endif`,
+  compiled for OpenGL) counted as the author's, so slangc's own invented `register(s0)` survived
+  and the texture landed on `ps_s1` again, off SpriteBatch's unit 0. A register written through a
+  macro (`#define SLOT(n) : register(n)`, or a `-D` value) was not recognised and was stripped: on
+  DirectX the texture moved from slot 1 to slot 0, and on OpenGL two such textures landed on units
+  0/1 instead of 2/3 (a regression from the original #252 fix, which had passed slangc's emission
+  through for those). `SlangCompiler` now asks slangc itself: one extra preprocess-only run
+  (`slangc -E`, the compile's own macros) whose token stream is what gets scanned, so an inactive
+  branch is gone and a macro is expanded. It runs on both transports with the same argument list
+  (`SlangcArguments.BuildPreprocess`; the WebAssembly slangc answers it byte for byte like native,
+  200/200 corpus runs plus both shapes on all five targets), only after every entry point compiled,
+  and only when the source, an include, a `##` paste, a line splice or a `-D` value could spell
+  `register` at all, so a shader that writes none pays nothing. A pass that exits 0 with empty output, or
+  output missing an entry point the compile found, now fails as `SD0629` instead of silently stripping every
+  author register. (A register in an `import`ed module or on a combined `Sampler2D` was still stripped;
+  fixed by issue #292, the entry above.) `mgfxc` 3.8.4.1 was measured on the
+  same two shapes in a `.fx` file and agrees with the preprocessed reading (`ps_s0`; `ps_s2`+`ps_s3`).
+  No corpus byte moves: `slang-manifest.json` is unchanged and the native-vs-WebAssembly identity
+  stays 235/235. `validation/SlangTexturedGl` gains an `Invert#if` row that renders the
+  inactive-branch shape in real MonoGame DesktopGL: `ps_s1` and a white picture (maxd 254) with the
+  old reading, unit 0 and maxd 0 against the CPU expectation and the `mgfxc` golden with the new one.
+  Found on the way and recorded as a known gap, not fixed here: the `.fx` route's own OpenGL
+  sampler-register reservation also scans unpreprocessed tokens and diverges from `mgfxc` on the
+  same two shapes (`docs/validation-matrix.md` §7).
+- **`ShadowDusk.Slang` on FNA: a user type whose name starts with "Texture" is no longer mistaken
+  for a texture (issue #230 follow-up).** The DX9 respelling matched texture types as `Texture\w*`,
+  so a texture-free shader with `struct TextureRegion` passed to a helper failed as `SD0627` ("a
+  texture or sampler passed as a function parameter"), and a local `TextureSlot slots[2]` as "the
+  texture array 'slots_0[...]'". Both compiled on OpenGL and DirectX all along. Every pattern in the
+  respeller and in the register strip now matches only the real resource types (`Texture1D`,
+  `Texture2D`, `Texture3D`, `TextureCube`, their `Array`/`MS`/`MSArray` forms, the `RW` variants,
+  `SamplerState`, `SamplerComparisonState`) as whole tokens.
+- **A content build no longer writes your build machine's path into DirectX 12 and Vulkan effects
+  (issue #274).** The MGFX v11 container, which DirectX 12 and Vulkan always use, stores a
+  source-file string per shader. MGCB and the MonoGame 3.8.5 Content Builder hand a processor the
+  effect's absolute path, and `ShadowDuskEffectProcessor` recorded it, so every such `.xnb` carried
+  the builder's directory (user name included) and its bytes changed with the checkout location.
+  The processor (both `ShadowDusk.MgcbPlugin` and `ShadowDusk.ContentPipeline`) now writes
+  `<unknown>` there, exactly what MonoGame's stock `EffectProcessor` writes. Measured on a real
+  `dotnet-mgcb` 3.8.5 for `DesktopVK` and `WindowsDX12`: the same effect built from two different
+  directories is now a byte-identical `.xnb`, and the string equals the stock build's. Build errors
+  and warnings still name the real file, line and column. OpenGL and DirectX 11 output is untouched
+  (MGFX v10 has no such string). **What moves:** DirectX 12 and Vulkan `.xnb` files built through
+  the plugin or the Content Builder processor change once (the string, and the 4-byte effect key
+  derived from the body); rendering is unaffected.
+  - **The CLI's `.mgfx` output is unchanged**: it keeps writing the source path exactly as passed,
+    which is what the `mgfxc` CLI does, so the plugin's DirectX 12 / Vulkan payload differs from the
+    CLI's `.mgfx` in that one string (and the key). Both content-pipeline gates assert "the CLI's
+    bytes with only that string replaced". (The CLI's `.xnb` output follows MGCB instead; see
+    issue #280 below.)
+  - A build with debug information on (`DebugMode=Debug`) still records the source path inside
+    the compiler's own SPIR-V / DXIL debug information, as the CLI's and `mgfxc`'s `/Debug` do.
+- **The CLI's `.xnb` output no longer carries your build machine's path on DirectX 12 and Vulkan
+  (issue #280).** `ShadowDuskCLI <abs>\Effect.fx Effect.xnb /Profile:Vulkan` (or `DirectX_12`, or
+  any target with `--mgfx-version 11`) wrote the absolute source path into every shader record of
+  the MGFX v11 payload. `mgfxc` has no `.xnb` mode, so the reference for an `.xnb` is MGCB, whose
+  stock `EffectProcessor` writes `<unknown>`: the CLI now writes `<unknown>` when the output is an
+  `.xnb`, and its `.xnb` payload equals the MGCB plugin's byte for byte. The same effect built from
+  two directories gives the same `.xnb`. **`.mgfx` output is unchanged** (still the path as passed,
+  `mgfxc` CLI parity), as are OpenGL / DirectX 11 / FNA `.xnb` files (no such string). Diagnostics
+  still name the real file.
+- **The MGCB plugin and Content Builder processor no longer turn debug information on for
+  `DebugMode=Auto` under `/config:Debug` (issue #280).** Stock MGCB never does: MonoGame 3.8.5's
+  `EffectProcessor` sets `Debug = DebugMode == EffectProcessorDebugMode.Debug` (3.8.2 adds `/Debug`
+  under the same condition) and never reads the build configuration, and a real `dotnet-mgcb` 3.8.5
+  `/config:Debug` build is byte-identical to its release build. ShadowDusk's processor did, which
+  made its output diverge from stock and put the source path into DXC's debug information on
+  DirectX 12 / Vulkan. `Auto` now optimizes everywhere, as in stock; set `DebugMode=Debug` for debug
+  information. **What moves:** only a `.mgcb` that sets `/config:Debug` and leaves `DebugMode` at
+  `Auto`; its effects are now the release bytes (MonoGame.Content.Builder.Task's own targets pass no
+  `/config`, and the Content Builder has no configuration, so the default routes do not move).
+- **`CompilerOptions.EmbeddedSourceFileName`'s XML doc now states that only `null` falls back to
+  `SourceFileName`**: an empty string is stored as an empty string (issue #280; pinned by a test).
+- **A `dxil.dll` on `PATH` no longer hijacks DXC's DXIL validator on Windows.** With the Windows
+  SDK's `bin` directory on `PATH` (every VS Developer Command Prompt), every DirectX 12 compile
+  failed with `DXIL container mismatch for 'PSVRuntimeInfoSize'`; with any other `dxil.dll` there,
+  DirectX 12 output could come out unsigned without a word. The cause was ShadowDusk's own call
+  to Vortice's `Dxc.LoadDxil()`, a bare `LoadLibrary("dxil.dll")` made before DXC loaded: our
+  `dxil.dll` sits in `runtimes/<rid>/native`, not the application directory, so the bare load
+  walked down to `PATH`, and `dxcompiler.dll` then bound the module already loaded under that
+  name. ShadowDusk now loads its pinned `dxil.dll` and then `dxcompiler.dll` by absolute path
+  before any DXC call (on Linux, `libdxcompiler.so`), and checks that the `dxil.dll` DXC binds is
+  its own (by the build version stamped into it, so a copy of the pinned file is accepted). Its resolver now runs ahead of
+  Vortice.Dxc's own, so a bare-name fallback can no longer pick a different DXC (on Linux, from
+  `LD_LIBRARY_PATH`). When the pinned natives are missing, every DXC-backed compile fails with the
+  new `SD0219` instead of running on whatever the OS search found. When a foreign validator was
+  loaded into the process first (by a host tool, or on macOS any `libdxil` image, since that build
+  ships none), only DirectX 12 compiles, whose validated and signed DXIL it would decide, fail with
+  `SD0219`; OpenGL, Vulkan and DirectX 11 never call the validator and keep compiling. Output bytes
+  are unchanged on a clean `PATH`. `CliDxcPathHijackTest` runs the CLI with decoy
+  `dxil.dll`/`dxcompiler.dll` (and, where installed, the Windows SDK's `bin`) first on `PATH` for
+  DirectX 12, DirectX 11, OpenGL and Vulkan, and requires output byte-identical to a clean-`PATH`
+  compile, with DirectX 12 signed; it failed before the fix. `DxcForeignValidatorTests` preloads a
+  decoy, the Windows SDK's, a byte-identical copy, and a `\\?\`-path `dxil.dll` in fresh processes
+  and pins which targets compile. The MGCB gate's decoy directory now carries a `dxil.dll` too.
+- **ShadowDusk now compiles only with its own pinned DXC build, on every OS and in every host
+  layout (issue #270).** Three gaps were left after the fix above. On macOS, ShadowDusk's resolver
+  still ran after Vortice.Dxc's own, which loads `libdxil` and `libdxcompiler` by bare name, so a
+  pair reachable through `DYLD_LIBRARY_PATH`, the working directory or `/usr/local/lib` silently
+  replaced our DXC for OpenGL and Vulkan; ShadowDusk now loads its macOS `libdxcompiler.dylib` by
+  absolute path and answers ahead of Vortice there too (and on Android). The loader probed the
+  host application's `runtimes/<rid>/native` before the directories beside the ShadowDusk
+  assemblies and took the first file with the right name: the Windows SDK's 1.8 pair placed in an
+  MGCB install's `runtimes\win-x64\native` compiled DirectX 12 with that foreign DXC without a
+  word. The natives that ship beside ShadowDusk now come first, and every candidate is checked
+  against the pinned build before it is loaded (the PE file version on Windows, the ELF GNU build
+  id on Linux, the Mach-O `LC_UUID` on macOS: identities that code signing and `strip` leave
+  alone). On macOS, dyld resolves even an absolute-path load against `DYLD_LIBRARY_PATH` first, so
+  the image dyld actually mapped is checked after loading as well: a byte copy of the pinned build
+  is accepted, a different build is refused. A candidate that is not the pinned build is skipped
+  and named; if no pinned build is
+  found, every DXC-backed compile fails with `SD0219`, never with a different DXC. DirectX 11 and
+  FNA do not use DXC and keep compiling. Output bytes are unchanged. New tests:
+  `CliDxcNativeLayoutTests` (the real CLI from a private copy of its output with the natives
+  removed, replaced by a foreign build, or shadowed by one; 4 of 6 failed before the fix),
+  `DxcLibraryPathDecoyTests` (Linux and macOS: a decoy pair first on the library path and as the
+  working directory, with and without the host knowing the natives; the mapped `libdxcompiler`
+  must be the pinned one, read from `/proc/self/maps` or dyld's image list; it fails with the old
+  subscription order; a macOS case puts a copy and a restamped build on `DYLD_LIBRARY_PATH`),
+  `DxcPinnedNativeIdentityTests` and `DxcNativeIdentityTests`.
+  The case a consumer really hits is measured: ShadowDusk.HLSL plus Evergine.DirectX12 resolves
+  Vortice.Dxc 3.8.3, whose natives are DXC 1.9.2602.17, with no NuGet warning. It now fails with an
+  `SD0219` that names the build found, the pinned build (on Windows the file version and the
+  source commit, `1.7.2212.40 (e043f4a12)`), the Vortice.Dxc version the process resolved, and the
+  fix: pin Vortice.Dxc to 3.3.4. The packed dependency is now the exact range `Vortice.Dxc
+  [3.3.4]`, so such a graph also gets NuGet `NU1608` at restore. A pinned-version file of the other
+  architecture probed first is skipped instead of ending the search. Android loads its DXC up
+  front, so a missing one is `SD0219` rather than a raw `DllNotFoundException`, and any OS without
+  a bundled DXC (iOS, Mac Catalyst, FreeBSD) gets `SD0219` too. The MGCB plugin's own DXC hook,
+  which `DxcLoader` had made unreachable and which checked no identity, is removed.
+- **`ShadowDusk.Slang`: textured shaders no longer crash real FNA (issue #230).** slangc emits
+  texture objects (`Texture2D T; SamplerState S; T.Sample(S, uv)`). On the FNA target that compiled,
+  but vkd3d folds the pair into one texture-typed sampler named `S+T`, so the `.fxb` held a texture
+  where MojoShader expects a sampler and FNA threw `NotImplementedException: Unhandled sampler
+  state!` on the first draw (all 12 textured shaders of the 21-shader corpus; `fxc /T fx_2_0` refuses
+  the same text). `SlangCompiler` now respells them for FNA in DX9 effect syntax (`texture2D T;
+  sampler2D S = sampler_state { Texture = <T>; }; tex2D(S, uv)`), the same SM3 `texld`, with every
+  texture declared before any sampler. Texture shapes it does not model (a texture or sampler passed
+  as a function parameter, a subscript load `T[...]`, `SampleLevel`/`SampleGrad`/`Load`, a non-2D
+  texture, one sampler for two textures, a non-zero register space) fail as the new `SD0627`, at the
+  Slang source line.
+- **FNA `.fx` (and the built-in `.slang` subset frontend): a DX10-style texture object now fails at
+  compile time instead of crashing FNA at the first draw (issue #230). Behavior change.** Any
+  `Texture2D`/`Texture3D`/`TextureCube` sampled through a `SamplerState` (`Sample`, `SampleLevel`,
+  `SampleGrad`, ...) at a `ps_2_0`/`ps_3_0`/`vs_*` profile used to compile for FNA into the same
+  texture-typed `S+T` entry, and FNA throws `Unhandled sampler state!` as soon as a pass that
+  samples it is applied (measured in real FNA 26.06 on the D3D11 and OpenGL drivers). `fxc
+  /T fx_2_0` refuses this source too. It now fails with `SD0303`, located at the sampling call, with
+  DX9 advice for the actual shape (`texture2D`/`texture3D`/`textureCUBE`, and
+  `tex2D`/`tex2Dlod`/`tex2Dgrad`/`tex3D`/`texCUBE`). Twelve test fixtures that used to "compile"
+  for FNA move to this rejection: `PenumbraLight`, `PenumbraTexture`, `SharedSamplerPair`,
+  `ExCubeSamplerHidef`, `ExModernSample`, `ExMultiSamplerHidef`, `ExPhantomTexLodUniform`,
+  `ExSampleGradHidef`, `ExSampleLevelHidef`, `ExTextureNamedTexture`, `ExVolumeTextureHidef`,
+  `ExVsTextureFetch`. No pass that samples a texture object could render in FNA. One shape did
+  work before and is now a compile error, as it is for `fxc`: a multi-technique effect where
+  only some techniques sample a texture object (`PenumbraLight.fx`'s three untextured techniques
+  rendered; only `TexturedLight` crashed). Respelling the texture in DX9 syntax, as `SD0303`
+  advises, restores the whole file. DX9-style `texture` + `sampler_state` + `tex2D` source is
+  unaffected and byte-identical.
+- **OpenGL `sin`/`cos`/`tan` on large arguments no longer depends on the driver's range reduction (issue #215).** SPIRV-Cross passed the raw argument to the GLSL builtin, so a shader feeding hundreds of radians into `sin` (`Dots.fx` reaches ~792) rendered 19/255 off the `mgfxc` golden on Intel UHD while llvmpipe and NVIDIA matched. The GLSL rewriter now reduces every non-literal `sin`/`cos`/`tan` argument into [-pi, pi] first (new rewriter Rule 16, a Cody-Waite split of 2pi through an `sd_reduce_angle` helper), as fxc does before every D3D9 `sincos`, with constants more accurate than `mgfxc`'s (max phase error 1.3e-7 rad at |x| <= 1000, measured in fp32, against 3.8e-4 for `mgfxc`'s six-decimal ones). `tan` is included because fxc reduces it too: D3D9 has no `tan` instruction, so `fxc /T ps_3_0` emits `mad / frc / mad / sincos / rcp / mul` for it (the same reduction, then sin/cos), and 2pi is two of `tan`'s periods so the same helper is exact. `atan`, `atan2`, `tanh` and the other non-angle builtins are untouched. **Every OpenGL/WebGL shader that calls `sin`, `cos` or `tan` changes bytes**; shaders without them, and every DirectX, DirectX 12, Vulkan and FNA output, are byte-unchanged.
+
+- **DirectX and FNA compiles no longer run vkd3d again for an entry point another pass already compiled (issue #255).** An effect whose techniques share entry points made one vkd3d call per pass. MonoGame's stock `BasicEffect.fx` made 64 calls for 30 distinct shaders. Each distinct request now compiles once per `Compile` call, which roughly halves the vkd3d time of the stock effects: `BasicEffect` about 490 to 250 ms, `SkinnedEffect` (DirectX) about 770 to 350 ms, `EnvironmentMapEffect` about 300 to 90 ms. Output bytes are unchanged. vkd3d is deterministic, the cache key is every field of the request, and the stock effects were byte-compared before and after. A cancelled token now also stops vkd3d diagnostic relocation before each of its parse-only probe compiles, through one check in the shared locator that the desktop and the browser backend both pass their token to. A native call that has already started still cannot be interrupted.
+  This does not speed up one very large pixel shader, such as the current upstream Apos.Shapes file (about 5 s on a Ryzen 7 5800X). That time is spent inside a single vkd3d call. vkd3d's HLSL optimizer is roughly quadratic in the size of the fully inlined shader, and vkd3d 2.1 is about 1.6x slower than 1.17 on that file and about 2x slower on branchy code. vkd3d has no option that reduces optimizer work and the faithful pipeline rules out another compiler, so the fix has to come from upstream vkd3d (a report is being verified before it is filed). The measurements are in `project_facts.md`.
+- **`ShadowDusk.Slang`: textured shaders sample SpriteBatch's texture on OpenGL (issue #252).** slangc
+  numbers every texture and sampler itself (`SamplerState S : register(s0)`), and the OpenGL sampler
+  allocator reads a `SamplerState` register as an author reservation (mgfxc's own rule), so a
+  single-texture Slang shader landed on sampler slot 1 while SpriteBatch binds the draw texture to
+  unit 0, and the shader never saw it. `SlangCompiler` now strips slangc's own texture/sampler
+  registers and keeps every `register(...)` the author wrote, so the route matches what the `.fx`
+  route gives the equivalent hand-written HLSL. New render gate `validation/SlangTexturedGl` (real
+  MonoGame DesktopGL, texture on unit 0 via SpriteBatch, Invert compared against the `mgfxc` golden)
+  measured red before the fix and green after; `slang-manifest.json` regenerated.
+- **Slang follow-ups (issue #258).** `*.slang` files are now pinned to LF in the checkout
+  (`.gitattributes`), like `.fx`/`.fxh`; every tracked `.slang` was already LF in the repo, so no
+  bytes change. `SlangCompiler`'s `SD0625` rejection (two entry points emitting different
+  declarations of one cbuffer/resource name) is now tested end to end through `SlangCompiler`
+  with a fake slangc, via an internal seam; the public API is unchanged. Every committed
+  `packages.lock.json` now records the `ShadowDusk.*` project references at 0.20.0 (they still
+  said 0.18.0, which no restore flags), and the release runbook rewrites them on each bump.
+- **Intermittent 60 s timeout in `Issue202_AposShapesCurrentUpstream_LandsOnTheRegisterLimit` on CI.** The test compiled the 3235-line shader twice, and each vkd3d compile costs about 3.3 s of CPU that a loaded runner stretched past the test's 60 s token. It now compiles once with no wall-clock token, since a token cannot interrupt a native compile; the CI integration step's `--blame-hang-timeout 3m` guards hangs and uploads a thread dump.
+- **`.fx` wave/quad intrinsics now fail loudly and consistently on every target that cannot hold them.** On OpenGL, DirectX 11 and FNA they are rejected with `SD0624` (the code the `.slang` route already used), instead of DXC's `Vulkan 1.1 is required` (OpenGL) or vkd3d's `Function "WaveActiveSum" is not defined` (DX11, FNA). The message names the intrinsic and target, keeps the compiler's own line and column, and appends its text; `.fx` and `.slang` share one message. A user function that shares an intrinsic's name on those targets still compiles. DirectX12 still compiles them; Vulkan stays `SD0218`.
+- **Host-independent generated text.** The Slang frontend `.fx`, the SkSL uniform rewrite, the ShaderToy `.fx` and harness, and the multipass manifest/WIRING.md used `AppendLine` (CRLF on Windows, LF elsewhere); they now emit `\n` everywhere. `HostNewlineBanTests` fails if `AppendLine`/`Environment.NewLine`/`WriteLine` reappears in a generator project. Compiled output bytes are unchanged.
+
+- **`SlangCompiler` mis-merged entry points that instantiate the same generic differently
+  (issue #228).** `-no-mangle` is collision-free inside one entry (measured: `Box_0`/`Box_1`/
+  `Box_2` for three `Box<T>`), but slangc numbers symbols per run in first-use order, so a
+  vertex and a pixel entry using `helper<float>` and `helper<float2>` in opposite order both
+  called theirs `helper_0`. The merged effect failed with a location-less redefinition error,
+  or silently bound the wrong overload when only the signatures differed. The merge now splits
+  by top-level declaration (it used to split at every `#line`, including mid-function, and could
+  drop a function's closing fragment as a "duplicate") and renames a later unit's colliding
+  structs, functions and statics (`helper_0_e1`), iterated to a fixed point. A colliding
+  cbuffer or resource, which is a reflected parameter name and cannot be renamed, is rejected as
+  `SD0625`.
+- **HLSL Effect (`.fx`) input to `SlangCompiler` is rejected as `SD0626` (issue #231).**
+  Measured against MonoGame v3.8.5's own effects (`Macros.fxh`, BasicEffect, SkinnedEffect, ...):
+  0 of 66 entries compile through real slangc, because of the `technique` block and then the
+  legacy `sampler` type; with both removed all 66 compile. Those effects belong on the `.fx`
+  route; previously the author got `SD0603`, "add `[shader]` attributes", a dead end.
+- **Slang: `[shader(...)]` or an SM6 intrinsic name inside a comment or string literal is no longer read as code (#222).** A doc comment quoting `[shader("fragment")]` could produce a phantom entry point and a false `SD0604`; the same blindness let a commented `WaveActiveSum` trigger `SD0624`. The entry scanner, the SM6 guard, and the `SD0600` construct scan now share one comment/string mask, and attribute stripping only removes real attributes.
+- **Vulkan: HLSL wave/quad intrinsics (`WaveActiveSum`, `QuadReadAcrossX`, ...) are rejected
+  loudly with a new diagnostic, `SD0218`, instead of DXC's confusing `Vulkan 1.1 is required for
+  Wave Operation`** ([#229](https://github.com/kaltinril/ShadowDusk/issues/229)). They are not
+  supported on Vulkan: MonoGame's DesktopVK creates a Vulkan 1.0 instance with no subgroup
+  support. Measured in the CI Vulkan lane: a SPIR-V 1.3 wave shader rendered correctly on Mesa
+  lavapipe, but the Khronos validation layer reported 10 spec errors, so a GPU driver is free to
+  refuse or miscompile it. The message names the intrinsic and the reason, keeps DXC's location,
+  and appends DXC's own text. The real-slangc `.slang` route rejects the same intrinsics on
+  Vulkan with the same code and message. Non-wave Vulkan output is unchanged (no target-env flag
+  is ever passed).
+
+- **`ShadowDusk.Slang` packed its Unix slangc at `runtimes/<rid>/native/slangc/slangc`,** away
+  from its library, because NuGet treats an extension-less `PackagePath` as a folder. Found by
+  the new cold-consumer run before any release shipped it.
+- **`SlangCompiler`'s source-only rejections (`SD0602`, `SD0603`, `SD0624`) no longer depend on
+  the host.** They ran after the platform check, so a host without slangc reported `SD0620`
+  instead; they now run first and are tested on every OS. A slangc the OS refuses to start
+  surfaces as `SD0622` with the OS's reason instead of an exception, a missing compiler library
+  is reported up front (`SD0623`), and slangc's stdin is written as UTF-8 on every host.
+- **`SlangCompiler`'s assembled `.fx` text is LF-only on every host.** The synthesized wrapper
+  used the host newline, so Windows got mixed line endings around slangc's LF body. The
+  compiled bytes were already identical across hosts; the intermediate text now is too.
+- **Compiling on macOS (and DXC's other non-Windows builds) can no longer crash or hang the
+  host process when compiles run concurrently or alongside `Process.Start`.** Three native
+  failures, all measured on macOS arm64 and all inside DXC's Unix support code, not in
+  ShadowDusk's output (no emitted byte changes):
+  (1) every DXIL compile and preprocess runs LLVM's `RegisterHandlers()`, which installs LLVM's
+  own signal handlers over the .NET runtime's (`SIGSEGV`, `SIGBUS`, and on macOS `SIGUSR1`,
+  CoreCLR's thread-suspension signal); test hosts died by `SIGUSR1` (exit code 158);
+  (2) concurrent first calls race that registration and overflow its fixed 17-slot table into
+  `TargetRegistry` state, so the next DXIL compile segfaults in
+  `llvm::TargetRegistry::lookupTarget`;
+  (3) DXC's `WideCharToMultiByte` shim calls `setlocale` about 180 times per compile, which
+  deadlocks permanently against a concurrent `fork()`.
+  ShadowDusk now performs DXC's signal registration once, serialized, and restores the
+  runtime's handlers (`DxcSignalIsolation`; LLVM never registers again), and on macOS a
+  `pthread_atfork` gate keeps `fork()` out of in-flight native compiles (`DxcForkGate`).
+  Compiles still run in parallel. This was the integration suite's intermittent "Test host
+  process crashed" (3 of 4 local macOS runs before; 11 of 11 clean on both TFMs after) and is
+  guarded by fresh-process probes plus a deterministic signal-ownership check in
+  `DxcConcurrencyStressTests`. CI's macOS-only `xUnit.MaxParallelThreads=1` workaround, which
+  hid the crash rather than fixing it, is removed.
 
 - **`ShadowDusk.Slang`'s real-slangc route now forwards the same per-target platform macros
   (`OPENGL`/`SM4`/`VULKAN`/`SM6`/`HLSL`/`GLSL`/`MGFX`/`FNA`/`SM3`, `__KNIFX__` for the KNIFX

@@ -22,6 +22,13 @@ var result = await compiler.CompileAsync(hlslSource,
     new ShadowDusk.Core.CompilerOptions { Target = ShadowDusk.Core.PlatformTarget.OpenGL });
 ```
 
+> [!NOTE]
+> ShadowDusk runs only with **Vortice.Dxc 3.3.4**, the release that carries its pinned DXC. If
+> another package in your application raises Vortice.Dxc (Evergine.DirectX12 pulls 3.8.3, for
+> example), your build shows warning `SD0220` next to NuGet's `NU1608`, and DirectX 12, OpenGL and
+> Vulkan compiles fail at runtime with `SD0219`; DirectX 11 and FNA are unaffected. Pin it with
+> `<PackageReference Include="Vortice.Dxc" Version="3.3.4" />`. See [Diagnostics](../diagnostics.md).
+
 ## The CLI tool (`ShadowDuskCLI`)
 
 Install the drop-in `mgfxc` replacement as a global tool:
@@ -61,7 +68,7 @@ Unsupported constructs fail loudly with a located (line/column) diagnostic rathe
 
 ShadowDusk accepts `.slang` source in two tiers. The **free default**, built into `ShadowDusk.Compiler` (no extra package, no native toolchain, works on every host including the browser), accepts the **HLSL-compatible subset** of Slang: entry points via `[shader("vertex")]`/`[shader("fragment")]`, a synthesized technique, and a body compiled by the same faithful pipeline as any `.fx`. Slang-only features (`import`, generics, `interface`s) are rejected with a named `SD0600` rather than approximated — see the [CLI Reference](../cli/index.md) for `--input-format`.
 
-For genuine Slang — `import`, generics, `interface` conformances, everything real Slang accepts — install the optional `ShadowDusk.Slang` package. It bundles the real `slangc` compiler (win-x64 today) and routes its HLSL emission to the same unchanged, faithful DXC pipeline:
+For genuine Slang — `import`, generics, `interface` conformances, everything real Slang accepts — install the optional `ShadowDusk.Slang` package. It bundles the real `slangc` compiler for win-x64, linux-x64, osx-x64, osx-arm64 (Linux needs a GCC 11+ `libstdc++`, i.e. Ubuntu 22.04 or later; macOS needs macOS 26 or later, the upstream build's own floor; ARM64 Linux and Windows are not bundled, because ShadowDusk's own pipeline is not complete or proven on those hosts yet) and routes its HLSL emission to the same unchanged, faithful DXC pipeline:
 
 ```sh
 dotnet add package ShadowDusk.Slang
@@ -72,6 +79,10 @@ var compiler = new ShadowDusk.Slang.SlangCompiler();
 var result = compiler.Compile(slangSource, new CompilerOptions { Target = PlatformTarget.OpenGL });
 // result.Value.Data is .mgfx bytes, same as EffectCompiler.CompileAsync's output
 ```
+
+**In the browser:** a browser cannot start slangc as a process, so the same pinned slangc is compiled to WebAssembly and run inside the page (`ShadowDusk.Slang.Wasm`'s `WasmSlangCompiler`). It gets the identical command line, its output is measured byte-identical to native slangc's, and its HLSL goes through the same in-browser DXC pipeline. It is not published as a NuGet package yet; the ShaderFiddle sample uses it from source.
+
+**Parameter names are the ones you wrote.** slangc's `-no-mangle` keeps cbuffer members and `Texture2D`/`SamplerState` globals at their source names, and a combined `Sampler2D Comb;` reflects its texture as `Comb` (`effect.Parameters["Comb"].SetValue(texture)`; slangc itself splits it into `Comb_texture_0` and `Comb_sampler_0`, and ShadowDusk gives the texture back the name you wrote, the same table a hand-written `Texture2D Comb; SamplerState ...` gets through the `.fx` route). A texture held in a struct global, inside a `cbuffer`/`ParameterBlock`, or taken as an entry-point `uniform` parameter has no name you wrote that could identify it, so it is rejected with `SD0640` naming the aggregate; declare such textures as globals of their own.
 
 A consumer who only needs the free subset above pays zero extra size or dependency for this package. Same rejection discipline either way: a construct real slangc accepts but that has nowhere to land in an `Effect` (a compute entry point, an SM6-only wave/quad intrinsic on a target that can't represent it) is rejected loudly by name, never silently dropped. Neither tier is ever `mgfxc`-equivalent — `mgfxc` cannot read Slang at all.
 

@@ -78,6 +78,14 @@ internal sealed class JsDxcShaderCompiler : IDxcShaderCompiler
             var blob = new PlatformBlob(BlobKind.Spirv, spirv);
             return Result<PlatformBlob, ShaderError>.Ok(blob);
         }
+        catch (JSException ex) when (WasmCompilerInitialization.IsTrap(ex, "DXC"))
+        {
+            // The shim already dropped the trapped instance (issue #271); mark the chain not
+            // ready so nothing calls into it again before a fresh load.
+            WasmCompilerInitialization.InvalidateDxcChain();
+            return Result<PlatformBlob, ShaderError>.Fail(
+                WasmCompilerInitialization.TrapError("DXC (HLSL → SPIR-V)", request.SourceFileName, ex));
+        }
         catch (JSException ex)
         {
             return Result<PlatformBlob, ShaderError>.Fail(MapJsException(ex, request.SourceFileName));
@@ -162,6 +170,14 @@ internal sealed class JsSpirvToGlslTranspiler : ISpirvToGlslTranspiler
 
             return Result<GlslSource, ShaderError>.Ok(new GlslSource(glsl));
         }
+        catch (JSException ex) when (WasmCompilerInitialization.IsTrap(ex, "SPIRV-Cross"))
+        {
+            // The shim already dropped the trapped instance (issue #271). SPIRV-Cross loads
+            // with the DXC chain, so the chain is marked not ready and reloads as one.
+            WasmCompilerInitialization.InvalidateDxcChain();
+            return Result<GlslSource, ShaderError>.Fail(
+                WasmCompilerInitialization.TrapError("SPIRV-Cross (SPIR-V → GLSL)", "<spirv-cross>", ex));
+        }
         catch (JSException ex)
         {
             return Result<GlslSource, ShaderError>.Fail(new ShaderError(
@@ -230,22 +246,55 @@ internal static partial class Vkd3dInterop
 
     /// <summary>
     /// Compiles HLSL (UTF-8 bytes, NOT null-terminated) to D3D bytecode via the
-    /// <c>sdw_vkd3d_compile</c> C ABI. <paramref name="targetType"/> is the raw vkd3d
+    /// <c>sdw_vkd3d_compile_options</c> C ABI. <paramref name="targetType"/> is the raw vkd3d
     /// target type (4 = D3D_BYTECODE for SM1–3/FNA, 5 = DXBC_TPF for SM4/5/DX11 —
-    /// <c>Vkd3dCompileContract</c>). JS contract:
+    /// <c>Vkd3dCompileContract</c>). <paramref name="options"/> is the
+    /// <c>vkd3d_shader_compile_option</c> list as flat (name, value) pairs — ALWAYS
+    /// <c>Vkd3dCompileContract.ResolveCompileOptions</c>, the list the desktop backend
+    /// marshals, so both hosts hand vkd3d the same options (issue #295); the shim and the
+    /// wrapper forward it untouched and add none of their own. JS contract:
     /// <c>compile(source: Uint8Array, entryPoint: string, profile: string,
-    /// sourceName: string, targetType: number): Uint8Array</c>; on failure the JS side
-    /// throws an <c>Error</c> whose message carries vkd3d's VERBATIM diagnostics
-    /// (surfaced here as a <see cref="JSException"/>).
+    /// sourceName: string, targetType: number, options: number[]): { code: Uint8Array,
+    /// messages: string }</c>: the bytecode AND vkd3d's verbatim message text, which is
+    /// populated on a successful compile too (non-fatal diagnostics; the desktop reads the
+    /// same buffer from the P/Invoke out-parameter). The shim once returned the bytes alone
+    /// and dropped the text on success, so the browser's <c>CompiledShader.Warnings</c> was
+    /// empty where the desktop's was not (issue #335). On failure the JS side throws an
+    /// <c>Error</c> whose message carries that same verbatim text (surfaced here as a
+    /// <see cref="JSException"/>).
     /// </summary>
-    [JSImport("compile", "shadowdusk-vkd3d")]
-    public static partial byte[] Compile(
+    public static Vkd3dCompileOutcome Compile(
         byte[] sourceUtf8,
         string entryPoint,
         string profile,
         string sourceName,
-        [JSMarshalAs<JSType.Number>] int targetType);
+        int targetType,
+        int[] options)
+    {
+        using JSObject result = CompileRaw(sourceUtf8, entryPoint, profile, sourceName, targetType, options);
+        byte[] code = result.GetPropertyAsByteArray("code")
+            ?? throw new InvalidOperationException(
+                "shadowdusk-vkd3d compile() returned no 'code' property; the shim and this binding disagree on the contract.");
+        return new Vkd3dCompileOutcome(code, result.GetPropertyAsString("messages") ?? string.Empty);
+    }
+
+    [JSImport("compile", "shadowdusk-vkd3d")]
+    private static partial JSObject CompileRaw(
+        byte[] sourceUtf8,
+        string entryPoint,
+        string profile,
+        string sourceName,
+        [JSMarshalAs<JSType.Number>] int targetType,
+        [JSMarshalAs<JSType.Array<JSType.Number>>] int[] options);
 }
+
+/// <summary>
+/// One successful <c>vkd3d_shader_compile</c> through the browser shim: the bytecode and
+/// vkd3d's verbatim message text (empty when vkd3d said nothing). The browser twin of the
+/// desktop backend's <c>NativeOutcome</c>, so both hosts hand the same two things to the
+/// shared <c>Vkd3dCompileContract</c> (issue #335).
+/// </summary>
+internal readonly record struct Vkd3dCompileOutcome(byte[] Code, string Messages);
 
 /// <summary>
 /// <c>[JSImport]</c> bindings into the SPIRV-Cross JavaScript module. The module
@@ -257,6 +306,10 @@ internal static partial class Vkd3dInterop
 [SupportedOSPlatform("browser")]
 internal static partial class SpirvCrossInterop
 {
+    [JSImport("ensureReady", "shadowdusk-spirv-cross")]
+    [return: JSMarshalAs<JSType.Promise<JSType.Void>>]
+    public static partial Task EnsureReadyAsync();
+
     /// <summary>
     /// Transpiles a SPIR-V module to GLSL text.
     /// JS contract:

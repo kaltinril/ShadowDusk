@@ -10,14 +10,15 @@ namespace ShadowDusk.Slang.Tests;
 
 /// <summary>
 /// Integration tests for <see cref="SlangCompiler"/> — the real-slangc compile route (Phase
-/// 66 A3). Every test here spawns the real, restored <c>tools/slang/win-x64/slangc.exe</c>
+/// 66 A3). Every test here spawns the real, restored <c>tools/slang/&lt;rid&gt;/</c> slangc
 /// (and, unless a stub downstream compiler is injected, the real faithful pipeline behind
 /// it), so the whole class is tagged Category=Integration, matching
 /// <c>ShadowDusk.Compiler.Tests.EffectCompilerTests</c>'s own convention.
 ///
 /// <para>Requires <c>tools/restore.ps1</c> / <c>restore.sh</c> to have restored
-/// <c>tools/slang/win-x64/slangc.exe</c> first — see <c>SlangToolPath</c>. Windows-x64 only
-/// today (Phase 66 A2), matching the package's platform support.</para>
+/// <c>tools/slang/&lt;rid&gt;/</c> first (see <c>SlangToolPath</c>). Runs for real on every
+/// bundled RID (win-x64, linux-x64, osx-x64, osx-arm64; issue #227) and FAILS, never skips,
+/// on a host without a usable slangc: a skip here would read as coverage that never ran.</para>
 /// </summary>
 [Trait("Category", "Integration")]
 public sealed class SlangCompilerTests
@@ -173,6 +174,21 @@ public sealed class SlangCompilerTests
     }
 
     [Fact]
+    public async Task AssembledFx_UsesLfOnly_OnEveryHost()
+    {
+        // One intermediate text on every OS: the synthesized wrapper must not take the host
+        // newline ("\r\n" on Windows) while slangc's body is '\n'-joined.
+        string source = await File.ReadAllTextAsync(Path.Combine(SlangCorpusDir, "WaveVertex.slang"));
+        var capture = new CapturingCompiler();
+
+        var result = await new SlangCompiler(capture).CompileAsync(
+            source, new CompilerOptions { Target = PlatformTarget.OpenGL, SourceFileName = "WaveVertex.slang" });
+
+        result.IsSuccess.ShouldBeTrue(result.IsFailure ? FormatErrors(result.Error) : "");
+        capture.CapturedHlslSource.ShouldNotBeNull().ShouldNotContain("\r", Case.Sensitive);
+    }
+
+    [Fact]
     public async Task PixelOnlyShader_SynthesizesAPixelOnlyPass_NoVertexShaderLine()
     {
         string source = await File.ReadAllTextAsync(Path.Combine(SlangCorpusDir, "Checkerboard.slang"));
@@ -225,72 +241,9 @@ public sealed class SlangCompilerTests
         error.Line.ShouldBeGreaterThan(0);
     }
 
-    // ---------------------------------------------------------------------------
-    // Entry-point policy is SlangEntryScanner's, reused unchanged: these two never even
-    // reach slangc (the scan fails first), but stay in this Integration-tagged class for
-    // simplicity alongside the rest of SlangCompiler's surface.
-    // ---------------------------------------------------------------------------
-
-    // Phase 66 A5, Band 2 part A: a real compute entry point (genuine [numthreads]/
-    // groupshared/SV_DispatchThreadID compute syntax, not just an attribute-only stub) must
-    // reject with SD0602 on EVERY target — the rejection is entry-stage policy
-    // (SlangEntryScanner.Scan), decided before any per-target compile step runs, so it can
-    // never depend on which target was asked for.
-    private const string ComputeEntrySource = """
-        RWStructuredBuffer<float> Particles;
-
-        [shader("compute")]
-        [numthreads(64, 1, 1)]
-        void Simulate(uint3 id : SV_DispatchThreadID)
-        {
-            Particles[id.x] += 1.0;
-        }
-        """;
-
-    [Theory]
-    [InlineData(PlatformTarget.OpenGL)]
-    [InlineData(PlatformTarget.DirectX)]
-    [InlineData(PlatformTarget.DirectX12)]
-    [InlineData(PlatformTarget.Vulkan)]
-    [InlineData(PlatformTarget.Fna)]
-    public async Task ComputeEntryPoint_RejectedLoudly_BeforeInvokingSlangc_OnEveryTarget(
-        PlatformTarget target)
-    {
-        var options = new CompilerOptions { Target = target, SourceFileName = "compute.slang" };
-
-        var result = await new SlangCompiler().CompileAsync(ComputeEntrySource, options);
-
-        result.IsFailure.ShouldBeTrue();
-        var error = result.Error.Single();
-        error.Code.ShouldBe("SD0602");
-        error.Message.ShouldContain("Simulate", Case.Sensitive);
-        error.Message.ShouldContain("compute", Case.Sensitive);
-    }
-
-    [Fact]
-    public async Task ComputeEntryPoint_RejectedBeforeSpawningSlangc_NeverReachesADownstreamError()
-    {
-        var capture = new CapturingCompiler();
-        var options = new CompilerOptions { Target = PlatformTarget.OpenGL, SourceFileName = "compute.slang" };
-
-        var result = await new SlangCompiler(capture).CompileAsync(ComputeEntrySource, options);
-
-        result.IsFailure.ShouldBeTrue();
-        result.Error.Single().Code.ShouldBe("SD0602");
-        capture.CapturedHlslSource.ShouldBeNull();
-    }
-
-    [Fact]
-    public async Task NoEntryPoints_RejectedLoudly_BeforeInvokingSlangc()
-    {
-        const string noEntries = "float4 Helper() { return 0; }";
-        var options = new CompilerOptions { Target = PlatformTarget.OpenGL, SourceFileName = "lib.slang" };
-
-        var result = await new SlangCompiler().CompileAsync(noEntries, options);
-
-        result.IsFailure.ShouldBeTrue();
-        result.Error.Single().Code.ShouldBe("SD0603");
-    }
+    // Entry-point policy (SD0602/SD0603) and the SM6 guard (SD0624) never reach slangc and
+    // live in SlangCompilerHostIndependentTests, which proves they run before the host/native
+    // lookup and so hold on every OS.
 
     // ---------------------------------------------------------------------------
     // Determinism — the same claim ShadowDusk.Compiler.Tests.EffectCompilerTests pins for
@@ -495,12 +448,8 @@ public sealed class SlangCompilerTests
 
     // ---------------------------------------------------------------------------
     // Phase 66 A5, Band 2 part B (OQ2) — an SM6-only wave intrinsic rejects with SD0624 on the
-    // three targets architecturally capped below SM6, and (measured, Phase 66 A5: the ONE target
-    // that reaches it end to end through ShadowDusk's real pipeline today) still compiles on
-    // DirectX12. Vulkan is deliberately NOT asserted to succeed here — see
-    // SlangSm6ConstructGuard.IsArchitecturallyBelowSm6's own doc comment for the separate,
-    // pre-existing DxcFlagBuilder '-fspv-target-env' gap this stage found but left unfixed
-    // (out of scope: it is a general Vulkan/DXC pipeline flag, not Slang-specific).
+    // three targets architecturally capped below SM6, with SD0218 on Vulkan (issue #229:
+    // MonoGame's DesktopVK has no subgroup support), and still compiles on DirectX12.
     // ---------------------------------------------------------------------------
 
     private const string WaveIntrinsicSource = """
@@ -518,42 +467,6 @@ public sealed class SlangCompilerTests
         }
         """;
 
-    [Theory]
-    [InlineData(PlatformTarget.OpenGL)]
-    [InlineData(PlatformTarget.DirectX)]
-    [InlineData(PlatformTarget.Fna)]
-    public async Task WaveIntrinsic_RejectedWithSD0624_OnTargetsArchitecturallyBelowSm6(
-        PlatformTarget target)
-    {
-        var options = new CompilerOptions { Target = target, SourceFileName = "wave.slang" };
-
-        var result = await new SlangCompiler().CompileAsync(WaveIntrinsicSource, options);
-
-        result.IsFailure.ShouldBeTrue();
-        var error = result.Error.Single();
-        error.Code.ShouldBe("SD0624");
-        error.Message.ShouldContain("WaveActiveSum", Case.Sensitive);
-        error.Message.ShouldContain(target.ToString(), Case.Sensitive);
-        error.Line.ShouldBeGreaterThan(0);
-    }
-
-    [Fact]
-    public async Task WaveIntrinsic_RejectedBeforeSpawningSlangc_NeverReachesADownstreamError()
-    {
-        // The guard runs on the raw Slang source before slangc is ever invoked (SD0624's own
-        // point: one consistent diagnostic instead of each backend's own confusing wording) —
-        // proven here via a stub downstream compiler that would fail the test outright if
-        // SlangCompiler somehow got as far as assembling/handing off an .fx body.
-        var capture = new CapturingCompiler();
-        var options = new CompilerOptions { Target = PlatformTarget.OpenGL, SourceFileName = "wave.slang" };
-
-        var result = await new SlangCompiler(capture).CompileAsync(WaveIntrinsicSource, options);
-
-        result.IsFailure.ShouldBeTrue();
-        result.Error.Single().Code.ShouldBe("SD0624");
-        capture.CapturedHlslSource.ShouldBeNull();
-    }
-
     [Fact]
     public async Task WaveIntrinsic_CompilesOnDirectX12_TheOneTargetThatReachesItToday()
     {
@@ -563,5 +476,46 @@ public sealed class SlangCompilerTests
 
         result.IsSuccess.ShouldBeTrue(result.IsFailure ? FormatErrors(result.Error) : "");
         AssertLooksLikeMgfx(result.Value.Data);
+    }
+
+    // Issue #222: example text in a comment or string must never act as code.
+    private const string CommentedWaveSource = """
+        // Do not call WaveActiveSum(x) here; /* QuadReadAcrossX */ is not available.
+        static const string Note = "WaveIsFirstLane()";
+
+        [shader("fragment")]
+        float4 MainPS(float4 p : SV_Position) : SV_Target
+        {
+            return float4(1, 0, 0, 1);
+        }
+        """;
+
+    [Theory]
+    [InlineData(PlatformTarget.OpenGL)]
+    [InlineData(PlatformTarget.DirectX)]
+    [InlineData(PlatformTarget.Vulkan)]
+    [InlineData(PlatformTarget.DirectX12)]
+    public async Task CommentedWaveIntrinsic_RaisesNeitherSD0624NorSD0218(PlatformTarget target)
+    {
+        var options = new CompilerOptions { Target = target, SourceFileName = "commented.slang" };
+
+        var result = await new SlangCompiler().CompileAsync(CommentedWaveSource, options);
+
+        result.IsSuccess.ShouldBeTrue(result.IsFailure ? FormatErrors(result.Error) : "");
+    }
+
+    [Fact]
+    public async Task CommentQuotingTheShaderAttribute_IsNotASecondEntry_SD0604()
+    {
+        const string source = """
+            // The [shader("fragment")] attribute marks the entry point (issue #4677) from here.
+            [shader("fragment")]
+            float4 MainPS(float4 p : SV_Position) : SV_Target { return float4(1, 0, 0, 1); }
+            """;
+        var options = new CompilerOptions { Target = PlatformTarget.OpenGL, SourceFileName = "attr.slang" };
+
+        var result = await new SlangCompiler().CompileAsync(source, options);
+
+        result.IsSuccess.ShouldBeTrue(result.IsFailure ? FormatErrors(result.Error) : "");
     }
 }

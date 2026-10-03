@@ -86,7 +86,7 @@ new ShadowDuskEffectProcessor { Defines = "FOO=1;BAR", DebugMode = EffectProcess
 
 | Property | Default | What it does |
 |---|---|---|
-| `DebugMode` | `Auto` | On MGCB, `Auto` follows the content build configuration. **The Builder has no build-configuration argument**, so `Auto` optimizes there; set `Debug` explicitly for debug info. |
+| `DebugMode` | `Auto` | `Auto` optimizes, as MonoGame's stock `EffectProcessor` does (on MGCB too, whatever the build configuration); set `Debug` explicitly for debug info. |
 | `Defines` | *(empty)* | Preprocessor macros in `mgfxc`'s `/Defines:` spelling: `NAME=VALUE` entries separated by `;` or `,`; a bare `NAME` defines it as `1`. |
 | `IncludeDirs` | *(empty)* | Extra `#include` search directories, `;`-separated. The including file's own directory is always searched first. `#include`d files are registered as dependencies, so editing an `.fxh` rebuilds. |
 | `ShaderProfile` | *(empty)* | Escape hatch: `DirectX_11`, `DirectX_12`, `OpenGL`, `Vulkan` overrides the platform-derived target. Not needed on 3.8.5, whose `DesktopVK` / `WindowsDX12` platforms already name those targets. |
@@ -107,7 +107,18 @@ subclass over the fixture set with two content roots — MonoGame's stock pair a
 asserts that the ShadowDusk `.xnb` payload is **byte-for-byte** the ShadowDusk CLI's, that the `.xnb`
 envelope is byte-for-byte the stock build's, that the payloads differ, and then loads **both** through a
 real `ContentManager.Load<Effect>` on MonoGame 3.8.5 and requires **pixel-identical** renders
-(measured 2026-09-09: 7/7 assets, 4/4 renders at 1,230,720 px identical). `pack-consume.yml`
+(11/11 assets across `Windows`, `DesktopGL`, `DesktopVK` and `WindowsDX12`, 4/4 renders at
+1,230,720 px identical).
+
+On `DesktopVK` and `WindowsDX12` there is one deliberate difference from the CLI's bytes. Their MGFX
+v11 container stores a source-file string per shader, and the Builder hands the importer your
+effect's **absolute** path. The CLI's `.mgfx` output records the path it is given, as `mgfxc`
+does (its `.xnb` output writes `<unknown>`, like a content build); the processor
+writes `<unknown>`, exactly what MonoGame's stock `EffectProcessor` writes, so the `.xnb` never
+carries your build machine's directory and is the same bytes wherever the project is checked out.
+Build errors still name the real file, line and column. The gate compares that string with the stock
+build's, compares the rest of the payload with the CLI's, and runs the Builder a second time from a
+different source directory to require a byte-identical `.xnb`. `pack-consume.yml`
 additionally consumes the packed package cold from a local feed in a scratch Builder on Linux, macOS,
 and Windows. Details in [Validation](../contributing/validation.md).
 

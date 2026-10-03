@@ -124,4 +124,261 @@ public sealed class DxcLoaderTests
         // runtimes/android-arm64/native.
         DxcLoader.AndroidLibFileName.ShouldBe("libdxcompiler.so");
     }
+
+    [Fact]
+    public void PinnedPairDirectories_ProbeBesideTheAssembliesBeforeTheHostsDirectories()
+    {
+        // Issue #270: a plugin host's own directories can hold a different DXC (measured: the
+        // Windows SDK's pair in <mgcb>/runtimes/win-x64/native won over ShadowDusk's own and
+        // compiled DirectX 12 silently). The natives that ship beside the ShadowDusk/Vortice
+        // assemblies come first; the host's base and search directories follow.
+        string search = Path.Combine(Path.GetTempPath(), "search");
+        string plugin = Path.Combine(Path.GetTempPath(), "plugin");
+
+        var dirs = DxcLoader.GetPinnedPairDirectories(
+            Base, [search], [plugin], "win-x64", ignoreCase: true).ToList();
+
+        dirs.ShouldBe(new[] {
+            Path.Combine(plugin, "runtimes", "win-x64", "native"),
+            plugin,
+            Path.Combine(Base, "runtimes", "win-x64", "native"),
+            Base,
+            search});
+    }
+
+    [Fact]
+    public void PinnedPairDirectories_AssemblyLoadedFromAPackageFolder_ProbeThatPackagesRuntimes()
+    {
+        // An assembly loaded straight from the NuGet cache sits in <package>/lib/<tfm>/ and its
+        // natives in <package>/runtimes/<rid>/native: the pair that ships with it, wherever
+        // the host's own directories point.
+        string package = Path.Combine(Path.GetTempPath(), "packages", "vortice.dxc", "3.3.4");
+        string lib = Path.Combine(package, "lib", "net8.0");
+
+        var dirs = DxcLoader.GetPinnedPairDirectories(
+            Base, [], [lib], "win-x64", ignoreCase: true).ToList();
+
+        dirs.ShouldBe(new[] {
+            Path.Combine(lib, "runtimes", "win-x64", "native"),
+            lib,
+            Path.Combine(package, "runtimes", "win-x64", "native"),
+            Path.Combine(Base, "runtimes", "win-x64", "native"),
+            Base});
+    }
+
+    [Fact]
+    public void MacCandidates_ProbeBesideTheAssembliesThenTheBaseThenTheSearchDirectories()
+    {
+        // Same preference as Windows/Linux, with the per-arch subdirectories the macOS layout
+        // needs. Every candidate is an absolute path to the dylib: a bare name would be the
+        // dynamic linker's search path (DYLD_LIBRARY_PATH, the working directory,
+        // /usr/local/lib), exactly where a foreign DXC sits (issue #270).
+        string search = Path.Combine(Path.GetTempPath(), "search");
+        string plugin = Path.Combine(Path.GetTempPath(), "plugin");
+        string lib = DxcLoader.MacLibFileName;
+
+        var candidates = DxcLoader.GetMacCandidates(Base, [search], [plugin], Architecture.Arm64).ToList();
+
+        candidates.Take(6).ShouldBe(new[] {
+            Path.Combine(plugin, "osx-arm64", lib),
+            Path.Combine(plugin, lib),
+            Path.Combine(plugin, "runtimes", "osx-arm64", "native", lib),
+            Path.Combine(Base, "osx-arm64", lib),
+            Path.Combine(Base, lib),
+            Path.Combine(Base, "runtimes", "osx-arm64", "native", lib)});
+        candidates.TakeLast(2).ShouldBe(new[] {
+            Path.Combine(search, "osx-arm64", lib),
+            Path.Combine(search, lib)});
+        candidates.ShouldAllBe(c => Path.IsPathFullyQualified(c) && Path.GetFileName(c) == lib);
+        candidates.ShouldBeUnique();
+    }
+
+    [Fact]
+    public void MacCandidates_AppWhoseAssembliesSitInTheBaseDirectory_KeepTheLongStandingOrder()
+    {
+        // The ordinary app: assemblies and base directory are the same place, so the list is
+        // the pre-#270 one (per-arch, flat, runtimes/<rid>/native, tools/dxc walk-up, search
+        // directories) with nothing probed twice.
+        string search = Path.Combine(Path.GetTempPath(), "search");
+
+        var candidates = DxcLoader.GetMacCandidates(Base, [search], [Base], Architecture.X64).ToList();
+
+        candidates.ShouldBe(
+            DxcLoader.GetProbeCandidates(Base, Architecture.X64)
+                .Concat(DxcLoader.GetSearchDirectoryCandidates(search, Architecture.X64))
+                .ToList());
+    }
+
+    [Fact]
+    public void PinnedPairDirectories_DropDuplicatesAndTrailingSeparators()
+    {
+        // The host lists the app directory among its search directories, and the ShadowDusk
+        // and Vortice assemblies usually share it: each directory is probed once.
+        var dirs = DxcLoader.GetPinnedPairDirectories(
+            Base,
+            [Base + Path.DirectorySeparatorChar],
+            [Base, Base],
+            "linux-x64",
+            ignoreCase: false).ToList();
+
+        dirs.ShouldBe(new[] {
+            Path.Combine(Base, "runtimes", "linux-x64", "native"),
+            Base});
+    }
+
+    [Theory]
+    [InlineData("win", Architecture.X64, "win-x64")]
+    [InlineData("win", Architecture.Arm64, "win-arm64")]
+    [InlineData("linux", Architecture.X64, "linux-x64")]
+    [InlineData("linux", Architecture.Arm64, "linux-arm64")]
+    [InlineData("osx", Architecture.X64, "osx-x64")]
+    [InlineData("osx", Architecture.Arm64, "osx-arm64")]
+    public void PinnedRid_FollowsTheProcessArchitecture(string os, Architecture arch, string expected)
+    {
+        DxcLoader.PinnedRid(os, arch).ShouldBe(expected);
+    }
+
+    [Theory]
+    [InlineData(@"C:\app\dxil.dll", @"c:\APP\DXIL.DLL", true)]
+    [InlineData(@"\\?\C:\app\dxil.dll", @"C:\app\dxil.dll", true)]
+    [InlineData(@"C:\app\dxil.dll", @"C:\other\dxil.dll", false)]
+    public void SamePath_IgnoresCaseAndTheLongPathPrefix(string a, string b, bool expected)
+    {
+        // GetModuleFileNameW reports a \\?\ path when the module was loaded through one, so
+        // the pinned dxil.dll reached that way must still be recognized as the pinned file.
+        DxcLoader.SamePath(a, b).ShouldBe(expected);
+    }
+
+    [Theory]
+    [InlineData("libdxil.dylib", true)]
+    [InlineData("libdxil.so", true)]
+    [InlineData("LIBDXIL.DYLIB", true)]
+    [InlineData("libdxcompiler.dylib", false)]
+    [InlineData("libdxil.dylib.bak", false)]
+    public void DxilLeafNames_AreExactlyTheValidatorNamesDxcOpens(string leaf, bool expected)
+    {
+        // Our macOS libdxcompiler.dylib dlopens both of these by leaf name; it ships neither,
+        // so any loaded image with one of these names is a foreign validator (SD0219).
+        DxcLoader.IsDxilLeafName(leaf).ShouldBe(expected);
+    }
+
+    [Theory]
+    [InlineData(ShadowDusk.Core.PlatformTarget.DirectX12, false, true)]
+    [InlineData(ShadowDusk.Core.PlatformTarget.DirectX, true, false)]
+    [InlineData(ShadowDusk.Core.PlatformTarget.OpenGL, false, false)]
+    [InlineData(ShadowDusk.Core.PlatformTarget.Vulkan, false, false)]
+    public void OnlyValidatedDxilCompiles_DependOnTheValidator(
+        ShadowDusk.Core.PlatformTarget target, bool skipValidation, bool expected)
+    {
+        // A foreign dxil.dll loaded by the host refuses only these compiles (SD0219): SPIR-V
+        // codegen and -Vd DXIL never call the validator, so they keep compiling.
+        var args = DxcFlagBuilder.Build(
+            target,
+            ShadowDusk.Core.ShaderStage.Pixel,
+            "PS",
+            [],
+            new DxcCompileOptions { SkipValidation = skipValidation });
+
+        DxcShaderCompiler.UsesValidator(args).ShouldBe(expected);
+    }
+
+    [Fact]
+    public void PinnedVorticeDxc_ExposesTheResolverFieldSubscribeFirstRewrites()
+    {
+        // DxcLoader.SubscribeFirst puts our resolver ahead of Vortice's own by rewriting this
+        // private event field, and silently falls back to a plain (last-in-line) subscription
+        // when it is missing, which reopens the Linux LD_LIBRARY_PATH hole. A Vortice.Dxc bump
+        // that renames or retypes the field must fail here, not in a consumer's process.
+        var field = typeof(Vortice.Dxc.Dxc).GetField(
+            "ResolveLibrary",
+            System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Static);
+
+        field.ShouldNotBeNull();
+        field.FieldType.ShouldBe(typeof(DllImportResolver));
+    }
+
+    [Theory]
+    [InlineData(false, true, false, false, "Windows")]
+    [InlineData(false, false, true, false, "Linux")]
+    [InlineData(false, false, false, true, "MacOS")]
+    [InlineData(true, false, false, false, "Android")]
+    [InlineData(true, false, true, false, "Android")]
+    [InlineData(false, false, false, false, "Unsupported")]
+    public void HostOf_ClassifiesEveryOperatingSystem(
+        bool android, bool windows, bool linux, bool macOS, string expected)
+    {
+        // iOS, Mac Catalyst, tvOS, FreeBSD, ... answer false to all four (issue #289).
+        DxcLoader.HostOf(android, windows, linux, macOS).ToString().ShouldBe(expected);
+    }
+
+    [Fact]
+    public void CurrentHost_IsOneDxcShipsFor()
+    {
+        // Every host this suite runs on (the Windows, Linux and macOS CI lanes) bundles a DXC.
+        DxcLoader.CurrentHost.ShouldNotBe(DxcLoader.DxcHost.Unsupported);
+    }
+
+    [Theory]
+    [InlineData("FreeBSD 14.1-RELEASE", "freebsd-x64")]
+    [InlineData("iOS 18.0", "ios-arm64")]
+    [InlineData("Mac Catalyst 18.0", "maccatalyst-arm64")]
+    public void UnsupportedHost_IsRefusedWithSD0219_NeverAMissingLibrary(string os, string rid)
+    {
+        // The unsupported-OS branch of DxcLoader.Register (issue #289): no DXC ships there, so
+        // the result is SD0219 instead of a DllNotFoundException at the first P/Invoke.
+        var error = DxcLoader.RefusalFor(DxcLoader.DxcHost.Unsupported, os, rid);
+
+        error.ShouldNotBeNull();
+        error.Code.ShouldBe("SD0219");
+        error.Message.ShouldContain(os, Case.Sensitive);
+        error.Message.ShouldContain(rid, Case.Sensitive);
+        error.Message.ShouldContain("DirectX 11 and FNA do not use DXC", Case.Sensitive);
+    }
+
+    [Theory]
+    [InlineData("Windows")]
+    [InlineData("Linux")]
+    [InlineData("MacOS")]
+    [InlineData("Android")]
+    public void SupportedHost_IsNotRefusedUpFront(string host)
+    {
+        DxcLoader.RefusalFor(Enum.Parse<DxcLoader.DxcHost>(host), "any", "any-x64").ShouldBeNull();
+    }
+
+    [Theory]
+    [InlineData(0)]
+    [InlineData(7)]
+    public void PinnedVorticeDxc_IsAccepted(int revision)
+    {
+        DxcLoader.CheckVorticeDxcVersion(new Version(3, 3, 4, revision)).ShouldBeNull();
+    }
+
+    [Theory]
+    [InlineData("3.8.3.0", "3.8.3")]
+    [InlineData("3.3.5.0", "3.3.5")]
+    [InlineData("3.3.3.0", "3.3.3")]
+    [InlineData(null, "(unknown version)")]
+    public void AnyOtherVorticeDxc_IsRefusedWithSD0219NamingTheFix(string? resolved, string named)
+    {
+        // Issue #282, measured: Vortice.Dxc 3.8.3 (pulled in by Evergine.DirectX12) is DXC 1.9 on
+        // Windows and Linux AND a binary-incompatible API, so where ShadowDusk ships its own native
+        // (macOS, Android) the only symptom used to be a MissingMethodException reported as a
+        // reflection failure. The managed version is now checked before any native is touched.
+        var error = DxcLoader.CheckVorticeDxcVersion(resolved is null ? null : Version.Parse(resolved));
+
+        error.ShouldNotBeNull();
+        error.Code.ShouldBe("SD0219");
+        error.Message.ShouldContain($"resolved Vortice.Dxc {named}", Case.Sensitive);
+        error.Message.ShouldContain("<PackageReference Include=\"Vortice.Dxc\" Version=\"3.3.4\" />", Case.Sensitive);
+        error.Message.ShouldContain("SD0220", Case.Sensitive);
+        error.Message.ShouldContain("DirectX 11 and FNA do not use DXC", Case.Sensitive);
+    }
+
+    [Fact]
+    public void TheVorticeDxcThisSuiteBinds_IsThePinnedOne()
+    {
+        // The loader compares the bound assembly against DxcNativeIdentity's pin; the repo's own
+        // exact range must resolve exactly it, or every DXC test would fail with SD0219.
+        DxcLoader.CheckVorticeDxcVersion(typeof(Vortice.Dxc.Dxc).Assembly.GetName().Version).ShouldBeNull();
+    }
 }

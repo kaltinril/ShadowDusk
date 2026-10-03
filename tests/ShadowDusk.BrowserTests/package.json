@@ -8,7 +8,9 @@
     "test": "node run-harness.mjs",
     "probe": "node probe-readback.mjs",
     "vkd3d-gate": "node node-test-vkd3d-wasm.mjs",
-    "vkd3d-browser-gate": "node browser-vkd3d-gate.mjs"
+    "wasm-depth-gate": "node node-test-wasm-depth.mjs",
+    "vkd3d-browser-gate": "node browser-vkd3d-gate.mjs",
+    "slang-browser-gate": "node browser-slang-gate.mjs"
   },
   "devDependencies": {
     "playwright": "^1.60.0",

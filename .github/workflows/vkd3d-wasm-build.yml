@@ -19,9 +19,11 @@
 #   * Vulkan-Headers / SPIRV-Headers are compile-time-only (header-only) and
 #     pinned to upstream tags; they cannot leak into the runtime artifact.
 #
-# The wrapper ABI (sdw_vkd3d_compile / sdw_vkd3d_free_code / sdw_vkd3d_free_messages)
-# is a CONTRACT with the C# [JSImport] interop side — see tools/vkd3d-wasm/
-# sdw_vkd3d_wrapper.c and the phase doc before changing anything.
+# The wrapper ABI (sdw_vkd3d_compile_options / sdw_vkd3d_free_code /
+# sdw_vkd3d_free_messages) is a CONTRACT with the C# [JSImport] interop side — see
+# tools/vkd3d-wasm/sdw_vkd3d_wrapper.c and the phase doc before changing anything.
+# The wrapper passes the CALLER'S vkd3d compile options through and decides none
+# itself (issue #295); the smoke gate below fails a build whose wrapper does not.
 name: Build vkd3d-shader WASM
 
 on:
@@ -167,6 +169,13 @@ jobs:
       # with cwrap,ccall,getValue,setValue,UTF8ToString,stringToUTF8,lengthBytesUTF8
       # and relied on the 3.1.34 HEAPU8 default) — it is verified working and is NOT
       # rebuilt/re-hosted; this line affects only FUTURE rebuilds (which get a new tag).
+      # STACK (issue #271): emscripten's default stack is 64 KB, against 1 MB (Windows) or
+      # 8 MB (Linux/macOS) for the desktop native. vkd3d's HLSL front end recurses per nesting
+      # level, and at 64 KB the module trapped on valid shaders the desktop compiles (75
+      # else-ifs, 200 nested ifs, a 1600-deep call chain; .wasm-build/WASM-STACK-DEPTH.md).
+      # 8 MB matches the DXC, SPIRV-Cross and slangc modules. --stack-first puts the stack
+      # below static data, so overflowing even 8 MB traps at once instead of silently
+      # corrupting static data; wasm-ld needs GLOBAL_BASE >= the stack size for it.
       - name: Link vkd3d-shader.{js,wasm} (emcc)
         run: |
           source emsdk/emsdk_env.sh
@@ -182,7 +191,10 @@ jobs:
             -sEXPORT_NAME=createVkd3dModule \
             -sFILESYSTEM=0 \
             -sALLOW_MEMORY_GROWTH=1 \
-            -sEXPORTED_FUNCTIONS=_sdw_vkd3d_compile,_sdw_vkd3d_free_code,_sdw_vkd3d_free_messages,_malloc,_free \
+            -sSTACK_SIZE=8MB \
+            -sGLOBAL_BASE=8388608 \
+            -Wl,--stack-first \
+            -sEXPORTED_FUNCTIONS=_sdw_vkd3d_compile_options,_sdw_vkd3d_free_code,_sdw_vkd3d_free_messages,_malloc,_free \
             -sEXPORTED_RUNTIME_METHODS=HEAPU8,getValue,setValue,UTF8ToString
           ls -la out/
 
@@ -190,7 +202,9 @@ jobs:
       # the sdw_* ABI under node. ps_2_0 -> d3dbc must carry the 0xFFFF0200
       # version token (FNA fx_2_0 path); ps_5_0 -> dxbc-tpf must carry the "DXBC"
       # magic (MonoGame DX11 path); a broken shader must fail loudly with
-      # verbatim diagnostics. Red here = no artifact.
+      # verbatim diagnostics; the caller's compile options must reach vkd3d
+      # (issue #295: SM1-3 struct semantics compile with MAP_SEMANTIC_NAMES and are
+      # refused without it). Red here = no artifact.
       - name: Smoke-test (node, sdw_* ABI)
         run: |
           mkdir -p smoke

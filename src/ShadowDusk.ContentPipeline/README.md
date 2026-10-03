@@ -2,7 +2,7 @@
 
 **ShadowDusk's MonoGame content-pipeline importer and processor as a normal library, for MonoGame 3.8.5's Content Builder project.** Reference the package, pass `new ShadowDuskEffectImporter()` and `new ShadowDuskEffectProcessor()` in your `ContentBuilder`, and your `.fx` shaders compile to `.xnb` **through ShadowDusk, inside your Builder's own process** — no `mgfxc`, no `fxc.exe`, no Wine, no Windows SDK, on Linux, macOS, and Windows build agents alike.
 
-This is a **delivery shape of the ShadowDusk compiler library**, not a second compiler. The processor builds a `CompilerOptions` from the build context and calls the same `EffectCompiler` the [ShadowDusk CLI](https://www.nuget.org/packages/ShadowDusk.Cli) and the runtime API call, so **the `.mgfx` bytes inside the `.xnb` are byte-for-byte what the CLI emits for the same source and target.** It compiles the exact same source files as [`ShadowDusk.MgcbPlugin`](https://www.nuget.org/packages/ShadowDusk.MgcbPlugin), which remains the package for `.mgcb` files and MGCB (a tools-only package that cannot be referenced from C# — that is why this one exists).
+This is a **delivery shape of the ShadowDusk compiler library**, not a second compiler. The processor builds a `CompilerOptions` from the build context and calls the same `EffectCompiler` the [ShadowDusk CLI](https://www.nuget.org/packages/ShadowDusk.Cli) and the runtime API call, so **the `.mgfx` bytes inside the `.xnb` are byte-for-byte what the CLI emits for the same source and target.** The one deliberate difference is on **DirectX 12 and Vulkan**, whose MGFX v11 container stores a source-file string per shader: a content build hands the processor your effect's absolute path, so the processor writes `<unknown>` there, exactly as MonoGame's stock `EffectProcessor` does, instead of recording your build machine's directory in the game's content. The compiled effect is the same bytes wherever the project is checked out; build errors and warnings still name the real file, line and column. It compiles the exact same source files as [`ShadowDusk.MgcbPlugin`](https://www.nuget.org/packages/ShadowDusk.MgcbPlugin), which remains the package for `.mgcb` files and MGCB (a tools-only package that cannot be referenced from C# — that is why this one exists).
 
 ## Install
 
@@ -57,7 +57,7 @@ That is the whole setup. **The target follows the Builder's platform** (`-p` / `
 Three things worth knowing, all measured against the real 3.8.5 Builder:
 
 - **Pass the instances** (as above). Extension auto-discovery picks MonoGame's stock pair when both are loaded; there is no way for a second `.fx` importer to win it.
-- **`DebugMode` defaults to optimized.** The Builder has no build-configuration argument, so `DebugMode = Auto` (which follows the configuration on MGCB) means optimized here. Want debug info: `new ShadowDuskEffectProcessor { DebugMode = EffectProcessorDebugMode.Debug }`.
+- **`DebugMode` defaults to optimized.** `DebugMode = Auto` optimizes, exactly like MonoGame's stock `EffectProcessor` (which never reads a build configuration). Want debug info: `new ShadowDuskEffectProcessor { DebugMode = EffectProcessorDebugMode.Debug }`.
 - **Processor parameters are C# properties on the instance**, not a dictionary: `new ShadowDuskEffectProcessor { Defines = "FOO=1;BAR" }`. They take part in the Builder's per-asset cache key, so changing one rebuilds the asset; `#include`d files are registered as dependencies, so editing an `.fxh` rebuilds too.
 
 ## Processor properties
@@ -66,7 +66,7 @@ Every one is optional; the defaults are the correct path.
 
 | Property | Default | What it does |
 |---|---|---|
-| `DebugMode` | `Auto` | `Auto` follows the content build configuration where there is one (MGCB); the Builder has none, so it optimizes. `Debug` / `Optimize` force it. |
+| `DebugMode` | `Auto` | Only `Debug` turns debug information on; `Auto` and `Optimize` optimize, as with MonoGame's stock `EffectProcessor`. |
 | `Defines` | *(empty)* | Preprocessor macros, in `mgfxc`'s `/Defines:` spelling: `NAME=VALUE` entries separated by `;` or `,`; a bare `NAME` defines it as `1`. |
 | `IncludeDirs` | *(empty)* | Extra `#include` search directories, `;`-separated. The including file's own directory is always searched first. |
 | `ShaderProfile` | *(empty)* | Escape hatch. Overrides the target derived from the platform: `DirectX_11`, `DirectX_12`, `OpenGL`, `Vulkan`. Not needed on 3.8.5, whose platforms already name Vulkan and DirectX 12. |

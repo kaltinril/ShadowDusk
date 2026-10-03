@@ -2,7 +2,7 @@
 
 **A MonoGame Content Builder (MGCB) content-processor plugin that compiles your `.fx` shaders with ShadowDusk, inside MGCB's own process** — no `mgfxc`, no `fxc.exe`, no Wine, no Windows SDK. It works on Linux, macOS, and Windows build agents alike.
 
-This is a **delivery shape of the ShadowDusk compiler library**, not a second compiler. The processor builds a `CompilerOptions` from MGCB's build context and calls the same `EffectCompiler` the [ShadowDusk CLI](https://www.nuget.org/packages/ShadowDusk.Cli) and the runtime API call, so **the `.mgfx` bytes inside the `.xnb` are byte-for-byte what the CLI emits for the same source and target.**
+This is a **delivery shape of the ShadowDusk compiler library**, not a second compiler. The processor builds a `CompilerOptions` from MGCB's build context and calls the same `EffectCompiler` the [ShadowDusk CLI](https://www.nuget.org/packages/ShadowDusk.Cli) and the runtime API call, so **the `.mgfx` bytes inside the `.xnb` are byte-for-byte what the CLI emits for the same source and target.** The one deliberate difference is on **DirectX 12 and Vulkan**, whose MGFX v11 container stores a source-file string per shader: a content build hands the processor your effect's absolute path, so the processor writes `<unknown>` there, exactly as MonoGame's stock `EffectProcessor` does, instead of recording your build machine's directory in the game's content. The compiled effect is the same bytes wherever the project is checked out; build errors and warnings still name the real file, line and column.
 
 > MGCB compiles `.fx` **in-process** and never launches an external effect compiler, so putting a drop-in `mgfxc` on `PATH` does not route an `.mgcb` build through ShadowDusk. This plugin is the route.
 
@@ -49,7 +49,7 @@ Every one is optional; the defaults are the correct path.
 
 | `/processorParam:` | Default | What it does |
 |---|---|---|
-| `DebugMode` | `Auto` | `Auto` follows the content build configuration, exactly like MonoGame's stock `EffectProcessor`. `Debug` / `Optimize` force it. |
+| `DebugMode` | `Auto` | Only `Debug` turns debug information on. `Auto` and `Optimize` optimize whatever the build configuration (`/config:Debug` included), exactly like MonoGame's stock `EffectProcessor`. |
 | `Defines` | *(empty)* | Preprocessor macros, in `mgfxc`'s `/Defines:` spelling: `NAME=VALUE` entries separated by `;` or `,`; a bare `NAME` defines it as `1`. |
 | `IncludeDirs` | *(empty)* | Extra `#include` search directories, `;`-separated. The including file's own directory is always searched first. |
 | `ShaderProfile` | *(empty)* | Escape hatch. Overrides the target derived from `/platform:`. `DirectX_11`, `DirectX_12`, `OpenGL`, `Vulkan` — needed only on MGCB **before 3.8.5**, whose platform list cannot name `WindowsDX12` / `DesktopVK`; from 3.8.5 those platforms derive their target directly. |

@@ -789,9 +789,9 @@
       "shadowdusk.compiler": {
         "type": "Project",
         "dependencies": {
-          "ShadowDusk.Core": "[0.18.0, )",
-          "ShadowDusk.GLSL": "[0.18.0, )",
-          "ShadowDusk.HLSL": "[0.18.0, )"
+          "ShadowDusk.Core": "[0.20.0, )",
+          "ShadowDusk.GLSL": "[0.20.0, )",
+          "ShadowDusk.HLSL": "[0.20.0, )"
         }
       },
       "shadowdusk.core": {
@@ -800,16 +800,16 @@
       "shadowdusk.glsl": {
         "type": "Project",
         "dependencies": {
-          "ShadowDusk.Core": "[0.18.0, )",
+          "ShadowDusk.Core": "[0.20.0, )",
           "Silk.NET.SPIRV.Cross.Native": "[2.23.0, )"
         }
       },
       "shadowdusk.hlsl": {
         "type": "Project",
         "dependencies": {
-          "ShadowDusk.Core": "[0.18.0, )",
+          "ShadowDusk.Core": "[0.20.0, )",
           "Vortice.D3DCompiler": "[3.3.4, )",
-          "Vortice.Dxc": "[3.3.4, )"
+          "Vortice.Dxc": "[3.3.4, 3.3.4]"
         }
       },
       "Silk.NET.SPIRV.Cross.Native": {
@@ -832,7 +832,7 @@
       },
       "Vortice.Dxc": {
         "type": "CentralTransitive",
-        "requested": "[3.3.4, )",
+        "requested": "[3.3.4, 3.3.4]",
         "resolved": "3.3.4",
         "contentHash": "Q+JJzn96ZKaLQFEhLRFtWau0/KxORtREpP8FTRdKN0luIdrTZIARto7OESKpOGXl3idIGP/jH8YQIupNzaR5EQ==",
         "dependencies": {

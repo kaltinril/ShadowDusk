@@ -2,7 +2,6 @@
 
 using System.Runtime.InteropServices;
 using System.Text;
-using System.Text.RegularExpressions;
 using ShadowDusk.Core;
 using ShadowDusk.HLSL.D3DCompiler;
 using ShadowDusk.HLSL.Dxc;
@@ -29,11 +28,8 @@ namespace ShadowDusk.HLSL.Vkd3d;
 /// </summary>
 public sealed class Vkd3dShaderCompiler : IDxbcShaderCompiler
 {
-    // Matches a whole #line directive line (keeps the trailing newline so blanking it
-    // leaves an empty line, preserving overall line numbering for vkd3d diagnostics).
-    private static readonly Regex LineDirectivePattern =
-        new(@"(?m)^[ \t]*#[ \t]*line\b[^\n]*", RegexOptions.Compiled);
-
+    // The #line blanking that used to live here is Vkd3dCompileContract.PrepareSource, the
+    // one source-preparation step both hosts run (issue #319).
 
     /// <inheritdoc/>
     public Task<Result<PlatformBlob, ShaderError>> CompileAsync(
@@ -41,7 +37,7 @@ public sealed class Vkd3dShaderCompiler : IDxbcShaderCompiler
         CancellationToken cancellationToken = default)
     {
         cancellationToken.ThrowIfCancellationRequested();
-        return Task.Run(() => CompileCore(request), cancellationToken);
+        return Task.Run(() => CompileCore(request, cancellationToken), cancellationToken);
     }
 
     /// <inheritdoc/>
@@ -50,10 +46,70 @@ public sealed class Vkd3dShaderCompiler : IDxbcShaderCompiler
         CancellationToken cancellationToken = default)
     {
         cancellationToken.ThrowIfCancellationRequested();
-        return CompileCore(request);
+        return CompileCore(request, cancellationToken);
     }
 
-    private static Result<PlatformBlob, ShaderError> CompileCore(D3DCompileRequest request)
+    /// <summary>
+    /// Test seam for a compile that goes through the whole pipeline, where the
+    /// <c>onNativeCallReturned</c> parameter below cannot be reached: a callback set here
+    /// runs after every <c>vkd3d_shader_compile</c> call made in the setting async flow
+    /// (it flows into <see cref="CompileAsync"/>'s <c>Task.Run</c>), and in no other, so
+    /// tests running in parallel do not see each other's calls. It is how the cost of a
+    /// failed compile (the real compile plus its diagnostic-relocation probes) is pinned on
+    /// the issue #202 fixture. Production never sets it.
+    /// </summary>
+    internal static readonly AsyncLocal<Action?> NativeCallObserver = new();
+
+    /// <summary>
+    /// Test seam for the options the DESKTOP really hands <c>vkd3d_shader_compile</c>: a
+    /// callback set here receives, before every native call made in the setting async flow,
+    /// the option list read back from the marshalled <c>vkd3d_shader_compile_info</c> as
+    /// flat (name, value) pairs (<see cref="Vkd3dCompileContract.FlattenCompileOptions"/>).
+    /// The tests pin it equal to <see cref="Vkd3dCompileContract.ResolveCompileOptions"/>,
+    /// which is what the browser host sends, and <c>Vkd3dCorpusProbe</c> records it per
+    /// compile so the browser gates replay the desktop's own options (issue #295).
+    /// Production never sets it.
+    /// </summary>
+    internal static readonly AsyncLocal<Action<int[]>?> NativeOptionsObserver = new();
+
+    /// <summary>
+    /// Test seam for the SOURCE BYTES the DESKTOP really hands <c>vkd3d_shader_compile</c>: a
+    /// callback set here receives, before every native call made in the setting async flow,
+    /// the bytes read back from the marshalled <c>vkd3d_shader_compile_info.source</c>. The
+    /// tests pin them equal to <see cref="Vkd3dCompileContract.PrepareSource"/> of the
+    /// request's <c>HlslSource</c>, which is what the browser host sends, and
+    /// <c>Vkd3dCorpusProbe</c> records them per compile so the browser gates replay the exact
+    /// text the desktop compiled (issue #319). The real compile is observed first; any later
+    /// call in the same flow is a diagnostic-relocation probe. Production never sets it.
+    /// </summary>
+    internal static readonly AsyncLocal<Action<byte[]>?> NativeSourceObserver = new();
+
+    /// <summary>
+    /// Test seam for the MESSAGE TEXT the DESKTOP really gets back from
+    /// <c>vkd3d_shader_compile</c>: a callback set here receives, after every native call made
+    /// in the setting async flow, vkd3d's verbatim message buffer (empty when vkd3d said
+    /// nothing), success and failure alike. <c>Vkd3dCorpusProbe</c> records it per compile so
+    /// the node gate can require the browser shim to hand back the identical text on a
+    /// successful compile, the channel the browser host used to drop (issue #335). The real
+    /// compile is observed first; any later call in the same flow is a diagnostic-relocation
+    /// probe. Production never sets it.
+    /// </summary>
+    internal static readonly AsyncLocal<Action<string>?> NativeMessagesObserver = new();
+
+    private static Result<PlatformBlob, ShaderError> CompileCore(
+        D3DCompileRequest request, CancellationToken cancellationToken) =>
+        CompileCore(request, cancellationToken, onNativeCallReturned: NativeCallObserver.Value);
+
+    /// <summary>
+    /// The compile, with a test seam: <paramref name="onNativeCallReturned"/> runs after
+    /// every <c>vkd3d_shader_compile</c> call returns (the real compile first, then each
+    /// diagnostic-relocation probe). A native call cannot be interrupted, so the only
+    /// deterministic way to cancel BETWEEN the failing compile and its probes, which is
+    /// the window the issue-#255 cancellation check covers, is from inside this callback;
+    /// it also lets a test count the native calls. Production passes <see langword="null"/>.
+    /// </summary>
+    internal static Result<PlatformBlob, ShaderError> CompileCore(
+        D3DCompileRequest request, CancellationToken cancellationToken, Action? onNativeCallReturned)
     {
         Vkd3dLoader.Register();
 
@@ -67,27 +123,30 @@ public sealed class Vkd3dShaderCompiler : IDxbcShaderCompiler
         var targetType    = (Vkd3dTargetType)Vkd3dCompileContract.ResolveTargetType(profile);
         BlobKind blobKind = Vkd3dCompileContract.ResolveBlobKind(profile);
 
-        // vkd3d-shader's HLSL preprocessor does not honor #line directives; it ignores
-        // each one and (at LogLevel >= Warning / VKD3D_DEBUG on) prints
-        // "vkd3d:NNNN:fixme:preproc_yyparse #line directive." to the process stderr, once
-        // per directive. An include-heavy effect (e.g. the MonoGame stock effects, which
-        // pull in Macros.fxh/Structures.fxh/Common.fxh/Lighting.fxh) carries hundreds of
-        // them from the include flattener, so a SUCCESSFUL compile would spew hundreds of
-        // stderr lines and break the mgfxc silent-success contract. (The VKD3D_DEBUG=none
-        // default in Vkd3dLoader does not reliably reach the native getenv at runtime,
-        // which masked this until an include-heavy effect first reached the vkd3d backend.)
-        // Blank every #line directive line before handing the source to vkd3d: it never
-        // used them, and BLANKING (not deleting) keeps the blanked text and
-        // request.HlslSource line-for-line aligned, which is what lets Vkd3dSourceLocator
-        // map vkd3d's coordinates back through the directives below (issue #202). The
-        // DXC/GL and d3dcompiler_47 paths keep their #line directives (those compilers
-        // honor them for diagnostics) — this strip is vkd3d-only.
-        string vkd3dSource = LineDirectivePattern.Replace(request.HlslSource, string.Empty);
+        // The text vkd3d gets is the SHARED Vkd3dCompileContract's too (issue #319): every
+        // #line directive line blanked (vkd3d ignores them and prints a fixme per directive
+        // otherwise), line count preserved so Vkd3dSourceLocator can map vkd3d's coordinates
+        // back through request.HlslSource's directives (issue #202). The browser backend
+        // sends the very same prepared string, so the two hosts cannot hand vkd3d different
+        // text. Never transform the source here.
+        string vkd3dSource = Vkd3dCompileContract.PrepareSource(request.HlslSource);
+
+        // On a large-stack worker (issue #306): vkd3d recurses per nesting level too. Measured
+        // on the caller's 1.5 MB Windows stack, a chain of 6,400 functions each calling the
+        // next killed the process inside vkd3d_shader_compile. The diagnostic-relocation
+        // probes compile the same source, so they go the same way.
+        NativeOutcome Invoke(string source)
+        {
+            NativeOutcome o = NativeCompileStack.Run(
+                () => InvokeNative(source, request, profile, targetType));
+            onNativeCallReturned?.Invoke();
+            return o;
+        }
 
         NativeOutcome outcome;
         try
         {
-            outcome = InvokeNative(vkd3dSource, request, profile, targetType);
+            outcome = Invoke(vkd3dSource);
         }
         catch (DllNotFoundException ex)
         {
@@ -115,9 +174,15 @@ public sealed class Vkd3dShaderCompiler : IDxbcShaderCompiler
         // count in its re-spaced token stream. Vkd3dSourceLocator asks vkd3d itself where
         // each diagnostic sits, with parse-abort probes of the SAME request; the real
         // compile above is untouched, so the emitted bytes cannot move.
+        //
+        // The token cannot interrupt vkd3d_shader_compile itself (one native call), but it
+        // is honoured before each relocation probe (up to Vkd3dSourceLocator.MaxProbes more
+        // native calls), so a cancelled compile does not go on to pay for them. The check
+        // itself lives in Vkd3dSourceLocator (shared with the browser host), which is why
+        // the token is handed to Relocate rather than tested here.
         ShaderError? Probe(string source)
         {
-            NativeOutcome o = InvokeNative(source, request, profile, targetType);
+            NativeOutcome o = Invoke(source);
             return o.Failed
                 ? Vkd3dCompileContract.MapCompileFailure(o.Messages, request.SourceFileName, string.Empty)
                 : null;
@@ -132,18 +197,19 @@ public sealed class Vkd3dShaderCompiler : IDxbcShaderCompiler
                 request.SourceFileName,
                 $"vkd3d-shader DXBC compilation failed (rc={outcome.Rc}) with no diagnostics");
             return Result<PlatformBlob, ShaderError>.Fail(
-                Vkd3dSourceLocator.Relocate(primary, vkd3dSource, request.HlslSource, request.SourceFileName, Probe));
+                Vkd3dSourceLocator.Relocate(
+                    primary, vkd3dSource, request.HlslSource, request.SourceFileName, Probe, cancellationToken));
         }
 
-        // vkd3d's message buffer is populated on SUCCESS too (LogLevel is
-        // Warning) — non-fatal diagnostics were previously discarded here.
-        // Capture verbatim; the pipeline surfaces them via
-        // CompiledShader.Warnings (constraint 5).
-        IReadOnlyList<ShaderError> warnings = string.IsNullOrWhiteSpace(outcome.Messages)
-            ? Array.Empty<ShaderError>()
-            : Vkd3dSourceLocator.Relocate(
-                D3DCompilerDiagnosticReformatter.ReformatAsWarnings(outcome.Messages, request.SourceFileName),
-                vkd3dSource, request.HlslSource, request.SourceFileName, Probe);
+        // vkd3d's message buffer is populated on SUCCESS too (LogLevel is Warning):
+        // non-fatal diagnostics were once discarded here, and later by the browser host
+        // (issue #335). The SHARED contract parses them (Vkd3dCompileContract
+        // .MapCompileWarnings) and the SAME locator relocates them, exactly as the browser
+        // backend does, so CompiledShader.Warnings cannot differ between hosts
+        // (constraint 5: verbatim, never swallowed).
+        IReadOnlyList<ShaderError> warnings = Vkd3dSourceLocator.Relocate(
+            Vkd3dCompileContract.MapCompileWarnings(outcome.Messages, request.SourceFileName),
+            vkd3dSource, request.HlslSource, request.SourceFileName, Probe, cancellationToken);
 
         return Result<PlatformBlob, ShaderError>.Ok(
             new PlatformBlob(blobKind, outcome.Code!) { Warnings = warnings });
@@ -173,32 +239,19 @@ public sealed class Vkd3dShaderCompiler : IDxbcShaderCompiler
         // Pin the chained struct so its address stays valid for CompileInfo.Next.
         IntPtr hlslInfoPtr = Marshal.AllocHGlobal(Marshal.SizeOf<Vkd3dHlslSourceInfo>());
 
-        // SM1-3 semantics on an SM4+ target: `fxc` accepts them (that is how every
-        // MonoGame `.fx` written against SM3 still builds at ps_4_0), and vkd3d only
-        // does with BACKWARD_COMPATIBILITY/MAP_SEMANTIC_NAMES — without it, vkd3d 2.1
-        // rejects a user semantic on a pixel-shader output outright ("E5013: Invalid
-        // semantic 'COLOR'"). FxPreParser rewrites the `) : COLOR<n>` RETURN semantic
-        // in RewriteToSm4 mode, but it deliberately cannot touch the same semantic on
-        // a struct FIELD (the struct may be a VS output, where COLOR is legal), so the
-        // option is what covers a `struct { float4 c : COLOR0; }` pixel-shader return.
-        // Scoped to the SM4+ target: on d3dbc these ARE the native semantics.
-        bool mapSemanticNames = targetType == Vkd3dTargetType.DxbcTpf;
-        IntPtr optionsPtr = mapSemanticNames
-            ? Marshal.AllocHGlobal(Marshal.SizeOf<Vkd3dCompileOption>())
+        // The option list is the SHARED Vkd3dCompileContract's (issue #295): the browser
+        // backend sends the very same list through its shim into the WASM wrapper, so the
+        // two hosts cannot hand vkd3d different options. Never add an option here.
+        IReadOnlyList<Vkd3dCompileOption> options = Vkd3dCompileContract.ResolveCompileOptions((int)targetType);
+        int optionSize = Marshal.SizeOf<Vkd3dCompileOption>();
+        IntPtr optionsPtr = options.Count > 0
+            ? Marshal.AllocHGlobal(optionSize * options.Count)
             : IntPtr.Zero;
 
         try
         {
-            if (mapSemanticNames)
-            {
-                Marshal.StructureToPtr(
-                    new Vkd3dCompileOption
-                    {
-                        Name  = Vkd3dCompileOptionName.BackwardCompatibility,
-                        Value = (uint)Vkd3dBackwardCompatibility.MapSemanticNames,
-                    },
-                    optionsPtr, fDeleteOld: false);
-            }
+            for (int i = 0; i < options.Count; i++)
+                Marshal.StructureToPtr(options[i], optionsPtr + i * optionSize, fDeleteOld: false);
 
             Marshal.Copy(sourceBytes, 0, sourcePtr, sourceBytes.Length);
 
@@ -220,14 +273,18 @@ public sealed class Vkd3dShaderCompiler : IDxbcShaderCompiler
                 SourceType  = Vkd3dSourceType.Hlsl,
                 TargetType  = targetType,
                 Options     = optionsPtr,
-                OptionCount = mapSemanticNames ? 1u : 0u,
+                OptionCount = (uint)options.Count,
                 // WARNING surfaces non-fatal diagnostics too; constraint 5 (fail loudly).
                 LogLevel    = Vkd3dLogLevel.Warning,
                 SourceName  = sourceNamePtr,
             };
 
+            NativeOptionsObserver.Value?.Invoke(ReadBackOptions(in compileInfo));
+            NativeSourceObserver.Value?.Invoke(ReadBackSource(in compileInfo));
+
             int rc = Vkd3dNative.Compile(in compileInfo, out Vkd3dShaderCode output, out IntPtr messagesPtr);
             string messages = ReadAndFreeMessages(messagesPtr);
+            NativeMessagesObserver.Value?.Invoke(messages);
 
             try
             {
@@ -254,6 +311,34 @@ public sealed class Vkd3dShaderCompiler : IDxbcShaderCompiler
             FreeCString(profilePtr);
             FreeCString(sourceNamePtr);
         }
+    }
+
+    /// <summary>
+    /// The option list as vkd3d is about to see it: read back out of the unmanaged
+    /// <c>vkd3d_shader_compile_info</c> (the count and the array it points at), not taken
+    /// from the managed list that was marshalled in. Only <see cref="NativeOptionsObserver"/>
+    /// uses it.
+    /// </summary>
+    private static int[] ReadBackOptions(in Vkd3dCompileInfo compileInfo)
+    {
+        var read = new Vkd3dCompileOption[compileInfo.OptionCount];
+        int size = Marshal.SizeOf<Vkd3dCompileOption>();
+        for (int i = 0; i < read.Length; i++)
+            read[i] = Marshal.PtrToStructure<Vkd3dCompileOption>(compileInfo.Options + i * size);
+        return Vkd3dCompileContract.FlattenCompileOptions(read);
+    }
+
+    /// <summary>
+    /// The source as vkd3d is about to see it: copied back out of the unmanaged
+    /// <c>vkd3d_shader_code</c> the compile info points at (pointer + size, not the managed
+    /// string that was marshalled in). Only <see cref="NativeSourceObserver"/> uses it.
+    /// </summary>
+    private static byte[] ReadBackSource(in Vkd3dCompileInfo compileInfo)
+    {
+        var bytes = new byte[checked((int)compileInfo.Source.Size)];
+        if (bytes.Length > 0)
+            Marshal.Copy(compileInfo.Source.Code, bytes, 0, bytes.Length);
+        return bytes;
     }
 
     private static string ReadAndFreeMessages(IntPtr messagesPtr)

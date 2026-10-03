@@ -47,6 +47,13 @@
         </div>
 
         <div class="row">
+            <label title="Real slangc compiled to WebAssembly turns the Slang into HLSL in this page; the same DXC pipeline then compiles it. The first click downloads the ~23 MB slangc module once.">…or a full Slang example (interface + generics):</label>
+            <button @onclick="LoadSlangExampleAsync" disabled="@(!_ready || _compiling || _exporting is not null)">
+                Slang generic blend
+            </button>
+        </div>
+
+        <div class="row">
             <label for="sdHiDef" title="WebGL2 / GLSL ES 3.00. Complex shaders (raymarchers using isnan-bearing min/max or dynamic loops) need it; the Flame and Self-reflect examples do.">
                 <input id="sdHiDef" type="checkbox" checked="@IsHiDef" @onchange="OnHiDefToggled" disabled="@(!_ready)" />
                 WebGL2 (HiDef) — needed by the Flame / Self-reflect raymarchers
@@ -214,6 +221,14 @@
                 audio/video/cubemap channels, and a few exotic constructs are out of scope and fail
                 with a located error. A real HLSL <code>.fx</code> (with a <code>technique</code>) is
                 detected automatically and compiled unchanged.
+            </p>
+            <p>
+                <strong>Slang input:</strong> source with <code>[shader("vertex")]</code> /
+                <code>[shader("fragment")]</code> entry points and no <code>technique</code> is compiled
+                as full Slang (<code>import</code>, generics, <code>interface</code>s): the real, pinned
+                <code>slangc</code>, compiled to WebAssembly, turns it into HLSL here in the page, and the
+                same DXC pipeline compiles that HLSL. The first Slang compile downloads the ~23&nbsp;MB
+                slangc module once.
             </p>
             <p>
                 Heads-up for <code>.fx</code> input: this sample only sets the 10 built-in corpus

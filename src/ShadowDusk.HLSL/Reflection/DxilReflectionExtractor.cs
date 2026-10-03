@@ -66,9 +66,10 @@ public sealed class DxilReflectionExtractor
     {
         ct.ThrowIfCancellationRequested();
 
-        // macOS: hook Vortice's ResolveLibrary so our pinned libdxcompiler.dylib
-        // resolves (Phase 37 A). Idempotent; no-op on Windows/Linux.
-        HLSL.Dxc.DxcLoader.Register();
+        // Resolve DXC as ShadowDusk's pinned build (absolute-path load on Windows/Linux, our
+        // own libdxcompiler on macOS/Android). Idempotent; SD0219 when that is not possible.
+        if (HLSL.Dxc.DxcLoader.Register() is { } loadError)
+            return Result<ReflectedEffect, ShaderError>.Fail(loadError);
 
         IDxcUtils utils = CreateDxcUtils();
 
@@ -91,7 +92,13 @@ public sealed class DxilReflectionExtractor
                     Message: "Reflection failed: unable to create DXC blob from DXIL bytes"));
             }
 
-            utils.CreateReflection(encodingBlob, out ID3D12ShaderReflection? reflection);
+            // DXC parses the whole DXIL module here. On a large-stack worker like every other
+            // call into DXC (issue #306); the getters below only read what this built.
+            ID3D12ShaderReflection? reflection = NativeCompileStack.Run(() =>
+            {
+                utils.CreateReflection(encodingBlob, out ID3D12ShaderReflection? created);
+                return created;
+            });
             encodingBlob.Dispose();
             if (reflection is null)
             {
@@ -256,20 +263,25 @@ public sealed class DxilReflectionExtractor
 
             switch (bindDesc.Type)
             {
+                // BindCount above 1 is an array of resources (`Texture2D Tex[N]`): one SM6
+                // binding spanning N registers from BindPoint (issue #324). Unbounded arrays
+                // report 0 in the raw descriptor; carried through as 0.
                 case D3DShaderInputType.Texture:
                     textures.Add(new TextureReflection
                     {
-                        Name      = bindDesc.Name,
-                        BindSlot  = bindDesc.BindPoint,
-                        Dimension = MapSrvDimension(bindDesc.Dimension),
+                        Name        = bindDesc.Name,
+                        BindSlot    = bindDesc.BindPoint,
+                        Dimension   = MapSrvDimension(bindDesc.Dimension),
+                        ArrayLength = bindDesc.BindCount == 1 ? null : bindDesc.BindCount,
                     });
                     break;
 
                 case D3DShaderInputType.Sampler:
                     samplers.Add(new SamplerReflection
                     {
-                        Name     = bindDesc.Name,
-                        BindSlot = bindDesc.BindPoint,
+                        Name        = bindDesc.Name,
+                        BindSlot    = bindDesc.BindPoint,
+                        ArrayLength = bindDesc.BindCount == 1 ? null : bindDesc.BindCount,
                     });
                     break;
             }

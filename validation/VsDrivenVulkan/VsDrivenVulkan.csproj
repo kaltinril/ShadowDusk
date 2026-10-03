@@ -23,6 +23,8 @@
   <ItemGroup Label="MonoGame 3.8.5 stable DesktopVK">
     <PackageReference Include="MonoGame.Framework.Native" Version="3.8.5" />
     <PackageReference Include="MonoGame.Runtime.Windows.Vulkan" Version="3.8.5" />
+    <!-- Linux natives (libmgruntime.so): the same driver runs in CI on Mesa lavapipe. -->
+    <PackageReference Include="MonoGame.Runtime.Linux.Vulkan" Version="3.8.5" />
   </ItemGroup>
 
   <ItemGroup Label="Apos.Shapes (Phase 55 - real ShapeBatch gallery render-proof)">
@@ -36,6 +38,11 @@
   <ItemGroup>
     <Compile Include="..\Shared\*.cs" />
     <Compile Include="..\SharedDx\AposGalleryRenderer.cs" />
+    <!-- Issue #324 (mode texarr): the MGFX parameter-block reader and the Vulkan ShaderCode
+         header reader, source-linked (BCL-only) so the driver can read the mgfxc golden's
+         (empty) table and descriptor layout. -->
+    <Compile Include="..\..\tests\ShadowDusk.Integration.Tests\MgfxBlobReader.cs" Link="MgfxBlobReader.cs" />
+    <Compile Include="..\..\tests\ShadowDusk.Integration.Tests\VulkanShaderCodeReader.cs" Link="VulkanShaderCodeReader.cs" />
   </ItemGroup>
 
 </Project>

@@ -37,7 +37,9 @@ public static class MultipassManifest
             Passes = result.Passes.Select(ToManifestPass).ToList(),
         };
 
-        return JsonSerializer.Serialize(manifest, JsonOptions);
+        // WriteIndented separates with Environment.NewLine on .NET 8 (CRLF on Windows); string values
+        // escape their newlines, so only structural whitespace is rewritten.
+        return JsonSerializer.Serialize(manifest, JsonOptions).ReplaceLineEndings("\n");
     }
 
     private static ManifestPass ToManifestPass(MultipassPassResult pass) => new()
@@ -77,13 +79,13 @@ public static class MultipassManifest
         ArgumentNullException.ThrowIfNull(result);
 
         var sb = new StringBuilder();
-        sb.AppendLine($"# Multipass wiring{(result.ProjectName is null ? string.Empty : $" — {result.ProjectName}")}");
-        sb.AppendLine();
-        sb.AppendLine("This export was batch-converted to **one `.fx` per render tab**. ShadowDusk does");
-        sb.AppendLine("**not** orchestrate or render the multipass graph for you, by design: the render");
-        sb.AppendLine("graph is the consumer's job, the way MonoGame already works. Below is the resolved");
-        sb.AppendLine("buffer graph and a concrete example of the ~15 lines you drop into your own `Draw`.");
-        sb.AppendLine();
+        sb.Append($"# Multipass wiring{(result.ProjectName is null ? string.Empty : $" — {result.ProjectName}")}").Append('\n');
+        sb.Append('\n');
+        sb.Append("This export was batch-converted to **one `.fx` per render tab**. ShadowDusk does").Append('\n');
+        sb.Append("**not** orchestrate or render the multipass graph for you, by design: the render").Append('\n');
+        sb.Append("graph is the consumer's job, the way MonoGame already works. Below is the resolved").Append('\n');
+        sb.Append("buffer graph and a concrete example of the ~15 lines you drop into your own `Draw`.").Append('\n');
+        sb.Append('\n');
 
         AppendExecutionOrder(sb, result);
         AppendPassTable(sb, result);
@@ -94,39 +96,39 @@ public static class MultipassManifest
 
     private static void AppendExecutionOrder(StringBuilder sb, MultipassResult result)
     {
-        sb.AppendLine("## Execution order (each frame)");
-        sb.AppendLine();
-        sb.AppendLine("Run the passes in this order; the last one renders to the screen:");
-        sb.AppendLine();
+        sb.Append("## Execution order (each frame)").Append('\n');
+        sb.Append('\n');
+        sb.Append("Run the passes in this order; the last one renders to the screen:").Append('\n');
+        sb.Append('\n');
         int i = 1;
         foreach (MultipassPassResult p in result.Passes)
         {
             string fb = p.HasFeedback ? "  _(feedback: ping-pong this buffer)_" : string.Empty;
             string screen = ReferenceEquals(p, result.Passes[^1]) ? "  → **screen**" : string.Empty;
-            sb.AppendLine($"{i}. `{p.Name}` → `{p.OutputFileName}`{screen}{fb}");
+            sb.Append($"{i}. `{p.Name}` → `{p.OutputFileName}`{screen}{fb}").Append('\n');
             i++;
         }
 
-        sb.AppendLine();
+        sb.Append('\n');
     }
 
     private static void AppendPassTable(StringBuilder sb, MultipassResult result)
     {
-        sb.AppendLine("## Channel wiring");
-        sb.AppendLine();
+        sb.Append("## Channel wiring").Append('\n');
+        sb.Append('\n');
         foreach (MultipassPassResult p in result.Passes)
         {
-            sb.AppendLine($"### `{p.Name}` (`{p.OutputFileName}`)");
-            sb.AppendLine();
+            sb.Append($"### `{p.Name}` (`{p.OutputFileName}`)").Append('\n');
+            sb.Append('\n');
             if (p.Channels.Count == 0)
             {
-                sb.AppendLine("_No input channels._");
-                sb.AppendLine();
+                sb.Append("_No input channels._").Append('\n');
+                sb.Append('\n');
                 continue;
             }
 
-            sb.AppendLine("| Channel | Source | Detail |");
-            sb.AppendLine("|---|---|---|");
+            sb.Append("| Channel | Source | Detail |").Append('\n');
+            sb.Append("|---|---|---|").Append('\n');
             foreach (ChannelWiring c in p.Channels)
             {
                 string source = c.Kind switch
@@ -142,27 +144,27 @@ public static class MultipassManifest
                     (null or "", null or "") => string.Empty,
                     _ => $" (wrap={c.Wrap}, filter={c.Filter})",
                 };
-                sb.AppendLine($"| `iChannel{c.Channel}` | {source} | {detail}{sampler} |");
+                sb.Append($"| `iChannel{c.Channel}` | {source} | {detail}{sampler} |").Append('\n');
             }
 
-            sb.AppendLine();
+            sb.Append('\n');
         }
     }
 
     private static void AppendExample(StringBuilder sb, MultipassResult result)
     {
-        sb.AppendLine("## Example: the Draw loop you write");
-        sb.AppendLine();
-        sb.AppendLine("A concrete ~15-line sketch. Allocate a `RenderTarget2D` per buffer once, then each");
-        sb.AppendLine("frame run the passes in order, binding prior outputs as `iChannelN` via");
-        sb.AppendLine("`ShaderToyEffect`, ping-ponging any feedback buffer, and drawing the last pass to the");
-        sb.AppendLine("screen. (ShadowDusk converts the `.fx`; this loop is yours.)");
-        sb.AppendLine();
-        sb.AppendLine("```csharp");
+        sb.Append("## Example: the Draw loop you write").Append('\n');
+        sb.Append('\n');
+        sb.Append("A concrete ~15-line sketch. Allocate a `RenderTarget2D` per buffer once, then each").Append('\n');
+        sb.Append("frame run the passes in order, binding prior outputs as `iChannelN` via").Append('\n');
+        sb.Append("`ShaderToyEffect`, ping-ponging any feedback buffer, and drawing the last pass to the").Append('\n');
+        sb.Append("screen. (ShadowDusk converts the `.fx`; this loop is yours.)").Append('\n');
+        sb.Append('\n');
+        sb.Append("```csharp").Append('\n');
         foreach (string line in BuildExampleLines(result))
-            sb.AppendLine(line);
-        sb.AppendLine("```");
-        sb.AppendLine();
+            sb.Append(line).Append('\n');
+        sb.Append("```").Append('\n');
+        sb.Append('\n');
     }
 
     /// <summary>

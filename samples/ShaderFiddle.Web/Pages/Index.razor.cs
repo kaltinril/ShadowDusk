@@ -11,6 +11,7 @@ using Microsoft.Xna.Framework;
 using Microsoft.Xna.Framework.Graphics;
 using ShadowDusk.Core;
 using ShadowDusk.ShaderToy;
+using ShadowDusk.Slang.Wasm;
 using ShadowDusk.Wasm;
 
 namespace ShadowDusk.ShaderFiddle.Web.Pages;
@@ -21,6 +22,11 @@ public partial class Index
 
     private ShaderFiddleGame? _game;
     private readonly WasmShaderCompiler _compiler = new();
+
+    // Issue #257: full Slang input (real slangc, compiled to WebAssembly and run in-page). It
+    // shares _compiler, so slangc's HLSL goes through the same DXC/SPIRV-Cross/vkd3d modules.
+    private WasmSlangCompiler? _slangCompiler;
+    private WasmSlangCompiler SlangCompiler => _slangCompiler ??= new WasmSlangCompiler(_compiler);
 
     // Phase 33 (issue #7): a `?profile=hidef` query param boots the KNI game in
     // the HiDef profile (WebGL2 / GLSL ES 3.00) instead of the default Reach
@@ -269,7 +275,10 @@ public partial class Index
     /// scope: a browser has no Direct3D, so the honest browser-side bar for these
     /// targets is byte-identity to the desktop-render-proven bytes (see
     /// <c>plan/DONE/PHASE-4.1-SPIKE-wasm-directx-dxbc.md</c>, the G2 rung).
-    /// Protocol: <c>"OK:&lt;base64 artifact&gt;"</c> on success, <c>"ERR:&lt;verbatim
+    /// Protocol: <c>"OK:&lt;base64 artifact&gt;"</c> on success, followed by one line per
+    /// <c>CompiledShader.Warnings</c> entry (<c>"\n" + FxcFormattedMessage</c>, the text the
+    /// cross-host <c>warnings-manifest.json</c> records, issue #335; base64 carries no
+    /// newline, so the first line is always the artifact); <c>"ERR:&lt;verbatim
     /// diagnostics&gt;"</c> on failure. Test-only and UI-invisible (the
     /// <see cref="TestLoadCorpus"/> pattern): only callable explicitly via JS interop;
     /// no UI element reaches it, and it does not touch the game, canvas, editor, or
@@ -302,7 +311,7 @@ public partial class Index
                     System.Linq.Enumerable.Select(result.Error, d => d.FxcFormattedMessage));
             }
 
-            return "OK:" + Convert.ToBase64String(result.Value.Data);
+            return TestExportOk(result.Value);
         }
         catch (Exception ex)
         {
@@ -321,7 +330,8 @@ public partial class Index
     /// SD1903 not-initialized error rather than an opaque runtime abort, and WARM (after
     /// the modules are loaded) to prove the sync output is byte-identical to the
     /// committed cross-host manifest — i.e. identical to <c>CompileAsync</c>'s bytes.
-    /// Protocol: <c>"OK:&lt;base64 artifact&gt;"</c> on success,
+    /// Protocol: <c>"OK:&lt;base64 artifact&gt;"</c> on success, followed by one line per
+    /// warning exactly as <see cref="TestCompileExport"/> prints them;
     /// <c>"ERR:&lt;code&gt;: &lt;message&gt; | …"</c> on failure (the SD code is
     /// machine-checkable). Test-only and UI-invisible (the <see cref="TestCompileExport"/>
     /// pattern); a pure compile, synchronous end-to-end on the browser thread.
@@ -347,12 +357,28 @@ public partial class Index
                     System.Linq.Enumerable.Select(result.Error, d => $"{d.Code}: {d.Message}"));
             }
 
-            return "OK:" + Convert.ToBase64String(result.Value.Data);
+            return TestExportOk(result.Value);
         }
         catch (Exception ex)
         {
             return "ERR:" + ex.Message;
         }
+    }
+
+    /// <summary>
+    /// The success line of the two export hooks: the artifact, then every
+    /// <c>CompiledShader.Warnings</c> entry on its own line in the canonical
+    /// <see cref="ShaderError.FxcFormattedMessage"/> text, which is what the committed
+    /// <c>tests/fixtures/golden/byte-identity/warnings-manifest.json</c> holds for the desktop
+    /// (issue #335: the browser's warnings must equal the desktop's, not just its bytes).
+    /// </summary>
+    private static string TestExportOk(CompiledShader compiled)
+    {
+        var sb = new System.Text.StringBuilder("OK:");
+        sb.Append(Convert.ToBase64String(compiled.Data));
+        foreach (var warning in compiled.Warnings)
+            sb.Append('\n').Append(warning.FxcFormattedMessage);
+        return sb.ToString();
     }
 
     /// <summary>
@@ -375,6 +401,104 @@ public partial class Index
         {
             return "ERR:" + ex.Message;
         }
+    }
+
+    /// <summary>
+    /// Issue #257 headless-test entry point: compiles <paramref name="source"/> (Slang) through
+    /// the in-browser full-Slang route (<see cref="WasmSlangCompiler"/>: slangc compiled to
+    /// WebAssembly, then the faithful DXC/SPIRV-Cross or vkd3d modules) for
+    /// <paramref name="targetName"/>, and returns <c>"OK:&lt;base64 artifact&gt;"</c> or
+    /// <c>"ERR:&lt;code&gt;: &lt;message&gt; | …"</c>. The Playwright gate
+    /// (<c>tests/ShadowDusk.BrowserTests/browser-slang-gate.mjs</c>) hashes the artifact against
+    /// the committed <c>slang-manifest.json</c>. Test-only and UI-invisible; a pure compile.
+    /// </summary>
+    [JSInvokable]
+    public async Task<string> TestCompileSlang(string source, string targetName, string sourceFileName)
+    {
+        try
+        {
+            if (!Enum.TryParse<PlatformTarget>(targetName, ignoreCase: false, out var target))
+                return $"ERR:unsupported target '{targetName}'";
+
+            var result = await SlangCompiler.CompileAsync(source, new CompilerOptions
+            {
+                Target = target,
+                SourceFileName = sourceFileName,
+            });
+            if (result.IsFailure)
+                return "ERR:" + string.Join(" | ", result.Error.Select(d => $"{d.Code}: {d.Message}"));
+            return "OK:" + Convert.ToBase64String(result.Value.Data);
+        }
+        catch (Exception ex)
+        {
+            return "ERR:" + ex.Message;
+        }
+    }
+
+    /// <summary>
+    /// Issue #257 headless-test entry point: compiles Slang <paramref name="source"/> for OpenGL
+    /// in-browser and loads it into the live KNI <c>Effect</c>. <paramref name="route"/> is
+    /// <c>"slangc"</c> (the full-Slang route, real slangc in WebAssembly) or <c>"subset"</c>
+    /// (ShadowDusk.Compiler's own HLSL-compatible-subset frontend, a pure text transform into
+    /// <c>.fx</c>); the gate renders a shader both ways and compares the canvases, two
+    /// independent front ends meeting at the same DXC. Returns <c>null</c> on success or the
+    /// error text.
+    /// </summary>
+    [JSInvokable]
+    public async Task<string?> TestCompileSlangAndApply(string source, string route)
+    {
+        if (!_ready || _game is null)
+            return "game not ready";
+        try
+        {
+            var options = new CompilerOptions { Target = PlatformTarget.OpenGL, SourceFileName = "probe.slang" };
+            Result<CompiledShader, ShaderError[]> result;
+            if (route == "slangc")
+            {
+                result = await SlangCompiler.CompileAsync(source, options);
+            }
+            else if (route == "subset")
+            {
+                var fx = ShadowDusk.Compiler.Slang.SlangFrontend.ConvertToFx(
+                    source, new ShadowDusk.Compiler.Slang.SlangConvertOptions { SourceName = "probe.slang" });
+                if (fx.IsFailure)
+                    return string.Join(" | ", fx.Error.Select(d => $"{d.Code}: {d.Message}"));
+                result = await _compiler.CompileAsync(fx.Value.FxText, options);
+            }
+            else
+            {
+                return $"unknown route '{route}'";
+            }
+
+            if (result.IsFailure)
+                return string.Join(" | ", result.Error.Select(d => $"{d.Code}: {d.Message}"));
+            var err = _game.ApplyEffect(result.Value.Data);
+            StateHasChanged();
+            return err;
+        }
+        catch (Exception ex)
+        {
+            return ex.Message;
+        }
+    }
+
+    /// <summary>Load the bundled full-Slang example (an <c>interface</c> plus a generic
+    /// function, which only real slangc compiles) into the editor and compile it.</summary>
+    private async Task LoadSlangExampleAsync()
+    {
+        string? src = await TryGetStringAsync("shaders/slang/generic-blend.slang");
+        if (src is null)
+        {
+            SetError("Could not fetch shaders/slang/generic-blend.slang.");
+            StateHasChanged();
+            return;
+        }
+
+        _source = NormalizeNewlines(src);
+        _exportName = "generic-blend";
+        ClearDiagnostics();
+        _exportStatus.Clear();
+        await CompileAndApplyAsync();
     }
 
     /// <summary>A small, self-contained animated ShaderToy shader (the classic cosine-palette) used by
@@ -524,7 +648,10 @@ public partial class Index
 
         // ShaderToy / GLSL input is converted to .fx in-browser before compiling; a real .fx is
         // unchanged. A convert failure surfaces as located diagnostics (last good render kept).
-        if (!TryResolveFx(_source, out var fxSource, out var convertErrors))
+        bool isSlang = WebShaderInputs.LooksLikeSlang(_source);
+        string fxSource = _source;
+        IReadOnlyList<ShaderError> convertErrors = Array.Empty<ShaderError>();
+        if (!isSlang && !TryResolveFx(_source, out fxSource, out convertErrors))
         {
             SetDiagnostics(convertErrors);
             SetError($"{convertErrors.Count} ShaderToy conversion error(s) — last good render kept.");
@@ -538,10 +665,14 @@ public partial class Index
             var options = new CompilerOptions
             {
                 Target = PlatformTarget.OpenGL,
-                SourceFileName = "fiddle.fx",
+                SourceFileName = isSlang ? "fiddle.slang" : "fiddle.fx",
             };
 
-            var result = await _compiler.CompileAsync(fxSource, options);
+            // Slang source (a [shader(...)] entry, no technique) takes the full-Slang route:
+            // in-page slangc, then the same pipeline. Everything else is .fx.
+            var result = isSlang
+                ? await SlangCompiler.CompileAsync(_source, options)
+                : await _compiler.CompileAsync(fxSource, options);
 
             if (result.IsSuccess)
             {
@@ -612,7 +743,10 @@ public partial class Index
 
         // Convert ShaderToy/GLSL source to .fx first (a real .fx passes through); a convert failure
         // surfaces in the shared diagnostics panel and aborts the export.
-        if (!TryResolveFx(_source, out var fxSource, out var convertErrors))
+        bool isSlang = WebShaderInputs.LooksLikeSlang(_source);
+        string fxSource = _source;
+        IReadOnlyList<ShaderError> convertErrors = Array.Empty<ShaderError>();
+        if (!isSlang && !TryResolveFx(_source, out fxSource, out convertErrors))
         {
             SetDiagnostics(convertErrors);
             _exportStatus[target.Target] =
@@ -627,10 +761,12 @@ public partial class Index
             var options = new CompilerOptions
             {
                 Target = target.Target,
-                SourceFileName = SafeExportName() + ".fx",
+                SourceFileName = SafeExportName() + (isSlang ? ".slang" : ".fx"),
             };
 
-            var result = await _compiler.CompileAsync(fxSource, options);
+            var result = isSlang
+                ? await SlangCompiler.CompileAsync(_source, options)
+                : await _compiler.CompileAsync(fxSource, options);
 
             if (result.IsSuccess)
             {

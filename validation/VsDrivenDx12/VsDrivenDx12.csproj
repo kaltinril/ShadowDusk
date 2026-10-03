@@ -32,6 +32,11 @@
     <Compile Include="..\SharedDx\DxEffectImageRenderer.cs" />
     <Compile Include="..\SharedDx\VsDxEffectImageRenderer.cs" />
     <Compile Include="..\SharedDx\AposGalleryRenderer.cs" />
+    <!-- Issue #324 (mode texarr): the MGFX parameter-block reader and the DX12 ShaderCode header
+         reader, source-linked (BCL-only) so the driver compares the candidate's table with the
+         mgfxc golden's record for record, the same way the in-suite tests do. -->
+    <Compile Include="..\..\tests\ShadowDusk.Integration.Tests\MgfxBlobReader.cs" Link="MgfxBlobReader.cs" />
+    <Compile Include="..\..\tests\ShadowDusk.Integration.Tests\DirectX12ShaderCodeReader.cs" Link="DirectX12ShaderCodeReader.cs" />
   </ItemGroup>
 
 </Project>

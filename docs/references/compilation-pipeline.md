@@ -8,11 +8,12 @@ the FX file, resolve includes, inject platform macros) is shared. The back half 
 target: **OpenGL/WebGL**, **DirectX 11**, **DirectX 12**, **Vulkan**, and **FNA**. The
 headline pipeline is the OpenGL branch:
 
-Two additive, distinct axes sit outside this fork: a **Slang frontend** runs *before*
+Additive, distinct axes sit outside this fork: a **Slang frontend** runs *before*
 Stage 1, converting `.slang` source to `.fx` text so it joins the ordinary pipeline below;
-and an **SkSL emitter** forks *off* the OpenGL branch, after SPIRV-Cross but before the
-GL rewriter, producing SkSL text for SkiaSharp instead of a `.mgfx`. Both are covered after
-the main stages, since neither is one of the five `.mgfx`/`.fxb`-producing tails.
+and two **source-text emitters**, SkSL (SkiaSharp) and raylib `glsl330` (Raylib-cs), fork
+*off* the OpenGL branch, after SPIRV-Cross but before the GL rewriter, producing shader text
+instead of a `.mgfx`. They are covered after the main stages, since none is one of the five
+`.mgfx`/`.fxb`-producing tails.
 
 ```
 HLSL  →[DXC]→  SPIR-V  →[SPIRV-Cross]→  GLSL  →[MonoGameGlslRewriter]→  .mgfx
@@ -277,6 +278,32 @@ vkd3d rejects them outright without the option. Stage 1's `RewriteToSm4` already
 what covers a pixel shader returning `struct { float4 c : COLOR0; }`. It is deliberately NOT
 set on the Stage 3c target, where those are the native semantics.
 
+**Every host passes the same list.** The options are chosen in one place
+(`Vkd3dCompileContract.ResolveCompileOptions`): the desktop backend marshals the list into the
+native call, and the browser backend sends the same list through its JS shim into the vkd3d
+WebAssembly module, whose wrapper forwards it untouched. The wrapper once carried its own (empty)
+list, so a browser compile of a shader with `POSITION0` / `COLOR0` on struct fields differed from
+the desktop's (issue #295); `Sm3SemanticStructs.fx` is the corpus fixture that now catches that.
+
+**Every host hands vkd3d the same text.** Before either host calls vkd3d, the preprocessed
+source goes through `Vkd3dCompileContract.PrepareSource`, which blanks every `#line` directive
+line: vkd3d's preprocessor ignores the directive and prints a fixme to stderr (the browser
+console) for each one, and blanking rather than deleting keeps the line count so the source
+locator can map vkd3d's coordinates back through the directives. The browser host once handed
+vkd3d the directives and wrote one console line per directive on every DirectX or FNA compile
+(issue #319); the directives were measured to change no output byte and no diagnostic position.
+
+**Every host surfaces the same warnings.** vkd3d's message buffer is populated on a successful
+compile too (both hosts compile at `LOG_WARNING`): a `float4` assigned to a `float3` compiles with
+`W5300: Implicit truncation of vector type.` Each host hands that text to
+`Vkd3dCompileContract.MapCompileWarnings`, the one place it becomes warnings (verbatim, never
+fatal), and relocates them with the same source locator that moves a failure's diagnostic onto the
+author's line; the pipeline returns them as `CompiledShader.Warnings`. The browser shim once returned
+the bytecode alone and dropped the text on success, so a browser compile had the desktop's exact
+bytes and no warnings (issue #335); its `compile()` now returns the code and the text together, and
+`ImplicitTruncationWarning.fx` is the corpus fixture whose warnings the cross-host manifest and the
+browser gates compare.
+
 ### Stage 3c — the FNA fx_2_0 path
 
 **What it is.** A wholly separate path for `PlatformTarget.Fna`
@@ -359,9 +386,11 @@ correct and required, but it has a downstream consequence, see *Design notes* be
 ## The SkSL emitter fork (OpenGL branch, before Stage 6)
 
 **What it is.** `ShadowDusk.Compiler.Sksl.SkslConverter` (`src/ShadowDusk.Compiler/Sksl/`)
-branches off the OpenGL branch at `CompilationPipeline.cs:2035` — after Stage 5 (SPIRV-Cross)
-has produced modern GLSL, but *before* Stage 6's `MonoGameGlslRewriter` drags that GLSL back
-to the legacy MojoShader dialect. Converting a pixel-only `.fx` to an
+branches off the OpenGL branch after Stage 5 (SPIRV-Cross) has produced modern GLSL, but
+*before* Stage 6's `MonoGameGlslRewriter` drags that GLSL back to the legacy MojoShader
+dialect. It does not run inside `CompilationPipeline`: `Internal/ModernGlslSeam` re-runs the
+OpenGL target's front half (same macro set, same DXC request, same SPIRV-Cross options) and
+stops at that point, and the raylib emitter below shares it. Converting a pixel-only `.fx` to an
 [SkSL runtime effect](https://skia.org/docs/user/sksl/) needs modern GLSL's shape (a `main`
 returning a value, named samplers), not MojoShader's, so the emitter skips the rewriter and
 the MGFX writer entirely — it produces SkSL **text**, not a `.mgfx`.
@@ -381,6 +410,34 @@ compiler of its own, so there is no `mgfxc`-equivalence claim to make here. The 
 is instead **rendered-image fidelity**: the SkSL emission's real-Skia render is compared
 against the original HLSL's own math. The convertible set is fragment-only, coordinate-driven
 effects with uniform inputs — post-process, tint, gradient, SDF work.
+
+---
+
+## The raylib emitter fork (OpenGL branch, before Stage 6)
+
+**What it is.** `ShadowDusk.Compiler.Raylib.RaylibConverter` (`src/ShadowDusk.Compiler/Raylib/`)
+takes the same `ModernGlslSeam` output as the SkSL emitter and produces a raylib
+`glsl330` fragment shader for `Raylib.LoadShaderFromMemory(null, fs)`. It skips the rewriter and
+the MGFX writer; the result is a `RaylibShader` (text plus binding contract), not a
+`CompiledShader`.
+
+**How it works.** `RaylibGlslMapper` renames SPIRV-Cross's interface onto raylib's fixed names:
+`in_var_TEXCOORD0` (vec2) → `fragTexCoord`, `in_var_COLOR0` (vec4) → `fragColor`, the single
+`vec4` output → `finalColor`, and the sampler the GL allocator puts on unit 0 → `texture0` (the
+texture raylib's draw call binds, as SpriteBatch binds unit 0). Other samplers keep their HLSL
+texture names. Uniform blocks, including DXC's `$Globals`, flatten to loose uniforms because
+raylib binds through `glGetUniformLocation` by name. `#version 140` becomes `#version 330` (a
+strict superset for fragment shaders), with the interface inserted after SPIRV-Cross's
+`#extension` preamble. Refused by name (`SD0630`–`SD0636`): multi-pass, pass render states, a
+vertex shader, interpolants raylib's built-in vertex shader does not write, Y-orientation-
+dependent builtins (`gl_FragCoord`, `dFdy`; MonoGame and raylib flip render targets in opposite
+directions), MRT, non-2D textures, matrix and struct uniforms, and names that would collide with
+raylib's or that SPIRV-Cross renamed (`input` → `_input`).
+
+**Why.** raylib has no reference compiler, so the evidence is rendered-image fidelity:
+`validation/RaylibRoute` renders each conversion in real Raylib-cs and pixel-diffs it against the
+same `.fx` built for OpenGL in real MonoGame DesktopGL. Only `glsl330` is emitted; `glsl100`
+(web) waits for an ES render harness.
 
 ---
 
@@ -413,7 +470,11 @@ sampler table is numbered from the same rule so the two cannot disagree), maps s
 legacy varying names, routes the pixel
 output to `gl_FragColor` (via a `#define ps_oC0 gl_FragColor` alias, MRT slots to `gl_FragData[n]`),
 lowers `texture()` to dimension-specific legacy builtins (`texture2D`/`textureCube`/`texture3D`),
-lowers `round`/`roundEven` to `floor((x)+0.5)` (valid in every GLSL profile), and on the vertex
+lowers `round`/`roundEven` to `floor((x)+0.5)` (valid in every GLSL profile), range-reduces every
+non-literal `sin`/`cos`/`tan` argument into [-π, π] with a Cody-Waite split of 2π before the builtin sees it
+(as `fxc` does before its `sincos`, which is also how it computes `tan`, so a weak driver's
+large-argument reduction never runs; issue #215),
+and on the vertex
 stage injects the `posFixup` uniform plus its two fixup lines (the Y-flip and half-pixel offset),
 remaps a legacy `: POSITION` output to `gl_Position`, and reconstructs `mat4` uniforms transposed
 (to cancel SPIRV-Cross's `mul(v, M)` → `M * v` operand swap; a naive reconstruction renders
@@ -533,7 +594,7 @@ bytes.
 - **The GLSL dialect contract** the rewriter enforces (uniform/sampler/varying naming, the
   `posFixup` and matrix conventions) is documented in full in `docs/glsl-uniform-naming.md`.
 - **The FNA container format** is documented in `docs/fx2-binary-format.md`.
-- **Slang input and the SkSL converter are additive, distinct axes, not `.mgfx` backends.**
-  Neither has an `mgfxc`/Skia reference-compiler-equivalence claim, so neither sits on the
-  five-tail fork above; see `docs/validation-matrix.md` §8.0 and §8.0b for their own evidence
-  bars.
+- **Slang input, the SkSL converter, and the raylib converter are additive, distinct axes,
+  not `.mgfx` backends.** None has a reference-compiler-equivalence claim, so none sits on the
+  five-tail fork above; see `docs/validation-matrix.md` §8.0, §8.0b, and §8.0c for their own
+  evidence bars.

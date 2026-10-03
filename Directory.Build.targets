@@ -1,0 +1,56 @@
+<Project>
+  <!--
+    Issue #273: keep desktop and Android natives out of browser (net8.0-browser / browser-wasm)
+    build and publish output.
+
+    ShadowDusk.HLSL and ShadowDusk.GLSL copy their restored natives (tools/vkd3d, tools/dxc,
+    tools/spirv-cross; vkd3d .dll/.so/.dylib, DXC .dylib/.so, android-arm64 SPIRV-Cross .so)
+    to build output with CopyToOutputDirectory, which repo/dev runs rely on (the loaders'
+    base-directory probes). A None item with CopyToOutputDirectory flows into EVERY referencing
+    project's output, and the referenced project cannot tell who is referencing it, so a
+    browser project that reaches them through ProjectReference (ShadowDusk.Wasm,
+    ShadowDusk.Slang.Wasm, the ShaderFiddle.Web sample) carried ~130 MB of natives no browser
+    can load into its publish root. The filter therefore sits on the consuming side: in a
+    browser project only, drop every copy item whose source is under this repo's tools/
+    directory. Desktop projects are untouched (the target's condition), so they still get
+    every native. PR #266 fixed the slangc instance of this by making those items pack-only.
+
+    NuGet consumers are not affected either way: the packages carry these natives under
+    runtimes/<rid>/native, which a browser-wasm app never selects.
+
+    The ShaderFiddle.Web sample isolates itself from the root Directory.Build.props, but
+    MSBuild looks up Directory.Build.targets separately, so this file applies to it too
+    (deliberately). wasm.yml's "Verify WASM publish output" step fails if any native returns.
+  -->
+  <PropertyGroup>
+    <_ShadowDuskToolsDirUpper>$([System.String]::Copy('$([MSBuild]::NormalizeDirectory('$(MSBuildThisFileDirectory)', 'tools'))').ToUpperInvariant())</_ShadowDuskToolsDirUpper>
+  </PropertyGroup>
+
+  <Target Name="_ShadowDuskDropDesktopNativesFromBrowserOutput"
+          AfterTargets="GetCopyToOutputDirectoryItems"
+          Condition="'$(TargetPlatformIdentifier)' == 'browser' Or '$(RuntimeIdentifier)' == 'browser-wasm'">
+    <ItemGroup>
+      <_ShadowDuskDesktopNative Include="@(_SourceItemsToCopyToOutputDirectoryAlways);@(_SourceItemsToCopyToOutputDirectory);@(_SourceItemsToCopyToOutputDirectoryIfDifferent)"
+                                Condition="$([System.String]::Copy('%(FullPath)').ToUpperInvariant().StartsWith('$(_ShadowDuskToolsDirUpper)'))" />
+      <_SourceItemsToCopyToOutputDirectoryAlways Remove="@(_ShadowDuskDesktopNative)" />
+      <_SourceItemsToCopyToOutputDirectory Remove="@(_ShadowDuskDesktopNative)" />
+      <_SourceItemsToCopyToOutputDirectoryIfDifferent Remove="@(_ShadowDuskDesktopNative)" />
+      <AllItemsFullPathWithTargetPath Remove="@(_ShadowDuskDesktopNative)" />
+      <_ShadowDuskDesktopNative Remove="@(_ShadowDuskDesktopNative)" />
+    </ItemGroup>
+  </Target>
+
+  <Target Name="_ShadowDuskDropDesktopNativesFromBrowserPublish"
+          AfterTargets="GetCopyToPublishDirectoryItems"
+          Condition="'$(TargetPlatformIdentifier)' == 'browser' Or '$(RuntimeIdentifier)' == 'browser-wasm'">
+    <ItemGroup>
+      <_ShadowDuskDesktopNative Include="@(_SourceItemsToCopyToPublishDirectoryAlways);@(_SourceItemsToCopyToPublishDirectory);@(_SourceItemsToCopyToPublishDirectoryIfDifferent);@(AllPublishItemsFullPathWithTargetPath)"
+                                Condition="$([System.String]::Copy('%(FullPath)').ToUpperInvariant().StartsWith('$(_ShadowDuskToolsDirUpper)'))" />
+      <_SourceItemsToCopyToPublishDirectoryAlways Remove="@(_ShadowDuskDesktopNative)" />
+      <_SourceItemsToCopyToPublishDirectory Remove="@(_ShadowDuskDesktopNative)" />
+      <_SourceItemsToCopyToPublishDirectoryIfDifferent Remove="@(_ShadowDuskDesktopNative)" />
+      <AllPublishItemsFullPathWithTargetPath Remove="@(_ShadowDuskDesktopNative)" />
+      <_ShadowDuskDesktopNative Remove="@(_ShadowDuskDesktopNative)" />
+    </ItemGroup>
+  </Target>
+</Project>

@@ -36,11 +36,14 @@ public static class ReferenceFx2Compiler
     /// the system d3dcompiler_47 at fx_2_0. Includes are inlined textually relative to
     /// the source's directory first (the corpus uses none, but stay correct), then
     /// <c>#define OPENGL 1</c> + <c>#line 1</c> are prepended for profile parity.
+    /// <paramref name="prependOpenGl"/> = false compiles the text exactly as given: the
+    /// issue-#230 Slang arm's input is slangc's emission, which carries no OPENGL
+    /// conditional and already selects ps_3_0/vs_3_0 under FNA's macros.
     /// </summary>
-    public static ReferenceResult Compile(string sourcePath, string source)
+    public static ReferenceResult Compile(string sourcePath, string source, bool prependOpenGl = true)
     {
         string inlined = InlineIncludes(source, Path.GetDirectoryName(Path.GetFullPath(sourcePath))!, depth: 0);
-        string prepared = "#define OPENGL 1\n#line 1\n" + inlined;
+        string prepared = prependOpenGl ? "#define OPENGL 1\n#line 1\n" + inlined : inlined;
         byte[] bytes = Encoding.UTF8.GetBytes(prepared);
 
         int hr = D3DCompile(

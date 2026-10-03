@@ -2,6 +2,7 @@
 
 using System.Runtime.InteropServices;
 using System.Text;
+using ShadowDusk.Core;
 using SharpGen.Runtime;
 using Vortice.Dxc;
 
@@ -75,6 +76,49 @@ internal static unsafe class DxcNativeInterop
         IReadOnlyList<string> arguments,
         IDxcIncludeHandler? includeHandler)
     {
+        // Off Windows, take DXC's one-time LLVM signal-handler registration out of the
+        // process before any real compile can race it (see DxcSignalIsolation).
+        DxcSignalIsolation.EnsureIsolated(compiler);
+        // macOS: make DXC's one-time locale change happen now, under the fork gate, so this
+        // compile's own setlocale calls are same-name calls that cannot deadlock against a
+        // concurrent fork() (see DxcForkGate).
+        DxcForkGate.SettleLocale(compiler);
+        return CompileRaw(compiler, source, arguments, includeHandler);
+    }
+
+    /// <summary>
+    /// The raw vtable call behind <see cref="Compile"/>, without the signal isolation and
+    /// locale settling steps (which themselves compile through here). <c>forkGated</c> holds
+    /// <see cref="DxcForkGate"/> across the native call and is only for a <c>-P</c> preprocess
+    /// that exists to perform DXC's locale change: a real compile must NOT be gated, because
+    /// the SPIR-V emitter can <c>dlopen</c> from inside it and a fork waiting for it holds
+    /// dyld's lock (issue #312).
+    /// </summary>
+    /// <remarks>
+    /// Runs on a <see cref="NativeCompileStack"/> worker (issue #306): DXC recurses once per
+    /// nesting level of the source, and on the caller's own stack a valid but very deep shader
+    /// overflowed it inside <c>dxcompiler</c> and killed the host process with no diagnostic.
+    /// Every in-process DXC compile ShadowDusk makes comes through here: SPIR-V, DXIL, the
+    /// reflection companion compile, <c>-P</c> preprocessing and the signal-isolation prime.
+    /// The calling thread blocks until the worker returns, so what the caller serializes
+    /// (<see cref="DxcSignalIsolation"/>'s lock) stays serialized, and <see cref="DxcForkGate"/>
+    /// is entered on the worker, the thread that is actually inside DXC's <c>setlocale</c>.
+    /// </remarks>
+    internal static IDxcResult CompileRaw(
+        IDxcCompiler3 compiler,
+        string source,
+        IReadOnlyList<string> arguments,
+        IDxcIncludeHandler? includeHandler,
+        bool forkGated = false) =>
+        NativeCompileStack.Run(() => CompileRawOnThisThread(compiler, source, arguments, includeHandler, forkGated));
+
+    private static IDxcResult CompileRawOnThisThread(
+        IDxcCompiler3 compiler,
+        string source,
+        IReadOnlyList<string> arguments,
+        IDxcIncludeHandler? includeHandler,
+        bool forkGated)
+    {
         byte[] sourceBytes = Encoding.UTF8.GetBytes(source);
 
         int argCount = arguments.Count;
@@ -111,14 +155,26 @@ internal static unsafe class DxcNativeInterop
                 var compile = (delegate* unmanaged[Stdcall]<nint, void*, void*, int, void*, void*, void*, int>)
                     ((nint*)*(nint*)compiler.NativePointer)[CompileVtblSlot];
 
-                Result hr = compile(
-                    compiler.NativePointer,
-                    &buffer,
-                    (void*)argArray,
-                    argCount,
-                    (void*)includeHandlerPtr,
-                    &iid,
-                    &resultPtr);
+                // macOS: the fork gate is held only around the -P preprocess that performs
+                // DXC's one-time locale change (see DxcForkGate). An ordinary compile runs
+                // ungated: its setlocale calls are same-name calls (no allocation under the
+                // locale lock, so no deadlock with fork()), and a SPIR-V compile with debug
+                // information dlopen()s libdxcompiler from inside this call, which a fork
+                // waiting for it would deadlock with (issue #312). DXC's validator lookup is
+                // not a concern either way: at the pinned commit dlopen("libdxil") runs once,
+                // in the library constructor, and DxilLibIsEnabled() never retries after a miss.
+                Result hr;
+                using (forkGated ? DxcForkGate.Enter() : default)
+                {
+                    hr = compile(
+                        compiler.NativePointer,
+                        &buffer,
+                        (void*)argArray,
+                        argCount,
+                        (void*)includeHandlerPtr,
+                        &iid,
+                        &resultPtr);
+                }
 
                 GC.KeepAlive(includeHandler);
                 hr.CheckError();

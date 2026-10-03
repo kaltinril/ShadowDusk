@@ -4,10 +4,17 @@ THIRD-PARTY NOTICES for the ShadowDusk.Slang package
 This package redistributes the following third-party native binaries
 (under runtimes/<rid>/native):
 
-Slang compiler (slangc.exe, slang-compiler.dll), version 2026.14.1, win-x64
------------------------------------------------------------------------------
+Slang compiler, version 2026.14.1
+---------------------------------
+  win-x64    slangc.exe, slang-compiler.dll
+  linux-x64  slangc, libslang-compiler.so.0.2026.14.1
+  osx-x64    slangc, libslang-compiler.0.2026.14.1.dylib
+  osx-arm64  slangc, libslang-compiler.0.2026.14.1.dylib
+
 Copyright (c) 2018 The Slang Project Authors
 https://github.com/shader-slang/slang
+
+SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 
 Licensed under the Apache License, Version 2.0 (the "License"); you may not
 use this file except in compliance with the License. You may obtain a copy
@@ -21,17 +28,38 @@ WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
 License for the specific language governing permissions and limitations
 under the License.
 
+LLVM Exceptions to the Apache 2.0 License
+
+As an exception, if, as a result of your compiling your source code, portions
+of this Software are embedded into an Object form of such source code, you
+may redistribute such embedded portions in such Object form without complying
+with the conditions of Sections 4(a), 4(b) and 4(d) of the License.
+
+In addition, if you combine or link compiled forms of this Software with
+software that is licensed under the GPLv2 ("Combined Software") and if a
+court of competent jurisdiction determines that the patent provision (Section
+3), the indemnity provision (Section 9) or other Section of the License
+conflicts with the conditions of the GPLv2, you may retroactively and
+prospectively choose to deem waived or otherwise exclude such Section(s) of
+the License, but only in their entirety and only with respect to the Combined
+Software.
+
 The bundled binaries are an UNMODIFIED subset of files extracted from the
-official upstream release:
-    https://github.com/shader-slang/slang/releases/download/v2026.14.1/slang-2026.14.1-windows-x86_64.zip
-(SHA-256 5ED0A59D650A0AF0ACA45D5DB4E083B3D8FB5CEA05748747DD95DFBE9C580658).
-Only slangc.exe and slang-compiler.dll are redistributed; every other file in
-the release (the LLVM/CPU-codegen backend, the CLI/language-server/interpreter
-binaries, the graphics-API abstraction layer, and the stdlib source tree) was
-measured unnecessary for the -target hlsl route ShadowDusk uses and is not
-shipped — see plan/PHASE-66-appendix/slang-native-minimal-set-probe/ in the
-ShadowDusk repository for the evidence. Restore/verification recipe:
-tools/restore.ps1 / tools/restore.sh in the ShadowDusk repository
+official upstream release archives
+(https://github.com/shader-slang/slang/releases/tag/v2026.14.1), each archive
+SHA-256-verified before extraction:
+    slang-2026.14.1-windows-x86_64.zip           5ed0a59d650a0af0aca45d5db4e083b3d8fb5cea05748747dd95dfbe9c580658
+    slang-2026.14.1-linux-x86_64-glibc-2.27.zip  9e36aab4be2686885dc0cd4b740fcbab27e50047c2d8187d9403ec2ce82fd1ba
+    slang-2026.14.1-macos-x86_64.zip             a3da109bfb732ab3f09beb6999f9831d9be440fa9a1843006b7ea56498f545d6
+    slang-2026.14.1-macos-aarch64.zip            2976c3a9a6f4d77b5734d00b5d841d1ff087d9965d9006b9b4d73edd0062cb7d
+Only the slangc executable and the slang-compiler library are redistributed;
+every other file in each release (the LLVM/CPU-codegen backend, the
+CLI/language-server/interpreter binaries, the graphics-API abstraction layer,
+glslang, the runtime library, and the stdlib source tree) was measured
+unnecessary for the -target hlsl route ShadowDusk uses and is not shipped. See
+plan/PHASE-66-appendix/slang-native-minimal-set-probe/ in the ShadowDusk
+repository for the evidence. Restore/verification recipe: tools/restore.ps1 /
+tools/restore.sh in the ShadowDusk repository
 (https://github.com/kaltinril/ShadowDusk).
 
 ShadowDusk itself is MIT-licensed; this notice applies only to the bundled

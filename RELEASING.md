@@ -4,7 +4,7 @@ This is the human runbook for cutting a ShadowDusk release. The `/release` skill
 (`.claude/skills/release/SKILL.md`) automates every step below; this document is the
 ground truth it follows, and the fallback when you cut a release by hand.
 
-A release publishes **all nine** `ShadowDusk.*` NuGet packages plus the `ShadowDuskCLI` `dotnet tool`
+A release publishes **all ten** `ShadowDusk.*` NuGet packages plus the `ShadowDuskCLI` `dotnet tool`
 to nuget.org, and attaches self-contained CLI binaries for each RID to a GitHub Release.
 
 | Package | What it is |
@@ -13,6 +13,7 @@ to nuget.org, and attaches self-contained CLI binaries for each RID to a GitHub 
 | `ShadowDusk.HLSL` | FX9 pre-parser, DXC integration, vkd3d-shader / `d3dcompiler_47` DXBC backends |
 | `ShadowDusk.GLSL` | SPIR-V → GLSL via SPIRV-Cross + MojoShader-dialect rewriter |
 | `ShadowDusk.ShaderToy` | Standalone pure-managed ShaderToy/GLSL → `.fx` converter (optional; not in the `Compiler` graph) |
+| `ShadowDusk.Slang` | Optional real-slangc Slang front-end (Phase 66). Depends on `ShadowDusk.Compiler`; carries slangc for win-x64, linux-x64, osx-x64, osx-arm64 under `runtimes/<rid>/native/` (~53 MB nupkg), gated by `release.yml`. |
 | `ShadowDusk.Compiler` | The consumer-facing product library (`EffectCompiler : IShaderCompiler`) |
 | `ShadowDusk.Cli` | The `ShadowDuskCLI` `dotnet tool` |
 | `ShadowDusk.Wasm` | The `net8.0-browser` in-browser compiler |
@@ -28,15 +29,16 @@ to nuget.org, and attaches self-contained CLI binaries for each RID to a GitHub 
    secret**. It must be an [nuget.org API key](https://www.nuget.org/account/apikeys) scoped
    to **Push** for the `ShadowDusk.*` package IDs (a glob-scoped key is simplest).
 
-2. **nuget.org owner rights on all nine package IDs.** You must be an owner (or have push
+2. **nuget.org owner rights on all ten package IDs.** You must be an owner (or have push
    rights) of every ID — `ShadowDusk.Core`, `ShadowDusk.HLSL`, `ShadowDusk.GLSL`,
-   `ShadowDusk.ShaderToy`, `ShadowDusk.Compiler`, `ShadowDusk.Cli`, `ShadowDusk.Wasm`,
-   `ShadowDusk.MgcbPlugin`, `ShadowDusk.ContentPipeline`. The
-   **first** publish of each ID reserves the name to your account; confirm all nine are
+   `ShadowDusk.ShaderToy`, `ShadowDusk.Slang`, `ShadowDusk.Compiler`, `ShadowDusk.Cli`,
+   `ShadowDusk.Wasm`, `ShadowDusk.MgcbPlugin`, `ShadowDusk.ContentPipeline`. The
+   **first** publish of each ID reserves the name to your account; confirm all ten are
    reserved before relying on the automated push (an unreserved ID makes the `dotnet nuget
    push` for that package fail). `ShadowDusk.ShaderToy` is **new in 0.9.0**,
    `ShadowDusk.MgcbPlugin` is **new in the first release after Phase 29**, and
-   `ShadowDusk.ContentPipeline` is **new in the first release after Phase 63** (issue #203), so
+   `ShadowDusk.ContentPipeline` is **new in the first release after Phase 63** (issue #203), and
+   `ShadowDusk.Slang` is **new in the first release after Phase 66**, so
    their first publish reserves those IDs — the glob-scoped key in step 1 already covers them.
 
 3. **A green `main`.** CI (`ci.yml`) runs the 3-OS build + test matrix on every push/PR.
@@ -72,8 +74,8 @@ to nuget.org, and attaches self-contained CLI binaries for each RID to a GitHub 
    time is spent:
 
    ```powershell
-   ./validation/run-windows-render-gates.ps1              # DX corpus + DX-modern (VTF) + DX Apos gallery + DX ShaderToy route + DX12 corpus + DX12 VS-driven/Apos gallery + KNI-DX + KNI-GL desktop + KNI-GL VS-driven + GL Apos + GL Apos gallery + ANGLE derivative probe + MGCB plugin (real dotnet mgcb build) + BOTH Vulkan gates
-   ./validation/run-windows-render-gates.ps1 -IncludeFna  # also FNA fx_2_0, for an FNA-affecting release (include it when in doubt)
+   ./validation/run-windows-render-gates.ps1              # DX corpus + DX-modern (VTF) + DX Apos gallery + DX ShaderToy route + DX12 corpus + DX12 VS-driven/Apos gallery + KNI-DX + KNI-GL desktop + KNI-GL VS-driven + GL Apos + GL Apos gallery + ANGLE-D3D11 derivative probe (issue #136) + MGCB plugin (real dotnet mgcb 3.8.4.1 AND 3.8.5, decoy-PATH DXC guard) + XNB direct writer Content.Load on MonoGame WindowsDX, MonoGame DesktopGL and KNI 4.2.9001+4.3.9001 + MonoGame 3.8.5 Content Builder + Slang corpus + Slang full corpus (DX11, DX12 and Vulkan real-Effect arms, issue #230) + Slang textured GL (issue #252) + BOTH Vulkan gates
+   ./validation/run-windows-render-gates.ps1 -IncludeFna  # also FNA fx_2_0 + its Slang arm, for an FNA-affecting release (include it when in doubt)
    ```
 
    The **Vulkan gates are default-ON** since issue #145 — the PS corpus plus the VS-driven
@@ -102,7 +104,7 @@ ShadowDusk's package version lives in **exactly one place**:
 ```
 
 That single `<Version>` flows to every `ShadowDusk.*` project, so `dotnet pack` stamps all
-nine packages (and their inter-package dependency ranges) at the same version.
+ten packages (and their inter-package dependency ranges) at the same version.
 
 > **Do NOT edit the nine `.csproj` files.** They no longer carry a per-project version.
 > Editing one csproj and not the others is exactly the desync this centralization removes.
@@ -118,8 +120,8 @@ To bump for a release, change that one line (e.g. `0.19.0` → `0.20.0`), update
 
 ## Artifacts that must be refreshed before you cut
 
-Two generated files are committed to the repo and do **not** rebuild themselves in CI, so a
-stale one ships silently. Check both:
+Three generated files/sets are committed to the repo and do **not** rebuild themselves in CI,
+so a stale one ships silently. Check all three:
 
 - **`docfx/images/pipeline-overview.svg`** — the published site embeds the **SVG**, not the
   `.puml`. If `docs/pipeline-overview.puml` changed since the SVG was last written, run
@@ -129,8 +131,20 @@ stale one ships silently. Check both:
 - **`plan/PHASE-41-appendix/structural-divergence-matrix.md`** — regenerated by every
   `dotnet test` run, so the pre-release full-suite run (below) refreshes it. Commit the diff
   if there is one; a changed divergence cell is a real signal, not noise.
+- **Every `packages.lock.json`**, including versioned names such as
+  `validation/KniXnbContentLoad/packages.4.3.9001.lock.json` (issues #258, #290). Each records the `ShadowDusk.*` project-reference
+  ranges at the version current when it was last regenerated, and neither a normal restore nor
+  CI's `--locked-mode` restore rewrites or rejects a stale one (0.19.0 and 0.20.0 both shipped
+  with lock files still saying `[0.18.0, )`). In the version-bump commit, rewrite them in place
+  (bash, repo root; `OLD`/`NEW` are the versions):
+  `git ls-files '*packages*.lock.json' | xargs sed -i -E 's/("ShadowDusk\.[A-Za-z.]+": "\[)OLD(, \)")/\1NEW\2/'`,
+  then confirm `git grep -h -o -E '"ShadowDusk\.[A-Za-z.]+": "\[[0-9.]+, \)"' -- '*packages*.lock.json' | sort | uniq -c`
+  lists only `NEW`. Prefer this to `dotnet restore --force-evaluate`, which also drops project
+  references whose source is not restored on your box (`validation/FnaValidation`'s
+  `external/FNA`). Finally run `tools/check-lock-files.sh`: it locked-restores every tracked lock
+  file (the `Lock files` CI job runs the same script, issue #291).
 
-The `/release` skill's docs-audit step checks both as a backstop, but the backstop catching
+The `/release` skill's docs-audit step checks all three as a backstop, but the backstop catching
 drift is a process failure.
 
 ---
@@ -163,7 +177,7 @@ first (the `/release` skill does this for you).
 2. **build + test** on the 3-OS matrix (Linux / macOS / Windows).
 3. **publish** self-contained `ShadowDuskCLI` binaries per RID (`win-x64`, `linux-x64`, `osx-x64`,
    `osx-arm64`) and archive them.
-4. **pack + push** all nine `ShadowDusk.*` packages (`.nupkg` + `.snupkg` symbols) to
+4. **pack + push** all ten `ShadowDusk.*` packages (`.nupkg` + `.snupkg` symbols) to
    nuget.org at the validated version, with `--skip-duplicate` (re-running a release no-ops
    on already-published versions). `ShadowDusk.Wasm` is packed in the WASM job (it needs the
    `wasm-tools` workload + restored `dxcompiler.wasm`); `ShadowDusk.MgcbPlugin` is packed in
@@ -179,8 +193,8 @@ first (the `/release` skill does this for you).
 
 ## Verify after release
 
-1. **nuget.org shows all nine at the new version.** Check each of
-   `ShadowDusk.{Core,HLSL,GLSL,ShaderToy,Compiler,Cli,Wasm,MgcbPlugin,ContentPipeline}` is listed at `<version>`
+1. **nuget.org shows all ten at the new version.** Check each of
+   `ShadowDusk.{Core,HLSL,GLSL,ShaderToy,Slang,Compiler,Cli,Wasm,MgcbPlugin,ContentPipeline}` is listed at `<version>`
    (indexing can take a few minutes after push).
 2. **The `ShadowDuskCLI` tool installs and runs:**
 
@@ -223,6 +237,21 @@ first (the `/release` skill does this for you).
 > gate. A red release beats silently shipping the FNA target and `DxbcBackend.Vkd3d`
 > broken for any consumer RID. If the gate trips, check that the `native-vkd3d-2.1`
 > release assets are intact and the restore-step log shows four "hash OK" lines.
+
+> **slangc packing (`ShadowDusk.Slang` — Phase 66, issues #226/#227):** `ShadowDusk.Slang.csproj`
+> packs each **restored** `tools/slang/<rid>/` pair (the slangc executable + its slang-compiler
+> library) for win-x64, linux-x64, osx-x64 and osx-arm64. `tools/restore.{ps1,sh}` download the
+> official shader-slang v2026.14.1 release zips, verify each zip's SHA-256 before extracting, and
+> verify each extracted file against its own pin. `release.yml`'s `pack-desktop` job hard-gates
+> the restored files and then fails red if the packed nupkg is missing any of the eight natives
+> or `THIRD-PARTY-NOTICES.txt` (exact entry names). The list lives in ONE script,
+> `tools/verify-slang-nupkg.sh`, which `tools/verify-slang-packaging.sh` (pack-consume.yml) runs
+> too; to check a locally packed nupkg, `bash tools/verify-slang-nupkg.sh <path/to/nupkg>` (exits
+> 1 naming each missing entry). **Before dispatching**, confirm the
+> `Pack & Consume Smoke` workflow is green on the release commit (dispatch it if the last run is
+> older): its `tools/verify-slang-packaging.sh` step is the only proof that a cold consumer can
+> install the package and run slangc on Linux, macOS and Windows. Host floors are upstream's:
+> Linux Ubuntu 22.04+, macOS 26+ (issue #237).
 
 ---
 

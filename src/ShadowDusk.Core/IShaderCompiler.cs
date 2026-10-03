@@ -73,9 +73,11 @@ public interface IShaderCompiler
     /// <remarks>
     /// Runs the exact same pipeline as <see cref="CompileAsync"/> (one shared
     /// implementation, never a fork), so for the same source, options, and compiler
-    /// version the output bytes are identical. The whole compile runs on the calling
-    /// thread and never blocks on a task internally — safe on single-threaded browser
-    /// WASM. <b>Precondition on the browser/WASM host:</b> <see cref="InitializeAsync"/>
+    /// version the output bytes are identical. The pipeline runs on the calling thread and
+    /// never blocks on a task internally — safe on single-threaded browser WASM. On desktop
+    /// each native compiler call runs on a ShadowDusk worker thread with a large stack while
+    /// the calling thread waits for it, so a very deep shader cannot overflow the caller's
+    /// stack (issue #306). <b>Precondition on the browser/WASM host:</b> <see cref="InitializeAsync"/>
     /// must have completed first (the WASM compiler modules load asynchronously);
     /// otherwise this returns a clear <see cref="ShaderError"/> (code <c>SD1903</c>)
     /// telling the caller to await <see cref="InitializeAsync"/>. On desktop no prior

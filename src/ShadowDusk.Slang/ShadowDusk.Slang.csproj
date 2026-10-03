@@ -9,8 +9,8 @@
     <!-- Phase 66: a NEW, separate, OPTIONAL package — the ShadowDusk.ShaderToy precedent.
          A consumer who does not add ShadowDusk.Slang pays zero size/dependency cost; it is
          not referenced by ShadowDusk.Compiler/HLSL/GLSL and they are not referenced by it.
-         Unlike ShaderToy, this package DOES carry a native (real slangc, win-x64 only
-         today), packed the same way ShadowDusk.HLSL packs vkd3d/DXC below.
+         Unlike ShaderToy, this package DOES carry a native (real slangc for win-x64,
+         linux-x64, osx-x64, osx-arm64), packed the same way ShadowDusk.HLSL packs vkd3d/DXC.
          A3: now references ShadowDusk.Compiler (not just Core) — SlangCompiler hands
          slangc's HLSL emission to the existing EffectCompiler pipeline, and reuses
          ShadowDusk.Compiler.Slang's internal SlangEntryScanner for [shader(...)] entry
@@ -23,7 +23,7 @@
     <PackageId>ShadowDusk.Slang</PackageId>
     <PackageLicenseExpression>MIT</PackageLicenseExpression>
     <PackageReadmeFile>README.md</PackageReadmeFile>
-    <Description>ShadowDusk full Slang front-end: bundles the real slangc compiler (win-x64 today; Apache-2.0, see THIRD-PARTY-NOTICES.txt) so a consumer gets genuine Slang input (import, generics, interfaces) compiled via slangc -target hlsl and handed to ShadowDusk's existing, unchanged, faithful DXC pipeline. Optional and additive: ShadowDusk.Compiler's own .slang support (an HLSL-compatible subset, no extra package) is untouched. Phase 66 A3: SlangCompiler drives the real compile route end to end.</Description>
+    <Description>ShadowDusk full Slang front-end: bundles the real slangc compiler for win-x64, linux-x64, osx-x64 and osx-arm64 (Apache-2.0, see THIRD-PARTY-NOTICES.txt) so a consumer gets genuine Slang input (import, generics, interfaces) compiled via slangc -target hlsl and handed to ShadowDusk's existing, unchanged, faithful DXC pipeline. Linux needs a GCC 11+ libstdc++ (Ubuntu 22.04 or later); macOS needs macOS 26 or later (the upstream build's own floor). Optional and additive: ShadowDusk.Compiler's own .slang support (an HLSL-compatible subset, no extra package) is untouched.</Description>
     <PackageTags>monogame kni fna slang shader compiler hlsl</PackageTags>
     <!-- Phase 26: emit the XML doc file for DocFX. CS1591 suppressed during the
          doc-comment transition so the TreatWarningsAsErrors build stays green. -->
@@ -39,6 +39,12 @@
          list in the driver would silently drift from whatever flags this class actually
          passes and invalidate the comparison it exists to make. -->
     <InternalsVisibleTo Include="ShadowDusk.Validation.SlangFullCorpus" />
+    <!-- Issue #257: the browser host of this same route. It reaches SlangCompiler's internal
+         in-process constructor (slangc compiled to WebAssembly, run in-process) so it shares
+         the argument list, register strip, merge, .fx assembly and downstream pipeline with
+         the desktop process route instead of copying them. Internal, not public, so no
+         public API lets a consumer plug a different compiler into that seam (a convention, not a security boundary: the assemblies are not strong-named). -->
+    <InternalsVisibleTo Include="ShadowDusk.Slang.Wasm" />
   </ItemGroup>
 
   <ItemGroup>
@@ -52,32 +58,66 @@
     <None Include="README.md" Pack="true" PackagePath="\" />
   </ItemGroup>
 
-  <!-- Real slangc (Phase 66 A1+A2, win-x64 ONLY for now — other RIDs follow once this
-       shape proves out). A RESTORED artifact (tools/restore.ps1 / restore.sh), NOT checked
-       into the repo, so this entry is Exists()-conditioned like ShadowDusk.HLSL's
-       vkd3d/DXC entries: a clean build with no restored native stays green, and
-       SlangToolPath.Resolve() returns null / ResolveOrThrow() throws loudly at runtime if
-       it's absent — never a silent fallback to a different compiler (there is no
-       substitute for real slangc; see plan/PHASE-66 §1's non-negotiables).
+  <!-- Real slangc for all four desktop RIDs (Phase 66 A1+A2 on win-x64, issue #227 for
+       linux-x64/osx-x64/osx-arm64). RESTORED artifacts (tools/restore.ps1 / restore.sh),
+       NOT checked into the repo, so every entry is Exists()-conditioned like
+       ShadowDusk.HLSL's vkd3d/DXC entries: a clean build with no restored native stays
+       green, and SlangToolPath.Resolve() returns null (SD0621) at run time if it's absent,
+       never a silent fallback to a different compiler. The release gate (release.yml) and
+       pack-consume.yml fail red when a packed nupkg is missing any of the eight files.
 
-       A1 measured slang-llvm.dll (84.4 MB, LLVM/CPU-codegen only) as excludable with zero
-       effect on the -target hlsl route this product uses. A2 measured the TRUE minimal
-       set empirically: slangc.exe + slang-compiler.dll ONLY (25,611,264 bytes total) pass
-       the full corpus with everything else in the release removed — see
-       plan/PHASE-66-appendix/slang-native-minimal-set-probe/. Both files copied to build
-       output (repo/dev runs; SlangToolPath's base-directory probe) AND packed into the
-       NuGet under runtimes/win-x64/native (self-contained/RID-specific consumers). -->
+       Measured minimal set per RID: the slangc executable + the slang-compiler library
+       ONLY (slang-llvm, gfx, glslang, slang-rt, the stdlib sources are all droppable for
+       -target hlsl; plan/PHASE-66-appendix/slang-native-minimal-set-probe/). The Unix
+       library keeps its versioned file name, which is what slangc's NEEDED/LC_LOAD_DYLIB
+       asks for; slangc finds it beside itself via its "$ORIGIN"/"@loader_path" rpath.
+
+       PackagePath names the FOLDER (trailing slash), never the file: NuGet treats an
+       extension-less PackagePath such as ".../native/slangc" as a directory and packs the file
+       as ".../native/slangc/slangc", which strands slangc away from its library (measured,
+       issue #225: every consumer compile failed SD0623 until this was fixed).
+
+       Every RID is pack-only: repo/dev runs resolve tools/slang/<rid>/ by walking up to the
+       repo root (SlangToolPath). win-x64 used to be copied to build output too, but a None item
+       with CopyToOutputDirectory flows into EVERY referencing project's output, so a browser
+       project referencing this one (ShadowDusk.Slang.Wasm, the ShaderFiddle sample) carried
+       25 MB of desktop slangc.exe + slang-compiler.dll into its publish folder (issue #257
+       review). -->
   <ItemGroup>
     <!-- Apache-2.0 notice for the bundled slangc binaries (Phase 66 A2), the same pattern
          ShadowDusk.HLSL's THIRD-PARTY-NOTICES.txt uses for vkd3d/DXC. -->
     <None Include="THIRD-PARTY-NOTICES.txt" Pack="true" PackagePath="THIRD-PARTY-NOTICES.txt" />
     <None Include="$(MSBuildThisFileDirectory)..\..\tools\slang\win-x64\slangc.exe"
           Condition="Exists('$(MSBuildThisFileDirectory)..\..\tools\slang\win-x64\slangc.exe')"
-          CopyToOutputDirectory="PreserveNewest" Link="slangc.exe"
-          Pack="true" PackagePath="runtimes/win-x64/native/slangc.exe" />
+          Pack="true" PackagePath="runtimes/win-x64/native/" />
     <None Include="$(MSBuildThisFileDirectory)..\..\tools\slang\win-x64\slang-compiler.dll"
           Condition="Exists('$(MSBuildThisFileDirectory)..\..\tools\slang\win-x64\slang-compiler.dll')"
-          CopyToOutputDirectory="PreserveNewest" Link="slang-compiler.dll"
-          Pack="true" PackagePath="runtimes/win-x64/native/slang-compiler.dll" />
+          Pack="true" PackagePath="runtimes/win-x64/native/" />
+  </ItemGroup>
+
+  <PropertyGroup>
+    <!-- Keep in sync with SlangToolPath.SlangVersion and tools/restore.*. -->
+    <SlangNativeVersion>2026.14.1</SlangNativeVersion>
+    <SlangToolsDir>$(MSBuildThisFileDirectory)..\..\tools\slang\</SlangToolsDir>
+  </PropertyGroup>
+  <ItemGroup>
+    <None Include="$(SlangToolsDir)linux-x64\slangc"
+          Condition="Exists('$(SlangToolsDir)linux-x64\slangc')"
+          Pack="true" PackagePath="runtimes/linux-x64/native/" />
+    <None Include="$(SlangToolsDir)linux-x64\libslang-compiler.so.0.$(SlangNativeVersion)"
+          Condition="Exists('$(SlangToolsDir)linux-x64\libslang-compiler.so.0.$(SlangNativeVersion)')"
+          Pack="true" PackagePath="runtimes/linux-x64/native/" />
+    <None Include="$(SlangToolsDir)osx-x64\slangc"
+          Condition="Exists('$(SlangToolsDir)osx-x64\slangc')"
+          Pack="true" PackagePath="runtimes/osx-x64/native/" />
+    <None Include="$(SlangToolsDir)osx-x64\libslang-compiler.0.$(SlangNativeVersion).dylib"
+          Condition="Exists('$(SlangToolsDir)osx-x64\libslang-compiler.0.$(SlangNativeVersion).dylib')"
+          Pack="true" PackagePath="runtimes/osx-x64/native/" />
+    <None Include="$(SlangToolsDir)osx-arm64\slangc"
+          Condition="Exists('$(SlangToolsDir)osx-arm64\slangc')"
+          Pack="true" PackagePath="runtimes/osx-arm64/native/" />
+    <None Include="$(SlangToolsDir)osx-arm64\libslang-compiler.0.$(SlangNativeVersion).dylib"
+          Condition="Exists('$(SlangToolsDir)osx-arm64\libslang-compiler.0.$(SlangNativeVersion).dylib')"
+          Pack="true" PackagePath="runtimes/osx-arm64/native/" />
   </ItemGroup>
 </Project>

@@ -25,4 +25,10 @@ public sealed record SamplerReflection
     /// by the Vulkan container's descriptor-layout table.
     /// </summary>
     public bool IsCombined { get; init; }
+    /// <summary>
+    /// The declared element count when the sampler is an ARRAY of samplers
+    /// (<c>SamplerState S[N]</c>; <c>0</c> for an unbounded array), or <see langword="null"/>
+    /// for a single sampler. See <see cref="TextureReflection.ArrayLength"/> (issue #324).
+    /// </summary>
+    public int? ArrayLength { get; init; }
 }

@@ -59,29 +59,9 @@ public sealed class CliMultipassCompileTest : IClassFixture<CliBinaryFixture>
     private async Task<(int ExitCode, string Stdout, string Stderr)> RunCliAsync(
         string sourceFile, string outputFile, params string[] extraArgs)
     {
-        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(60));
-
-        var argList = new List<string> { sourceFile, outputFile };
-        argList.AddRange(extraArgs);
-        string arguments = string.Join(" ", argList.Select(a => a.Contains(' ') ? $"\"{a}\"" : a));
-
-        var psi = new ProcessStartInfo(_fixture.ExecutablePath)
-        {
-            Arguments              = arguments,
-            UseShellExecute        = false,
-            RedirectStandardOutput = true,
-            RedirectStandardError  = true,
-            WorkingDirectory       = Path.GetTempPath(),
-        };
-
-        using var process = Process.Start(psi)
-            ?? throw new InvalidOperationException("Failed to start CLI process.");
-
-        string stdout = await process.StandardOutput.ReadToEndAsync(cts.Token);
-        string stderr = await process.StandardError.ReadToEndAsync(cts.Token);
-        await process.WaitForExitAsync(cts.Token);
-
-        return (process.ExitCode, stdout, stderr);
+        ChildProcessResult run = await CliProcess.RunAsync(
+            _fixture.ExecutablePath, [sourceFile, outputFile, .. extraArgs], TimeSpan.FromSeconds(60));
+        return (run.ExitCode, run.Stdout, run.Stderr);
     }
 
     // The multipass export fixtures are authored in the converter's test corpus; locate them from the

@@ -50,7 +50,7 @@ ShadowDuskCLI MyShader.slang MyShader.mgfx /Profile:OpenGL
 
 The Slang frontend is a pure managed text transform: entry points come from Slang's own `[shader("vertex")]`/`[shader("fragment")]` attributes, a technique is synthesized (Slang has no technique/pass concept), and the body — near-HLSL by Slang's own design — compiles through the same faithful pipeline as any other `.fx`. No Slang binary ships or runs anywhere, on any platform. Slang-only language features (`import` modules, generics, `extension`s) are rejected with a named error rather than approximated, and there's no `mgfxc` oracle for Slang input (`mgfxc` cannot read Slang at all), so a Slang-sourced build is reach, never an `mgfxc`-equivalence claim.
 
-Need genuine Slang — `import`, generics, `interface` conformances, everything real Slang accepts? The optional `ShadowDusk.Slang` package bundles the real [slangc](https://github.com/shader-slang/slang) compiler (win-x64 today) and routes `.slang → slangc -target hlsl → the same unchanged faithful DXC pipeline`. It's a separate, opt-in package — a consumer who only needs the free subset above pays nothing extra for it:
+Need genuine Slang — `import`, generics, `interface` conformances, everything real Slang accepts? The optional `ShadowDusk.Slang` package bundles the real [slangc](https://github.com/shader-slang/slang) compiler (win-x64, linux-x64, osx-x64, osx-arm64; Linux needs Ubuntu 22.04+, macOS needs macOS 26+) and routes `.slang → slangc -target hlsl → the same unchanged faithful DXC pipeline`. It's a separate, opt-in package — a consumer who only needs the free subset above pays nothing extra for it:
 
 ```sh
 dotnet add package ShadowDusk.Slang
@@ -60,6 +60,8 @@ dotnet add package ShadowDusk.Slang
 var compiler = new ShadowDusk.Slang.SlangCompiler();
 var result = compiler.Compile(slangSource, new CompilerOptions { Target = PlatformTarget.OpenGL });
 ```
+
+In the browser, where no process can be spawned, the same pinned slangc runs in the page as WebAssembly (`ShadowDusk.Slang.Wasm`, issue #257): it receives the identical command line and its output is measured byte-identical to native slangc's, so a `.slang` file compiles to the same bytes in the browser as on the desktop. That project is proven in CI but is not published as a package yet ([Phase 67](plan/PHASE-67-slang-in-process-wasm.md)).
 
 Same rejection discipline as the built-in subset: a construct real slangc accepts but that has nowhere to land in an `Effect` (a compute/mesh entry point, an SM6-only wave/quad intrinsic on a target that can't represent it) is rejected loudly by name, never silently dropped, and no route through it is `mgfxc`-equivalent either. The optional `ShadowDusk.ShaderToy` package covers a third input, ShaderToy / plain-GLSL fragment shaders.
 
@@ -80,6 +82,8 @@ ShadowDusk works with **MonoGame, KNI, and FNA** across these graphics backends.
 
 Supported targets are tested end-to-end against the reference compiler (on-device Android via byte-identity: its output is byte-identical to the desktop build, whose renders are proven — the on-device pixel diff is a tracked follow-up). For the exact per-version, per-OS proof status, see the [Validation Matrix](docs/validation-matrix.md). To choose a target (or build a shader-download feature), see the [Choosing a Target](https://kaltinril.github.io/ShadowDusk/guides/choosing-a-target.html) guide. Classic Microsoft XNA 4.0 is out of scope.
 
+Two source-text outputs sit outside this table because neither runtime has a reference compiler to be equivalent to: **SkSL** for SkiaSharp and **raylib `glsl330` fragment shaders** for Raylib-cs. Both are proven by rendered-image fidelity instead (see [Delivery shapes](#delivery-shapes)).
+
 <details>
 <summary><b>How the pipeline works</b> (you don't need this to use it)</summary>
 
@@ -94,6 +98,8 @@ DirectX 12 (MonoGame WindowsDX12):
   HLSL (.fx)  ->  DXC  ->  DXIL (SM6)  ->  .mgfx (profile 2)
 Vulkan (MonoGame DesktopVK):
   HLSL (.fx)  ->  DXC  ->  SPIR-V  ->  .mgfx (profile 80)
+raylib (Raylib-cs, fragment-only) and SkSL (SkiaSharp), source text, not a container:
+  HLSL (.fx)  ->  DXC  ->  SPIR-V  ->  SPIRV-Cross  ->  GLSL  ->  convention mapper  ->  shader text
 FNA:
   HLSL (.fx, D3D9-style)  ->  vkd3d-shader  ->  D3D9 bytecode  ->  .fxb
 ```
@@ -145,7 +151,7 @@ ShadowDuskCLI MyShader.fx MyShader.mgfx /Profile:OpenGL
 /build:MyShader.fx
 ```
 
-The target comes from the content project's own `/platform:` line (`DesktopVK` and `WindowsDX12` included on MonoGame 3.8.5), and the `.mgfx` inside the `.xnb` is byte-for-byte what the CLI emits. See [MGCB Content Pipeline](https://kaltinril.github.io/ShadowDusk/guides/mgcb-content-pipeline.html).
+The target comes from the content project's own `/platform:` line (`DesktopVK` and `WindowsDX12` included on MonoGame 3.8.5), and the `.mgfx` inside the `.xnb` is byte-for-byte what the CLI emits (on DirectX 12 and Vulkan, whose MGFX v11 container stores a source-file string per shader, that one string is `<unknown>` as in a stock MonoGame build, never your build machine's path). See [MGCB Content Pipeline](https://kaltinril.github.io/ShadowDusk/guides/mgcb-content-pipeline.html).
 
 **Content Builder library** (`ShadowDusk.ContentPipeline`) — the same importer and processor as a normal library, for MonoGame 3.8.5's code-centric **Content Builder project** (the template default since 3.8.5, where a C# `ContentBuilder` you own replaces the `.mgcb`). Add the package to the Builder project and pass the two instances:
 
@@ -155,7 +161,7 @@ using ShadowDusk.ContentPipeline;
 content.Include<WildcardRule>("Effects/*.fx", new ShadowDuskEffectImporter(), new ShadowDuskEffectProcessor());
 ```
 
-Pass the instances (auto-discovery by extension picks MonoGame's own pair); the target follows the Builder's `-p` platform. Proven at rung 4 in a real 3.8.5 `ContentBuilder`: payload byte-identical to the CLI, envelope byte-identical to the stock build, and pixel-identical through `Content.Load<Effect>` on MonoGame 3.8.5. See [MonoGame 3.8.5 Content Builder](https://kaltinril.github.io/ShadowDusk/guides/content-builder.html).
+Pass the instances (auto-discovery by extension picks MonoGame's own pair); the target follows the Builder's `-p` platform. Proven at rung 4 in a real 3.8.5 `ContentBuilder`: payload byte-identical to the CLI (apart from the MGFX v11 source-file string on DirectX 12 and Vulkan, which matches the stock build's `<unknown>`), envelope byte-identical to the stock build, and pixel-identical through `Content.Load<Effect>` on MonoGame 3.8.5. See [MonoGame 3.8.5 Content Builder](https://kaltinril.github.io/ShadowDusk/guides/content-builder.html).
 
 **Direct `.xnb` output** — replace your content pipeline without changing a line of your game's code. ShadowDusk writes the `.xnb` itself, so `Content.Load<Effect>("MyShader")` keeps working and MGCB is out of the picture entirely. On the CLI, just name an `.xnb` output:
 
@@ -170,7 +176,7 @@ var result = await new EffectCompiler().CompileAsync(fx, new CompilerOptions { T
 File.WriteAllBytes("Content/MyShader.xnb", result.Value.ToXnb());
 ```
 
-The XNB platform byte is **derived** from the target you already picked, never something you select, and the payload inside is byte-for-byte the `.mgfx` the same call would emit:
+The XNB platform byte is **derived** from the target you already picked, never something you select, and the payload inside is byte-for-byte the `.mgfx` the same call would emit (on DirectX 12 and Vulkan, whose MGFX v11 container stores a per-shader source-file string, the CLI's `.xnb` writes `<unknown>` there, as a stock MGCB build does, instead of the path you passed):
 
 | `/Profile:` (or `--target-runtime`) | XNB platform byte | Runtimes that accept it |
 |---|---|---|
@@ -195,6 +201,15 @@ using var effect = SKRuntimeEffect.CreateShader(result.Value.SkslText, out var e
 
 Know the limits before reaching for it — they are Skia's, not ShadowDusk's, and the converter enforces them **loudly** rather than emitting something that renders wrong. SkSL runtime effects have **no vertex stage and no varyings at all**: a pixel shader gets its coordinate plus uniforms and nothing else. That means a shader that *reads an interpolated input* (a vertex color, a custom interpolant) does not convert **even though it is purely a pixel shader** — the converter refuses it by name, with an explicit opt-in (`TreatVaryingsAsUniforms`) if a per-draw constant is acceptable. The convertible set is fragment-only, coordinate-driven effects with uniform inputs: post-process, tint, gradient, SDF work. Evidence bar: rendered-image fidelity against the original HLSL's math in real Skia (there is no reference compiler for SkSL, so this is **not** an `mgfxc`-equivalence claim).
 
+**raylib converter** (`RaylibConverter`) — converts a single-pass, pixel-only `.fx` to a `glsl330` fragment shader for [Raylib-cs](https://github.com/raylib-cs/raylib-cs), so one post-process source (a CRT pass, a palette/LCD look) runs on both MonoGame and raylib:
+
+```csharp
+var result = RaylibConverter.Convert(fxSource, new RaylibConvertOptions());
+Shader shader = Raylib.LoadShaderFromMemory(null, result.Value.FragmentShader); // raylib's own vertex shader
+```
+
+The emission uses raylib's fixed names: the texture coordinate is `fragTexCoord`, the vertex color (SpriteBatch's tint, raylib's draw tint) is `fragColor`, the texture the draw call binds is `texture0`, and your other uniforms keep their HLSL names for `GetShaderLocation`; `result.Value.Uniforms` and `Samplers` list them. It refuses by name what raylib's model cannot hold: multiple passes, render states, a vertex shader, interpolants other than `TEXCOORD0`/`COLOR0`, `SV_Position`/`ddy` (MonoGame and raylib flip render targets in opposite directions), and matrix uniforms. Only `glsl330` (desktop GL 3.3) is emitted today. Evidence bar: each conversion renders in real Raylib-cs and is pixel-diffed against the same `.fx` on real MonoGame OpenGL (15/15 at maxd 0); raylib has no reference compiler, so this is **not** an `mgfxc`-equivalence claim.
+
 **WASM library** (`ShadowDusk.Wasm`) — the same pipeline running in the browser via WebAssembly, for live in-browser compilation with no server roundtrip. OpenGL output renders live in KNI WebGL; DirectX and FNA output come back as downloads to run in your desktop game. The [in-browser fiddle](samples/ShaderFiddle.Web) is a sample of this. See [`docs/HOWTO-WASM-KNI.md`](docs/HOWTO-WASM-KNI.md) for the KNI/Blazor walkthrough.
 
 > "Same `.mgfx` output" means it loads and renders like mgfxc's, not that the bytes are identical. ShadowDusk's output is deterministic in its own right: the same version, source, and target always give the same bytes.
@@ -209,7 +224,7 @@ All packages ship together at one shared version. Most projects only need one of
 | `ShadowDusk.Cli` | [![ShadowDusk.Cli](https://img.shields.io/nuget/v/ShadowDusk.Cli)](https://www.nuget.org/packages/ShadowDusk.Cli) | The `ShadowDuskCLI` dotnet tool — the same compiler as a command-line mgfxc replacement: `dotnet tool install -g ShadowDusk.Cli` |
 | `ShadowDusk.Wasm` | [![ShadowDusk.Wasm](https://img.shields.io/nuget/v/ShadowDusk.Wasm)](https://www.nuget.org/packages/ShadowDusk.Wasm) | The same pipeline compiled to WebAssembly, for in-browser compilation from Blazor / KNI web apps. |
 | `ShadowDusk.ShaderToy` | [![ShadowDusk.ShaderToy](https://img.shields.io/nuget/v/ShadowDusk.ShaderToy)](https://www.nuget.org/packages/ShadowDusk.ShaderToy) | Optional, standalone ShaderToy / GLSL → `.fx` front-end (pure managed, no native deps). |
-| `ShadowDusk.Slang` | [![ShadowDusk.Slang](https://img.shields.io/nuget/v/ShadowDusk.Slang)](https://www.nuget.org/packages/ShadowDusk.Slang) | Optional, standalone REAL Slang front-end: bundles the real `slangc` compiler (win-x64 today) for genuine Slang — `import`, generics, `interface`s. Everyone else uses `ShadowDusk.Compiler`'s free HLSL-compatible-subset `.slang` support instead — zero extra package. |
+| `ShadowDusk.Slang` | [![ShadowDusk.Slang](https://img.shields.io/nuget/v/ShadowDusk.Slang)](https://www.nuget.org/packages/ShadowDusk.Slang) | Optional, standalone REAL Slang front-end: bundles the real `slangc` compiler (win-x64, linux-x64, osx-x64, osx-arm64) for genuine Slang — `import`, generics, `interface`s. Everyone else uses `ShadowDusk.Compiler`'s free HLSL-compatible-subset `.slang` support instead — zero extra package. |
 | `ShadowDusk.Core` | [![ShadowDusk.Core](https://img.shields.io/nuget/v/ShadowDusk.Core)](https://www.nuget.org/packages/ShadowDusk.Core) | Shared types (`IShaderCompiler`, `CompilerOptions`, `Result<T,E>`). Pulled in automatically as a dependency. |
 | `ShadowDusk.HLSL` | [![ShadowDusk.HLSL](https://img.shields.io/nuget/v/ShadowDusk.HLSL)](https://www.nuget.org/packages/ShadowDusk.HLSL) | HLSL front-end (FX pre-parser, DXC, DXBC backends). Pulled in automatically as a dependency. |
 | `ShadowDusk.GLSL` | [![ShadowDusk.GLSL](https://img.shields.io/nuget/v/ShadowDusk.GLSL)](https://www.nuget.org/packages/ShadowDusk.GLSL) | SPIR-V → GLSL transpilation and the MonoGame GLSL rewrite. Pulled in automatically as a dependency. |
@@ -265,7 +280,7 @@ ShadowDusk/
 │   │                            #   vkd3d-shader + d3dcompiler DXBC backends
 │   ├── ShadowDusk.GLSL/         # SPIR-V → GLSL via SPIRV-Cross + MonoGameGlslRewriter
 │   ├── ShadowDusk.ShaderToy/    # ShaderToy / GLSL → .fx front-end (optional, pure managed)
-│   ├── ShadowDusk.Slang/        # REAL Slang front-end via bundled slangc (optional, native win-x64)
+│   ├── ShadowDusk.Slang/        # REAL Slang front-end via bundled slangc (optional; win/linux x64, macOS x64/arm64)
 │   ├── ShadowDusk.Metal/        # SPIR-V → MSL (stub — not yet implemented)
 │   ├── ShadowDusk.Compiler/     # EffectCompiler : IShaderCompiler — the consumer-facing product NuGet
 │   ├── ShadowDusk.Cli/          # dotnet tool entry point (mgfxc)
@@ -285,7 +300,7 @@ ShadowDusk/
 │   └── fixtures/
 │       ├── shaders/             # Canonical .fx test shaders
 │       └── golden/              # Reference .mgfx outputs (DirectX_11/ and OpenGL/)
-├── validation/                  # In-engine render-proof drivers (real MonoGame / KNI / FNA)
+├── validation/                  # In-engine render-proof drivers (real MonoGame / KNI / FNA / Raylib-cs)
 ├── tools/                       # Native binary restore scripts
 └── docs/                        # Architecture docs and research (incl. HOWTO-WASM-KNI.md)
 ```

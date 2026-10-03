@@ -25,12 +25,14 @@ namespace ShadowDusk.Wasm;
 /// <c>Fx2EffectWriter</c> / <c>D3d9BytecodePatcher</c> / CTAB reflection around it
 /// are managed C# that already runs in WASM).</para>
 ///
-/// <para>Request→ABI mapping and error mapping are the SHARED
-/// <see cref="Vkd3dCompileContract"/> — same profile defaults (vs_5_0/ps_5_0),
-/// same SM ≤ 3 routing, same verbatim-diagnostic surfacing (constraint 5) as the
-/// desktop backend. When the WASM module itself cannot be loaded (e.g.
-/// <c>vkd3d-shader.wasm</c> not restored/hosted yet) the compile fails loudly with
-/// <c>SD1902</c> — the WASM sibling of the desktop's SD0211 native-not-found.</para>
+/// <para>Source preparation, request→ABI mapping, error mapping and warning mapping are
+/// the SHARED <see cref="Vkd3dCompileContract"/> — same prepared source text (issue #319),
+/// same profile defaults (vs_5_0/ps_5_0), same SM ≤ 3 routing, same vkd3d compile options
+/// (issue #295), same verbatim-diagnostic surfacing on failure AND on a success that
+/// carries non-fatal diagnostics (issue #335; constraint 5) as the desktop backend. When
+/// the WASM module itself cannot be loaded (e.g. <c>vkd3d-shader.wasm</c> not
+/// restored/hosted yet) the compile fails loudly with <c>SD1902</c> — the WASM sibling of
+/// the desktop's SD0211 native-not-found.</para>
 /// </summary>
 [SupportedOSPlatform("browser")]
 internal sealed class WasmVkd3dShaderCompiler : IDxbcShaderCompiler
@@ -86,21 +88,75 @@ internal sealed class WasmVkd3dShaderCompiler : IDxbcShaderCompiler
         int targetType     = Vkd3dCompileContract.ResolveTargetType(profile);
         BlobKind blobKind  = Vkd3dCompileContract.ResolveBlobKind(profile);
 
+        // The compile options are the shared contract's too (issue #295): the list the
+        // desktop marshals into vkd3d_shader_compile_info, flattened for the JS boundary.
+        // The shim and the WASM wrapper forward it untouched, so this host can never
+        // compile with a different option set than the desktop. Never build a list here.
+        int[] options = Vkd3dCompileContract.FlattenCompileOptions(
+            Vkd3dCompileContract.ResolveCompileOptions(targetType));
+
+        // And so is the text vkd3d gets (issue #319): the desktop's PrepareSource, every #line
+        // directive line blanked with the line count kept. This host used to hand vkd3d
+        // request.HlslSource with the directives in it; vkd3d ignored them for the bytes but
+        // printed one fixme line per directive to the console. The shim and the WASM wrapper
+        // forward the bytes untouched. Never transform the source here.
+        string vkd3dSource = Vkd3dCompileContract.PrepareSource(request.HlslSource);
+
+        // The relocation probe (issue #202) for BOTH outcomes below: a failing compile's
+        // primary diagnostic and a successful compile's warnings move onto the author's
+        // line through the same Vkd3dSourceLocator the desktop uses, probing through this
+        // host's JS call exactly as the desktop probes through P/Invoke. A probe that
+        // succeeds reports null, one that fails reports vkd3d's primary diagnostic; after a
+        // probe TRAPS the instance is gone (the shim discarded it, issue #271), so probing
+        // stops: every later probe answers 'inconclusive' (the locator then keeps vkd3d's
+        // own coordinates rather than calling into the discarded module).
+        bool probeTrapped = false;
+        ShaderError? Probe(string source)
+        {
+            if (probeTrapped)
+                return Inconclusive;
+            try
+            {
+                Vkd3dInterop.Compile(
+                    Encoding.UTF8.GetBytes(source), request.EntryPoint, profile, request.SourceFileName, targetType, options);
+                return null;
+            }
+            catch (JSException probeEx) when (WasmCompilerInitialization.IsTrap(probeEx, "vkd3d"))
+            {
+                WasmCompilerInitialization.InvalidateVkd3d();
+                probeTrapped = true;
+                return Inconclusive;
+            }
+            catch (JSException probeEx)
+            {
+                return Vkd3dCompileContract.MapCompileFailure(probeEx.Message, request.SourceFileName, string.Empty);
+            }
+        }
+
+        Vkd3dCompileOutcome outcome;
         try
         {
             // Source bytes are UTF-8 and NOT null-terminated (vkd3d_shader_code carries
             // bytes + length); entry/profile/source-name cross as C strings inside the
             // JS glue. Mirrors the desktop marshalling exactly.
-            byte[] sourceBytes = Encoding.UTF8.GetBytes(request.HlslSource);
+            byte[] sourceBytes = Encoding.UTF8.GetBytes(vkd3dSource);
 
-            byte[] code = Vkd3dInterop.Compile(
+            outcome = Vkd3dInterop.Compile(
                 sourceBytes,
                 request.EntryPoint,
                 profile,
                 request.SourceFileName,
-                targetType);
-
-            return Result<PlatformBlob, ShaderError>.Ok(new PlatformBlob(blobKind, code));
+                targetType,
+                options);
+        }
+        catch (JSException ex) when (WasmCompilerInitialization.IsTrap(ex, "vkd3d"))
+        {
+            // The shim already dropped the trapped instance (issue #271): mark it not ready,
+            // and do NOT run the source-locator probes, which would call into it.
+            WasmCompilerInitialization.InvalidateVkd3d();
+            return Result<PlatformBlob, ShaderError>.Fail(
+                WasmCompilerInitialization.TrapError(
+                    "vkd3d-shader (DirectX DXBC / FNA fx_2_0)", request.SourceFileName, ex));
         }
         catch (JSException ex)
         {
@@ -108,34 +164,52 @@ internal sealed class WasmVkd3dShaderCompiler : IDxbcShaderCompiler
             // (constraint 5). Map them with the SAME shared reformatter the desktop
             // backend uses, so the in-browser failure carries real file/line/column —
             // then put that location back onto the author's line with the SAME
-            // Vkd3dSourceLocator (issue #202: vkd3d's own line numbers drift), probing
-            // through this host's JS call exactly as the desktop probes through P/Invoke.
+            // Vkd3dSourceLocator (issue #202: vkd3d's own line numbers drift).
             ShaderError primary = Vkd3dCompileContract.MapCompileFailure(
                 ex.Message,
                 request.SourceFileName,
                 "vkd3d-shader WASM compilation failed with no diagnostics");
 
-            ShaderError? Probe(string source)
-            {
-                try
-                {
-                    Vkd3dInterop.Compile(
-                        Encoding.UTF8.GetBytes(source), request.EntryPoint, profile, request.SourceFileName, targetType);
-                    return null;
-                }
-                catch (JSException probeEx)
-                {
-                    return Vkd3dCompileContract.MapCompileFailure(probeEx.Message, request.SourceFileName, string.Empty);
-                }
-            }
-
-            // This host hands vkd3d request.HlslSource unblanked (its preprocessor ignores
-            // the #line lines, which stay in place as blank lines), so the compiled text and
-            // the directive-carrying text are one and the same.
-            return Result<PlatformBlob, ShaderError>.Fail(
-                Vkd3dSourceLocator.Relocate(primary, request.HlslSource, request.HlslSource, request.SourceFileName, Probe));
+            // The locator gets the prepared text vkd3d compiled and the directive-carrying
+            // request.HlslSource, line-for-line aligned, exactly as on the desktop.
+            //
+            // The token goes to the locator, which checks it before every probe (issue #255),
+            // the same single check the desktop host gets. On today's single-threaded browser
+            // runtime nothing can cancel the token while this synchronous call is on the stack
+            // (a token cancelled beforehand is caught by the entry check above), so here the
+            // check cannot fire yet; the token is passed so the two hosts stay identical and
+            // a multi-threaded WASM runtime is covered without another change.
+            ShaderError relocated = Vkd3dSourceLocator.Relocate(
+                primary, vkd3dSource, request.HlslSource, request.SourceFileName, Probe, cancellationToken);
+            return Result<PlatformBlob, ShaderError>.Fail(probeTrapped ? primary : relocated);
         }
+
+        // vkd3d's message buffer is populated on SUCCESS too (the wrapper compiles at
+        // VKD3D_SHADER_LOG_WARNING, like the desktop). This host used to drop it here and
+        // return the bytes alone, so a shader that warned gave identical bytes on both hosts
+        // and an empty Warnings list in the browser (issue #335). The SHARED contract parses
+        // the text and the SAME locator relocates it, as on the desktop; the pipeline
+        // surfaces the result as CompiledShader.Warnings (constraint 5).
+        IReadOnlyList<ShaderError> warnings = Vkd3dSourceLocator.Relocate(
+            Vkd3dCompileContract.MapCompileWarnings(outcome.Messages, request.SourceFileName),
+            vkd3dSource, request.HlslSource, request.SourceFileName, Probe, cancellationToken);
+
+        return Result<PlatformBlob, ShaderError>.Ok(
+            new PlatformBlob(blobKind, outcome.Code) { Warnings = warnings });
     }
+
+    /// <summary>
+    /// What a relocation probe answers once the module has trapped and been discarded: a
+    /// diagnostic the locator can never match to its sentinel, so it stops bisecting and
+    /// keeps vkd3d's own coordinates (honest raw positions over a guess), without another
+    /// call into the gone instance. Unlocated (<c>Line</c> 0) and never surfaced itself.
+    /// </summary>
+    private static readonly ShaderError Inconclusive = new(
+        File:    "<vkd3d>",
+        Line:    0,
+        Column:  0,
+        Code:    "SD1907",
+        Message: "the vkd3d-shader WASM instance trapped during a diagnostic-relocation probe and was discarded");
 
     /// <summary>
     /// The module genuinely is not loadable (not restored, not hosted, fetch failed).

@@ -98,7 +98,67 @@ internal static partial class SlangDiagnosticReformatter
     /// <c>SD0622</c> naming the entry point and stage that failed.
     /// </summary>
     public static ShaderError SelectPrimary(
-        string slangcStderr, string sourceFileName, string entryName, string stageLabel)
+        string slangcStderr, string sourceFileName, string entryName, string stageLabel) =>
+        SelectPrimary(
+            slangcStderr, sourceFileName,
+            $"slangc failed compiling entry point '{entryName}' ({stageLabel}) with no diagnostic output.");
+
+    /// <summary>
+    /// <see cref="SelectPrimary(string, string, string, string)"/> with the exit code in the
+    /// no-output text. A code that is not a plain failure status (negative on Windows, where a
+    /// crash reports its NTSTATUS such as <c>0xC0000005</c>; 128 or more on Unix, a signal) is
+    /// named as a crash of slangc, with the one trigger known to produce it with empty stderr
+    /// (issue #323: two same-named constant-buffer members in different namespaces, which
+    /// <c>SlangCompiler</c> reports as <c>SD0643</c> whenever a text it read shows the pair).
+    /// </summary>
+    public static ShaderError SelectPrimary(
+        string slangcStderr, string sourceFileName, string entryName, string stageLabel, int exitCode)
+    {
+        bool crashed = exitCode < 0 || exitCode >= 128;
+        if (!crashed)
+        {
+            return SelectPrimary(
+                slangcStderr, sourceFileName,
+                $"slangc failed compiling entry point '{entryName}' ({stageLabel}) with no diagnostic output (exit code {exitCode}).");
+        }
+
+        // A crash: slangc's own ERROR, when it printed one, is still the primary. Warnings alone
+        // are not (measured: the issue #323 shape prints its 'implicit global shader parameter'
+        // warnings and then dies); they are kept verbatim after the crash's own description.
+        IReadOnlyList<ShaderError> errors = Reformat(slangcStderr, sourceFileName);
+        foreach (ShaderError e in errors)
+        {
+            // slangc's own structured error; the SD0622 Reformat gives unstructured text is not one.
+            if (e.Severity == ShaderErrorSeverity.Error && e.Code != "SD0622")
+                return e;
+        }
+        string raw = string.IsNullOrWhiteSpace(slangcStderr) ? "" : slangcStderr.TrimEnd();
+        string how =
+            $"slangc terminated abnormally (exit code {exitCode}, 0x{(uint)exitCode:X8}: a crash, not a compile error) " +
+            $"while compiling entry point '{entryName}' ({stageLabel})" +
+            (raw.Length > 0 ? ", after the output below" : ", with no diagnostic output") +
+            ". The one trigger known to crash slangc this way (v2026.14.1, issue #323) is two shader parameters of " +
+            "one name declared in different namespaces, which its -no-mangle output cannot keep apart; ShadowDusk " +
+            "reports that shape as SD0643 when a text it reads shows both declarations, so look for a pair formed " +
+            "through macros or spread across imported modules, and give each global a unique name." +
+            (raw.Length > 0 ? "\n" + raw : "");
+        return new ShaderError(
+            File: sourceFileName,
+            Line: 0,
+            Column: 0,
+            Code: "SD0622",
+            Message: how,
+            Severity: ShaderErrorSeverity.Error,
+            RawDiagnostics: raw.Length > 0 ? raw : null);
+    }
+
+    /// <summary>
+    /// <see cref="SelectPrimary(string, string, string, string)"/> for a slangc run that is not
+    /// an entry-point compile: <paramref name="noOutputMessage"/> is the synthesized
+    /// <c>SD0622</c> text when slangc exited non-zero and wrote nothing.
+    /// </summary>
+    public static ShaderError SelectPrimary(
+        string slangcStderr, string sourceFileName, string noOutputMessage)
     {
         IReadOnlyList<ShaderError> errors = Reformat(slangcStderr, sourceFileName);
 
@@ -116,9 +176,7 @@ internal static partial class SlangDiagnosticReformatter
             Line: 0,
             Column: 0,
             Code: "SD0622",
-            Message: raw.Length > 0
-                ? raw
-                : $"slangc failed compiling entry point '{entryName}' ({stageLabel}) with no diagnostic output.",
+            Message: raw.Length > 0 ? raw : noOutputMessage,
             Severity: ShaderErrorSeverity.Error,
             RawDiagnostics: raw.Length > 0 ? raw : null);
     }

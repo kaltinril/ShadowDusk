@@ -129,7 +129,20 @@ export function compileToSpirv(hlslSource, args) {
     // Forward args VERBATIM. embind expects a JS string[]; ensure that shape.
     const dxcArgs = Array.isArray(args) ? args : [];
 
-    const res = dxcInstance.compileToSpirv(hlslSource, dxcArgs);
+    let res;
+    try {
+        res = dxcInstance.compileToSpirv(hlslSource, dxcArgs);
+    } catch (e) {
+        // The glue reports DXC's diagnostics as a value ({ error }), so anything THROWN out
+        // of the module is a trap (stack overflow, out-of-bounds access, abort, an escaped
+        // C++ exception). It leaves the instance's memory and C++ state undefined, and every
+        // later call into it would fail or misbehave. Drop it so the next ensureReady()
+        // instantiates a fresh module (issue #271, the slangc pattern from PR #266). The
+        // 'DXC trapped:' prefix is what JsDxcShaderCompiler keys SD1907 on.
+        dxcInstance = null;
+        loadPromise = null;
+        throw new Error('DXC trapped: ' + describeTrap(e));
+    }
 
     // Current glue (Phase 38): a { spirv, error } object. Re-throw DXC's verbatim
     // diagnostic text on failure so .NET can parse line/column from it.
@@ -142,6 +155,10 @@ export function compileToSpirv(hlslSource, args) {
 
     // Back-compat: an older glue build returned a bare Uint8Array (and threw on failure).
     return validateSpirv(res);
+}
+
+function describeTrap(e) {
+    return e instanceof Error ? `${e.name}: ${e.message}` : String(e);
 }
 
 // Copy the embind heap view into a standalone Uint8Array and sanity-check it.

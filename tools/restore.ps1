@@ -290,8 +290,10 @@ function Restore-DxcWasm {
     if ((Test-Path $DxcWasmWasm) -and (Test-Path $DxcWasmJs)) {
         Write-Host "restore.ps1: DXC->WASM (dxcompiler.{js,wasm}) present in .wasm-build — OK"
         # Copy the built .wasm into the package wwwroot for pack if it's missing or stale.
+        # Staleness is decided by HASH, not size: a relink can change the module and keep its
+        # size (measured in issue #271 with only -sSTACK_SIZE set), and a size check keeps the old copy.
         if (-not (Test-Path $PkgDxcWasm) -or
-            ((Get-Item $DxcWasmWasm).Length -ne (Get-Item $PkgDxcWasm).Length)) {
+            ((Get-FileHash -Algorithm SHA256 $DxcWasmWasm).Hash -ne (Get-FileHash -Algorithm SHA256 $PkgDxcWasm).Hash)) {
             New-Item -ItemType Directory -Force -Path $PkgDxcDir | Out-Null
             Copy-Item -Force $DxcWasmWasm $PkgDxcWasm
             Write-Host "restore.ps1: copied dxcompiler.wasm -> src/ShadowDusk.Wasm/wwwroot/dxc/ (for pack)"
@@ -467,76 +469,77 @@ function Restore-Vkd3dWasm {
 Restore-Vkd3dWasm
 
 # ---------------------------------------------------------------------------
-# Slang compiler (real slangc, win-x64 only for now — Phase 66 A2)
+# Slang compiler (real slangc, all four desktop RIDs — Phase 66 A2, issue #227)
 # ---------------------------------------------------------------------------
-# ShadowDusk.Slang (a NEW, separate, opt-in package — plan/PHASE-66) ships REAL slangc so a
+# ShadowDusk.Slang (a separate, opt-in package — plan/PHASE-66) ships REAL slangc so a
 # consumer who adds it gets genuine Slang input (import/generics/interfaces), compiled via
 # slangc -target hlsl and handed to the existing, unchanged, faithful DXC pipeline. A
-# consumer who does NOT add ShadowDusk.Slang pays zero size/dependency cost — the
-# ShadowDusk.ShaderToy precedent. This is NOT part of ShadowDusk.Compiler/HLSL/GLSL.
+# consumer who does NOT add ShadowDusk.Slang pays zero size/dependency cost. Every host
+# restores every RID (pack-ready, like Restore-Vkd3dShader): the ShadowDusk.Slang nupkg must
+# carry all four, and release.yml / pack-consume.yml gate on it.
 #
-# Pin: the SAME slangc v2026.14.1 win-x64 release validation/SlangCorpus/Program.cs already
-# downloads as a TEST-TIME oracle — keep both pins in sync on a version bump (one release,
-# two consumers: the test oracle and the shipped native).
+# Pin: the official shader-slang v2026.14.1 release for every RID. Keep in sync with
+# restore.sh (same zips, same file pins), validation/SlangCorpus/Program.cs's test-time
+# oracle, and SlangToolPath.SlangVersion (the versioned Unix library file name). The WHOLE
+# zip is SHA-256-verified before extraction and the extracted files are pinned too, so a
+# present-but-stale copy is replaced, never trusted.
 #
-# Phase 66 A1 (2026-09-11) measured slang-llvm.dll (84.4 MB, LLVM/CPU-codegen only) as
-# excludable with zero effect on -target hlsl. A2 (2026-09-11) went further: re-running the
-# SAME -target hlsl corpus (tests/fixtures/shaders/slang/ + Phase 65's Gum-shaped +
-# generics-probe shaders, 24 entry points) after removing every other candidate one at a
-# time — slang.exe/slangd.exe/slangi.exe (CLI/language-server/interpreter), gfx.dll/
-# gfx.slang (graphics-API abstraction), slang-glsl-module.dll, slang-glslang.dll, slang.dll,
-# slang-rt.dll, slang.slang, and the slang-standard-module-2026.14.1/ stdlib source
-# directory — found ALL of them droppable too (slang-compiler.dll embeds what slangc.exe
-# actually needs; a negative control, deleting slang-compiler.dll itself, failed all 24
-# entries, confirming the corpus test discriminates rather than passing regardless). Final
-# vendored set: slangc.exe + slang-compiler.dll ONLY, 25,611,264 bytes (~24.4 MiB) — a ~80%
-# cut from the 126.2 MB unmodified release, ~39% further than A1's 41.8 MB no-LLVM figure.
-# Full evidence: plan/PHASE-66-appendix/slang-native-minimal-set-probe/.
+# Minimal vendored set per RID, measured (Phase 66 A1/A2 on win-x64, issue #227 on the Unix
+# RIDs; plan/PHASE-66-appendix/slang-native-minimal-set-probe/): the slangc executable plus
+# the slang-compiler library only. The Unix slangc resolves its library through
+# RUNPATH/LC_RPATH "$ORIGIN"/"@loader_path", so the two files work side by side in one flat
+# directory. Linux uses upstream's "glibc-2.27" build (GLIBC_2.17 floor, GLIBCXX_3.4.29);
+# the macOS builds declare minos 26.0. See restore.sh for the full notes.
 #
-# NOTE (flagged for A3, not solved here): slangc.exe writes a runtime cache file
-# (slang-glsl-module.bin, ~1.3 MB) into its OWN directory on first compile — even for
-# -target hlsl. The vendored runtimes/win-x64/native/ directory must therefore be WRITABLE
-# at runtime; a read-only deployment (e.g. some container filesystems) would need this
-# solved before shipping.
+# slangc writes a runtime cache file (slang-glsl-module.bin) into its OWN directory on first
+# compile; SlangNativeCache handles a read-only packaged directory at run time (Phase 66 A3).
 $SlangVersion = '2026.14.1'
-$SlangZipSha256 = '5ED0A59D650A0AF0ACA45D5DB4E083B3D8FB5CEA05748747DD95DFBE9C580658'
-$SlangZipUrl = "https://github.com/shader-slang/slang/releases/download/v$SlangVersion/slang-$SlangVersion-windows-x86_64.zip"
+$SlangReleaseUrl = "https://github.com/shader-slang/slang/releases/download/v$SlangVersion"
 
-function Restore-SlangWinX64 {
-    $SlangDir = Join-Path $RepoRoot 'tools' 'slang' 'win-x64'
-    $SlangcExe = Join-Path $SlangDir 'slangc.exe'
-    $SlangCompilerDll = Join-Path $SlangDir 'slang-compiler.dll'
+function Restore-SlangRid([string]$Rid, [string]$ZipSuffix, [string]$ZipSha,
+                          [string]$ExeEntry, [string]$ExeSha, [string]$LibEntry, [string]$LibSha) {
+    $SlangDir = Join-Path $RepoRoot 'tools' 'slang' $Rid
+    $Exe = Join-Path $SlangDir (Split-Path -Leaf $ExeEntry)
+    $Lib = Join-Path $SlangDir (Split-Path -Leaf $LibEntry)
 
-    if ((Test-Path $SlangcExe) -and (Test-Path $SlangCompilerDll)) {
-        Write-Host "restore.ps1: slangc (win-x64) present — OK"
-        return
+    function Test-Pinned([string]$Path, [string]$Sha) {
+        (Test-Path $Path) -and ((Get-FileHash -Algorithm SHA256 -Path $Path).Hash.ToLowerInvariant() -eq $Sha)
     }
 
+    if ((Test-Pinned $Exe $ExeSha) -and (Test-Pinned $Lib $LibSha)) {
+        if (-not $IsWindows -and $null -ne $IsWindows) { chmod +x $Exe }
+        Write-Host "restore.ps1: slangc ($Rid) present, hash OK"
+        return
+    }
+    # Delete-on-mismatch: never leave an unverified file in place for existence-only checks.
+    foreach ($p in @($Exe, $Lib)) { if (Test-Path $p) { Remove-Item -Force $p } }
+
+    $zipUrl = "$SlangReleaseUrl/slang-$SlangVersion-$ZipSuffix.zip"
     $tmpZip = Join-Path ([System.IO.Path]::GetTempPath()) "slangc-restore-$([Guid]::NewGuid().ToString('N')).zip"
     try {
-        Invoke-WebRequest -Uri $SlangZipUrl -OutFile $tmpZip -UseBasicParsing
+        Invoke-WebRequest -Uri $zipUrl -OutFile $tmpZip -UseBasicParsing
     } catch {
-        Write-Warning "restore.ps1: could not download slangc from $SlangZipUrl (offline?); ShadowDusk.Slang packaging (win-x64) will be unavailable. $_"
+        Write-Warning "restore.ps1: could not download slangc from $zipUrl (offline?); ShadowDusk.Slang ($Rid) will be unavailable. $_"
         if (Test-Path $tmpZip) { Remove-Item -Force $tmpZip }
         return   # non-fatal by design
     }
 
     # Verify BEFORE extracting — an unverified binary is what the pin exists to prevent.
-    $got = (Get-FileHash -Algorithm SHA256 -Path $tmpZip).Hash
-    if ($got -ne $SlangZipSha256) {
-        Write-Warning "restore.ps1: slangc release SHA-256 mismatch (expected $SlangZipSha256, got $got); discarding."
+    $got = (Get-FileHash -Algorithm SHA256 -Path $tmpZip).Hash.ToLowerInvariant()
+    if ($got -ne $ZipSha) {
+        Write-Warning "restore.ps1: slangc ($Rid) release SHA-256 mismatch (expected $ZipSha, got $got); discarding."
         Remove-Item -Force $tmpZip
-        return   # non-fatal, but the file is NOT placed
+        return   # non-fatal, but nothing is placed
     }
 
     EnsureDir $SlangDir
     Add-Type -AssemblyName System.IO.Compression.FileSystem
     $archive = [System.IO.Compression.ZipFile]::OpenRead($tmpZip)
     try {
-        foreach ($entryName in @('bin/slangc.exe', 'bin/slang-compiler.dll')) {
+        foreach ($entryName in @($ExeEntry, $LibEntry)) {
             $entry = $archive.Entries | Where-Object { $_.FullName -eq $entryName }
             if (-not $entry) {
-                Write-Warning "restore.ps1: slangc release is missing expected entry $entryName; upstream layout may have changed."
+                Write-Warning "restore.ps1: slangc ($Rid) release is missing expected entry $entryName; upstream layout may have changed."
                 continue
             }
             $dest = Join-Path $SlangDir (Split-Path -Leaf $entryName)
@@ -547,14 +550,41 @@ function Restore-SlangWinX64 {
     }
     Remove-Item -Force $tmpZip
 
-    if ((Test-Path $SlangcExe) -and (Test-Path $SlangCompilerDll)) {
-        Write-Host "restore.ps1: slangc (win-x64) downloaded, zip hash OK — slangc.exe + slang-compiler.dll only (25,611,264 bytes)"
-    } else {
-        Write-Warning "restore.ps1: slangc (win-x64) extraction did not produce both expected files."
+    if (-not ((Test-Pinned $Exe $ExeSha) -and (Test-Pinned $Lib $LibSha))) {
+        Write-Warning "restore.ps1: slangc ($Rid) extracted files do not match their pins; discarding."
+        foreach ($p in @($Exe, $Lib)) { if (Test-Path $p) { Remove-Item -Force $p } }
+        return
     }
+    # pwsh on Linux/macOS: ZipFile extraction does not set the execute bit. SlangNativeCache
+    # also sets it at run time; this covers repo/dev runs straight out of tools/slang/<rid>/.
+    if (-not $IsWindows -and $null -ne $IsWindows) { chmod +x $Exe }
+    Write-Host "restore.ps1: slangc ($Rid) downloaded, zip + file hashes OK"
 }
 
-Restore-SlangWinX64
+# linux-arm64 and win-arm64 are NOT restored although upstream publishes them: the core
+# pipeline is incomplete on both (linux-arm64 has no DXC or vkd3d native; win-arm64 has DXC
+# but no vkd3d, and is unproven) (project_decisions.md, issue #227). Add them when the core
+# pipeline does.
+function Restore-Slang {
+    Restore-SlangRid 'win-x64' 'windows-x86_64' `
+        '5ed0a59d650a0af0aca45d5db4e083b3d8fb5cea05748747dd95dfbe9c580658' `
+        'bin/slangc.exe' 'b9f786a651569aa4f968e4014d04b6e2f4f1a6c9584f47ea9f4ccc841fdeeeeb' `
+        'bin/slang-compiler.dll' '2271ca931ffa18fb59a649bb91b22f36afd6ec34584e17f8bb28e00143614ca4'
+    Restore-SlangRid 'linux-x64' 'linux-x86_64-glibc-2.27' `
+        '9e36aab4be2686885dc0cd4b740fcbab27e50047c2d8187d9403ec2ce82fd1ba' `
+        'bin/slangc' '5cc0134d42cf414f0dcde8c31a813337801a6afdc5443033ef39e28b1262d336' `
+        "lib/libslang-compiler.so.0.$SlangVersion" 'aba57be5bccd5490c539e3ff19b307bc464243f60714e5894e62bad8c2cac9ba'
+    Restore-SlangRid 'osx-x64' 'macos-x86_64' `
+        'a3da109bfb732ab3f09beb6999f9831d9be440fa9a1843006b7ea56498f545d6' `
+        'bin/slangc' '4de52e387cc44996ea2d2dfaea1b941e522b7896054799ec7b63a3272c00c3a6' `
+        "lib/libslang-compiler.0.$SlangVersion.dylib" 'c87e37121416f54b1d9b988fb74241b0bc662cd03f9e4ce823b314271a9d7016'
+    Restore-SlangRid 'osx-arm64' 'macos-aarch64' `
+        '2976c3a9a6f4d77b5734d00b5d841d1ff087d9965d9006b9b4d73edd0062cb7d' `
+        'bin/slangc' 'a1c5ecae0d2425b13fe7f616686f2df7cc7028d3f6a85fb717497cf98bee3d0a' `
+        "lib/libslang-compiler.0.$SlangVersion.dylib" '4fadae0d56d4538dc2a0099086de3d2a5350e12da4591679ee8cbb571c5db7de'
+}
+
+Restore-Slang
 
 if (-not $Force -and (Test-Path $WinDll)) {
     Write-Host "spirv-cross-c-shared.dll already present — skipping restore."

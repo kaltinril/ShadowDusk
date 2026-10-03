@@ -52,7 +52,9 @@ namespace ShadowDusk.Slang;
 /// registered diagnostic naming the construct and the target — a non-vertex/fragment entry stage
 /// (<c>SD0602</c>, <see cref="SlangEntryScanner"/>) or an SM6-only Wave/Quad intrinsic on a
 /// target whose backend cannot represent SM6 HLSL (<c>SD0624</c>,
-/// <see cref="SlangSm6ConstructGuard"/>) (band 2); everything else compiles, with no curated
+/// <see cref="SlangSm6ConstructGuard"/>), or a Wave/Quad intrinsic on Vulkan, whose MonoGame
+/// runtime has no subgroup support (<c>SD0218</c>, shared with the <c>.fx</c> route) (band 2);
+/// everything else compiles, with no curated
 /// allow-list (band 3).</para>
 ///
 /// <para><b>Per-target platform macros, forwarded to slangc (Phase 66 A6):</b> every
@@ -65,6 +67,13 @@ namespace ShadowDusk.Slang;
 /// huge share of the real, non-Slang-authored fixture corpus relies on for per-target
 /// correctness) resolved to the SAME branch on every target, since slangc's own
 /// preprocessor pass never saw them — a silent, target-blind divergence.</para>
+///
+/// <para><b>Two transports, one route (issue #257):</b> on desktop slangc runs as a child
+/// process; where no process can be spawned (the browser), <c>ShadowDusk.Slang.Wasm</c> runs
+/// the same pinned slangc compiled to WebAssembly inside the page. Both receive the identical
+/// argument list (<see cref="SlangcArguments"/>), and everything before and after the slangc
+/// call is this one class, so the two hosts hand DXC byte-identical HLSL (measured over the
+/// whole corpus, every target's macros, success and failure output alike).</para>
 /// </summary>
 /// <remarks>
 /// Deliberately does NOT implement <c>IShaderCompiler</c>: that interface's contract is
@@ -79,7 +88,35 @@ public sealed class SlangCompiler
 {
     private const string TechniqueName = "SlangEffect";
 
+    /// <summary><c>SD0629</c>: slangc's preprocess-only pass exited 0 with output that cannot
+    /// be the source (empty, or missing an entry point the compile found).</summary>
+    internal const string PreprocessOutputUnusableCode = "SD0629";
+
+    /// <summary><c>SD0628</c>: slangc's emission carries a texture/sampler register on a
+    /// declaration from another file (an <c>import</c>ed module or an <c>__include</c>d file)
+    /// and no preprocess pass can prove whether the author wrote it (issue #292).</summary>
+    internal const string RegisterAuthorshipUnprovenCode = "SD0628";
+
     private readonly IShaderCompiler _downstreamCompiler;
+    private readonly Func<SlangcLocation> _locateSlangc;
+    private readonly Func<string, string> _prepareSlangc;
+    private readonly SlangcInvoker _runSlangc;
+    private readonly InProcessSlangc? _inProcessSlangc;
+
+    /// <summary>
+    /// Where (and whether) this host's slangc is: <see cref="UnsupportedReason"/> is
+    /// non-null on a host the bundled natives cannot run on (<c>SD0620</c>);
+    /// <see cref="SlangcPath"/> is null when the native was not found (<c>SD0621</c>).
+    /// </summary>
+    internal readonly record struct SlangcLocation(string? UnsupportedReason, string? SlangcPath);
+
+    private static SlangcLocation LocateBundledSlangc()
+    {
+        string? reason = SlangToolPath.GetUnsupportedReason();
+        return reason is not null
+            ? new SlangcLocation(reason, null)
+            : new SlangcLocation(null, SlangToolPath.Resolve());
+    }
 
     /// <summary>
     /// Creates a <see cref="SlangCompiler"/>. The optional <paramref name="downstreamCompiler"/>
@@ -88,8 +125,77 @@ public sealed class SlangCompiler
     /// and get the real <see cref="EffectCompiler"/>.
     /// </summary>
     public SlangCompiler(IShaderCompiler? downstreamCompiler = null)
+        : this(downstreamCompiler, LocateBundledSlangc)
+    {
+    }
+
+    /// <summary>
+    /// Test seam: <paramref name="locateSlangc"/> replaces the host/native lookup, so the
+    /// checks that must run BEFORE it (entry-stage policy, the SM6 intrinsic guard) are
+    /// provably independent of whether this host has a slangc at all.
+    /// </summary>
+    internal SlangCompiler(IShaderCompiler? downstreamCompiler, Func<SlangcLocation> locateSlangc)
+        : this(downstreamCompiler, locateSlangc, SlangNativeCache.EnsureRunnableSlangc, RunSlangc)
+    {
+    }
+
+    /// <summary>
+    /// One slangc process run: <paramref name="arguments"/> is a <see cref="SlangcArguments"/>
+    /// list (a per-entry compile or the preprocess-only pass) and the source goes to stdin.
+    /// Shaped exactly like <see cref="RunSlangc(string, string, string, IReadOnlyList{string})"/>.
+    /// </summary>
+    internal delegate (int ExitCode, string Stdout, string Stderr) SlangcInvoker(
+        string slangcPath,
+        string workingDirectory,
+        string slangSource,
+        IReadOnlyList<string> arguments);
+
+    /// <summary>
+    /// Test seam (issue #258): <paramref name="prepareSlangc"/> replaces the native-cache
+    /// preparation and <paramref name="runSlangc"/> replaces the process spawn, so the
+    /// post-slangc logic (the per-entry merge and its <c>SD0625</c> rejection, the
+    /// <c>.fx</c> assembly) can be driven end to end with canned slangc output. No valid
+    /// Slang source reproduces <c>SD0625</c> through real slangc, which is why this exists.
+    /// </summary>
+    internal SlangCompiler(
+        IShaderCompiler? downstreamCompiler,
+        Func<SlangcLocation> locateSlangc,
+        Func<string, string> prepareSlangc,
+        SlangcInvoker runSlangc)
     {
         _downstreamCompiler = downstreamCompiler ?? new EffectCompiler();
+        _locateSlangc = locateSlangc;
+        _prepareSlangc = prepareSlangc;
+        _runSlangc = runSlangc;
+    }
+
+    /// <summary>
+    /// One slangc run hosted INSIDE this process (issue #257): <paramref name="arguments"/>
+    /// is a <see cref="SlangcArguments"/> list (<see cref="SlangcArguments.Build"/> for an entry
+    /// point, <see cref="SlangcArguments.BuildPreprocess"/> for the preprocess-only pass), to be
+    /// handed to slang's own command-line parser verbatim, and <paramref name="slangSource"/>
+    /// is what the desktop route pipes to slangc's stdin. Returns slangc's exit status and its
+    /// raw stdout/stderr text;
+    /// <see cref="Compile"/> normalizes the text exactly as the process route does
+    /// (<see cref="SlangcArguments.JoinOutputLines"/>).
+    /// </summary>
+    internal delegate (int ExitCode, string Stdout, string Stderr) InProcessSlangc(
+        string slangSource,
+        IReadOnlyList<string> arguments);
+
+    /// <summary>
+    /// The in-process route (issue #257): slangc runs inside this process instead of as a
+    /// child process, for hosts that cannot spawn one (the browser). Everything around the
+    /// slangc call (the host-independent rejections, the argument list, the register strip,
+    /// the per-entry merge, the <c>.fx</c> assembly, and the downstream pipeline) is the same
+    /// code the desktop route runs; only the transport differs. Internal, and reached only by
+    /// <c>ShadowDusk.Slang.Wasm</c>, so no public API plugs a different compiler in here (a
+    /// convention rather than a security boundary: the assemblies are not strong-named).
+    /// </summary>
+    internal SlangCompiler(IShaderCompiler downstreamCompiler, InProcessSlangc inProcessSlangc)
+        : this(downstreamCompiler, LocateBundledSlangc)
+    {
+        _inProcessSlangc = inProcessSlangc;
     }
 
     /// <summary>
@@ -105,28 +211,24 @@ public sealed class SlangCompiler
         cancellationToken.ThrowIfCancellationRequested();
         string sourceName = options.SourceFileName ?? "<memory>.slang";
 
-        if (!SlangToolPath.IsSupportedOnThisPlatform)
+        // Issue #231: an HLSL Effect (.fx) file is not Slang. Checked before the entry scan,
+        // whose SD0603 ("add [shader] attributes") would send the author down a dead end.
+        (string Construct, int Line)? effectHit = SlangEffectFrameworkGuard.FindConstruct(slangSource);
+        if (effectHit is not null)
         {
             return Fail(new ShaderError(
-                File: sourceName, Line: 0, Column: 0, Code: "SD0620",
-                Message: "ShadowDusk.Slang's real-slangc compile route packages slangc for " +
-                         "win-x64 only today (Phase 66 A2/A3); this platform/architecture is " +
-                         "not yet supported. ShadowDusk.Compiler's built-in .slang frontend " +
-                         "(the HLSL-compatible subset) works everywhere if the source does " +
-                         "not need genuine Slang-only features (import/generics/interfaces)."));
+                File: sourceName, Line: effectHit.Value.Line, Column: 1, Code: "SD0626",
+                Message: "'" + effectHit.Value.Construct + "' is an HLSL Effect (.fx) construct, not Slang: real slangc has no " +
+                         "technique/pass concept and cannot parse it (nor the legacy sampler declarations those effects use). " +
+                         "ShadowDusk.Slang compiles Slang source whose entry points are marked [shader(''vertex'')] / " +
+                         "[shader(''fragment'')]; it synthesizes the technique itself. Compile .fx files, including MonoGame's own " +
+                         "Macros.fxh-based effects (BasicEffect, SpriteEffect, SkinnedEffect, ...), through the .fx route: " +
+                         "EffectCompiler, the CLI, or the MGCB plugin."));
         }
 
-        string? slangcPath = SlangToolPath.Resolve();
-        if (slangcPath is null)
-        {
-            return Fail(new ShaderError(
-                File: sourceName, Line: 0, Column: 0, Code: "SD0621",
-                Message: "slangc.exe was not found. A framework-dependent build that never " +
-                         "copies runtimes/win-x64/native locally (or a repo/dev build that " +
-                         "never ran tools/restore.ps1 / restore.sh) hits this — see " +
-                         "SlangToolPath.ResolveOrThrow's remarks."));
-        }
-
+        // Host-independent rejections run FIRST (entry-stage policy, then the SM6 intrinsic
+        // guard): they depend only on the source and the target, so a host without a usable
+        // slangc must report them exactly like one with it, and their tests run on every OS.
         Result<IReadOnlyList<SlangEntryPoint>, ShaderError[]> entriesResult =
             SlangEntryScanner.Scan(slangSource, sourceName);
         if (entriesResult.IsFailure)
@@ -143,31 +245,55 @@ public sealed class SlangCompiler
             if (sm6Hit is not null)
             {
                 return Fail(new ShaderError(
-                    File: sourceName, Line: sm6Hit.Value.Line, Column: 1, Code: "SD0624",
-                    Message: $"'{sm6Hit.Value.Construct}' is a Shader Model 6 wave/quad intrinsic " +
-                             $"— the {options.Target} target compiles through ShadowDusk's pipeline " +
-                             "at Shader Model 5 or lower and can never represent it (OpenGL: a fixed " +
-                             "vs_5_0/ps_5_0 DXC profile; DirectX: SM5 DXBC; FNA: SM<=3 fx_2_0). This " +
-                             "Slang construct compiles (real slangc accepts it), but has nowhere to " +
-                             "land on this target. Build for Vulkan or DirectX12 instead, or avoid " +
-                             "the intrinsic."));
+                    File: sourceName, Line: sm6Hit.Value.Line, Column: 1,
+                    Code: WaveQuadIntrinsics.BelowSm6Code,
+                    Message: WaveQuadIntrinsics.BelowSm6Message(sm6Hit.Value.Construct, options.Target)));
+            }
+        }
+        else if (options.Target == PlatformTarget.Vulkan)
+        {
+            // Issue #229: Vulkan CAN represent SM6, but MonoGame's DesktopVK runtime cannot run
+            // wave/quad ops (Vulkan 1.0 instance, no subgroup support). Same code and message as
+            // the .fx route, which reaches the same verdict from DXC's own rejection.
+            (string Construct, int Line)? waveHit = SlangSm6ConstructGuard.FindConstruct(slangSource);
+            if (waveHit is not null)
+            {
+                return Fail(new ShaderError(
+                    File: sourceName, Line: waveHit.Value.Line, Column: 1,
+                    Code: WaveQuadIntrinsics.VulkanUnsupportedCode,
+                    Message: WaveQuadIntrinsics.VulkanUnsupportedMessage(waveHit.Value.Construct)));
             }
         }
 
-        string toolDirectory;
-        try
+        // Issue #323: two globals of one name in different namespaces, which slangc's -no-mangle
+        // output silently merges (or, for constant-buffer members, crashes on). The raw text is
+        // read first, before slangc runs at all, and decides on its own when nothing can rewrite
+        // it; otherwise a candidate pair it shows is confirmed by slangc's own preprocess-only
+        // output below (one run, paid only by a source whose raw text shows a pair).
+        IReadOnlyList<SlangcGlobalNameCollisions.GlobalDeclaration> rawDeclarations = [];
+        bool confirmCollisionsByPreprocess = false;
+        if (SlangcGlobalNameCollisions.MaySpellNamespace(slangSource, options.Defines))
         {
-            toolDirectory = SlangNativeCache.EnsureWritableToolDirectory(slangcPath);
+            rawDeclarations = SlangcGlobalNameCollisions.Scan(slangSource, sourceName, rawSource: true);
+            IReadOnlyList<SlangcGlobalNameCollisions.Collision> rawCollisions =
+                SlangcGlobalNameCollisions.FindCollisions(rawDeclarations, sourceName);
+            bool rawIsFinal = SlangcGlobalNameCollisions.RawTextIsWhatSlangcCompiles(slangSource, options.Defines);
+            if (rawCollisions.Count > 0 && rawIsFinal)
+                return Fail(SlangcGlobalNameCollisions.Error(rawCollisions[0], sourceName));
+            confirmCollisionsByPreprocess = !rawIsFinal
+                && (rawCollisions.Count > 0 || !slangSource.Contains("namespace", StringComparison.Ordinal));
         }
-        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or FileNotFoundException)
+
+        // Issue #257: the in-process route has no executable to find or prepare; everything
+        // from the argument list onward is shared with the process route below.
+        string? runnableSlangc = null;
+        string? toolDirectory = null;
+        if (_inProcessSlangc is null)
         {
-            return Fail(new ShaderError(
-                File: sourceName, Line: 0, Column: 0, Code: "SD0623",
-                Message: "Could not prepare a writable directory to run slangc from (it writes " +
-                         $"a runtime cache file, slang-glsl-module.bin, into its own directory " +
-                         $"on first compile): {ex.Message}"));
+            ShaderError? hostError = PrepareProcessSlangc(sourceName, out runnableSlangc, out toolDirectory);
+            if (hostError is not null)
+                return Fail(hostError);
         }
-        string runnableSlangc = Path.Combine(toolDirectory, "slangc.exe");
 
         // Phase 66 A6: forward the SAME per-target platform macros (OPENGL/SM4/VULKAN/SM6/
         // HLSL/GLSL/MGFX/FNA/SM3, plus __KNIFX__ when options.Container is Knifx) the
@@ -193,6 +319,32 @@ public sealed class SlangCompiler
             ? PlatformMacros.For(options.Target, options.Container).Macros
             : [];
 
+        // Issue #323, the confirmation run: the raw text showed a candidate pair but a directive
+        // or a -D value may rewrite it, so slangc's own -E text decides. Before the compiles,
+        // because the constant-buffer-member shape crashes slangc; trusted only when the
+        // preprocessor reported no error (its exit code is 0 either way, measured), so a
+        // preprocessing error is still slangc's own, from the compile that follows.
+        (int ExitCode, string Text, string Stderr)? preprocessedEntry = null;
+        if (confirmCollisionsByPreprocess)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            ShaderError? startError = InvokeSlangc(
+                SlangcArguments.BuildPreprocess(platformMacros, options.Defines),
+                slangSource, sourceName, runnableSlangc, toolDirectory,
+                out int exitCode, out string stdout, out string stderr);
+            if (startError is not null)
+                return Fail(startError);
+            if (exitCode == 0 && !stderr.Contains("error[", StringComparison.Ordinal)
+                && CheckEntryPreprocessOutput((0, stdout, stderr), entries, sourceName, "", "") is null)
+            {
+                preprocessedEntry = (0, stdout, stderr);
+                IReadOnlyList<SlangcGlobalNameCollisions.Collision> collisions = SlangcGlobalNameCollisions.FindCollisions(
+                    SlangcGlobalNameCollisions.Scan(stdout, sourceName, rawSource: false), sourceName);
+                if (collisions.Count > 0)
+                    return Fail(SlangcGlobalNameCollisions.Error(SlangcGlobalNameCollisions.Locate(collisions[0], rawDeclarations), sourceName));
+            }
+        }
+
         // Sequential, not parallel: every invocation shares the SAME writable directory (and
         // therefore the same first-compile cache write into it), so running entries one at a
         // time sidesteps any question of concurrent-write safety in slangc itself, which
@@ -203,21 +355,778 @@ public sealed class SlangCompiler
             cancellationToken.ThrowIfCancellationRequested();
 
             string stage = entry.Stage == SlangStage.Vertex ? "vertex" : "fragment";
-            (int exitCode, string stdout, string stderr) = RunSlangc(
-                runnableSlangc, toolDirectory, slangSource, entry.Name, stage, platformMacros, options.Defines);
+            ShaderError? startError = InvokeSlangc(
+                SlangcArguments.Build(platformMacros, options.Defines, entry.Name, stage),
+                slangSource, sourceName, runnableSlangc, toolDirectory,
+                out int exitCode, out string stdout, out string stderr);
+            if (startError is not null)
+                return Fail(startError);
 
             if (exitCode != 0)
             {
-                return Fail(SlangDiagnosticReformatter.SelectPrimary(stderr, sourceName, entry.Name, stage));
+                return Fail(SlangDiagnosticReformatter.SelectPrimary(stderr, sourceName, entry.Name, stage, exitCode));
             }
 
             perEntryHlsl.Add(stdout);
         }
 
-        string mergedHlsl = SlangHlslMerger.Merge(perEntryHlsl);
+        // Issue #252: slangc registers every texture/sampler itself; only the author's own
+        // register(...) annotations survive (SlangcRegisterStripper). Which ones the author
+        // wrote is read from slangc's OWN preprocess-only output, produced with the macros the
+        // compiles above saw: a register in an inactive #if branch is not this target's intent,
+        // and one written through a macro is. Issue #292 extends it to declarations from an
+        // imported module or an __include'd file, and to a combined Sampler2D's split halves.
+        Result<RegisterDecision, ShaderError> kept = DecideAuthorRegisters(
+            perEntryHlsl, entries, slangSource, sourceName, options.Defines, platformMacros,
+            runnableSlangc, toolDirectory, cancellationToken, preprocessedEntry);
+        if (kept.IsFailure)
+            return Fail(kept.Error);
+
+        // Issue #323, on the texts the register pass read (the entry source as slangc's
+        // preprocessor leaves it, and the modules reached by quoted-path import): a pair formed
+        // through macros, or spread across modules, is found here at no extra slangc run.
+        if (kept.Value.ReadTexts.Count > 0)
+        {
+            var declarations = new List<SlangcGlobalNameCollisions.GlobalDeclaration>();
+            foreach ((string file, string text) in kept.Value.ReadTexts)
+                declarations.AddRange(SlangcGlobalNameCollisions.Scan(text, file, rawSource: false));
+            IReadOnlyList<SlangcGlobalNameCollisions.Collision> collisions =
+                SlangcGlobalNameCollisions.FindCollisions(declarations, sourceName);
+            if (collisions.Count > 0)
+                return Fail(SlangcGlobalNameCollisions.Error(SlangcGlobalNameCollisions.Locate(collisions[0], rawDeclarations), sourceName));
+        }
+
+        // Stripped per entry, before the merge, so both entries' copies of a shared
+        // declaration stay identical.
+        for (int i = 0; i < perEntryHlsl.Count; i++)
+            perEntryHlsl[i] = SlangcRegisterStripper.Strip(perEntryHlsl[i], kept.Value.Keep);
+
+        string mergedHlsl = SlangHlslMerger.TryMerge(
+            perEntryHlsl, entries.Select(e => e.Name).ToArray(), out var mergeConflicts);
+        if (mergeConflicts.Count > 0)
+        {
+            // Entries compiled by separate slangc processes number their generated symbols
+            // independently; the merger renames colliding structs/functions, but a colliding
+            // cbuffer/resource name cannot be renamed (it IS a reflected parameter name).
+            // Reject by name instead of letting DXC report a redefinition with no location.
+            var c = mergeConflicts[0];
+            return Fail(new ShaderError(
+                File: sourceName, Line: 0, Column: 0, Code: "SD0625",
+                Message: "Entry points compile to different declarations of the same global " +
+                         "name '" + c.Name + "' and slangc output for each entry is merged into one effect, " +
+                         "so the name cannot be kept unique. Rename the shader parameter or resource, " +
+                         "or give each entry point its own source file."));
+        }
+        // Issue #302: a texture slangc hoisted out of a combined sampler takes the name the
+        // author wrote (effect.Parameters["Comb"], not "Comb_texture_0"); one hoisted out of
+        // anything else has no author-written name and is rejected. Before the FNA respelling,
+        // so the DX9 texture it declares carries the author's name too.
+        Result<string, ShaderError> named = NameHoistedTextures(
+            mergedHlsl, kept.Value.Texts, entries, slangSource, sourceName, options.Defines, platformMacros,
+            runnableSlangc, toolDirectory, cancellationToken);
+        if (named.IsFailure)
+            return Fail(named.Error);
+        mergedHlsl = named.Value;
+
+        // Issue #230: FNA's fx_2_0 needs DX9 effect texture syntax; slangc only emits texture
+        // objects, which compiled but crashed real FNA on the first draw. See the respeller.
+        if (options.Target == PlatformTarget.Fna)
+        {
+            SlangFx2TextureRespeller.Result respelled = SlangFx2TextureRespeller.Respell(mergedHlsl);
+            if (respelled.Text is null)
+            {
+                return Fail(new ShaderError(
+                    File: sourceName, Line: respelled.SourceLine, Column: respelled.SourceLine > 0 ? 1 : 0,
+                    Code: SlangFx2TextureRespeller.UnsupportedCode,
+                    Message: "The FNA target (fx_2_0, Shader Model 2-3) binds textures through DX9 " +
+                             "texture/sampler_state/tex2D, and ShadowDusk cannot respell slangc's emission " +
+                             "into that form because it contains " + respelled.Unsupported + ". Supported on " +
+                             "FNA: a global Texture2D sampled as T.Sample(S, uv) through a global " +
+                             "SamplerState, one texture per sampler."));
+            }
+            mergedHlsl = respelled.Text;
+        }
+
         string fxText = AssembleFx(mergedHlsl, entries, sourceName);
 
-        return _downstreamCompiler.Compile(fxText, options, cancellationToken);
+        // Issue #340: slangc lowers an author's combined-sampler ARRAY (`Sampler2D T[N]`) to a
+        // texture array plus a sampler array (`SamplerState T_sampler_0[N]`). The sampler half is
+        // one author resource lowered, not the `SamplerState S[N]` mgfxc's parser refuses, so the
+        // DirectX sampler-array refusal (SD0224) must skip it and let the texture half carry the
+        // array diagnostics (SD0221, SD0222), as the hand-written `Texture2D T[N]; SamplerState S;`
+        // reference gets. An author-written `SamplerState S[N]` in Slang source is still refused.
+        IReadOnlyCollection<string> combinedHalves = CombinedSamplerArrayHalves(mergedHlsl);
+        CompilerOptions downstreamOptions = combinedHalves.Count == 0
+            ? options
+            : options.WithSamplerArraysFromCombinedSamplers(combinedHalves);
+
+        Result<CompiledShader, ShaderError[]> downstream = _downstreamCompiler.Compile(fxText, downstreamOptions, cancellationToken);
+        if (downstream.IsFailure)
+            return Result<CompiledShader, ShaderError[]>.Fail(RelocateResourceArrayErrors(downstream.Error, slangSource, sourceName));
+        if (downstream.Value.Warnings.Any(w => w.Code == ResourceArrayWarningCode))
+        {
+            return Result<CompiledShader, ShaderError[]>.Ok(downstream.Value with
+            {
+                Warnings = RelocateResourceArrayErrors(downstream.Value.Warnings.ToArray(), slangSource, sourceName),
+            });
+        }
+        return downstream;
+    }
+
+    /// <summary>The pipeline's codes for an array of textures or samplers: the Vulkan error and
+    /// the DirectX 12 warning (issue #324), and the DirectX 11/12 sampler-array error (issue #340).</summary>
+    private const string ResourceArrayCode = "SD0221";
+    private const string ResourceArrayWarningCode = "SD0222";
+    private const string SamplerArrayCode = "SD0224";
+
+    // The resource name the SD0221/SD0222/SD0224 message opens with: "Vulkan target: 'Tex' is ...".
+    private static readonly Regex ResourceArrayName = new(@"^(?:Vulkan|DirectX 1[12]) target: '(?<name>[^']+)'", RegexOptions.Compiled);
+
+    // slangc's sampler half of a combined sampler, declared as an array:
+    // 'SamplerState  Comb_sampler_0[int(2)];' (the texture half is '<global>_texture_<n>', see
+    // SlangcHoistedResourceNames). Matched on the merged HLSL with comments and strings blanked.
+    private static readonly Regex CombinedSamplerArrayHalf = new(
+        @"\bSamplerState\s+(?<name>[A-Za-z_][A-Za-z0-9_]*_sampler_\d+)\s*\[",
+        RegexOptions.Compiled | RegexOptions.CultureInvariant);
+
+    /// <summary>
+    /// The names of the sampler arrays slangc emitted as the sampler half of a combined-sampler
+    /// array (<c>Sampler2D T[N]</c> → <c>SamplerState T_sampler_0[N]</c>) in
+    /// <paramref name="mergedHlsl"/>; see <see cref="CompilerOptions.SamplerArraysFromCombinedSamplers"/>.
+    /// </summary>
+    internal static IReadOnlyCollection<string> CombinedSamplerArrayHalves(string mergedHlsl)
+    {
+        string masked = ShadowDusk.Compiler.Internal.ResourceArrayDiagnostics.MaskCommentsAndStrings(mergedHlsl);
+        var names = new HashSet<string>(StringComparer.Ordinal);
+        foreach (Match m in CombinedSamplerArrayHalf.Matches(masked))
+            names.Add(m.Groups["name"].Value);
+        return names;
+    }
+
+    /// <summary>
+    /// Issue #324: the pipeline's <c>SD0221</c> (an array of textures or samplers on Vulkan) is
+    /// located at the declaration in the HLSL it compiled. For a combined <c>Sampler2D T[N]</c>
+    /// that declaration is slangc's hoisted half, whose <c>#line</c> names slangc's core module
+    /// (<c>core</c>, <c>hlsl.meta.slang</c>), not the author's file. Point it at the author's
+    /// declaration of the same name in the Slang source instead; every other error passes through.
+    /// The same for <c>SD0222</c> and for <c>SD0224</c> (an author-written <c>SamplerState S[N]</c>
+    /// on DirectX 11/12, issue #340).
+    /// </summary>
+    private static ShaderError[] RelocateResourceArrayErrors(ShaderError[] errors, string slangSource, string sourceName)
+    {
+        if (!errors.Any(e => e.Code is ResourceArrayCode or ResourceArrayWarningCode or SamplerArrayCode))
+            return errors;
+
+        string masked = SlangSourceMask.Mask(slangSource);
+        var relocated = new ShaderError[errors.Length];
+        for (int i = 0; i < errors.Length; i++)
+        {
+            ShaderError e = errors[i];
+            Match name = e.Code is ResourceArrayCode or ResourceArrayWarningCode or SamplerArrayCode ? ResourceArrayName.Match(e.Message) : Match.Empty;
+            bool atAnAuthorFile = e.File.IndexOfAny(['/', '\\']) >= 0 && e.File != sourceName;
+            if (!name.Success || atAnAuthorFile)
+            {
+                relocated[i] = e; // not ours, or already at a file the author can open
+                continue;
+            }
+
+            Match decl = Regex.Match(masked, @"\b" + Regex.Escape(name.Groups["name"].Value) + @"\s*\[", RegexOptions.CultureInvariant);
+            relocated[i] = decl.Success
+                ? e with { File = sourceName, Line = LineOf(masked, decl.Index), Column = ColumnOf(masked, decl.Index) }
+                : e with { File = sourceName, Line = 0, Column = 0 };
+        }
+        return relocated;
+    }
+
+    private static int LineOf(string text, int offset)
+    {
+        int line = 1;
+        for (int i = 0; i < offset; i++)
+        {
+            if (text[i] == '\n')
+                line++;
+        }
+        return line;
+    }
+
+    private static int ColumnOf(string text, int offset)
+    {
+        int lineStart = offset == 0 ? -1 : text.LastIndexOf('\n', offset - 1);
+        return offset - lineStart;
+    }
+
+    /// <summary>
+    /// The emitted texture/sampler declarations whose register the author wrote (by emitted
+    /// name), every other slangc-numbered one to be stripped. Fails rather than guess: a
+    /// preprocess pass that cannot be read, or a declaration no pass can decide, is an error.
+    /// </summary>
+    /// <remarks>
+    /// <para>Runs after every compile (so each compile diagnostic is unchanged, and a source
+    /// whose preprocessing reports an error never gets here: <c>-E</c> exits 0 even then).</para>
+    /// <para><b>Cost, in slangc invocations beyond the per-entry compiles</b> (pinned by
+    /// <c>SlangRegisterPassCostTests</c>):</para>
+    /// <list type="bullet">
+    /// <item>0 when slangc's output holds no texture/sampler register, or when the entry source
+    /// can spell neither <c>register</c> nor (with a declaration from another file present)
+    /// <c>import</c>: nothing can be the author's.</item>
+    /// <item>1 when the entry source's own text decides every declaration, and also when every
+    /// declaration from another file comes from a file that is provably a module: the first
+    /// pass preprocesses the entry source AND every file slangc's <c>#line</c> names for a
+    /// registered declaration in ONE invocation (slangc prints one line per input, measured).
+    /// A module's text is its own (macros do not cross an <c>import</c> or an
+    /// <c>__include</c>, measured), so a declaration located in one is decided from that file
+    /// alone and nothing else needs reading.</item>
+    /// <item>One more per level of quoted-path imports that still has to be read, each level in
+    /// one invocation, and only while something is undecided: a file not yet proven to be a
+    /// module (it may be an <c>#include</c>d fragment, whose text depends on its includer's
+    /// macros), or a resource slangc hoisted out of an aggregate, whose <c>#line</c> names
+    /// slangc's core module instead of the author's file. Those two need the whole closure.</item>
+    /// </list>
+    /// <para>Each distinct file is preprocessed at most once per compile. Both transports run
+    /// the same lists; on the in-process (browser) route slangc opens each path in its own
+    /// virtual file system exactly as its compile did.</para>
+    /// </remarks>
+    private Result<RegisterDecision, ShaderError> DecideAuthorRegisters(
+        List<string> perEntryHlsl,
+        IReadOnlyList<SlangEntryPoint> entries,
+        string slangSource,
+        string sourceName,
+        IReadOnlyList<UserDefine> defines,
+        IReadOnlyList<MacroDefinition> platformMacros,
+        string? runnableSlangc,
+        string? toolDirectory,
+        CancellationToken cancellationToken,
+        (int ExitCode, string Text, string Stderr)? preprocessedEntry = null)
+    {
+        static Result<RegisterDecision, ShaderError> Failed(ShaderError error) =>
+            Result<RegisterDecision, ShaderError>.Fail(error);
+        static Result<RegisterDecision, ShaderError> Decided(
+            IReadOnlySet<string> keep, SlangcHoistedResourceNames.PreprocessedTexts? texts,
+            IReadOnlyList<(string File, string Text)>? readTexts = null) =>
+            Result<RegisterDecision, ShaderError>.Ok(new RegisterDecision(keep, texts, readTexts ?? []));
+
+        var keep = new HashSet<string>(StringComparer.Ordinal);
+        List<SlangcRegisterStripper.EmittedResource> emitted =
+            perEntryHlsl.SelectMany(SlangcRegisterStripper.FindRegistered).Distinct().ToList();
+        if (emitted.Count == 0)
+        {
+            return Decided(keep, texts: null,
+                preprocessedEntry is { } already ? [(sourceName, already.Text)] : null);
+        }
+
+        // Nothing can be the author's when the entry source cannot spell 'register' (through
+        // its own text, an #include, a paste, a splice or a -D value) and no declaration can
+        // come from a module: every emitted register is slangc's own number.
+        bool fromOtherFiles = emitted.Any(r => r.File != SlangcRegisterStripper.EntrySourceFile);
+        if (!SlangcRegisterStripper.MayWriteRegister(slangSource, defines)
+            && !(fromOtherFiles && SlangcRegisterStripper.MayImport(slangSource, defines)))
+        {
+            return Decided(keep, texts: null,
+                preprocessedEntry is { } already ? [(sourceName, already.Text)] : null);
+        }
+
+        // Pass 1: the entry source plus, in the same invocation, every file slangc's #line names
+        // for a registered declaration. Reading those files here is speculative: their text is
+        // used only once the file is proven to be a module (below). An entry text already read
+        // (issue #323's confirmation run) is reused when it is all this pass needs.
+        List<string> named = emitted
+            .Where(r => r.File != SlangcRegisterStripper.EntrySourceFile && !r.IsCoreHoist)
+            .Select(r => r.File)
+            .DistinctBy(SlangcRegisterStripper.PathKey, StringComparer.Ordinal)
+            .ToList();
+        var reads = new Dictionary<string, FileRead>(StringComparer.Ordinal);
+        (int ExitCode, string Text, string Stderr) entry;
+        if (named.Count == 0 && preprocessedEntry is { } preprocessed)
+        {
+            entry = preprocessed;
+        }
+        else
+        {
+            ShaderError? startError = PreprocessFiles(
+                includeEntry: true, named, platformMacros, defines, slangSource, sourceName, runnableSlangc,
+                toolDirectory, cancellationToken, reads, out entry);
+            if (startError is not null)
+                return Failed(startError);
+        }
+
+        // Never guess which registers are the author's: without the preprocessed source the
+        // strip could silently move a texture to another slot, and a pass that printed nothing
+        // is not "the author wrote no register".
+        ShaderError? unusable = CheckEntryPreprocessOutput(
+            entry, entries, sourceName, "which finds the registers the author wrote",
+            "cannot tell which texture/sampler registers are the author's and will not guess (guessing would " +
+            "silently move textures to other slots)");
+        if (unusable is not null)
+            return Failed(unusable);
+
+        var entryBindings = SlangcRegisterStripper.AuthorBindings.Parse(entry.Text);
+
+        // Only when the combined run above did not come back clean and the entry source was read
+        // alone: read the named files now, and only those of declarations the entry text does
+        // not decide VERBATIM (a fragment the entry source #includes may not preprocess on its
+        // own). Issue #325: a prefix match through an entry global ('tex' for 'tex_layer_0') is
+        // not a decision; the file has to be read to tell a hoist from an author's name.
+        List<string> unreadNamed = emitted
+            .Where(r => r.File != SlangcRegisterStripper.EntrySourceFile && !r.IsCoreHoist
+                        && !reads.ContainsKey(SlangcRegisterStripper.PathKey(r.File))
+                        && !entryBindings.Binds(r, hoisted: false) && !entryBindings.DeclaresPlainly(r, hoisted: false))
+            .Select(r => r.File)
+            .DistinctBy(SlangcRegisterStripper.PathKey, StringComparer.Ordinal)
+            .ToList();
+        if (unreadNamed.Count > 0)
+        {
+            ShaderError? startError = PreprocessFiles(
+                includeEntry: false, unreadNamed, platformMacros, defines, slangSource, sourceName, runnableSlangc,
+                toolDirectory, cancellationToken, reads, out _);
+            if (startError is not null)
+                return Failed(startError);
+        }
+
+        // Issue #292: declarations the entry source's text cannot speak for. A file's text is
+        // trusted once it is proven to be a MODULE (reached through a quoted-path import or
+        // __include from a trusted text, or opening with a module/implementing declaration):
+        // macros do not cross those, so its own -E output is what slangc compiled. A file that
+        // is neither may be an #include'd fragment, whose text depends on its includer.
+        var modules = new Dictionary<string, SlangcRegisterStripper.AuthorBindings>(StringComparer.Ordinal);
+        var parsed = new Dictionary<string, SlangcRegisterStripper.AuthorBindings>(StringComparer.Ordinal);
+        var frontier = new Queue<string>();
+        var reached = new HashSet<string>(StringComparer.Ordinal);
+        string? unreadableImport = null;
+
+        // Every read text, trusted or not, parsed once: what it SPELLS tells an author's name
+        // from a hoist (issue #325) even before the file is proven to be a module.
+        SlangcRegisterStripper.AuthorBindings Parsed(FileRead read)
+        {
+            string key = SlangcRegisterStripper.PathKey(read.Path);
+            if (!parsed.TryGetValue(key, out SlangcRegisterStripper.AuthorBindings? bindings))
+                parsed[key] = bindings = SlangcRegisterStripper.AuthorBindings.Parse(read.Text!);
+            return bindings;
+        }
+
+        SlangcRegisterStripper.AuthorBindings? Located(SlangcRegisterStripper.EmittedResource resource) =>
+            resource.File != SlangcRegisterStripper.EntrySourceFile && !resource.IsCoreHoist
+            && reads.TryGetValue(SlangcRegisterStripper.PathKey(resource.File), out FileRead? read) && read.Text is not null
+                ? Parsed(read)
+                : null;
+
+        void Trust(FileRead read)
+        {
+            string key = SlangcRegisterStripper.PathKey(read.Path);
+            if (modules.ContainsKey(key))
+                return;
+            modules[key] = Parsed(read);
+            foreach (string imported in SlangcRegisterStripper.QuotedImports(read.Text!, read.Path))
+                frontier.Enqueue(imported);
+        }
+
+        foreach (string imported in SlangcRegisterStripper.QuotedImports(entry.Text, importingFile: null))
+            frontier.Enqueue(imported);
+        foreach (FileRead read in reads.Values.ToList())
+        {
+            if (read.Text is not null && SlangcRegisterStripper.OpensAsModule(read.Text))
+                Trust(read);
+        }
+
+        List<SlangcRegisterStripper.RegisterVerdict> verdicts;
+        while (true)
+        {
+            // Everything reachable that is already read becomes trusted; the rest is the next level.
+            var level = new List<string>();
+            while (frontier.Count > 0)
+            {
+                string path = frontier.Dequeue();
+                if (!reached.Add(SlangcRegisterStripper.PathKey(path)))
+                    continue;
+                if (!reads.TryGetValue(SlangcRegisterStripper.PathKey(path), out FileRead? read))
+                    level.Add(path);
+                else if (read.Text is null)
+                    unreadableImport ??= path;
+                else
+                    Trust(read);
+            }
+
+            bool closureComplete = level.Count == 0;
+            verdicts = emitted
+                .Select(r => SlangcRegisterStripper.Judge(
+                    r, entryBindings, modules, closureComplete, closureBroken: unreadableImport is not null, Located(r)))
+                .ToList();
+            if (closureComplete || !verdicts.Contains(SlangcRegisterStripper.RegisterVerdict.Pending))
+                break;
+
+            ShaderError? levelError = PreprocessFiles(
+                includeEntry: false, level, platformMacros, defines, slangSource, sourceName, runnableSlangc,
+                toolDirectory, cancellationToken, reads, out _);
+            if (levelError is not null)
+                return Failed(levelError);
+            foreach (string path in level)
+            {
+                FileRead read = reads[SlangcRegisterStripper.PathKey(path)];
+                if (read.Text is null)
+                    unreadableImport ??= path;
+                else
+                    Trust(read);
+            }
+        }
+
+        for (int i = 0; i < emitted.Count; i++)
+        {
+            SlangcRegisterStripper.EmittedResource resource = emitted[i];
+            if (verdicts[i] == SlangcRegisterStripper.RegisterVerdict.Keep)
+            {
+                keep.Add(resource.Name);
+                continue;
+            }
+            if (verdicts[i] == SlangcRegisterStripper.RegisterVerdict.Strip)
+                continue;
+
+            string key = SlangcRegisterStripper.PathKey(resource.File);
+            reads.TryGetValue(key, out FileRead? own);
+            string reason;
+            bool located = own is not null;
+            if (own is { Text: null })
+            {
+                reason = $"the preprocess-only pass over '{resource.File}' (slangc -E, which finds the registers the " +
+                         $"author wrote there) could not be read: {own.Failure}";
+            }
+            else if (modules.ContainsKey(key))
+            {
+                reason = $"'{resource.File}' preprocessed with this target's macros neither writes register(...) on " +
+                         $"'{resource.AuthorName}' nor declares it plainly (a register spelled through a macro defined " +
+                         "in another file, a declaration inside a namespace or block, or two declarations that disagree)";
+            }
+            else if (own is not null)
+            {
+                reason = $"'{resource.File}' is not reached from the entry source through quoted-path imports and does " +
+                         "not open with a 'module' or 'implementing' declaration, so its text cannot be told from an " +
+                         "#include'd fragment, which depends on macros of an includer ShadowDusk cannot see (an import " +
+                         "by module name is not followed)";
+            }
+            else
+            {
+                reason = $"no file ShadowDusk could read declares '{resource.AuthorName}': it is not in the entry " +
+                         $"source, slangc's #line names '{resource.File}' for it (its own core module, for a resource " +
+                         "it hoisted out of a combined sampler or a struct), and an import by module name rather " +
+                         "than by quoted path is not followed";
+            }
+            if (unreadableImport is not null)
+                reason += $"; and '{unreadableImport}', imported by quoted path, could not be preprocessed on its own";
+            return Failed(Unprovable(resource, sourceName, located, reason));
+        }
+
+        // Issue #302: the texts this pass read also say which names the author wrote. Issue
+        // #323: the entry text and the texts proven to be modules are what the name-collision
+        // check reads (an unproven fragment's own text is not what slangc compiled).
+        var readTexts = new List<(string File, string Text)> { (sourceName, entry.Text) };
+        foreach (FileRead read in reads.Values)
+        {
+            if (read.Text is not null && modules.ContainsKey(SlangcRegisterStripper.PathKey(read.Path)))
+                readTexts.Add((read.Path, read.Text));
+        }
+        return Decided(keep, new SlangcHoistedResourceNames.PreprocessedTexts(
+            entry.Text, reads.Values.Where(read => read.Text is not null).Select(read => read.Text!)), readTexts);
+    }
+
+    /// <summary>What <see cref="DecideAuthorRegisters"/> settled.</summary>
+    /// <param name="Keep">The emitted declarations whose register the author wrote.</param>
+    /// <param name="Texts">The preprocess-only output the pass read, or null when it did not
+    /// have to run.</param>
+    /// <param name="ReadTexts">The entry source's preprocess-only text (keyed by the source name)
+    /// and that of every file proven to be a module (keyed by its path), for the issue #323
+    /// name-collision check; empty when nothing was read.</param>
+    private sealed record RegisterDecision(
+        IReadOnlySet<string> Keep,
+        SlangcHoistedResourceNames.PreprocessedTexts? Texts,
+        IReadOnlyList<(string File, string Text)> ReadTexts);
+
+    /// <summary>
+    /// Issue #302: renames the texture half of every combined sampler slangc split
+    /// (<c>Comb_texture_0</c>) to the global the author declared (<c>Comb</c>), and fails on a
+    /// hoisted texture that has no author-written name. See
+    /// <see cref="SlangcHoistedResourceNames"/> for the rule and its evidence.
+    /// </summary>
+    /// <remarks>
+    /// <b>Cost:</b> no slangc run for a source whose own text decides (every shader with no
+    /// hoisted texture, and a combined sampler declared plainly in a source that cannot form an
+    /// identifier it does not spell), and none when the register pass already preprocessed the
+    /// source (<paramref name="texts"/>). One preprocess-only run otherwise: a hoisted name the
+    /// source also spells, or a combined sampler declared through a macro. Pinned by
+    /// <c>SlangRegisterPassCostTests</c>.
+    /// </remarks>
+    private Result<string, ShaderError> NameHoistedTextures(
+        string mergedHlsl,
+        SlangcHoistedResourceNames.PreprocessedTexts? texts,
+        IReadOnlyList<SlangEntryPoint> entries,
+        string slangSource,
+        string sourceName,
+        IReadOnlyList<UserDefine> defines,
+        IReadOnlyList<MacroDefinition> platformMacros,
+        string? runnableSlangc,
+        string? toolDirectory,
+        CancellationToken cancellationToken)
+    {
+        SlangcHoistedResourceNames.Decision decision =
+            SlangcHoistedResourceNames.Decide(mergedHlsl, slangSource, sourceName, defines, texts);
+        if (decision.NeedsPreprocess)
+        {
+            var reads = new Dictionary<string, FileRead>(StringComparer.Ordinal);
+            ShaderError? startError = PreprocessFiles(
+                includeEntry: true, [], platformMacros, defines, slangSource, sourceName, runnableSlangc,
+                toolDirectory, cancellationToken, reads, out (int ExitCode, string Text, string Stderr) entry);
+            if (startError is not null)
+                return Result<string, ShaderError>.Fail(startError);
+            ShaderError? unusable = CheckEntryPreprocessOutput(
+                entry, entries, sourceName, "which finds the names the author wrote",
+                "cannot tell which resource names are the author's and will not guess (guessing would silently " +
+                "rename an effect parameter)");
+            if (unusable is not null)
+                return Result<string, ShaderError>.Fail(unusable);
+
+            decision = SlangcHoistedResourceNames.Decide(
+                mergedHlsl, slangSource, sourceName, defines,
+                new SlangcHoistedResourceNames.PreprocessedTexts(entry.Text, []));
+        }
+
+        return decision.Error is not null
+            ? Result<string, ShaderError>.Fail(decision.Error)
+            : Result<string, ShaderError>.Ok(SlangcHoistedResourceNames.Apply(mergedHlsl, decision.Renames));
+    }
+
+    /// <summary>
+    /// A preprocess-only run of the entry source is usable only when slangc exited 0 and its
+    /// output is the source: not empty, and holding every entry point the compile found.
+    /// Returns the error to fail with otherwise (slangc's own diagnostic, or <c>SD0629</c>).
+    /// </summary>
+    private static ShaderError? CheckEntryPreprocessOutput(
+        (int ExitCode, string Text, string Stderr) entry,
+        IReadOnlyList<SlangEntryPoint> entries,
+        string sourceName,
+        string purpose,
+        string consequence)
+    {
+        if (entry.ExitCode != 0)
+        {
+            // Never guess: without the preprocessed source the decision would be a silent one.
+            return SlangDiagnosticReformatter.SelectPrimary(
+                entry.Stderr, sourceName,
+                $"slangc failed its preprocess-only pass (-E, {purpose}) with no diagnostic output, " +
+                "after every entry point compiled.");
+        }
+
+        // A successful pass that printed nothing (or dropped an entry point the compile just
+        // found) is not "the author wrote nothing": fail by name instead.
+        string? missingEntry = string.IsNullOrWhiteSpace(entry.Text)
+            ? null
+            : entries.Select(e => e.Name).FirstOrDefault(
+                name => !Regex.IsMatch(entry.Text, $@"\b{Regex.Escape(name)}\b"));
+        if (string.IsNullOrWhiteSpace(entry.Text) || missingEntry is not null)
+        {
+            return new ShaderError(
+                File: sourceName, Line: 0, Column: 0, Code: PreprocessOutputUnusableCode,
+                Message: $"slangc's preprocess-only pass (-E, {purpose}) exited 0 but its output " +
+                         (missingEntry is null
+                             ? "was empty"
+                             : $"does not contain the entry point '{missingEntry}' that slangc just compiled") +
+                         $", so ShadowDusk {consequence}.");
+        }
+        return null;
+    }
+
+    /// <summary>One file's preprocess-only result: its text, or why it could not be read.</summary>
+    private sealed record FileRead(string Path, string? Text, string? Failure);
+
+    /// <summary>
+    /// Preprocesses the entry source (when <paramref name="includeEntry"/>) and
+    /// <paramref name="files"/> in ONE slangc invocation, which prints one line per input in
+    /// argument order (measured, v2026.14.1; an input it cannot open prints an error and no
+    /// line, and <c>-E</c> still exits 0). If that run does not come back as exactly one clean
+    /// line per input, the inputs are run again on their own so a failure is attributed to its
+    /// file: with <paramref name="includeEntry"/> only the entry source (the files stay unread,
+    /// for the caller to read the ones it still needs), otherwise each file. Returns an error
+    /// only when slangc could not be started.
+    /// </summary>
+    private ShaderError? PreprocessFiles(
+        bool includeEntry,
+        IReadOnlyList<string> files,
+        IReadOnlyList<MacroDefinition> platformMacros,
+        IReadOnlyList<UserDefine> defines,
+        string slangSource,
+        string sourceName,
+        string? runnableSlangc,
+        string? toolDirectory,
+        CancellationToken cancellationToken,
+        Dictionary<string, FileRead> reads,
+        out (int ExitCode, string Text, string Stderr) entry)
+    {
+        entry = default;
+        int inputs = files.Count + (includeEntry ? 1 : 0);
+        if (inputs > 1)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            ShaderError? startError = InvokeSlangc(
+                SlangcArguments.BuildPreprocessFiles(platformMacros, defines, includeEntry, files),
+                slangSource, sourceName, runnableSlangc, toolDirectory,
+                out int exitCode, out string stdout, out string stderr);
+            if (startError is not null)
+                return startError;
+
+            string[] lines = stdout.Split('\n');
+            if (exitCode == 0 && lines.Length == inputs + 1 && lines[^1].Length == 0
+                && !stderr.Contains("error[", StringComparison.Ordinal))
+            {
+                int next = 0;
+                if (includeEntry)
+                    entry = (0, lines[next++] + "\n", stderr);
+                foreach (string file in files)
+                    reads[SlangcRegisterStripper.PathKey(file)] = new FileRead(file, lines[next++], null);
+                return null;
+            }
+        }
+
+        if (includeEntry)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            ShaderError? startError = InvokeSlangc(
+                SlangcArguments.BuildPreprocess(platformMacros, defines),
+                slangSource, sourceName, runnableSlangc, toolDirectory,
+                out int exitCode, out string stdout, out string stderr);
+            if (startError is not null)
+                return startError;
+            entry = (exitCode, stdout, stderr);
+            // The files are left unread: the caller reads only those the entry text does not
+            // already speak for (an #include'd fragment need not preprocess on its own).
+            return null;
+        }
+
+        foreach (string file in files)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            ShaderError? startError = InvokeSlangc(
+                SlangcArguments.BuildPreprocessFiles(platformMacros, defines, includeEntry: false, [file]),
+                slangSource, sourceName, runnableSlangc, toolDirectory,
+                out int exitCode, out string stdout, out string stderr);
+            if (startError is not null)
+                return startError;
+
+            // '-E' exits 0 even when it cannot open the file (measured), so an error line on
+            // stderr counts as a failed read, with slangc's words verbatim.
+            bool failed = exitCode != 0 || stderr.Contains("error[", StringComparison.Ordinal);
+            reads[SlangcRegisterStripper.PathKey(file)] = failed
+                ? new FileRead(file, null, string.IsNullOrWhiteSpace(stderr)
+                    ? $"slangc exited {exitCode} with no diagnostic output"
+                    : "slangc reported: " + stderr.Trim())
+                : new FileRead(file, stdout, null);
+        }
+        return null;
+    }
+
+    /// <summary><c>SD0628</c>: a texture/sampler register whose authorship cannot be proven,
+    /// located at the declaration slangc's <c>#line</c> names when that is a file ShadowDusk
+    /// read, else at the entry source (a hoisted resource's <c>#line</c> is slangc's core module).</summary>
+    private static ShaderError Unprovable(
+        SlangcRegisterStripper.EmittedResource resource, string sourceName, bool located, string reason)
+    {
+        string what = resource.AuthorName == resource.Name
+            ? $"'{resource.Name}'"
+            : $"'{resource.Name}' (which slangc may have hoisted out of '{resource.AuthorName}')";
+        return new ShaderError(
+            File: located ? resource.File : sourceName,
+            Line: located ? resource.Line : 0,
+            Column: located ? 1 : 0,
+            Code: RegisterAuthorshipUnprovenCode,
+            Message: $"slangc emitted register({resource.RegisterClass}...) on {what}, declared in '{resource.File}', and " +
+                     $"ShadowDusk cannot prove whether the author wrote that register or slangc numbered it itself: {reason}. " +
+                     "ShadowDusk will not guess (keeping an invented register or dropping an author's one would silently " +
+                     "move a texture to another slot). Declare the resource in the entry source, or write its register(...) " +
+                     "directly on its declaration in a module the entry source imports by quoted path.");
+    }
+
+    /// <summary>
+    /// One slangc run over whichever transport this instance uses, with the output text in
+    /// the same form on both (issue #257). Returns an error only when the process could not
+    /// be started at all; a slangc failure is a non-zero <paramref name="exitCode"/>.
+    /// </summary>
+    private ShaderError? InvokeSlangc(
+        IReadOnlyList<string> arguments,
+        string slangSource,
+        string sourceName,
+        string? runnableSlangc,
+        string? toolDirectory,
+        out int exitCode,
+        out string stdout,
+        out string stderr)
+    {
+        if (_inProcessSlangc is { } inProcess)
+        {
+            (exitCode, stdout, stderr) = inProcess(slangSource, arguments);
+            stdout = SlangcArguments.JoinOutputLines(stdout);
+            stderr = SlangcArguments.JoinOutputLines(stderr);
+            return null;
+        }
+
+        try
+        {
+            (exitCode, stdout, stderr) = _runSlangc(runnableSlangc!, toolDirectory!, slangSource, arguments);
+            return null;
+        }
+        catch (System.ComponentModel.Win32Exception ex)
+        {
+            // The OS refused to start the process at all (no execute permission, wrong
+            // architecture, a loader rejection): surface the OS's own words, never a crash.
+            exitCode = -1;
+            stdout = stderr = "";
+            return new ShaderError(
+                File: sourceName, Line: 0, Column: 0, Code: "SD0622",
+                Message: $"slangc could not be started ('{runnableSlangc}'): {ex.Message}");
+        }
+    }
+
+    /// <summary>
+    /// The process route's host checks: finds the bundled slangc (<c>SD0620</c> on a host the
+    /// natives cannot run on, <c>SD0621</c> when it is missing) and prepares it to run
+    /// (<c>SD0623</c>). Returns null when <paramref name="runnableSlangc"/> is ready.
+    /// </summary>
+    private ShaderError? PrepareProcessSlangc(string sourceName, out string? runnableSlangc, out string? toolDirectory)
+    {
+        runnableSlangc = null;
+        toolDirectory = null;
+        SlangcLocation location = _locateSlangc();
+        if (location.UnsupportedReason is not null)
+        {
+            return new ShaderError(
+                File: sourceName, Line: 0, Column: 0, Code: "SD0620",
+                Message: location.UnsupportedReason + " ShadowDusk.Compiler's built-in .slang " +
+                         "frontend (the HLSL-compatible subset) works everywhere if the source " +
+                         "does not need genuine Slang-only features (import/generics/interfaces).");
+        }
+
+        if (location.SlangcPath is null)
+        {
+            return new ShaderError(
+                File: sourceName, Line: 0, Column: 0, Code: "SD0621",
+                Message: $"slangc was not found for {SlangToolPath.CurrentRid}. Probed the app " +
+                         $"base directory, runtimes/{SlangToolPath.CurrentRid}/native/ under it, " +
+                         "the host's native search directories, and a repository " +
+                         $"tools/slang/{SlangToolPath.CurrentRid}/ restore (tools/restore.sh / " +
+                         "restore.ps1). A package consumer should never hit this: the native " +
+                         "rides inside the ShadowDusk.Slang package.");
+        }
+
+        string prepared;
+        try
+        {
+            prepared = _prepareSlangc(location.SlangcPath);
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            return new ShaderError(
+                File: sourceName, Line: 0, Column: 0, Code: "SD0623",
+                Message: "Could not prepare slangc to run (it needs its compiler library beside " +
+                         "it, an execute permission, and a writable directory for the runtime " +
+                         $"cache file it writes on first compile): {ex.Message}");
+        }
+        runnableSlangc = prepared;
+        toolDirectory = Path.GetDirectoryName(prepared)!;
+        return null;
     }
 
     /// <summary>
@@ -248,36 +1157,41 @@ public sealed class SlangCompiler
         SlangEntryPoint? vs = entries.FirstOrDefault(e => e.Stage == SlangStage.Vertex);
         SlangEntryPoint? ps = entries.FirstOrDefault(e => e.Stage == SlangStage.Fragment);
 
+        // '\n' explicitly, never AppendLine: AppendLine writes the HOST newline ("\r\n" on
+        // Windows), and slangc's own body is already '\n'-joined, so Windows got mixed line
+        // endings and a different intermediate text than Linux/macOS (caught by
+        // SlangCrossHostByteIdentityTests' AssembledFx keys; the compiled bytes matched).
         var sb = new StringBuilder();
-        sb.AppendLine($"// Generated from '{sourceName}' by ShadowDusk's real-slangc Slang route (Phase 66 A3).");
-        sb.AppendLine("// The body below is slangc's own -target hlsl emission for the discovered entry");
-        sb.AppendLine("// point(s); the technique block is synthesized the same way the HLSL-compatible-");
-        sb.AppendLine("// subset frontend (SlangFrontend.ConvertToFx) does for its own .slang input.");
-        sb.AppendLine();
+        void Line(string text = "") => sb.Append(text).Append('\n');
+        Line($"// Generated from '{sourceName}' by ShadowDusk's real-slangc Slang route (Phase 66 A3).");
+        Line("// The body below is slangc's own -target hlsl emission for the discovered entry");
+        Line("// point(s); the technique block is synthesized the same way the HLSL-compatible-");
+        Line("// subset frontend (SlangFrontend.ConvertToFx) does for its own .slang input.");
+        Line();
 
         // Same measured convention SlangFrontend/the ShaderToy frontend use: gate on SM4
         // (exactly what the DirectX profiles define), not on OPENGL.
-        sb.AppendLine("#if SM4");
-        sb.AppendLine("    #define VS_SHADERMODEL vs_4_0_level_9_1");
-        sb.AppendLine("    #define PS_SHADERMODEL ps_4_0_level_9_1");
-        sb.AppendLine("#else");
-        sb.AppendLine("    #define VS_SHADERMODEL vs_3_0");
-        sb.AppendLine("    #define PS_SHADERMODEL ps_3_0");
-        sb.AppendLine("#endif");
-        sb.AppendLine();
+        Line("#if SM4");
+        Line("    #define VS_SHADERMODEL vs_4_0_level_9_1");
+        Line("    #define PS_SHADERMODEL ps_4_0_level_9_1");
+        Line("#else");
+        Line("    #define VS_SHADERMODEL vs_3_0");
+        Line("    #define PS_SHADERMODEL ps_3_0");
+        Line("#endif");
+        Line();
         string cleanedHlsl = StripMatrixPackingPragma(StripUnresolvableConditionalIncludes(mergedHlsl));
-        sb.AppendLine(cleanedHlsl.Trim());
-        sb.AppendLine();
-        sb.AppendLine($"technique {TechniqueName}");
-        sb.AppendLine("{");
-        sb.AppendLine("    pass P0");
-        sb.AppendLine("    {");
+        Line(cleanedHlsl.Trim());
+        Line();
+        Line($"technique {TechniqueName}");
+        Line("{");
+        Line("    pass P0");
+        Line("    {");
         if (vs is not null)
-            sb.AppendLine($"        VertexShader = compile VS_SHADERMODEL {vs.Name}();");
+            Line($"        VertexShader = compile VS_SHADERMODEL {vs.Name}();");
         if (ps is not null)
-            sb.AppendLine($"        PixelShader = compile PS_SHADERMODEL {ps.Name}();");
-        sb.AppendLine("    }");
-        sb.AppendLine("}");
+            Line($"        PixelShader = compile PS_SHADERMODEL {ps.Name}();");
+        Line("    }");
+        Line("}");
         return sb.ToString();
     }
 
@@ -353,7 +1267,22 @@ public sealed class SlangCompiler
         string entryName,
         string stage,
         IReadOnlyList<MacroDefinition> platformMacros,
-        IReadOnlyList<UserDefine> defines)
+        IReadOnlyList<UserDefine> defines) =>
+        // Issue #257: the argument list lives in SlangcArguments, shared with the in-process
+        // (browser) route so both hosts hand slangc the identical command line.
+        RunSlangc(slangcPath, workingDirectory, slangSource,
+            SlangcArguments.Build(platformMacros, defines, entryName, stage));
+
+    /// <summary>
+    /// Runs slangc once with <paramref name="arguments"/> (a <see cref="SlangcArguments"/>
+    /// list): <paramref name="slangSource"/> piped over stdin, stdout and stderr captured line
+    /// by line and re-joined with <c>'\n'</c>.
+    /// </summary>
+    internal static (int ExitCode, string Stdout, string Stderr) RunSlangc(
+        string slangcPath,
+        string workingDirectory,
+        string slangSource,
+        IReadOnlyList<string> arguments)
     {
         var psi = new ProcessStartInfo(slangcPath)
         {
@@ -362,59 +1291,16 @@ public sealed class SlangCompiler
             RedirectStandardInput  = true,
             RedirectStandardOutput = true,
             RedirectStandardError  = true,
+            // slangc reads its stdin source as UTF-8. Without an explicit encoding, .NET
+            // writes stdin in the console's input code page, which on Windows is the OEM code
+            // page, so a non-ASCII byte in the source would reach slangc differently per host.
+            StandardInputEncoding  = new UTF8Encoding(encoderShouldEmitUTF8Identifier: false),
             StandardOutputEncoding = Encoding.UTF8,
             StandardErrorEncoding  = Encoding.UTF8,
         };
 
-        psi.ArgumentList.Add("-lang");
-        psi.ArgumentList.Add("slang");
-        // Platform macros first, user defines after — same ordering ToDxcFlags() uses for
-        // the ordinary .fx route, so a user -D of the same name (unusual, but not
-        // forbidden) still wins.
-        foreach (MacroDefinition macro in platformMacros)
-            psi.ArgumentList.Add($"-D{macro.Name}={macro.Value}");
-        foreach (UserDefine define in defines)
-            psi.ArgumentList.Add($"-D{define.Name}={define.Value}");
-        psi.ArgumentList.Add("-target");
-        psi.ArgumentList.Add("hlsl");
-        // Without this, slangc wraps every cbuffer's members in a generated
-        // 'SLANG_ParameterGroup_*' struct and gives the cbuffer itself a single member of
-        // that struct type (Phase 65 §2's residue finding). That is legal HLSL — DXC
-        // compiles it fine — but ShadowDusk's own OpenGL uniform-block lowering
-        // (the MojoShader-dialect GLSL rewrite) only models FLAT float/vec2/vec3/vec4/mat4
-        // members and arrays of those directly inside a cbuffer, so a nested-struct member
-        // fails loudly with SD0210 (measured, Phase 66 A3: every corpus shader with a
-        // cbuffer failed OpenGL specifically until this flag was added). This flag makes
-        // slangc emit flat members directly in the cbuffer instead — DirectX_11 was
-        // unaffected either way. It does NOT touch the separate, still-unfixed '_N' name
-        // mangling (A4's job): 'float Desaturation_0' still carries slangc's suffix, only
-        // the cbuffer's SHAPE changes.
-        psi.ArgumentList.Add("-no-hlsl-pack-constant-buffer-elements");
-        // Phase 66 A4: without this, slangc renames every symbol with an '_N' suffix
-        // ('float BlurAmount' -> 'float BlurAmount_0'), which would surface in a
-        // consumer's compiled effect's reflected parameter table and break
-        // effect.Parameters["BlurAmount"] lookups. '-no-mangle' is documented by slangc
-        // itself as experimental ("do as little mangling of names as possible"), but
-        // measured (Phase 66 A4) against the full 21-shader corpus on both DirectX_11 and
-        // OpenGL: every top-level declaration that matters for the reflected parameter
-        // table — cbuffer names, cbuffer members, Texture2D/SamplerState declarations —
-        // comes back with the author's exact original name, with no collisions anywhere
-        // in the corpus (including GenericsProbe.slang's real generic-over-interface
-        // function). Local variables and struct field names (VSOutput/PsInput members,
-        // the loop-body temporaries) still carry an '_N' suffix, but those are never part
-        // of an Effect's reflected parameter table, so they don't matter for the
-        // consumer-visible surface this flag exists to fix. No corpus shader failed to
-        // compile with the flag added, so the simpler fix (this flag) was taken over
-        // building a separate demangling/renaming shim.
-        psi.ArgumentList.Add("-no-mangle");
-        psi.ArgumentList.Add("-entry");
-        psi.ArgumentList.Add(entryName);
-        psi.ArgumentList.Add("-stage");
-        psi.ArgumentList.Add(stage);
-        // '--' then '-': read the single input file from stdin (slangc -h: "Use '-' once to
-        // read from standard input; -lang is required, stdin is limited to 256 MiB").
-        psi.ArgumentList.Add("--");
-        psi.ArgumentList.Add("-");
+        foreach (string argument in arguments)
+            psi.ArgumentList.Add(argument);
 
         using var process = new Process { StartInfo = psi };
 

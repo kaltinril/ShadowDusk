@@ -301,17 +301,25 @@ public sealed class FxPreParser
     // Drained by the ParseFile sampler dispatch after each ParseSamplerDecl call.
     private readonly List<(int Start, int End)> _samplerAnnotationErasures = new();
 
+    // True when the text being parsed is the PREPROCESSED source of the legacy-sampler recovery
+    // (issue #308): conditionals already evaluated, macros already expanded, so every token is
+    // one the compiler will see. Only then is it safe to rewrite a legacy sampler declaration
+    // nothing reads (see the bare-form dispatch in ParseFile); on raw source the same text can
+    // sit in a branch the target never compiles.
+    private readonly bool _preprocessed;
+
     // -------------------------------------------------------------------------
     // Constructor (private — callers use the static Parse entry point)
     // -------------------------------------------------------------------------
 
-    private FxPreParser(string source, string sourceFile, IReadOnlyList<Token> tokens, int[] tokenCharOffset, FxSourceMode mode)
+    private FxPreParser(string source, string sourceFile, IReadOnlyList<Token> tokens, int[] tokenCharOffset, FxSourceMode mode, bool preprocessed = false)
     {
         _source = source;
         _sourceFile = sourceFile;
         _tokens = tokens;
         _tokenCharOffset = tokenCharOffset;
         _mode = mode;
+        _preprocessed = preprocessed;
         _pos = 0;
     }
 
@@ -702,6 +710,37 @@ public sealed class FxPreParser
                         continue;
                     }
 
+                    // Issue #308, preprocessed re-parse only: a bare declaration NOTHING reads
+                    // (no legacy intrinsic, no modern Texture method), whose type is a D3D9
+                    // sampler type DXC does not have ('sampler2D U;',
+                    // 'samplerCUBE U : register(s0);'). Verbatim it stops the compile ("unknown
+                    // type name 'sampler2D'"), while fxc/mgfxc accept it and simply drop the
+                    // unused object. It becomes a plain 'SamplerState U;', which DXC drops the
+                    // same way. Its register still RESERVES (mgfxc does that for an unused
+                    // sampler too, measured), and that is read off the preprocessed view of the
+                    // raw source, not off this rewritten text.
+                    //
+                    // Deliberately narrow. One a modern method reads ('Tex.Sample(U, uv)' with
+                    // 'sampler2D U;') is left alone: mgfxc rejects that (X3013), so it must not
+                    // start compiling here. A misspelt keyword ('samplerstate') is not a D3D9
+                    // type and is left alone too.
+                    //
+                    // Not done on raw source: there the declaration can sit in a branch this
+                    // target never compiles, and rewriting it would change the text handed to
+                    // the compiler for an effect that compiles today.
+                    if (isBareForm && _preprocessed && _mode == FxSourceMode.RewriteToSm4 &&
+                        IsD3d9OnlySamplerType(tok.Text) &&
+                        !_modernMethodSamplers.Contains(nameTok.Text))
+                    {
+                        int blockStart = _tokenCharOffset[_pos];
+                        (string name, int declEnd) = ConsumeBareSamplerDecl();
+                        replacedRanges.Add((blockStart, declEnd,
+                            BuildDeclReplacement(blockStart, declEnd, $"SamplerState {name};")));
+
+                        SkipNonCodeTokens();
+                        continue;
+                    }
+
                     // Any other use of a sampler-type keyword (a function parameter,
                     // an unused bare sampler, an unused Form 1 sampler whose intrinsic
                     // isn't tex2D) falls through to verbatim copy / existing handling.
@@ -978,6 +1017,7 @@ public sealed class FxPreParser
             Samplers = samplers,
             ParameterAnnotations = paramAnnotations,
             ExplicitGlSamplerSlots = explicitGlSlots,
+            LegacySamplerTextures = new Dictionary<string, string>(_samplerTextureBindings, StringComparer.Ordinal),
             ReservedGlSamplerSlots = CollectReservedSamplerRegisters(),
         });
     }
@@ -1731,13 +1771,379 @@ public sealed class FxPreParser
     /// function parameter (<c>float4 f(SamplerState s, …)</c>) cannot match because no
     /// <c>register</c> clause follows.</para>
     /// </summary>
-    private HashSet<int> CollectReservedSamplerRegisters()
+    private HashSet<int> CollectReservedSamplerRegisters() => CollectReservedSamplerRegisters(_tokens);
+
+    /// <summary>
+    /// The OpenGL sampler registers reserved by modern <c>SamplerState X : register(sN)</c>
+    /// declarations, decided on the PREPROCESSED source, the way <c>mgfxc</c> decides it
+    /// (issue #283).
+    ///
+    /// <para><see cref="FxParseResult.ReservedGlSamplerSlots"/> is read from the tokens the
+    /// pre-parser was given, which for a compile is the raw source: a register that only exists in
+    /// an inactive <c>#if</c> branch is counted there, one written through a macro
+    /// (<c>#define SLOT(n) : register(n)</c>) is missed, and one in an <c>#include</c>d file is
+    /// never seen. This entry point first builds the preprocessed view of
+    /// <paramref name="flattenedSource"/> (conditionals evaluated, macros expanded, with the
+    /// <c>#define</c>s the flattener prepended for the target and the user's defines), then runs
+    /// the same declaration matcher over it. It is pure managed code, so the answer is identical
+    /// on every host, the browser included.</para>
+    /// </summary>
+    /// <param name="flattenedSource">
+    /// The effect source with <c>#include</c>s inlined and the compile's macros prepended as
+    /// <c>#define</c> lines (the output of <c>ShadowDusk.Core.Preprocessor.Preprocessor.Flatten</c>).
+    /// </param>
+    /// <param name="sourceFile">Display name used in diagnostics.</param>
+    /// <returns>
+    /// The reserved register indices, or an <c>SD0009</c> error when the preprocessed view
+    /// cannot be built (a directive or <c>#if</c> expression this preprocessor does not model).
+    /// </returns>
+    public static Result<IReadOnlySet<int>, ShaderError> CollectReservedGlSamplerSlots(
+        string flattenedSource, string sourceFile)
+    {
+        var tokens = PreprocessedViewTokens(flattenedSource, sourceFile);
+        if (tokens.IsFailure)
+            return Result<IReadOnlySet<int>, ShaderError>.Fail(tokens.Error);
+
+        return Result<IReadOnlySet<int>, ShaderError>.Ok(CollectReservedSamplerRegisters(tokens.Value));
+    }
+
+    /// <summary>
+    /// Both halves of the OpenGL sampler-register decision, read off ONE preprocessed view of the
+    /// source, the way <c>mgfxc</c> reads them (issues #283 and #299):
+    /// <list type="bullet">
+    ///   <item><description><see cref="GlSamplerSlots.Reserved"/>: the registers modern
+    ///   <c>SamplerState X : register(sN)</c> declarations take out of circulation, exactly what
+    ///   <see cref="CollectReservedGlSamplerSlots"/> returns.</description></item>
+    ///   <item><description><see cref="GlSamplerSlots.Explicit"/>: texture name -> the register an
+    ///   explicit <c>register(sN)</c> on its LEGACY sampler declaration pins it to, the
+    ///   preprocessed counterpart of <see cref="FxParseResult.ExplicitGlSamplerSlots"/>.</description></item>
+    /// </list>
+    ///
+    /// <para><b>Why the explicit map needs the preprocessed view too (issue #299).</b> The
+    /// pre-parser records a legacy sampler's register from the raw tokens, so it sees both arms
+    /// of an <c>#if</c> and no macro expansion. Measured against the pinned <c>mgfxc</c> 3.8.4.1
+    /// <c>/Profile:OpenGL</c>: <c>#if OPENGL</c> / <c>sampler S = sampler_state { … };</c> /
+    /// <c>#else</c> / <c>sampler S : register(s1) = sampler_state { … };</c> is <c>ps_s0</c>
+    /// (the raw reading said <c>ps_s1</c>, off <c>SpriteBatch</c>'s unit 0), and
+    /// <c>#define REG s1</c> / <c>sampler S : register(REG);</c> is <c>ps_s1</c> (the raw reading
+    /// missed it: <c>ps_s0</c>).</para>
+    ///
+    /// <para><b>Which declarations count</b> is unchanged from the raw reading, only the text is
+    /// different: a sampler-type keyword, the name, then the exact <c>register ( sN )</c> clause;
+    /// and only a sampler the SM4 rewrite bound to a texture (one a legacy intrinsic such as
+    /// <c>tex2D</c> reads) gets an entry. The sampler-to-texture join comes from
+    /// <paramref name="parsed"/>, the parse of the source that is actually compiled, because that
+    /// is the texture the rewritten HLSL samples through. Both names of that join are resolved
+    /// through the preprocessor first, so a sampler or texture whose NAME is a macro
+    /// (<c>#define SAMP MySampler</c> / <c>sampler SAMP : register(s1);</c>) still finds its
+    /// declaration in the view and its texture in the SPIR-V.</para>
+    /// </summary>
+    /// <param name="flattenedSource">
+    /// The RAW effect source with <c>#include</c>s inlined and the compile's macros prepended as
+    /// <c>#define</c> lines (the output of <c>ShadowDusk.Core.Preprocessor.Preprocessor.Flatten</c>).
+    /// </param>
+    /// <param name="sourceFile">Display name used in diagnostics.</param>
+    /// <param name="parsed">The pre-parse of the same effect that feeds the compile.</param>
+    /// <returns>
+    /// Both maps, or an <c>SD0009</c> error when the preprocessed view cannot be built.
+    /// </returns>
+    public static Result<GlSamplerSlots, ShaderError> CollectGlSamplerSlots(
+        string flattenedSource, string sourceFile, FxParseResult parsed)
+    {
+        ArgumentNullException.ThrowIfNull(parsed);
+
+        // The raw parse knows each sampler and texture by the token the author wrote. Either can
+        // itself be a macro (`#define SAMP MySampler`), in which case the view, and the compiled
+        // SPIR-V, only ever show what it expands to. So the names are resolved through the same
+        // preprocessor before they are used as join keys.
+        var rawNames = new HashSet<string>(StringComparer.Ordinal);
+        foreach ((string samplerName, string textureName) in parsed.LegacySamplerTextures)
+        {
+            rawNames.Add(samplerName);
+            rawNames.Add(textureName);
+        }
+
+        var view = Preprocessing.FxMacroPreprocessor.Process(flattenedSource, sourceFile, rawNames);
+        if (view.IsFailure)
+            return Result<GlSamplerSlots, ShaderError>.Fail(view.Error);
+
+        IReadOnlyList<Token> tokens = new FxLexer(view.Value.View, sourceFile).Tokenize();
+        IReadOnlyDictionary<string, string> resolved = view.Value.Resolved;
+
+        // A name that expands to anything but one identifier is not a name the view can be
+        // searched for; it keeps its raw spelling (and then simply finds no register).
+        string ViewName(string rawName) =>
+            resolved.TryGetValue(rawName, out string? expansion) && IsIdentifier(expansion) ? expansion : rawName;
+
+        // Re-key SAMPLER name -> register onto TEXTURE name, as the raw parse does for
+        // FxParseResult.ExplicitGlSamplerSlots: a sampler with no register in the view is not
+        // pinned, and the allocator falls back to declaration order for it.
+        Dictionary<string, int> registers = CollectLegacySamplerRegisters(tokens);
+        var explicitSlots = new Dictionary<string, int>(StringComparer.Ordinal);
+        foreach ((string samplerName, string textureName) in parsed.LegacySamplerTextures)
+        {
+            if (registers.TryGetValue(ViewName(samplerName), out int slot))
+                explicitSlots[ViewName(textureName)] = slot;
+        }
+
+        return Result<GlSamplerSlots, ShaderError>.Ok(
+            new GlSamplerSlots(explicitSlots, CollectReservedSamplerRegisters(tokens)));
+    }
+
+    // -------------------------------------------------------------------------
+    // Legacy-sampler recovery on the preprocessed source (issue #308)
+    // -------------------------------------------------------------------------
+
+    /// <summary>
+    /// Whether <paramref name="flattenedSource"/>, once PREPROCESSED, still holds legacy D3D9
+    /// sampler syntax that DXC does not compile: a sampler type it has no keyword for
+    /// (<c>sampler2D</c>, <c>samplerCUBE</c>, <c>sampler_state</c> …) or a call to a legacy
+    /// sampling intrinsic (<c>tex2D</c> and its family).
+    ///
+    /// <para>This is the test for "the pre-parser's SM4 rewrite missed something" (issue #308).
+    /// The rewrite reads the raw tokens of the main file, so a legacy sampler declared in an
+    /// <c>#include</c>d file, one whose register clause or whole declaration comes out of a macro
+    /// (<c>DECLARE_TEXTURE(S, 1)</c>), or a <c>tex2D</c> hidden in a macro body
+    /// (<c>SAMPLE_TEXTURE(S, uv)</c>) reaches the compiler unrewritten. Pass the text the compiler
+    /// was actually given (the rewritten source, <c>#include</c>s inlined); it is preprocessed
+    /// here first, because on raw text the same syntax can sit in a branch the target never
+    /// compiles.</para>
+    /// </summary>
+    /// <param name="flattenedSource">
+    /// The compiler's input with <c>#include</c>s inlined and the compile's macros prepended
+    /// (the output of <c>ShadowDusk.Core.Preprocessor.Preprocessor.Flatten</c>).
+    /// </param>
+    /// <param name="sourceFile">Display name used in diagnostics.</param>
+    /// <returns>
+    /// Whether such syntax remains, and the compiler-predefined macro a conditional tested if one
+    /// did (the view evaluated it as undefined, so the answer may not be what the compiler saw);
+    /// or an <c>SD0009</c> error when the preprocessed view cannot be built.
+    /// </returns>
+    public static Result<LegacySamplerResidueCheck, ShaderError> HasLegacySamplerResidue(string flattenedSource, string sourceFile)
+    {
+        var view = Preprocessing.FxMacroPreprocessor.ProcessForCompiler(flattenedSource, sourceFile);
+        if (view.IsFailure)
+            return Result<LegacySamplerResidueCheck, ShaderError>.Fail(view.Error);
+
+        bool found = FindLegacySamplerResidue(new FxLexer(view.Value.Text, sourceFile).Tokenize()) is not null;
+        Preprocessing.FxMacroPreprocessor.CompilerPredefinedMacroUse? predefined = view.Value.PredefinedMacroUse;
+        return Result<LegacySamplerResidueCheck, ShaderError>.Ok(new LegacySamplerResidueCheck(
+            found,
+            predefined is null ? null : new CompilerPredefinedMacroTest(predefined.Name, predefined.File, predefined.Line)));
+    }
+
+    /// <summary>
+    /// A plain word search for the same legacy sampler syntax
+    /// <see cref="HasLegacySamplerResidue"/> looks for, with NO preprocessing: it also sees a
+    /// macro body and an inactive branch. Only good for "this effect uses that syntax somewhere",
+    /// which is all the caller needs when the preprocessed view cannot be built.
+    /// </summary>
+    /// <param name="source">Any effect text.</param>
+    public static bool MentionsLegacySamplerSyntax(string source)
+    {
+        ArgumentNullException.ThrowIfNull(source);
+        return LegacySamplerSyntaxWord.IsMatch(source);
+    }
+
+    private static readonly System.Text.RegularExpressions.Regex LegacySamplerSyntaxWord = new(
+        @"\b(sampler1D|sampler2D|sampler3D|samplerCUBE|sampler_state|tex(1D|2D|3D|CUBE)(bias|grad|lod|proj)?)\b",
+        System.Text.RegularExpressions.RegexOptions.CultureInvariant);
+
+    /// <summary>
+    /// Pre-parses the PREPROCESSED form of an effect (issue #308): the legacy-sampler recovery
+    /// for an effect the compiler rejected because the raw pre-parse could not see a legacy
+    /// sampler declaration or <c>tex2D</c> call that an <c>#include</c> or a macro supplies.
+    ///
+    /// <para><paramref name="flattenedRawSource"/> is preprocessed by the managed
+    /// <see cref="Preprocessing.FxMacroPreprocessor"/> (conditionals evaluated, macros expanded,
+    /// one output line per input line, <c>#line</c> and <c>#pragma</c> passed through), and the
+    /// ordinary pre-parse then runs on THAT text, which is how <c>mgfxc</c> itself works: it
+    /// preprocesses first and parses techniques and samplers second. The returned
+    /// <see cref="FxParseResult.StrippedHlsl"/> is the text to hand to the compiler in place of
+    /// the flattened raw source; every span in the result, and any error, is mapped back onto
+    /// the author's lines through the <c>#line</c> directives.</para>
+    ///
+    /// <para>It is a RECOVERY, never the first attempt: an effect that compiles from its raw
+    /// source keeps compiling from exactly that source, so no output byte moves for it.</para>
+    /// </summary>
+    /// <param name="flattenedRawSource">
+    /// The RAW effect source (before any pre-parse) with <c>#include</c>s inlined and the
+    /// compile's macros prepended (the output of
+    /// <c>ShadowDusk.Core.Preprocessor.Preprocessor.Flatten</c>).
+    /// </param>
+    /// <param name="sourceFile">Display name used in diagnostics.</param>
+    /// <returns>
+    /// The parse, or an error: <c>SD0009</c> when the preprocessed text cannot be built, or the
+    /// pre-parser's own <c>FXnnnn</c> diagnostic for the preprocessed text.
+    /// </returns>
+    public static Result<FxPreprocessedParse, ShaderError> ParsePreprocessed(string flattenedRawSource, string sourceFile)
+    {
+        var view = Preprocessing.FxMacroPreprocessor.ProcessForCompiler(flattenedRawSource, sourceFile);
+        if (view.IsFailure)
+            return Result<FxPreprocessedParse, ShaderError>.Fail(view.Error);
+
+        string text = view.Value.Text;
+        var lineMap = new Preprocessing.SourceLineMap(text, sourceFile);
+
+        IReadOnlyList<Token> tokens = new FxLexer(text, sourceFile).Tokenize();
+        var parser = new FxPreParser(
+            text, sourceFile, tokens, ComputeCharacterOffsets(text, tokens), FxSourceMode.RewriteToSm4, preprocessed: true);
+        Result<FxParseResult, FxParseError> parsed = parser.ParseFile();
+        if (parsed.IsFailure)
+        {
+            FxParseError error = parsed.Error;
+            (string file, int line) = lineMap.Resolve(error.Line);
+            return Result<FxPreprocessedParse, ShaderError>.Fail(new ShaderError(
+                File: file,
+                Line: line,
+                Column: error.Column,
+                Code: $"FX{(int)error.Code:D4}",
+                Message: error.Message));
+        }
+
+        // What the rewrite still could not model: the text is fully preprocessed and line-aligned
+        // with the view, so a plain token scan finds it and the line map places it.
+        LegacySamplerResidue? residue = null;
+        if (FindLegacySamplerResidue(new FxLexer(parsed.Value.StrippedHlsl, sourceFile).Tokenize()) is { } left)
+        {
+            (string file, int line) = lineMap.Resolve(left.Line);
+            residue = new LegacySamplerResidue(left.Text, file, line, left.Column);
+        }
+
+        Preprocessing.FxMacroPreprocessor.CompilerPredefinedMacroUse? predefined = view.Value.PredefinedMacroUse;
+        return Result<FxPreprocessedParse, ShaderError>.Ok(new FxPreprocessedParse
+        {
+            Parsed = lineMap.Remap(parsed.Value),
+            Residue = residue,
+            CompilerPredefinedMacro = predefined is null
+                ? null
+                : new CompilerPredefinedMacroTest(predefined.Name, predefined.File, predefined.Line),
+        });
+    }
+
+    /// <summary>
+    /// The first token of legacy D3D9 sampler syntax DXC does not compile, in a token stream that
+    /// is already preprocessed: a sampler type keyword other than the two DXC has, or a legacy
+    /// sampling intrinsic that is actually CALLED (a variable that merely shares the name is not
+    /// one).
+    /// </summary>
+    private static Token? FindLegacySamplerResidue(IReadOnlyList<Token> tokens)
+    {
+        for (int i = 0; i < tokens.Count; i++)
+        {
+            Token t = tokens[i];
+            if (t.Kind != TokenKind.Identifier)
+                continue;
+
+            if (SamplerTypeKeywords.Contains(t.Text) && !IsDxcSamplerType(t.Text))
+                return t;
+
+            if (LegacySampleIntrinsics.ContainsKey(t.Text) || UnsupportedLegacyIntrinsics.Contains(t.Text))
+            {
+                int j = i + 1;
+                while (j < tokens.Count &&
+                       tokens[j].Kind is TokenKind.LineComment or TokenKind.BlockComment or TokenKind.Preprocessor)
+                {
+                    j++;
+                }
+                if (j < tokens.Count && tokens[j].Kind == TokenKind.LParen)
+                    return t;
+            }
+        }
+
+        return null;
+    }
+
+    private static bool IsIdentifier(string text)
+    {
+        if (text.Length == 0 || !(char.IsAsciiLetter(text[0]) || text[0] == '_'))
+            return false;
+        foreach (char c in text)
+        {
+            if (!(char.IsAsciiLetterOrDigit(c) || c == '_'))
+                return false;
+        }
+        return true;
+    }
+
+    /// <summary>
+    /// The preprocessed view of <paramref name="flattenedSource"/> (conditionals evaluated,
+    /// macros expanded), tokenized. Shared by every OpenGL sampler-register reading so they are
+    /// all decided on the same text.
+    /// </summary>
+    private static Result<IReadOnlyList<Token>, ShaderError> PreprocessedViewTokens(
+        string flattenedSource, string sourceFile)
+    {
+        var view = Preprocessing.FxMacroPreprocessor.Process(flattenedSource, sourceFile);
+        if (view.IsFailure)
+            return Result<IReadOnlyList<Token>, ShaderError>.Fail(view.Error);
+
+        return Result<IReadOnlyList<Token>, ShaderError>.Ok(new FxLexer(view.Value, sourceFile).Tokenize());
+    }
+
+    /// <summary>
+    /// Read-only scan for <c>&lt;sampler type&gt; &lt;name&gt; : register(sN)</c>, returning
+    /// name -> N (a later declaration of the same name wins, as it does in
+    /// the main parse). It matches the same shape the main loop records into
+    /// <see cref="_explicitSamplerRegisters"/>: any <see cref="SamplerTypeKeywords"/> keyword,
+    /// the name, then the exact <c>register ( sN )</c> clause that
+    /// <see cref="TryReadSamplerRegister"/> accepts (the lexer has already dropped the ':').
+    /// Whether the declaration then carries <c>= sampler_state { … }</c>, a brace block or just
+    /// <c>;</c> does not matter to the register.
+    ///
+    /// <para>Like <see cref="CollectReservedSamplerRegisters(IReadOnlyList{Token})"/> it is a
+    /// separate pass so it cannot perturb the rewrite: a shape it does not recognise costs an
+    /// allocation difference, never a parse.</para>
+    /// </summary>
+    private static Dictionary<string, int> CollectLegacySamplerRegisters(IReadOnlyList<Token> tokens)
+    {
+        var registers = new Dictionary<string, int>(StringComparer.Ordinal);
+
+        var code = new List<Token>(tokens.Count);
+        foreach (Token t in tokens)
+        {
+            if (t.Kind is not (TokenKind.LineComment or TokenKind.BlockComment or TokenKind.Preprocessor))
+                code.Add(t);
+        }
+
+        for (int i = 0; i + 5 < code.Count; i++)
+        {
+            if (code[i].Kind != TokenKind.Identifier || !SamplerTypeKeywords.Contains(code[i].Text))
+                continue;
+            if (code[i + 1].Kind != TokenKind.Identifier) continue;
+            if (code[i + 2].Kind != TokenKind.Identifier ||
+                !string.Equals(code[i + 2].Text, "register", StringComparison.OrdinalIgnoreCase))
+            {
+                continue;
+            }
+            if (code[i + 3].Kind != TokenKind.LParen) continue;
+
+            Token slotTok = code[i + 4];
+            if (slotTok.Kind != TokenKind.Identifier ||
+                slotTok.Text.Length < 2 ||
+                (slotTok.Text[0] != 's' && slotTok.Text[0] != 'S') ||
+                !int.TryParse(slotTok.Text.AsSpan(1), System.Globalization.NumberStyles.None,
+                              System.Globalization.CultureInfo.InvariantCulture, out int slot))
+            {
+                continue;
+            }
+            if (code[i + 5].Kind != TokenKind.RParen) continue;
+
+            // The same single-byte bound TryReadSamplerRegister applies.
+            if (slot is >= 0 and <= 255)
+                registers[code[i + 1].Text] = slot;
+        }
+
+        return registers;
+    }
+
+    private static HashSet<int> CollectReservedSamplerRegisters(IReadOnlyList<Token> tokens)
     {
         var reserved = new HashSet<int>();
 
         // Code tokens only — trivia can sit anywhere between the five we need to match.
-        var code = new List<Token>(_tokens.Count);
-        foreach (Token t in _tokens)
+        var code = new List<Token>(tokens.Count);
+        foreach (Token t in tokens)
         {
             if (t.Kind is not (TokenKind.LineComment or TokenKind.BlockComment or TokenKind.Preprocessor))
                 code.Add(t);
@@ -1745,11 +2151,8 @@ public sealed class FxPreParser
 
         for (int i = 0; i + 4 < code.Count; i++)
         {
-            if (code[i].Kind != TokenKind.Identifier ||
-                !string.Equals(code[i].Text, "SamplerState", StringComparison.Ordinal))
-            {
+            if (code[i].Kind != TokenKind.Identifier || !IsRegisterReservingSamplerType(code[i].Text))
                 continue;
-            }
             if (code[i + 1].Kind != TokenKind.Identifier) continue;
             if (code[i + 2].Kind != TokenKind.Identifier ||
                 !string.Equals(code[i + 2].Text, "register", StringComparison.OrdinalIgnoreCase))
@@ -1774,6 +2177,46 @@ public sealed class FxPreParser
 
         return reserved;
     }
+
+    /// <summary>
+    /// The type keywords whose declaration RESERVES its explicit <c>register(sN)</c> on OpenGL
+    /// (issue #309): every sampler type, not only the exact spelling <c>SamplerState</c>.
+    ///
+    /// <para>Measured against the pinned <c>mgfxc</c> 3.8.4.1 <c>/Profile:OpenGL</c>, one texture
+    /// read through <c>Tex.Sample(S, uv)</c> with an unannotated <c>SamplerState S</c> unless noted:
+    /// <c>sampler S : register(s0)</c> as the sampler read is <c>ps_s1</c>, bare and with a
+    /// <c>= sampler_state { … }</c> block; an UNUSED <c>sampler U : register(s0)</c>,
+    /// <c>sampler2D U : register(s0)</c>, <c>samplerCUBE U : register(s0)</c> or
+    /// <c>SamplerComparisonState C : register(s0)</c> is <c>ps_s1</c> too; and a legacy sampler
+    /// with a register that ANOTHER entry point reads through <c>tex2D</c> still takes that
+    /// register away from this one (<c>sampler X : register(s0); sampler2D Y;</c> with one pixel
+    /// shader per sampler is <c>ps_s0</c> for the first and <c>ps_s1</c> for the second). fxc
+    /// keeps an explicitly bound register out of circulation for the whole source, whatever the
+    /// keyword and whether or not the entry point being compiled uses the object.</para>
+    ///
+    /// <para>A legacy sampler a <c>tex2D</c> reads is therefore reserved AND pinned
+    /// (<see cref="CollectLegacySamplerRegisters"/>): the pin wins for its own pair in pass 1 of
+    /// <c>SpirvCombinedSamplerPairs.ResolveSlots</c>, and the reservation keeps every other pair
+    /// off that register in pass 2.</para>
+    /// </summary>
+    private static bool IsRegisterReservingSamplerType(string keyword) =>
+        SamplerTypeKeywords.Contains(keyword) ||
+        string.Equals(keyword, "SamplerComparisonState", StringComparison.Ordinal);
+
+    /// <summary>
+    /// True for the two sampler type keywords DXC itself declares a sampler with. Every other
+    /// <see cref="SamplerTypeKeywords"/> entry (<c>sampler2D</c>, <c>samplerCUBE</c>,
+    /// <c>sampler_state</c> …) is D3D9 effect syntax DXC rejects.
+    /// </summary>
+    private static bool IsDxcSamplerType(string keyword) =>
+        keyword is "sampler" or "SamplerState" or "SamplerComparisonState";
+
+    /// <summary>
+    /// True for the dimensioned D3D9 sampler types fxc declares a sampler with and DXC does not
+    /// (exact spelling: fxc is case-sensitive here, <c>samplerstate</c> is its X3000).
+    /// </summary>
+    private static bool IsD3d9OnlySamplerType(string keyword) =>
+        keyword is "sampler1D" or "sampler2D" or "sampler3D" or "samplerCUBE";
 
     /// <summary>True for the D3D9 effect-framework <c>NULL</c> keyword (case-insensitive,
     /// matching fxc) used in <c>VertexShader = NULL;</c> / <c>Texture = NULL;</c>.</summary>

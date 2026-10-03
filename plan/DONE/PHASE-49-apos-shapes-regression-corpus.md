@@ -4,7 +4,7 @@
 > single remaining item, Option B (the decision-gated Apos.Shapes render-proof), was **moved to
 > [Phase 51 (A3)](../PHASE-51-consolidated-remainder-backlog.md)**.
 
-**Status:** Option A implemented (2026-06-27) — vendored, probed, classified, wired, suite green. Option B (render-proof) deferred.
+**Status:** ✅ Done, archived. Option A implemented (2026-06-27): vendored, probed, classified, wired, suite green. Option B (render-proof) was carried to [Phase 51](../PHASE-51-consolidated-remainder-backlog.md) and landed as [Phase 55](PHASE-55-apos-shapes-shape-gallery-render-proof.md).
 
 ## As-built (2026-06-27)
 

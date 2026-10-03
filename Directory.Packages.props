@@ -7,7 +7,11 @@
        type the CLR refuses to load, and MonoGame 3.8.5's Content Builder GetTypes()-scans every
        consumer dependency unguarded. The ID3D12ShaderReflection interop is ShadowDusk-owned now. -->
   <ItemGroup Label="DXC">
-    <PackageVersion Include="Vortice.Dxc" Version="3.3.4" />
+    <!-- EXACT range (issue #270): DxcLoader runs only the DXC natives Vortice.Dxc 3.3.4 ships
+         (DxcNativeIdentity pins them) and refuses any other build with SD0219. The packed
+         nuspec then says [3.3.4], so a consumer graph that lifts Vortice.Dxc (e.g. through
+         another engine's package) gets NuGet's NU1608 at restore, not only SD0219 at run time. -->
+    <PackageVersion Include="Vortice.Dxc" Version="[3.3.4]" />
   </ItemGroup>
 
   <ItemGroup Label="D3DCompiler (DXBC oracle backend — managed wrapper restores cross-platform; runtime is Windows-only, guarded by OperatingSystem.IsWindows())">
@@ -42,6 +46,13 @@
   <ItemGroup Label="MonoGame runtime validation (Phase 17 / Phase 18)">
     <PackageVersion Include="MonoGame.Framework.DesktopGL" Version="3.8.2.1105" />
     <PackageVersion Include="MonoGame.Framework.WindowsDX" Version="3.8.2.1105" />
+  </ItemGroup>
+
+  <!-- Phase 59: validation-only, never a product dependency. validation/RaylibRoute renders the
+       raylib converter's output in real Raylib-cs (raylib 6.0, glsl330). Pinned because the
+       render gate's evidence is only as good as the runtime it ran against. -->
+  <ItemGroup Label="Raylib runtime validation (Phase 59)">
+    <PackageVersion Include="Raylib-cs" Version="8.1.0" />
   </ItemGroup>
 
   <!--

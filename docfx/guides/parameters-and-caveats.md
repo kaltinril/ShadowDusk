@@ -112,7 +112,7 @@ ShadowDusk produces **MGFX v10** by default (<xref:ShadowDusk.Core.CompilerOptio
 
 Two **opt-in, experimental** newer containers are available for consumers targeting newer runtimes. Both are **additive** — the v10 default is unchanged, and you only get them if you ask:
 
-- **MGFX v11** — set <xref:ShadowDusk.Core.CompilerOptions.MgfxVersion> `= 11` (CLI `--mgfx-version 11`). A faithful MonoGame v11 container for **MonoGame 3.8.5+**. v11 adds two per-shader diagnostic strings (the source file + entry point, used only in shader error messages, MonoGame PR #8813); it renders identically to v10. Render-proven in real MonoGame 3.8.5. *(v11 stays opt-in: v10 loads in every MonoGame from 3.8.1.263 onward and in KNI, whereas v11 requires 3.8.5+.)*
+- **MGFX v11** — set <xref:ShadowDusk.Core.CompilerOptions.MgfxVersion> `= 11` (CLI `--mgfx-version 11`). A faithful MonoGame v11 container for **MonoGame 3.8.5+**. v11 adds two per-shader diagnostic strings (the source file + entry point, used only in shader error messages, MonoGame PR #8813); it renders identically to v10. The source-file string is <xref:ShadowDusk.Core.CompilerOptions.SourceFileName> exactly as you pass it (what `mgfxc` does with its own argument), so an absolute path ends up in the effect; set <xref:ShadowDusk.Core.CompilerOptions.EmbeddedSourceFileName> to store a different string while diagnostics keep the real path. ShadowDusk's MGCB plugin and Content Builder processor store `<unknown>`, as MonoGame's stock processor does. DirectX 12 and Vulkan are always v11, so this applies to them without any opt-in. Render-proven in real MonoGame 3.8.5. *(v11 stays opt-in: v10 loads in every MonoGame from 3.8.1.263 onward and in KNI, whereas v11 requires 3.8.5+.)*
 - **KNIFX v11** — set <xref:ShadowDusk.Core.CompilerOptions.Container> `= EffectContainer.Knifx`. KNI's newer KNIFX container for **KNI v4.02+**, render-proven in real KNI v4.2.9001. `MgfxVersion` is ignored when `Container == Knifx`; `Container` is ignored for the `Fna` target (always D3D9 fx_2_0).
 
 To pick a whole target (backend + container) with one value instead of setting these separately, set `CompilerOptions.Profile` to a `CapabilityProfile` (e.g. `CapabilityProfile.KniGL_4_02`), or use the CLI `--target-runtime` flag — a profile overrides `Target` / `Container` / `MgfxVersion`. See [Choosing a Target](choosing-a-target.md).
@@ -143,6 +143,10 @@ Pass extra include search paths with the CLI `/I <path>` (repeatable) or the lib
 ## Errors fail loudly
 
 Compilation returns `Result<CompiledShader, ShaderError[]>`. Each <xref:ShadowDusk.Core.ShaderError> carries the file, line, column, code, and message exactly as the underlying compiler emitted them; `FxcFormattedMessage` renders the MGCB-parseable form. No exceptions are thrown for expected shader failures.
+
+## Extremely deep expressions
+
+The native compilers (DXC, vkd3d-shader, SPIRV-Cross) recurse once per nesting level of the source, and a native stack overflow cannot be reported as a `ShaderError`: it ends the process. ShadowDusk therefore runs every native compiler call on its own worker thread with a 64 MB stack, whatever thread (and stack size) your code calls `Compile`/`CompileAsync` from. Measured on Windows x64, that moves the ceiling from about 2,000 terms in one additive chain (`x + x + ...`) to about 94,400, and `else if` chains and call chains of tens of thousands compile with time as the only limit. Only the native call moves: your `IIncludeResolver` and the rest of the pipeline run on the calling thread. Source deeper than even that still exits the process, since the overflow cannot be detected beforehand (see `project_facts.md` for the measured ceilings); bracketed nesting is capped earlier by DXC's own clean `-fbracket-depth` (256) diagnostic.
 
 ## Validating a `.fx` (no render needed)
 

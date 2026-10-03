@@ -45,6 +45,13 @@
     <ProjectReference Include="..\..\src\ShadowDusk.Wasm\ShadowDusk.Wasm.csproj" />
   </ItemGroup>
 
+  <ItemGroup Label="Full Slang input in the browser (issue #257, Phase 67)">
+    <!-- WasmSlangCompiler: the pinned slangc compiled to WebAssembly and run in-page (Slang
+         INPUT only), feeding the same ShadowDusk.Wasm pipeline. Its slangc module is served
+         from _content/ShadowDusk.Slang.Wasm/ like ShadowDusk.Wasm's own modules. -->
+    <ProjectReference Include="..\..\src\ShadowDusk.Slang.Wasm\ShadowDusk.Slang.Wasm.csproj" />
+  </ItemGroup>
+
   <ItemGroup Label="ShaderToy / GLSL front-end (Phase 47)">
     <!-- Pure-managed ShaderToy/GLSL -> .fx converter. Lets the fiddle accept ShaderToy 'mainImage'
          (or plain 'void main') source: it is converted to .fx in-browser, then compiled by the same

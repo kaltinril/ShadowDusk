@@ -46,7 +46,8 @@ Effect effect = new Effect(GraphicsDevice, mgfx);   // a live Effect, compiled o
 ## What it needs
 
 - A standard `net*-android` MonoGame or KNI project.
-- The `ShadowDusk.Compiler` package. Its Android native compilers (DXC + SPIRV-Cross, both `arm64-v8a` and `x86_64`) ride inside the package as per-ABI native assets and land in your APK automatically — the same "add the package, call the API" setup as desktop, no separate install. Real devices (`arm64-v8a`) and x86/x86\_64 emulators are both covered.
+- The `ShadowDusk.Compiler` package. Its Android native compilers (DXC + SPIRV-Cross for `arm64-v8a`) ride inside the package as native assets and land in your APK automatically — the same "add the package, call the API" setup as desktop, no separate install. Real devices (`arm64-v8a`) are covered; the package ships no `x86_64` natives, so on an x86\_64 emulator image a DXC-backed compile returns `SD0219` unless the app bundles ShadowDusk's own x86\_64 build.
+- ShadowDusk checks that the DXC it loaded is its own pinned build, by the build id of the library as mapped from the APK. If another package in your app ships its own `libdxcompiler.so` for the same ABI and the build keeps that one, compiles return `SD0219` instead of running a different compiler.
 
 ## Notes & caveats
 
@@ -79,3 +80,7 @@ If you are building ShadowDusk from source rather than from a published package,
   This stages a stripped `libdxcompiler.so` as `tools/dxc/<rid>/libdxcompiler.so`.
 
 Bundle the per-ABI `.so` into your APK with `<AndroidNativeLibrary Include="..." Abi="arm64-v8a">` items (the published package does this for you). A worked, end-to-end harness — compile a shader on the device and render with it — lives in `validation/AndroidGl`.
+
+## Slang on Android
+
+The free `.slang` subset built into `ShadowDusk.Compiler` works on-device like any `.fx`. Full Slang (the optional `ShadowDusk.Slang` package, real `slangc`) does **not** run on-device yet: upstream ships no Android `slangc`, and an Android app can only start a packaged executable when native libraries are extracted, which a default Release build does not do (measured on an API-34 emulator, issue #257). Compile full-Slang shaders at build time, or use the subset. The planned on-device route runs `slangc` in-process instead of spawning it (see [Phase 67](https://github.com/kaltinril/ShadowDusk/blob/main/plan/PHASE-67-slang-in-process-wasm.md)).

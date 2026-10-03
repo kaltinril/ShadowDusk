@@ -20,11 +20,11 @@
 
 ## Headline
 
-- Golden-backed cells (fixture x target): **102**
-  - Structurally **clean**: **75**
-  - **Divergent** (>=1 level): **17**
+- Golden-backed cells (fixture x target): **118**
+  - Structurally **clean**: **85**
+  - **Divergent** (>=1 level): **23**
   - Compile/parse **failures**: **10**
-- Non-golden census cells: **200** (**134** compile, **66** fail with a code)
+- Non-golden census cells: **212** (**149** compile, **63** fail with a code)
 
 ## Golden-backed fixtures — per-level structural verdict
 
@@ -90,12 +90,26 @@ Legend: `OK` = match, `XX` = diverge, `--` = compile/parse failed (see notes). L
 | Pixelated | OpenGL | OK | OK | OK | OK | OK |  |
 | PolygonLight | DirectX_11 | OK | OK | OK | OK | OK |  |
 | PolygonLight | OpenGL | OK | XX | OK | OK | OK | cbuffer `ps_uniforms_vec4` size 112 vs 48; cbuffer `vs_uniforms_vec4` size 112 vs 64; param `viewProjectionMatrix` cbuffer offset 48 vs 0 |
+| SamplerLegacyInclude | DirectX_11 | XX | OK | XX | OK | OK | param `MaskBTexture` missing (golden class=3 type=7); extra value-class param `MaskB` (class=3 type=7); sampler slot 2 missing (golden ``); sampler slot 3 missing (golden ``); extra sampler slot 0 (``); extra sampler slot 1 (``) |
+| SamplerLegacyInclude | OpenGL | OK | OK | OK | OK | OK |  |
+| SamplerLegacyMacroDecl | DirectX_11 | XX | OK | XX | OK | OK | param `MaskBTexture` missing (golden class=3 type=7); extra value-class param `MaskB` (class=3 type=7); sampler slot 2 missing (golden ``); sampler slot 3 missing (golden ``); extra sampler slot 0 (``); extra sampler slot 1 (``) |
+| SamplerLegacyMacroDecl | OpenGL | OK | OK | OK | OK | OK |  |
+| SamplerLegacyRegisterIfBranch | DirectX_11 | OK | OK | OK | OK | OK |  |
+| SamplerLegacyRegisterIfBranch | OpenGL | OK | OK | OK | OK | OK |  |
+| SamplerLegacyRegisterMacro | DirectX_11 | OK | OK | XX | OK | OK | sampler slot 2 missing (golden ``); sampler slot 3 missing (golden ``); extra sampler slot 0 (``); extra sampler slot 1 (``) |
+| SamplerLegacyRegisterMacro | OpenGL | OK | OK | OK | OK | OK |  |
 | SamplerPairMirror | DirectX_11 | OK | OK | OK | OK | OK |  |
 | SamplerPairMirror | OpenGL | OK | OK | OK | OK | OK |  |
 | SamplerRegisterOrder | DirectX_11 | OK | OK | OK | OK | OK |  |
 | SamplerRegisterOrder | OpenGL | OK | OK | OK | OK | OK |  |
 | SamplerRegisterSparse | DirectX_11 | OK | OK | XX | OK | OK | sampler slot 2 missing (golden ``); sampler slot 3 missing (golden ``); extra sampler slot 0 (``); extra sampler slot 1 (``) |
 | SamplerRegisterSparse | OpenGL | OK | OK | OK | OK | OK |  |
+| SamplerReservationIfBranch | DirectX_11 | OK | OK | OK | OK | OK |  |
+| SamplerReservationIfBranch | OpenGL | XX | OK | OK | OK | OK | param `SpriteSampler+SpriteTexture` missing (golden class=3 type=7); extra value-class param `SpriteTexture` (class=3 type=7) |
+| SamplerReservationKeywords | DirectX_11 | OK | OK | OK | OK | OK |  |
+| SamplerReservationKeywords | OpenGL | XX | OK | OK | OK | OK | param `MaskSampler+MaskATexture` missing (golden class=3 type=7); param `MaskSampler+MaskBTexture` missing (golden class=3 type=7); extra value-class param `MaskATexture` (class=3 type=7); extra value-class param `MaskBTexture` (class=3 type=7) |
+| SamplerReservationMacro | DirectX_11 | OK | OK | OK | OK | OK |  |
+| SamplerReservationMacro | OpenGL | XX | OK | OK | OK | OK | param `MaskASampler+MaskA` missing (golden class=3 type=7); param `MaskBSampler+MaskB` missing (golden class=3 type=7); extra value-class param `MaskA` (class=3 type=7); extra value-class param `MaskB` (class=3 type=7) |
 | SamplerStatesFull | DirectX_11 | OK | OK | OK | OK | OK |  |
 | SamplerStatesFull | OpenGL | OK | OK | OK | OK | OK |  |
 | Saturate | DirectX_11 | OK | OK | OK | OK | OK |  |
@@ -112,6 +126,8 @@ Legend: `OK` = match, `XX` = diverge, `--` = compile/parse failed (see notes). L
 | SimpleLightShader | OpenGL | OK | OK | OK | OK | OK |  |
 | SkinnedEffect | DirectX_11 | OK | OK | OK | XX | OK | `SkinnedEffect_VertexLighting_OneBone` pass[0] name `P0` vs ``; `SkinnedEffect_VertexLighting_OneBone_NoFog` pass[0] name `P0` vs ``; `SkinnedEffect_VertexLighting_TwoBone` pass[0] name `P0` vs ``; `SkinnedEffect_VertexLighting_TwoBone_NoFog` pass[0] name `P0` vs ``; `SkinnedEffect_VertexLighting_FourBone` pass[0] name `P0` vs ``; `SkinnedEffect_VertexLighting_FourBone_NoFog` pass[0] name `P0` vs ``; `SkinnedEffect_OneLight_OneBone` pass[0] name `P0` vs ``; `SkinnedEffect_OneLight_OneBone_NoFog` pass[0] name `P0` vs ``; `SkinnedEffect_OneLight_TwoBone` pass[0] name `P0` vs ``; `SkinnedEffect_OneLight_TwoBone_NoFog` pass[0] name `P0` vs ``; `SkinnedEffect_OneLight_FourBone` pass[0] name `P0` vs ``; `SkinnedEffect_OneLight_FourBone_NoFog` pass[0] name `P0` vs ``; `SkinnedEffect_PixelLighting_OneBone` pass[0] name `P0` vs ``; `SkinnedEffect_PixelLighting_OneBone_NoFog` pass[0] name `P0` vs ``; `SkinnedEffect_PixelLighting_TwoBone` pass[0] name `P0` vs ``; `SkinnedEffect_PixelLighting_TwoBone_NoFog` pass[0] name `P0` vs ``; `SkinnedEffect_PixelLighting_FourBone` pass[0] name `P0` vs ``; `SkinnedEffect_PixelLighting_FourBone_NoFog` pass[0] name `P0` vs `` |
 | SkinnedEffect | OpenGL | -- | -- | -- | -- | -- | COMPILE FAIL SD0010: Effect source contains no techniques |
+| Sm3SemanticStructs | DirectX_11 | OK | OK | OK | OK | OK |  |
+| Sm3SemanticStructs | OpenGL | OK | OK | OK | OK | OK |  |
 | SpriteAlphaTest | DirectX_11 | OK | OK | OK | OK | OK |  |
 | SpriteAlphaTest | OpenGL | OK | OK | OK | OK | OK |  |
 | SpriteEffect | DirectX_11 | OK | OK | OK | XX | OK | `SpriteBatch` pass[0] name `P0` vs `` |
@@ -186,6 +202,24 @@ For an anonymous `pass { ... }` (no name), mgfxc stores an empty pass name while
 
 Affected cells: AlphaTestEffect [DirectX_11], BasicEffect [DirectX_11], ClipShaderNew [DirectX_11], ClipShaderNew [OpenGL], DualTextureEffect [DirectX_11], EnvironmentMapEffect [DirectX_11], PenumbraHull [DirectX_11], PenumbraLight [DirectX_11], PenumbraShadow [DirectX_11], PenumbraTexture [DirectX_11], SkinnedEffect [DirectX_11], SpriteEffect [DirectX_11]
 
+### Object-class (texture/sampler) parameter shape (6 cell(s))
+
+A texture/sampler (object-class) parameter diverges beyond the two pinned, render-proven shapes (extra sampler params; legacy `sampler s0;` -> synthesized `_SDTexture`).
+
+Affected cells: SamplerLegacyInclude [DirectX_11], SamplerLegacyMacroDecl [DirectX_11], SamplerReservationIfBranch [OpenGL], SamplerReservationKeywords [OpenGL], SamplerReservationMacro [OpenGL], SharedSamplerPair [OpenGL]
+
+### Value-class parameter metadata delta (6 cell(s))
+
+A Scalar/Vector/Matrix parameter's reflection metadata (class/type/rows/cols/elements/members) or an unexpected extra value-class parameter diverges. This is the SetValue fidelity surface and should be triaged.
+
+Affected cells: SamplerLegacyInclude [DirectX_11], SamplerLegacyMacroDecl [DirectX_11], SamplerReservationIfBranch [OpenGL], SamplerReservationKeywords [OpenGL], SamplerReservationMacro [OpenGL], SharedSamplerPair [OpenGL]
+
+### Sampler slot / baked-state delta (4 cell(s))
+
+A sampler slot is missing/extra or its baked sampler_state differs.
+
+Affected cells: SamplerLegacyInclude [DirectX_11], SamplerLegacyMacroDecl [DirectX_11], SamplerLegacyRegisterMacro [DirectX_11], SamplerRegisterSparse [DirectX_11]
+
 ### GL per-stage cbuffer sizing (full-layout vs used-only) — KNOWN, render-equivalent (3 cell(s))
 
 On the OpenGL target, mgfxc sizes each per-stage `{vs,ps}_uniforms_vec4` record to ONLY the members that stage actually uses (dead-uniform elimination); ShadowDusk emits each stage's FULL declared cbuffer layout. Both `.mgfx` files are internally self-consistent — the USED parameter's offset and the GLSL `uniform vec4 {vs,ps}_uniforms_vec4[size/16]` array length agree within each file, so `SetValue` binds correctly either way. This is the pinned, render-equivalent divergence already documented and tolerated by `Phase43CbufferModelTests` (F4); the accompanying `offset N vs 0` lines are the SAME shape (the used member sits at a different absolute offset but the same relative slot). Not a defect.
@@ -197,24 +231,6 @@ Affected cells: PolygonLight [OpenGL], SharedCbuffer [OpenGL], VertexAndPixel [O
 A constant buffer size or a per-parameter byte offset differs OUTSIDE the known GL per-stage sizing model. Worth triage: cbuffer offsets are the runtime SetValue layout.
 
 Affected cells: PenumbraHull [DirectX_11]
-
-### Sampler slot / baked-state delta (1 cell(s))
-
-A sampler slot is missing/extra or its baked sampler_state differs.
-
-Affected cells: SamplerRegisterSparse [DirectX_11]
-
-### Object-class (texture/sampler) parameter shape (1 cell(s))
-
-A texture/sampler (object-class) parameter diverges beyond the two pinned, render-proven shapes (extra sampler params; legacy `sampler s0;` -> synthesized `_SDTexture`).
-
-Affected cells: SharedSamplerPair [OpenGL]
-
-### Value-class parameter metadata delta (1 cell(s))
-
-A Scalar/Vector/Matrix parameter's reflection metadata (class/type/rows/cols/elements/members) or an unexpected extra value-class parameter diverges. This is the SetValue fidelity surface and should be triaged.
-
-Affected cells: SharedSamplerPair [OpenGL]
 
 > Note on bytecode: every cell's shader bytecode differs from the golden (vkd3d vs fxc on DX,
 > SPIRV-Cross GLSL vs MojoShader on GL). This is EXPECTED and is not counted as a divergence anywhere above.
@@ -232,12 +248,16 @@ is a CORRECT result, not a defect.
 | AnnotatedTechnique.fx | OpenGL | PASS |  |  |
 | FnaMultiPassStates.fx | DirectX_11 | FAIL | SD0015 | compile target 'vs_2_0' is below the DirectX target's floor — mgfxc rejects it with "Invalid profile 'vs_2_0'. Vertex shader 'MainVS' must be SM 4.0 level 9.1 o... |
 | FnaMultiPassStates.fx | OpenGL | PASS |  |  |
+| ImplicitTruncationWarning.fx | DirectX_11 | PASS |  |  |
+| ImplicitTruncationWarning.fx | OpenGL | PASS |  |  |
 | Minimal.fx | DirectX_11 | PASS |  |  |
 | Minimal.fx | OpenGL | PASS |  |  |
 | MinimalWithInclude.fx | DirectX_11 | FAIL | SD0001 | Cannot find include 'TestHelper.fxh' |
 | MinimalWithInclude.fx | OpenGL | FAIL | SD0001 | Cannot find include 'TestHelper.fxh' |
 | VsTransformColorTextureLegacyPos.fx | DirectX_11 | PASS |  |  |
 | VsTransformColorTextureLegacyPos.fx | OpenGL | PASS |  |  |
+| VsWaveQuadIntrinsics.fx | DirectX_11 | PASS |  |  |
+| VsWaveQuadIntrinsics.fx | OpenGL | PASS |  |  |
 | basiceffect-mini.fx | DirectX_11 | PASS |  |  |
 | basiceffect-mini.fx | OpenGL | PASS |  |  |
 | cbuffer.fx | DirectX_11 | PASS |  |  |
@@ -352,6 +372,16 @@ is a CORRECT result, not a defect.
 | passthrough_vs.fx | OpenGL | FAIL | SD0010 | Effect source contains no techniques |
 | platform-macros.fx | DirectX_11 | PASS |  |  |
 | platform-macros.fx | OpenGL | PASS |  |  |
+| raylib/CrtFilter.fx | DirectX_11 | PASS |  |  |
+| raylib/CrtFilter.fx | OpenGL | PASS |  |  |
+| raylib/RetroHandheld.fx | DirectX_11 | PASS |  |  |
+| raylib/RetroHandheld.fx | OpenGL | PASS |  |  |
+| texture-arrays/SamplerArray2.fx | DirectX_11 | FAIL | SD0224 | DirectX 11 target: 'Samplers' is an array of 2 samplers ('SamplerState Samplers[2]'). Real mgfxc (3.8.4.1 and 3.8.5) refuses an array of samplers on every profi... |
+| texture-arrays/SamplerArray2.fx | OpenGL | FAIL | SD0100 | SPIRV-Cross [build_combined_image_samplers]: Attempting to use arrays or structs of separate samplers. This is not possible to statically remap to plain GLSL. |
+| texture-arrays/TextureArray2.fx | DirectX_11 | PASS |  |  |
+| texture-arrays/TextureArray2.fx | OpenGL | FAIL | SD0217 | Cannot determine the OpenGL combined-sampler declaration order: 'Tex' is declared as an array of textures, which MonoGame's OpenGL effect format has no represen... |
+| texture-arrays/TextureArray4NoRegister.fx | DirectX_11 | PASS |  |  |
+| texture-arrays/TextureArray4NoRegister.fx | OpenGL | FAIL | SD0217 | Cannot determine the OpenGL combined-sampler declaration order: 'Tex' is declared as an array of textures, which MonoGame's OpenGL effect format has no represen... |
 | textured.fx | DirectX_11 | PASS |  |  |
 | textured.fx | OpenGL | PASS |  |  |
 | textured_vs_ps.fx | DirectX_11 | FAIL | SD0010 | Effect source contains no techniques |
@@ -369,23 +399,23 @@ is a CORRECT result, not a defect.
 | third-party/Gum/MonoGameInCode-Grayscale.fx | DirectX_11 | PASS |  |  |
 | third-party/Gum/MonoGameInCode-Grayscale.fx | OpenGL | PASS |  |  |
 | third-party/MonoGame/Bevels.fx | DirectX_11 | PASS |  |  |
-| third-party/MonoGame/Bevels.fx | OpenGL | FAIL | X0000 | unknown type name 'sampler2D'; did you mean 'sampler'? |
+| third-party/MonoGame/Bevels.fx | OpenGL | PASS |  |  |
 | third-party/MonoGame/BlackOut.fx | DirectX_11 | PASS |  |  |
-| third-party/MonoGame/BlackOut.fx | OpenGL | FAIL | X0000 | unknown type name 'sampler2D'; did you mean 'sampler'? |
+| third-party/MonoGame/BlackOut.fx | OpenGL | PASS |  |  |
 | third-party/MonoGame/ColorFlip.fx | DirectX_11 | PASS |  |  |
-| third-party/MonoGame/ColorFlip.fx | OpenGL | FAIL | X0000 | unknown type name 'sampler2D'; did you mean 'sampler'? |
+| third-party/MonoGame/ColorFlip.fx | OpenGL | PASS |  |  |
 | third-party/MonoGame/CustomSpriteBatchEffect.fx | DirectX_11 | PASS |  |  |
-| third-party/MonoGame/CustomSpriteBatchEffect.fx | OpenGL | FAIL | X0000 | unknown type name 'sampler2D'; did you mean 'sampler'? |
+| third-party/MonoGame/CustomSpriteBatchEffect.fx | OpenGL | PASS |  |  |
 | third-party/MonoGame/CustomSpriteBatchEffectComparisonSampler.fx | DirectX_11 | PASS |  |  |
 | third-party/MonoGame/CustomSpriteBatchEffectComparisonSampler.fx | OpenGL | FAIL | X0000 | invalid semantic 'COLOR' for ps 6.0 |
 | third-party/MonoGame/DefinesTest.fx | DirectX_11 | FAIL | E5030 | Unknown modifier "Bar". |
 | third-party/MonoGame/DefinesTest.fx | OpenGL | FAIL | X0000 | HLSL requires a type specifier for all declarations |
 | third-party/MonoGame/HighContrast.fx | DirectX_11 | PASS |  |  |
-| third-party/MonoGame/HighContrast.fx | OpenGL | FAIL | X0000 | unknown type name 'sampler2D'; did you mean 'sampler'? |
+| third-party/MonoGame/HighContrast.fx | OpenGL | PASS |  |  |
 | third-party/MonoGame/Instancing.fx | DirectX_11 | PASS |  |  |
 | third-party/MonoGame/Instancing.fx | OpenGL | FAIL | SD0210 | GLSL rewrite: stage interface identifier 'in_var_BLENDWEIGHT' survived the I/O rewrite — its declaration shape (qualifier or type) is not modelled by the MojoSh... |
 | third-party/MonoGame/NoEffect.fx | DirectX_11 | PASS |  |  |
-| third-party/MonoGame/NoEffect.fx | OpenGL | FAIL | X0000 | unknown type name 'sampler2D'; did you mean 'sampler'? |
+| third-party/MonoGame/NoEffect.fx | OpenGL | PASS |  |  |
 | third-party/MonoGame/ParameterTypes.fx | DirectX_11 | FAIL | E5017 | Aborting due to not yet implemented feature: Non-constant vector addressing on store. Unrolling may be missing. |
 | third-party/MonoGame/ParameterTypes.fx | OpenGL | FAIL | SD0010 | Effect source contains no techniques |
 | third-party/MonoGame/ParserTest.fx | DirectX_11 | PASS |  |  |
@@ -393,7 +423,7 @@ is a CORRECT result, not a defect.
 | third-party/MonoGame/PreprocessorTest.fx | DirectX_11 | FAIL | E4000 | syntax error, unexpected T_IDENTIFIER_PAREN |
 | third-party/MonoGame/PreprocessorTest.fx | OpenGL | FAIL | X0000 | token is not a valid binary operator in a preprocessor subexpression |
 | third-party/MonoGame/RainbowH.fx | DirectX_11 | PASS |  |  |
-| third-party/MonoGame/RainbowH.fx | OpenGL | FAIL | X0000 | unknown type name 'sampler2D'; did you mean 'sampler'? |
+| third-party/MonoGame/RainbowH.fx | OpenGL | PASS |  |  |
 | third-party/MonoGame/TextureArrayEffect.fx | DirectX_11 | PASS |  |  |
 | third-party/MonoGame/TextureArrayEffect.fx | OpenGL | FAIL | SD0210 | Unsupported sampler type for the MonoGame/KNI GL target: 'sampler2DArray'. The MojoShader-dialect rewrite models 'sampler2D', 'samplerCube' and 'sampler3D'; a '... |
 | third-party/MonoGame/VertexTextureEffect.fx | DirectX_11 | FAIL | FX0012 | The legacy D3D9 sampling intrinsic 'tex2Dlod' is not supported on this target: its arguments do not map 1:1 onto a modern Texture method, so ShadowDusk cannot r... |
@@ -432,15 +462,17 @@ is a CORRECT result, not a defect.
 ### Census failure codes
 
 - `SD0015`: 22 cell(s) — FnaMultiPassStates.fx [DirectX_11], examples/ExIntUniformMember.fx [DirectX_11], examples/ExMat3UniformMember.fx [DirectX_11], examples/ExProfileSm3BothArms.fx [DirectX_11], examples/ExProfileSm3OnDirectX.fx [DirectX_11], examples/ExProfileSm6OnDirectX.fx [DirectX_11], third-party/Gum/FnaSample-Shader.fx [DirectX_11], third-party/Gum/KniInCode-Shader.fx [DirectX_11], third-party/Nez/Bevels.fx [DirectX_11], third-party/Nez/BloomCombine.fx [DirectX_11], third-party/Nez/BloomExtract.fx [DirectX_11], third-party/Nez/Crosshatch.fx [DirectX_11], third-party/Nez/GaussianBlur.fx [DirectX_11], third-party/Nez/HeatDistortion.fx [DirectX_11], third-party/Nez/Letterbox.fx [DirectX_11], third-party/Nez/Noise.fx [DirectX_11], third-party/Nez/PixelGlitch.fx [DirectX_11], third-party/Nez/Reflection.fx [DirectX_11], third-party/Nez/SpriteBlinkEffect.fx [DirectX_11], third-party/Nez/SpriteLines.fx [DirectX_11], third-party/Nez/Twist.fx [DirectX_11], third-party/Nez/Vignette.fx [DirectX_11]
-- `X0000`: 12 cell(s) — third-party/Gum/KniInCode-Shader.fx [OpenGL], third-party/MonoGame/Bevels.fx [OpenGL], third-party/MonoGame/BlackOut.fx [OpenGL], third-party/MonoGame/ColorFlip.fx [OpenGL], third-party/MonoGame/CustomSpriteBatchEffect.fx [OpenGL], third-party/MonoGame/CustomSpriteBatchEffectComparisonSampler.fx [OpenGL], third-party/MonoGame/DefinesTest.fx [OpenGL], third-party/MonoGame/HighContrast.fx [OpenGL], third-party/MonoGame/NoEffect.fx [OpenGL], third-party/MonoGame/ParserTest.fx [OpenGL], third-party/MonoGame/PreprocessorTest.fx [OpenGL], third-party/MonoGame/RainbowH.fx [OpenGL]
 - `SD0010`: 8 cell(s) — minimal_vs_ps.fx [DirectX_11], minimal_vs_ps.fx [OpenGL], passthrough_vs.fx [DirectX_11], passthrough_vs.fx [OpenGL], textured_vs_ps.fx [DirectX_11], textured_vs_ps.fx [OpenGL], third-party/Gum/FnaSample-Shader.fx [OpenGL], third-party/MonoGame/ParameterTypes.fx [OpenGL]
 - `SD0210`: 6 cell(s) — examples/ExIntUniformMember.fx [OpenGL], examples/ExMat3UniformMember.fx [OpenGL], examples/ExVsTextureFetch.fx [OpenGL], third-party/MonoGame/Instancing.fx [OpenGL], third-party/MonoGame/TextureArrayEffect.fx [OpenGL], third-party/Nez/Crosshatch.fx [OpenGL]
 - `SD0013`: 6 cell(s) — examples/ExProfileBogusLiteral.fx [DirectX_11], examples/ExProfileBogusLiteral.fx [OpenGL], examples/ExProfileTypo.fx [DirectX_11], examples/ExProfileTypo.fx [OpenGL], examples/ExProfileUndefinedMacro.fx [DirectX_11], examples/ExProfileUndefinedMacro.fx [OpenGL]
+- `X0000`: 5 cell(s) — third-party/Gum/KniInCode-Shader.fx [OpenGL], third-party/MonoGame/CustomSpriteBatchEffectComparisonSampler.fx [OpenGL], third-party/MonoGame/DefinesTest.fx [OpenGL], third-party/MonoGame/ParserTest.fx [OpenGL], third-party/MonoGame/PreprocessorTest.fx [OpenGL]
 - `FX0012`: 4 cell(s) — third-party/MonoGame/VertexTextureEffect.fx [DirectX_11], third-party/MonoGame/VertexTextureEffect.fx [OpenGL], third-party/Nez/PaletteCycler.fx [DirectX_11], third-party/Nez/PaletteCycler.fx [OpenGL]
 - `SD0001`: 2 cell(s) — MinimalWithInclude.fx [DirectX_11], MinimalWithInclude.fx [OpenGL]
 - `SD0014`: 2 cell(s) — examples/ExProfileStageMismatch.fx [DirectX_11], examples/ExProfileStageMismatch.fx [OpenGL]
+- `SD0100`: 2 cell(s) — texture-arrays/SamplerArray2.fx [OpenGL], third-party/Nez/Reflection.fx [OpenGL]
+- `SD0217`: 2 cell(s) — texture-arrays/TextureArray2.fx [OpenGL], texture-arrays/TextureArray4NoRegister.fx [OpenGL]
+- `SD0224`: 1 cell(s) — texture-arrays/SamplerArray2.fx [DirectX_11]
 - `E5030`: 1 cell(s) — third-party/MonoGame/DefinesTest.fx [DirectX_11]
 - `E5017`: 1 cell(s) — third-party/MonoGame/ParameterTypes.fx [DirectX_11]
 - `E4000`: 1 cell(s) — third-party/MonoGame/PreprocessorTest.fx [DirectX_11]
-- `SD0100`: 1 cell(s) — third-party/Nez/Reflection.fx [OpenGL]
 

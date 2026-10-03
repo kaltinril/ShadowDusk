@@ -61,26 +61,15 @@ public static class TestHelpers
         // environment where the binary was copied next to the test assembly.
         string cliBinary = cliBinaryPath ?? FindCliBinary();
 
-        string arguments = BuildArgString(inputPath, outputPath, $"/Profile:{profile}");
-
-        var psi = new ProcessStartInfo(cliBinary)
-        {
-            Arguments              = arguments,
-            UseShellExecute        = false,
-            RedirectStandardOutput = true,
-            RedirectStandardError  = true,
-            WorkingDirectory       = Path.GetTempPath(),
-        };
-
-        using var process = Process.Start(psi)
-            ?? throw new InvalidOperationException($"Failed to start CLI process at '{cliBinary}'.");
-
-        string stderr = await process.StandardError.ReadToEndAsync(ct).ConfigureAwait(false);
-        await process.WaitForExitAsync(ct).ConfigureAwait(false);
+        // The caller's token is its own deadline (30 to 120 s across the suite); the ceiling here
+        // is the largest CLI budget in use, so a caller that passes no token is still bounded.
+        ChildProcessResult run = await CliProcess.RunAsync(
+            cliBinary, [inputPath, outputPath, $"/Profile:{profile}"], TimeSpan.FromSeconds(120), cancellationToken: ct)
+            .ConfigureAwait(false);
 
         byte[] mgfx = File.Exists(outputPath) ? await File.ReadAllBytesAsync(outputPath, ct).ConfigureAwait(false) : Array.Empty<byte>();
 
-        return new CompileResult(process.ExitCode, mgfx, stderr);
+        return new CompileResult(run.ExitCode, mgfx, run.Stderr);
     }
 
     public static async Task<CompileResult> CompileViaPipelineAsync(
@@ -180,10 +169,5 @@ public static class TestHelpers
         throw new FileNotFoundException(
             $"CLI binary not found. Searched: '{candidate}', '{legacyCandidate}'. " +
             "Build the CLI project before running CLI-mode integration tests.");
-    }
-
-    private static string BuildArgString(params string[] parts)
-    {
-        return string.Join(" ", parts.Select(p => p.Contains(' ') ? $"\"{p}\"" : p));
     }
 }

@@ -61,6 +61,63 @@
 // puts the pair on slot 0 regardless, allocating by texture declaration order. So
 // the sparse fixture must stay in legacy syntax or it stops testing anything.
 //
+// ARMS "ifbranch" and "macro" (GitHub issue #283) — the RESERVATION a modern
+// `SamplerState X : register(sN)` makes (the combined sampler fxc synthesizes is
+// allocated around register N), which mgfxc decides on the PREPROCESSED source:
+//
+//   ifbranch (SamplerReservationIfBranch.fx): register(s0) only in the #else branch.
+//     RED sprite, GREEN texture through the parameter:
+//       nothing reserved (mgfxc ps_s0)        -> (255,   0, 0)  red
+//       dead branch counted (bug, ps_s1)      -> (  0, 255, 0)  green
+//   macro (SamplerReservationMacro.fx): `#define SLOT(n) : register(n)`, s0/s1.
+//     BLUE sprite, RED MaskA, GREEN MaskB, (a.r, b.g, 0, 1):
+//       reserved (mgfxc ps_s2/ps_s3)          -> (255, 255, 0)  yellow
+//       macro not seen (bug, ps_s0/ps_s1)     -> (  0, 255, 0)  green
+//
+// ARMS "legacy-ifbranch" and "legacy-macro" (GitHub issue #299) — the same two
+// preprocessing shapes on the OTHER half of the rule: the register a LEGACY
+// `sampler X : register(sN)` PINS its texture to, which mgfxc also reads off the
+// PREPROCESSED source. Both fixtures mix a `sampler_state` declaration with a bare
+// one, so both legacy forms are rendered:
+//
+//   legacy-ifbranch (SamplerLegacyRegisterIfBranch.fx): the #else branch pins
+//     SpriteSampler to s1 and MaskSampler to s0, the REVERSE of declaration order.
+//     RED sprite, BLUE SpriteTexture parameter, GREEN mask, (sprite.r, mask.g, 0, 1):
+//       declaration order (mgfxc ps_s0/ps_s1)  -> (255, 255, 0)  yellow
+//       dead branch counted (bug, swapped)     -> (  0,   0, 0)  black
+//   legacy-macro (SamplerLegacyRegisterMacro.fx): `register(MASK_A_REGISTER)` with
+//     `#define MASK_A_REGISTER s2` (and s3 for MaskB).
+//     BLUE sprite, RED MaskA, GREEN MaskB, (a.r, b.g, 0, 1):
+//       pinned (mgfxc ps_s2/ps_s3)             -> (255, 255, 0)  yellow
+//       macro not seen (bug, ps_s0/ps_s1)      -> (  0, 255, 0)  green
+//
+// ARMS "legacy-include" and "legacy-macro-decl" (GitHub issue #308) — a legacy
+// sampler the pre-parser's SM4 rewrite could not SEE, because it is declared in an
+// #include'd file or comes out of a macro (MonoGame's DECLARE_TEXTURE /
+// SAMPLE_TEXTURE idiom, `sampler S SLOT(s3)`). Before the fix neither compiled for
+// OpenGL at all (DXC: "unknown type name 'sampler2D'"), so the gate could not even
+// build its candidate; the fix repeats the pre-parse on the preprocessed source
+// once the ordinary compile has failed. Both fixtures mix a bare declaration with a
+// `sampler_state` one, and both pin MaskA to s2 and MaskB to s3:
+//
+//   legacy-include (SamplerLegacyInclude.fx): the declarations and MaskA's tex2D
+//     read live in SamplerLegacyInclude.fxh.
+//   legacy-macro-decl (SamplerLegacyMacroDecl.fx): DECLARE_TEXTURE(MaskA, 2),
+//     SAMPLE_TEXTURE(MaskA, uv), and `sampler MaskB SLOT(s3) = sampler_state {…}`.
+//     BLUE sprite, RED MaskA, GREEN MaskB, (a.r, b.g, 0, 1):
+//       pinned (mgfxc ps_s2/ps_s3)             -> (255, 255, 0)  yellow
+//       compacted to ps_s0/ps_s1               -> (  0, 255, 0)  green
+//
+// ARM "keyword-reservation" (GitHub issue #309) — the reservation half again, for
+// EVERY sampler type keyword, used or not: `sampler MaskSampler : register(s0)`
+// (the lowercase keyword, read through Texture.Sample) and an unused
+// `SamplerComparisonState Unused : register(s1)` both take their register out of
+// circulation, so the two pairs belong on units 2/3 (mgfxc ps_s2/ps_s3). ShadowDusk
+// only recognised the exact keyword `SamplerState` and put them on 0/1.
+//     BLUE sprite, RED MaskATexture, GREEN MaskBTexture, (a.r, b.g, 0, 1):
+//       reserved (mgfxc ps_s2/ps_s3)           -> (255, 255, 0)  yellow
+//       keywords not recognised (bug, 0/1)     -> (  0, 255, 0)  green
+//
 // EVIDENCE EACH ARM PRODUCES
 //   1. ShadowDusk's own build renders the expected colour (the absolute claim).
 //   2. The mgfxc golden renders it too (the CONTROL — without it, both builds being
@@ -100,7 +157,19 @@ Console.WriteLine($"[regorder] out: {outDir}  tolerance: {tolerance}\n");
 // (samples out of declaration order). B: the ABSOLUTE register VALUE (samples strictly
 // in declaration order, so order cannot be what it measures, and sits at s2/s3 with
 // nothing at s0/s1).
-var fixtures = new[] { "SamplerRegisterOrder", "SamplerRegisterSparse" };
+// Issue #283 adds two more, both about the RESERVATION a modern `SamplerState : register(sN)`
+// makes, which mgfxc decides on the PREPROCESSED source: "ifbranch" (the register exists only in
+// the #if branch OpenGL does not compile) and "macro" (the registers are spelled through a macro).
+// Issue #299 adds the same two shapes for the register a LEGACY `sampler : register(sN)` pins:
+// "legacy-ifbranch" and "legacy-macro". Issue #308 adds the legacy sampler the rewrite could not
+// see ("legacy-include", "legacy-macro-decl"), and issue #309 the reservation every sampler type
+// keyword makes ("keyword-reservation").
+var fixtures = new[]
+{
+    "SamplerRegisterOrder", "SamplerRegisterSparse", "SamplerReservationIfBranch", "SamplerReservationMacro",
+    "SamplerLegacyRegisterIfBranch", "SamplerLegacyRegisterMacro",
+    "SamplerLegacyInclude", "SamplerLegacyMacroDecl", "SamplerReservationKeywords",
+};
 var compiled = new Dictionary<string, (byte[] Candidate, byte[] Golden)>(StringComparer.Ordinal);
 
 foreach (string name in fixtures)
@@ -166,6 +235,9 @@ Directory.CreateDirectory(outDir);
 using var game = new RegisterOrderGame(
     compiled["SamplerRegisterOrder"].Candidate, compiled["SamplerRegisterOrder"].Golden,
     compiled["SamplerRegisterSparse"].Candidate, compiled["SamplerRegisterSparse"].Golden,
+    compiled["SamplerReservationIfBranch"], compiled["SamplerReservationMacro"],
+    compiled["SamplerLegacyRegisterIfBranch"], compiled["SamplerLegacyRegisterMacro"],
+    compiled["SamplerLegacyInclude"], compiled["SamplerLegacyMacroDecl"], compiled["SamplerReservationKeywords"],
     outDir, tolerance);
 game.Run();
 
@@ -188,7 +260,7 @@ if (game.Skipped)
 foreach (string line in game.Report)
     Console.WriteLine(line);
 
-Console.WriteLine($"\n[regorder] {(game.Passed ? "PASS" : "FAIL")} — rung-4 OpenGL sampler register-order validation (issue #189).");
+Console.WriteLine($"\n[regorder] {(game.Passed ? "PASS" : "FAIL")} — rung-4 OpenGL sampler register-order validation (issues #189, #283, #299, #308, #309).");
 return game.Passed ? 0 : 1;
 
 // -----------------------------------------------------------------------------
@@ -324,6 +396,8 @@ sealed class RegisterOrderGame : Game
 
     private readonly GraphicsDeviceManager _gdm;
     private readonly byte[] _candidate, _golden, _sparseCandidate, _sparseGolden;
+    private readonly (byte[] Candidate, byte[] Golden) _ifBranch, _macro, _legacyIfBranch, _legacyMacro;
+    private readonly (byte[] Candidate, byte[] Golden) _legacyInclude, _legacyMacroDecl, _keywordReservation;
     private readonly string _outDir;
     private readonly int _tolerance;
     private bool _done;
@@ -336,8 +410,19 @@ sealed class RegisterOrderGame : Game
     public RegisterOrderGame(
         byte[] candidate, byte[] golden,
         byte[] sparseCandidate, byte[] sparseGolden,
+        (byte[] Candidate, byte[] Golden) ifBranch, (byte[] Candidate, byte[] Golden) macro,
+        (byte[] Candidate, byte[] Golden) legacyIfBranch, (byte[] Candidate, byte[] Golden) legacyMacro,
+        (byte[] Candidate, byte[] Golden) legacyInclude, (byte[] Candidate, byte[] Golden) legacyMacroDecl,
+        (byte[] Candidate, byte[] Golden) keywordReservation,
         string outDir, int tolerance)
     {
+        _legacyInclude = legacyInclude;
+        _legacyMacroDecl = legacyMacroDecl;
+        _keywordReservation = keywordReservation;
+        _ifBranch = ifBranch;
+        _macro = macro;
+        _legacyIfBranch = legacyIfBranch;
+        _legacyMacro = legacyMacro;
         _candidate = candidate;
         _golden = golden;
         _sparseCandidate = sparseCandidate;
@@ -379,6 +464,48 @@ sealed class RegisterOrderGame : Game
         catch (Exception ex)
         {
             Report.Add($"[regorder] sparse EXCEPTION: {ex.GetType().Name}: {ex.Message}");
+            ok = false;
+        }
+        try { ok &= ValidateIfBranch(); }
+        catch (Exception ex)
+        {
+            Report.Add($"[regorder] ifbranch EXCEPTION: {ex.GetType().Name}: {ex.Message}");
+            ok = false;
+        }
+        try { ok &= ValidateMacro(); }
+        catch (Exception ex)
+        {
+            Report.Add($"[regorder] macro EXCEPTION: {ex.GetType().Name}: {ex.Message}");
+            ok = false;
+        }
+        try { ok &= ValidateLegacyIfBranch(); }
+        catch (Exception ex)
+        {
+            Report.Add($"[regorder] legacy-ifbranch EXCEPTION: {ex.GetType().Name}: {ex.Message}");
+            ok = false;
+        }
+        try { ok &= ValidateLegacyMacro(); }
+        catch (Exception ex)
+        {
+            Report.Add($"[regorder] legacy-macro EXCEPTION: {ex.GetType().Name}: {ex.Message}");
+            ok = false;
+        }
+        try { ok &= ValidateLegacyInclude(); }
+        catch (Exception ex)
+        {
+            Report.Add($"[regorder] legacy-include EXCEPTION: {ex.GetType().Name}: {ex.Message}");
+            ok = false;
+        }
+        try { ok &= ValidateLegacyMacroDecl(); }
+        catch (Exception ex)
+        {
+            Report.Add($"[regorder] legacy-macro-decl EXCEPTION: {ex.GetType().Name}: {ex.Message}");
+            ok = false;
+        }
+        try { ok &= ValidateKeywordReservation(); }
+        catch (Exception ex)
+        {
+            Report.Add($"[regorder] keyword-reservation EXCEPTION: {ex.GetType().Name}: {ex.Message}");
             ok = false;
         }
         Passed = ok;
@@ -526,6 +653,218 @@ sealed class RegisterOrderGame : Game
         (int maxDelta, int diffCount) = Compare(candImg, goldImg);
         bool match = diffCount == 0;
         Report.Add($"[regorder] sparse vs mgfxc golden: maxd {maxDelta}, {diffCount} px over tolerance " +
+                   $"{_tolerance} -> {(match ? "OK" : "WRONG")}");
+
+        candidate.Dispose();
+        golden.Dispose();
+        return candCorrect && goldCorrect && match;
+    }
+
+    /// <summary>
+    /// Issue #283 arm "ifbranch": `SamplerReservationIfBranch.fx` writes `register(s0)` only in the
+    /// #else branch OpenGL does not compile, so nothing is reserved and the single pair belongs on
+    /// unit 0 (mgfxc: ps_s0). RED sprite through SpriteBatch, GREEN texture through the parameter:
+    /// red = the pair is on unit 0 and reads the sprite (correct); green = it was pushed to unit 1
+    /// by the dead branch's register and reads the parameter (the bug).
+    /// </summary>
+    private bool ValidateIfBranch()
+    {
+        using Texture2D parameterTexture = Solid(GraphicsDevice, Green);
+        return ValidateArm(
+            "ifbranch", _ifBranch, sprite: Red,
+            bind: e =>
+            {
+                foreach (string n in new[] { "SpriteTexture", "SpriteSampler+SpriteTexture" })
+                    e.Parameters[n]?.SetValue(parameterTexture);
+            },
+            want: Red,
+            describe: c =>
+                Approx(c, Red)     ? "correct — no register is reserved, so the pair is on SpriteBatch's unit 0"
+                : Approx(c, Green) ? "WRONG (issue #283): the inactive branch's register(s0) was counted, pushing the pair to unit 1"
+                                   : "WRONG: unrecognised — check the harness bindings");
+    }
+
+    /// <summary>
+    /// Issue #283 arm "macro": `SamplerReservationMacro.fx` reserves s0/s1 through
+    /// `#define SLOT(n) : register(n)`, so the pairs belong on units 2/3 (mgfxc: ps_s2/ps_s3).
+    /// BLUE sprite, RED MaskA, GREEN MaskB, output (a.r, b.g, 0, 1): yellow = correct; green =
+    /// the macro registers were not seen, MaskA sat on unit 0 and SpriteBatch overwrote it.
+    /// </summary>
+    private bool ValidateMacro()
+    {
+        using Texture2D maskA = Solid(GraphicsDevice, Red);
+        using Texture2D maskB = Solid(GraphicsDevice, Green);
+        return ValidateArm(
+            "macro", _macro, sprite: Blue,
+            bind: e =>
+            {
+                foreach (string n in new[] { "MaskA", "MaskASampler+MaskA" })
+                    e.Parameters[n]?.SetValue(maskA);
+                foreach (string n in new[] { "MaskB", "MaskBSampler+MaskB" })
+                    e.Parameters[n]?.SetValue(maskB);
+            },
+            want: Yellow,
+            describe: c =>
+                Approx(c, Yellow)  ? "correct — s0/s1 are reserved through the macro, so the pairs are on units 2/3"
+                : Approx(c, Green) ? "WRONG (issue #283): the macro-spelled registers were not seen, so MaskA sat on unit 0 and SpriteBatch overwrote it"
+                                   : "WRONG: unrecognised — check the harness bindings");
+    }
+
+    /// <summary>
+    /// Issue #299 arm "legacy-ifbranch": `SamplerLegacyRegisterIfBranch.fx` writes its legacy
+    /// registers (SpriteSampler s1, MaskSampler s0) only in the #else branch OpenGL does not
+    /// compile, so nothing is pinned and the samplers take declaration order (mgfxc: ps_s0/ps_s1).
+    /// RED sprite through SpriteBatch, BLUE through the SpriteTexture parameter, GREEN mask,
+    /// output (sprite.r, mask.g, 0, 1): yellow = SpriteSampler is on unit 0 and reads the sprite;
+    /// black = the dead branch's registers swapped the two, so SpriteSampler reads the BLUE
+    /// parameter texture on unit 1 and MaskSampler reads the RED sprite on unit 0.
+    /// </summary>
+    private bool ValidateLegacyIfBranch()
+    {
+        using Texture2D parameterTexture = Solid(GraphicsDevice, Blue);
+        using Texture2D mask = Solid(GraphicsDevice, Green);
+        return ValidateArm(
+            "legacy-ifbranch", _legacyIfBranch, sprite: Red,
+            bind: e =>
+            {
+                foreach (string n in new[] { "SpriteTexture", "SpriteSampler+SpriteTexture" })
+                    e.Parameters[n]?.SetValue(parameterTexture);
+                foreach (string n in new[] { "MaskSampler", "MaskSampler_SDTexture", "MaskSampler+MaskSampler" })
+                    e.Parameters[n]?.SetValue(mask);
+            },
+            want: Yellow,
+            describe: c =>
+                Approx(c, Yellow)  ? "correct — nothing is pinned, so SpriteSampler is on SpriteBatch's unit 0 and MaskSampler on unit 1"
+                : Approx(c, Black) ? "WRONG (issue #299): the inactive branch's legacy registers were counted, swapping the samplers (SpriteSampler on unit 1, MaskSampler on unit 0)"
+                                   : "WRONG: unrecognised — check the harness bindings");
+    }
+
+    /// <summary>
+    /// Issue #299 arm "legacy-macro": `SamplerLegacyRegisterMacro.fx` pins its legacy samplers
+    /// through `register(MASK_A_REGISTER)` / `register(MASK_B_REGISTER)` with the macros defined
+    /// as s2/s3 (mgfxc: ps_s2/ps_s3). BLUE sprite, RED MaskA, GREEN MaskB, output
+    /// (a.r, b.g, 0, 1): yellow = correct; green = the macro-spelled registers were not seen, the
+    /// pair was compacted to units 0/1 and SpriteBatch overwrote MaskA with the sprite.
+    /// </summary>
+    private bool ValidateLegacyMacro()
+    {
+        using Texture2D maskA = Solid(GraphicsDevice, Red);
+        using Texture2D maskB = Solid(GraphicsDevice, Green);
+        return ValidateArm(
+            "legacy-macro", _legacyMacro, sprite: Blue,
+            bind: e =>
+            {
+                foreach (string n in new[] { "MaskA", "MaskA_SDTexture", "MaskA+MaskA" })
+                    e.Parameters[n]?.SetValue(maskA);
+                foreach (string n in new[] { "MaskBTexture", "MaskB+MaskBTexture" })
+                    e.Parameters[n]?.SetValue(maskB);
+            },
+            want: Yellow,
+            describe: c =>
+                Approx(c, Yellow)  ? "correct — the macro-spelled registers pin MaskA to unit 2 and MaskB to unit 3"
+                : Approx(c, Green) ? "WRONG (issue #299): the macro-spelled legacy registers were not seen, so MaskA sat on unit 0 and SpriteBatch overwrote it"
+                                   : "WRONG: unrecognised — check the harness bindings");
+    }
+
+    /// <summary>
+    /// Issue #308 arm "legacy-include": `SamplerLegacyInclude.fx` declares both legacy samplers
+    /// (bare MaskA at s2, sampler_state MaskB at s3) and MaskA's tex2D read in an #include'd file
+    /// the raw pre-parse never saw. BLUE sprite, RED MaskA, GREEN MaskB, output (a.r, b.g, 0, 1):
+    /// yellow = correct (mgfxc ps_s2/ps_s3); green = compacted to units 0/1 and SpriteBatch
+    /// overwrote MaskA. Before the fix the candidate did not compile at all.
+    /// </summary>
+    private bool ValidateLegacyInclude() => ValidateMaskPair("legacy-include", _legacyInclude,
+        maskANames: new[] { "MaskA", "MaskA_SDTexture", "MaskA+MaskA" },
+        maskBNames: new[] { "MaskBTexture", "MaskB+MaskBTexture" },
+        wrong: "WRONG (issue #308): the include's legacy registers were not honoured, so MaskA sat on unit 0 and SpriteBatch overwrote it");
+
+    /// <summary>
+    /// Issue #308 arm "legacy-macro-decl": `SamplerLegacyMacroDecl.fx` declares MaskA through
+    /// DECLARE_TEXTURE(MaskA, 2), reads it through SAMPLE_TEXTURE, and declares MaskB with a
+    /// macro register clause `SLOT(s3)`. Same colours and verdicts as "legacy-include".
+    /// </summary>
+    private bool ValidateLegacyMacroDecl() => ValidateMaskPair("legacy-macro-decl", _legacyMacroDecl,
+        maskANames: new[] { "MaskA", "MaskA_SDTexture", "MaskA+MaskA" },
+        maskBNames: new[] { "MaskBTexture", "MaskB+MaskBTexture" },
+        wrong: "WRONG (issue #308): the macro-declared legacy samplers were not honoured, so MaskA sat on unit 0 and SpriteBatch overwrote it");
+
+    /// <summary>
+    /// Issue #309 arm "keyword-reservation": `SamplerReservationKeywords.fx` reserves s0 with a
+    /// lowercase `sampler MaskSampler : register(s0)` read through Texture.Sample and s1 with an
+    /// unused `SamplerComparisonState Unused : register(s1)`, so the two pairs belong on units 2/3
+    /// (mgfxc ps_s2/ps_s3). BLUE sprite, RED MaskATexture, GREEN MaskBTexture, output
+    /// (a.r, b.g, 0, 1): yellow = correct; green = only `SamplerState` was recognised, the pairs
+    /// took units 0/1 and SpriteBatch overwrote MaskA.
+    /// </summary>
+    private bool ValidateKeywordReservation() => ValidateMaskPair("keyword-reservation", _keywordReservation,
+        maskANames: new[] { "MaskATexture", "MaskSampler+MaskATexture" },
+        maskBNames: new[] { "MaskBTexture", "MaskSampler+MaskBTexture" },
+        wrong: "WRONG (issue #309): only the keyword SamplerState reserved, so the pairs took units 0/1 and SpriteBatch overwrote MaskA");
+
+    /// <summary>The RED-MaskA / GREEN-MaskB / BLUE-sprite arm shape shared by the s2/s3 fixtures.</summary>
+    private bool ValidateMaskPair(
+        string arm, (byte[] Candidate, byte[] Golden) mgfx, string[] maskANames, string[] maskBNames, string wrong)
+    {
+        using Texture2D maskA = Solid(GraphicsDevice, Red);
+        using Texture2D maskB = Solid(GraphicsDevice, Green);
+        return ValidateArm(
+            arm, mgfx, sprite: Blue,
+            bind: e =>
+            {
+                foreach (string n in maskANames)
+                    e.Parameters[n]?.SetValue(maskA);
+                foreach (string n in maskBNames)
+                    e.Parameters[n]?.SetValue(maskB);
+            },
+            want: Yellow,
+            describe: c =>
+                Approx(c, Yellow)  ? "correct — MaskA is on unit 2 and MaskB on unit 3, neither on SpriteBatch's unit 0"
+                : Approx(c, Green) ? wrong
+                                   : "WRONG: unrecognised — check the harness bindings");
+    }
+
+    /// <summary>The three claims every arm makes: candidate right, golden right (control), and equal.</summary>
+    private bool ValidateArm(
+        string arm, (byte[] Candidate, byte[] Golden) mgfx, Color sprite,
+        Action<Effect> bind, Color want, Func<Color, string> describe)
+    {
+        GraphicsDevice gd = GraphicsDevice;
+        string tag = $"[regorder] {arm}";
+
+        Effect candidate, golden;
+        try { candidate = new Effect(gd, mgfx.Candidate); }
+        catch (Exception ex)
+        {
+            Report.Add($"{tag} candidate new Effect() FAILED: {ex.GetType().Name}: {ex.Message}");
+            return false;
+        }
+        try { golden = new Effect(gd, mgfx.Golden); }
+        catch (Exception ex)
+        {
+            Report.Add($"{tag} GOLDEN new Effect() threw (control failure): {ex.Message}");
+            candidate.Dispose();
+            return false;
+        }
+
+        using Texture2D spriteTexture = Solid(gd, sprite);
+        Color[] candImg = RenderSprite(gd, candidate, spriteTexture, bind);
+        Color[] goldImg = RenderSprite(gd, golden,    spriteTexture, bind);
+        SavePng(gd, candImg, $"{arm}_candidate.png");
+        SavePng(gd, goldImg, $"{arm}_golden.png");
+
+        Color candCentre = candImg[Px(Size / 2, Size / 2)];
+        Color goldCentre = goldImg[Px(Size / 2, Size / 2)];
+
+        bool candCorrect = Approx(candCentre, want);
+        Report.Add($"{tag} candidate centre = {Fmt(candCentre)} (want {Fmt(want)}) -> {describe(candCentre)}");
+
+        bool goldCorrect = Approx(goldCentre, want);
+        Report.Add($"{tag} mgfxc     centre = {Fmt(goldCentre)} (want {Fmt(want)}) -> " +
+                   (goldCorrect ? "OK (control)" : "HARNESS FAULT — the reference build does not render the expected colour"));
+
+        (int maxDelta, int diffCount) = Compare(candImg, goldImg);
+        bool match = diffCount == 0;
+        Report.Add($"{tag} vs mgfxc golden: maxd {maxDelta}, {diffCount} px over tolerance " +
                    $"{_tolerance} -> {(match ? "OK" : "WRONG")}");
 
         candidate.Dispose();

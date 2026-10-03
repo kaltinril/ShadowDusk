@@ -71,6 +71,12 @@
                                    because its restore-fna.ps1 clones the FNA source tree (heavy) and
                                    needs an authenticated gh for the fnalibs natives. Run it for any
                                    release that could affect the FNA target or the .xnb writer.
+    * Slang DX12 / Vulkan / FNA  - validation/SlangFullCorpusDx12, validation/SlangFullCorpusVulkan
+                                   (Vulkan block) and FnaValidation -- slang (-IncludeFna), issue
+                                   #230: the 21-shader real-slangc corpus through SlangCompiler vs
+                                   the reference compiler (mgfxc DirectX_12 / Vulkan, fxc fx_2_0) on
+                                   the assembled .fx, real Effect load + render, tol 4/255, two
+                                   positive controls that must diverge.
     * Vulkan PS corpus           - validation/CandidateVulkan (ShadowDusk's OWN output rendered on
                                    real MonoGame DesktopVK; not an mgfxc diff - mgfxc's output is
                                    unloadable for this corpus, a confirmed MonoGame SlotOffset bug).
@@ -98,20 +104,29 @@
                                    Phase 63: two MGCB versions (3.8.4.1 + 3.8.5, which renumbered
                                    TargetPlatform: Web/DesktopVK/WindowsDX12 arms) and a decoy
                                    dxcompiler.dll on the child PATH (pinned-DXC + dxil guard).
+                                   Issue #274: on DesktopVK/WindowsDX12 (MGFX v11) the per-shader
+                                   source-file string must be the stock build's `<unknown>`, never
+                                   the build machine's path; the payload is the CLI's with only
+                                   that string replaced; a second-directory build is byte-identical.
     * Content Builder (3.8.5)    - validation/ContentBuilder: a REAL MonoGame 3.8.5 ContentBuilder
                                    subclass builds the fixtures through the stock pair AND through
                                    ShadowDusk.ContentPipeline's pair (the library shape, Phase 63),
-                                   asserts payload == ShadowDuskCLI and envelope == stock, then
+                                   asserts payload == ShadowDuskCLI and envelope == stock (plus,
+                                   on its DesktopVK/WindowsDX12 passes, the issue-#274 MGFX v11
+                                   source-file string checks and a second Builder run from another
+                                   source directory), then
                                    Content.Load<Effect>s both on MonoGame 3.8.5 WindowsDX and
                                    requires pixel-identical renders. Also the only run of the
                                    Builder's unguarded GetTypes() scan over our real graph.
 
   Both Vulkan gates are DEFAULT-ON (issue #145: a Vulkan-affecting change must not depend on
   someone remembering a switch). Pass -SkipVulkan only on a box with no Vulkan-capable GPU.
+  CI also runs both (validation-render.yml, Mesa lavapipe + the Khronos validation layer), but
+  that is a CPU driver; this local run is still the only GPU-driver Vulkan render.
 
   The in-process MonoGame OpenGL render gates (StateFidelity / CbufferModel /
   TextureBreadthValidation / ReservedWordGl / SamplerPairsGl / SamplerRegisterOrderGl /
-  DeferredSpriteMrtGl / ShaderToyRouteGl) are intentionally NOT here - CI already runs them
+  DeferredSpriteMrtGl / ShaderToyRouteGl / RaylibRoute) are intentionally NOT here - CI already runs them
   (see validation-render.yml). Run them with `dotnet test` + that workflow, not this script.
 
 .PARAMETER IncludeFna
@@ -189,6 +204,18 @@ $gates.Add(@{
     Action = { Invoke-Checked 'dotnet' @('run', '--project', 'validation/VsDrivenDx', '-c', 'Release', '--', 'apos') }
 })
 $gates.Add(@{
+    Name   = 'DX resource arrays (issues #339/#340: texture array table + render vs mgfxc 3.8.4.1 DirectX_11 golden; sampler array refused with SD0224), real MonoGame WindowsDX'
+    Action = {
+        # Issue #339: Texture2D Tex[2] must reflect mgfxc's table (ONE `Tex` parameter, ONE record
+        # at the array's base slot) on both DXBC backends, load with Parameters["Tex"] present, and
+        # render like the golden; element [1] through GraphicsDevice.Textures[1] is reported.
+        Invoke-Checked 'dotnet' @('run', '--project', 'validation/VsDrivenDx', '-c', 'Release', '--', 'texarr')
+        # Issue #340: SamplerState Samplers[2] must FAIL with SD0224 at its declaration on DirectX
+        # 11 and 12, as real mgfxc refuses it on every profile in its own parser.
+        Invoke-Checked 'dotnet' @('run', '--project', 'validation/VsDrivenDx', '-c', 'Release', '--', 'samparr')
+    }
+})
+$gates.Add(@{
     Name   = 'ShaderToy .glsl route on DX (Phase 51 A5/A10: converted .fx vs REAL mgfxc DirectX_11 golden, real MonoGame WindowsDX)'
     Action = { Invoke-Checked 'dotnet' @('run', '--project', 'validation/ShaderToyRouteDx', '-c', 'Release') }
 })
@@ -205,6 +232,11 @@ $gates.Add(@{
     Action = {
         Invoke-Checked 'dotnet' @('run', '--project', 'validation/VsDrivenDx12', '-c', 'Release')
         Invoke-Checked 'dotnet' @('run', '--project', 'validation/VsDrivenDx12', '-c', 'Release', '--', 'apos')
+        # Issue #324: an ARRAY of textures (Texture2D Tex[2]) vs the real mgfxc 3.8.5 golden: the
+        # parameter table must equal mgfxc's (one Tex parameter bound to slot 0), both arms must
+        # load and draw the same picture, and element [1], reachable only through
+        # GraphicsDevice.Textures[1], must really be read (CPU expectation (cat + green) / 2).
+        Invoke-Checked 'dotnet' @('run', '--project', 'validation/VsDrivenDx12', '-c', 'Release', '--', 'texarr')
     }
 })
 $gates.Add(@{
@@ -255,8 +287,13 @@ $gates.Add(@{
 # Since Phase 63 (issue #203) it runs TWO MGCB versions (the manifest 3.8.4.1 and a real 3.8.5,
 # which renumbered TargetPlatform) and puts a decoy dxcompiler.dll first on the plugin-arm
 # child's PATH, so a fallback to an OS-search-path DXC or an unsigned DX12 module fails loudly.
+# Since issue #274 its DesktopVK / WindowsDX12 cases also pin the MGFX v11 source-file string to
+# what MGCB's own stock processor writes, and rebuild from a second directory for identical bytes.
+# Since issue #280 every case also requires the CLI's own .xnb payload to equal the plugin's, and
+# every v11 case rebuilds under /config:Debug (DebugMode=Auto) for bytes identical to the default
+# build, with stock MGCB's own /config:Debug build checked the same way as the premise.
 $gates.Add(@{
-    Name   = 'MGCB content-processor plugin (Phase 29: real dotnet mgcb build, .xnb payload vs CLI bytes; Phase 63: + dotnet-mgcb 3.8.5 arm for Web/DesktopVK/WindowsDX12 + decoy-PATH DXC guard)'
+    Name   = 'MGCB content-processor plugin (Phase 29: real dotnet mgcb build, .xnb payload vs CLI bytes; Phase 63: + dotnet-mgcb 3.8.5 arm for Web/DesktopVK/WindowsDX12 + decoy-PATH DXC guard; issue #274: MGFX v11 source-file string == stock, path-independent .xnb; issue #280: CLI .xnb == plugin payload, /config:Debug Auto == default build like stock)'
     Action = {
         # The pinned dotnet-mgcb from .config/dotnet-tools.json (idempotent; cached offline).
         Invoke-Checked 'dotnet' @('tool', 'restore')
@@ -315,7 +352,7 @@ $gates.Add(@{
 # the only place the Builder's unguarded Assembly.GetTypes() scan is exercised against our real
 # dependency graph - a dependency that fails type-load takes the consumer's whole build down.
 $gates.Add(@{
-    Name   = 'MonoGame 3.8.5 Content Builder (Phase 63: ShadowDusk.ContentPipeline pair vs stock pair, real ContentBuilder + Content.Load<Effect> on 3.8.5)'
+    Name   = 'MonoGame 3.8.5 Content Builder (Phase 63: ShadowDusk.ContentPipeline pair vs stock pair, real ContentBuilder + Content.Load<Effect> on 3.8.5; issue #274: DesktopVK/WindowsDX12 passes, MGFX v11 source-file string == stock, path-independent .xnb)'
     Action = {
         Invoke-Checked 'dotnet' @('build', 'src/ShadowDusk.Cli/ShadowDusk.Cli.csproj', '-c', 'Release')
         Invoke-Checked 'dotnet' @('run', '--project', 'validation/ContentBuilder', '-c', 'Release')
@@ -340,12 +377,29 @@ $gates.Add(@{
 # tools/restore.ps1 has run); (2) the uniform-free procedural subset (8 shaders) renders
 # pixel-identical through ShadowDusk's .fx-wrapped route vs slangc's own raw HLSL emission fed
 # to the same DXC + SPIRV-Cross (OpenGL); (3) every shader loads into a REAL
-# MonoGame.Framework.WindowsDX Effect and renders (DirectX_11). DirectX_12/Vulkan stay at the
-# compile+structural rung from gate 1 - a real-Effect-load proof for those two is open, see
-# docs/validation-matrix.md and plan/PHASE-66-full-slang-input-implementation.md's A7 section.
+# MonoGame.Framework.WindowsDX Effect and renders (DirectX_11). The DirectX_12, Vulkan and FNA
+# real-Effect arms are the issue-#230 gates below (and in the FNA / Vulkan blocks).
 $gates.Add(@{
     Name   = 'Slang full corpus (Phase 66 A7: real-slangc route, 21 shaders x 4 targets + procedural pixel-diff vs slangc''s raw HLSL + real DirectX_11 Effect load/render)'
-    Action = { Invoke-Checked 'dotnet' @('run', '--project', 'validation/SlangFullCorpus', '-c', 'Release') }
+    # -f net8.0-windows: the driver multi-targets (issue #227); only the Windows build has gate 3.
+    Action = { Invoke-Checked 'dotnet' @('run', '--project', 'validation/SlangFullCorpus', '-c', 'Release', '-f', 'net8.0-windows') }
+})
+# Real-slangc textured shaders on OpenGL in REAL MonoGame DesktopGL (issue #252). The Slang
+# full-corpus gate above never shows WHICH texture unit a sampler landed on; this one leaves the
+# texture to SpriteBatch (unit 0, never set by parameter), checks the .mgfx sampler table, and
+# compares each textured PS-only corpus shader against its own math on the CPU, plus Invert
+# against the committed mgfxc golden. Also runs in CI on llvmpipe (validation-render.yml); this
+# is the real-GPU-driver run.
+$gates.Add(@{
+    Name   = 'Slang textured GL (issue #252: real-slangc textured shaders sample SpriteBatch''s unit 0, real DesktopGL, Invert vs mgfxc)'
+    Action = { Invoke-Checked 'dotnet' @('run', '--project', 'validation/SlangTexturedGl', '-c', 'Release') }
+})
+# Real-slangc Slang corpus on DirectX_12 in REAL MonoGame 3.8.5 WindowsDX12 (issue #230): every
+# shader through SlangCompiler vs real mgfxc 3.8.5 /Profile:DirectX_12 on the assembled .fx the
+# pipeline was handed, same device, tol 4/255, plus two positive controls that must diverge.
+$gates.Add(@{
+    Name   = 'Slang DX12 (issue #230: real-slangc route vs mgfxc DirectX_12, 21 shaders, real MonoGame 3.8.5 WindowsDX12 Effect load + render)'
+    Action = { Invoke-Checked 'dotnet' @('run', '--project', 'validation/SlangFullCorpusDx12', '-c', 'Release') }
 })
 if ($IncludeFna) {
     $gates.Add(@{
@@ -355,6 +409,12 @@ if ($IncludeFna) {
             if (Test-Path $fnaRestore) { & $fnaRestore }
             Invoke-Checked 'dotnet' @('run', '--project', 'validation/FnaValidation', '-c', 'Release')
         }
+    })
+    # Issue #230: the real-slangc Slang corpus in real FNA, vs fxc /T fx_2_0 on the assembled
+    # .fx. Its own process (FNA allows one Game per process). Restore already ran above.
+    $gates.Add(@{
+        Name   = 'Slang FNA (issue #230: real-slangc route vs fxc /T fx_2_0, 21 shaders, real FNA Effect + .xnb arm)'
+        Action = { Invoke-Checked 'dotnet' @('run', '--project', 'validation/FnaValidation', '-c', 'Release', '--', 'slang') }
     })
 } else {
     Write-Host "NOTE: FNA gate not run (pass -IncludeFna). Required before an FNA-affecting release.`n" -ForegroundColor Yellow
@@ -385,7 +445,19 @@ if (-not $SkipVulkan) {
             # GraphicsDevice in one process. This one renders the issue-#145 reproducer itself -
             # upstream Apos.Shapes at its current revision - against the mgfxc golden.
             Invoke-Checked 'dotnet' @('run', '--project', 'validation/VsDrivenVulkan', '-c', 'Release', '--', 'apos')
+            # Issue #324, EXPECT-DIAGNOSTIC (no device): an ARRAY of textures must be refused with
+            # SD0221 at its declaration, because real mgfxc 3.8.5's own Vulkan output for it has
+            # no parameter, no sampler record and no descriptor binding (the committed golden is
+            # decoded to pin that). `-- texarr-reference` draws mgfxc's effect itself, as evidence.
+            Invoke-Checked 'dotnet' @('run', '--project', 'validation/VsDrivenVulkan', '-c', 'Release', '--', 'texarr')
         }
+    })
+    $gates.Add(@{
+        # Issue #230: the real-slangc Slang corpus vs real mgfxc 3.8.5 /Profile:Vulkan on the
+        # assembled .fx (measured: mgfxc's Vulkan build of these 21 loads and renders, unlike the
+        # CandidateVulkan corpus above), real DesktopVK, tol 4/255, two positive controls.
+        Name   = 'Slang Vulkan (issue #230: real-slangc route vs mgfxc Vulkan, 21 shaders, real MonoGame DesktopVK Effect load + render)'
+        Action = { Invoke-Checked 'dotnet' @('run', '--project', 'validation/SlangFullCorpusVulkan', '-c', 'Release') }
     })
 } else {
     Write-Host "NOTE: Vulkan gates SKIPPED by -SkipVulkan. They are default-ON; only skip them on a box with no Vulkan GPU.`n" -ForegroundColor Yellow

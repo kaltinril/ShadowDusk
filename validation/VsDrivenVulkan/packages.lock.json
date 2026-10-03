@@ -18,6 +18,12 @@
         "resolved": "3.8.5",
         "contentHash": "fobFZ8nfhCmt98HD0FNX+nP1IOoJ2N/Zk/JHY6148i4CEpIThv+OJeiR8W+zba+Xz5NkPC2pmWHRum0jN37boQ=="
       },
+      "MonoGame.Runtime.Linux.Vulkan": {
+        "type": "Direct",
+        "requested": "[3.8.5, )",
+        "resolved": "3.8.5",
+        "contentHash": "hfoeAoeBpdKAh9IjqZMllh/JHvIs7RtVpONMqh+3S32qyraE6xgDXsSFecGxgptOhTnDyy496XHSSRShfG8HJQ=="
+      },
       "MonoGame.Runtime.Windows.Vulkan": {
         "type": "Direct",
         "requested": "[3.8.5, )",
@@ -125,9 +131,9 @@
       "shadowdusk.compiler": {
         "type": "Project",
         "dependencies": {
-          "ShadowDusk.Core": "[0.18.0, )",
-          "ShadowDusk.GLSL": "[0.18.0, )",
-          "ShadowDusk.HLSL": "[0.18.0, )"
+          "ShadowDusk.Core": "[0.20.0, )",
+          "ShadowDusk.GLSL": "[0.20.0, )",
+          "ShadowDusk.HLSL": "[0.20.0, )"
         }
       },
       "shadowdusk.core": {
@@ -136,16 +142,16 @@
       "shadowdusk.glsl": {
         "type": "Project",
         "dependencies": {
-          "ShadowDusk.Core": "[0.18.0, )",
+          "ShadowDusk.Core": "[0.20.0, )",
           "Silk.NET.SPIRV.Cross.Native": "[2.23.0, )"
         }
       },
       "shadowdusk.hlsl": {
         "type": "Project",
         "dependencies": {
-          "ShadowDusk.Core": "[0.18.0, )",
+          "ShadowDusk.Core": "[0.20.0, )",
           "Vortice.D3DCompiler": "[3.3.4, )",
-          "Vortice.Dxc": "[3.3.4, )"
+          "Vortice.Dxc": "[3.3.4, 3.3.4]"
         }
       }
     }

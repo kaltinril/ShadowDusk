@@ -58,6 +58,12 @@ Environment.SetEnvironmentVariable("FNA3D_FORCE_DRIVER", "D3D11");
 var fna3dErrors = new List<string>();
 FNALoggerEXT.LogError = msg => fna3dErrors.Add(msg);
 
+// Issue #230: `-- slang` runs the real-slangc Slang corpus gate (SlangFnaGate.cs) instead of
+// the .fx corpus, on the same harness, device pin and tolerance. Its own process because FNA
+// allows one Game per process.
+if (args.Length > 0 && args[0].Equals("slang", StringComparison.OrdinalIgnoreCase))
+    return await SlangFnaGate.RunAsync(fna3dErrors);
+
 string repoRoot = FnaShaderInputs.FindRepoRoot();
 string catPath = FnaShaderInputs.CatPath(repoRoot);
 string outRoot = Path.Combine(repoRoot, "validation", "output-fna");

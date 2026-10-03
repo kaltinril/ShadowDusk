@@ -7,6 +7,13 @@
     <AssemblyName>ShadowDusk.Integration.Tests</AssemblyName>
     <RootNamespace>ShadowDusk.Integration.Tests</RootNamespace>
     <IsPackable>false</IsPackable>
+    <!-- Dxc/DxcConcurrencyProbe.cs supplies Main instead of the test SDK's empty generated one,
+         so a test can re-run this assembly as a fresh child process (`dotnet exec`) for a
+         race that can only happen once per process. -->
+    <GenerateProgramFile>false</GenerateProgramFile>
+    <!-- Dxc/ProbeLibc.cs calls libc (fork, _exit, setlocale, pthread_atfork) through unmanaged
+         function pointers: the forked child must not reach a marshalling stub or the JIT. -->
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
   </PropertyGroup>
 
   <ItemGroup>
@@ -77,6 +84,27 @@
     <!-- Phase 37 tail (1): the committed cross-host byte-identity manifest
          (CrossHostByteIdentityTests) — win-x64-generated SHA-256s asserted on every OS. -->
     <None Include="..\..\tests\fixtures\golden\byte-identity\**\*" CopyToOutputDirectory="PreserveNewest" Link="fixtures\golden\byte-identity\%(RecursiveDir)%(Filename)%(Extension)" />
+  </ItemGroup>
+
+  <!-- Issue #270: a real, WORKING DXC that is not ShadowDusk's pinned build (DXC 1.9.2602.17,
+       what Vortice.Dxc 3.8.3 pulls in through Vortice.Dxc.Native 1.0.5), for the SD0219
+       "found a different build" case. PackageDownload is NOT a dependency: nothing references
+       it, it only puts the package in the NuGet cache; its natives are copied under
+       foreign-dxc/ beside the test assembly, never under runtimes/. -->
+  <ItemGroup Label="Foreign DXC fixture">
+    <PackageDownload Include="Vortice.Dxc.Native" Version="[1.0.5]" />
+  </ItemGroup>
+  <ItemGroup Condition="'$(NuGetPackageRoot)' != ''">
+    <None Include="$(NuGetPackageRoot)vortice.dxc.native/1.0.5/runtimes/*/native/*"
+          CopyToOutputDirectory="PreserveNewest"
+          Link="foreign-dxc/1.9/%(RecursiveDir)%(Filename)%(Extension)" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- Issues #312/#316: xUnit reports every test that has been running longer than
+         longRunningTestSeconds ("[Long Running Test] 'Name', Elapsed: ..."), so a stalled run
+         names the tests that were in flight even when no hang dump could be taken. -->
+    <Content Include="xunit.runner.json" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 
   <ItemGroup Label="Test framework">

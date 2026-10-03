@@ -9,11 +9,11 @@
 # Pipeline:
 #   validate          → resolve + guard the version
 #   build-and-test    → 3-OS build + full test gate
-#   pack-desktop      → pack the SEVEN desktop packages (Core/HLSL/GLSL/ShaderToy/Compiler/Cli/
-#                       ContentPipeline) at the validated version, with symbols (.snupkg), PLUS the
+#   pack-desktop      → pack the EIGHT desktop packages (Core/HLSL/GLSL/ShaderToy/Slang/Compiler/
+#                       Cli/ContentPipeline) at the validated version, with symbols (.snupkg), PLUS the
 #                       ShadowDusk.MgcbPlugin tools-only package (Phase 29) in a separate
 #                       step without symbols — it has no lib/, so a .snupkg cannot be built
-#   pack-wasm         → pack ShadowDusk.Wasm (the NINTH package) in THIS workflow —
+#   pack-wasm         → pack ShadowDusk.Wasm (the TENTH package) in THIS workflow —
 #                       its own job because it needs the wasm-tools workload and the
 #                       restored dxcompiler.wasm (its `VerifyDxcWasmPresent` MSBuild
 #                       target hard-fails the pack otherwise)
@@ -157,7 +157,7 @@ jobs:
           path: TestResults/*.trx
           retention-days: 30
 
-  # ── Pack the seven desktop packages (Wasm is packed in wasm.yml) ───────────
+  # ── Pack the eight desktop packages + the MGCB plugin (Wasm: pack-wasm below) ──
   pack-desktop:
     name: Pack desktop NuGet packages
     runs-on: ubuntu-latest
@@ -195,6 +195,12 @@ jobs:
           path: tools/dxc
           key: dxc-1.7.2212.40-${{ runner.os }}
 
+      - name: Cache slangc natives
+        uses: actions/cache@v5
+        with:
+          path: tools/slang
+          key: slang-2026.14.1-${{ runner.os }}
+
       # No `|| true`: a genuine restore failure must fail the release, not surface
       # later as a broken package.
       - name: Restore native tools
@@ -216,7 +222,15 @@ jobs:
             'tools/dxc/osx-x64/libdxcompiler.dylib' \
             'tools/dxc/osx-arm64/libdxcompiler.dylib' \
             'tools/dxc/android-arm64/libdxcompiler.so' \
-            'tools/spirv-cross/android-arm64/libspirv-cross.so' ; do
+            'tools/spirv-cross/android-arm64/libspirv-cross.so' \
+            'tools/slang/win-x64/slangc.exe' \
+            'tools/slang/win-x64/slang-compiler.dll' \
+            'tools/slang/linux-x64/slangc' \
+            'tools/slang/linux-x64/libslang-compiler.so.0.2026.14.1' \
+            'tools/slang/osx-x64/slangc' \
+            'tools/slang/osx-x64/libslang-compiler.0.2026.14.1.dylib' \
+            'tools/slang/osx-arm64/slangc' \
+            'tools/slang/osx-arm64/libslang-compiler.0.2026.14.1.dylib' ; do
               if [ ! -f "$f" ]; then
                 echo "::error::restored native missing: $f — tools/restore.sh failed to provision a hosted, pinned asset. Packing now would ship a package broken on that RID; failing the release instead."
                 missing=1
@@ -227,13 +241,15 @@ jobs:
       - name: dotnet restore
         run: dotnet restore ShadowDusk.slnx --locked-mode
 
-      # Pack the seven desktop packages at the validated version, with symbol
+      # Pack the eight desktop packages at the validated version, with symbol
       # packages (.snupkg). The Version override is belt-and-braces — it already
       # equals Directory.Build.props per the validate guard — but keeps the pack
       # explicit and matches a workflow_dispatch where the tag may not exist yet.
       # ShadowDusk.ShaderToy is the standalone, pure-managed ShaderToy/GLSL -> .fx
       # front-end (zero natives, no ProjectReferences): it is NOT in the
       # ShadowDusk.Compiler dependency graph, so pack-consume.yml does not pull it.
+      # ShadowDusk.Slang is the opt-in real-slangc Slang front-end (Phase 66): it depends on
+      # ShadowDusk.Compiler and carries slangc for four RIDs, gated below.
       - name: Pack desktop packages
         run: |
           for proj in \
@@ -241,6 +257,7 @@ jobs:
             src/ShadowDusk.HLSL/ShadowDusk.HLSL.csproj \
             src/ShadowDusk.GLSL/ShadowDusk.GLSL.csproj \
             src/ShadowDusk.ShaderToy/ShadowDusk.ShaderToy.csproj \
+            src/ShadowDusk.Slang/ShadowDusk.Slang.csproj \
             src/ShadowDusk.Compiler/ShadowDusk.Compiler.csproj \
             src/ShadowDusk.Cli/ShadowDusk.Cli.csproj \
             src/ShadowDusk.ContentPipeline/ShadowDusk.ContentPipeline.csproj ; do
@@ -265,8 +282,8 @@ jobs:
           ls -la nupkg/
           count=$(find nupkg -maxdepth 1 -name '*.nupkg' | wc -l)
           echo "Found $count .nupkg files"
-          if [ "$count" -lt 8 ]; then
-            echo "::error::Expected 8 desktop .nupkg (7 libraries/CLI/ContentPipeline + ShadowDusk.MgcbPlugin), found $count"
+          if [ "$count" -lt 9 ]; then
+            echo "::error::Expected 9 desktop .nupkg (8 libraries/CLI/ContentPipeline + ShadowDusk.MgcbPlugin), found $count"
             exit 1
           fi
 
@@ -284,7 +301,10 @@ jobs:
         run: |
           pkg=$(find nupkg -maxdepth 1 -name 'ShadowDusk.HLSL.*.nupkg' ! -name '*.snupkg' | head -1)
           echo "Inspecting $pkg"
-          listing=$(unzip -l "$pkg")
+          # unzip -Z1: EXACT entry names, one per line, matched whole-line (grep -x). A
+          # substring match once passed a package holding "native/slangc/slangc" instead of
+          # "native/slangc" (issue #225), and the same shape could hide a mis-pathed native here.
+          listing=$(unzip -Z1 "$pkg")
           missing=0
           for native in \
             'runtimes/win-x64/native/libvkd3d-shader-1.dll' \
@@ -294,13 +314,27 @@ jobs:
             'runtimes/osx-x64/native/libdxcompiler.dylib' \
             'runtimes/osx-arm64/native/libdxcompiler.dylib' \
             'runtimes/android-arm64/native/libdxcompiler.so' \
+            'buildTransitive/ShadowDusk.HLSL.targets' \
             'THIRD-PARTY-NOTICES.txt' ; do
-              if ! grep -qF "$native" <<<"$listing"; then
+              if ! grep -qxF "$native" <<<"$listing"; then
                 echo "::error::$pkg is missing $native — a consumer on that RID gets a broken package (SD0211 for vkd3d paths; DllNotFoundException for the macOS/Android OpenGL pipeline). Restore natives before packing (tools/restore.sh; RELEASING.md 'Native binaries')."
                 missing=1
               fi
           done
           exit $missing
+
+      # ShadowDusk.Slang (issue #226): the real slangc for all four desktop RIDs plus its
+      # Apache-2.0 notice. Its csproj entries are Exists()-conditioned like HLSL's, so a pack
+      # without the restored natives SILENTLY ships a package whose every compile fails SD0621
+      # on that RID. Fail the release red instead (project_decisions.md: a missing native fails
+      # the release, it does not warn). The exact-name list lives in ONE place,
+      # tools/verify-slang-nupkg.sh, which tools/verify-slang-packaging.sh (pack-consume.yml)
+      # also runs, and which a release driver can run locally against a packed nupkg.
+      - name: Verify ShadowDusk.Slang contains slangc for all four RIDs + Apache-2.0 notice
+        run: |
+          pkg=$(find nupkg -maxdepth 1 -name 'ShadowDusk.Slang.[0-9]*.nupkg' ! -name '*.snupkg' | head -1)
+          chmod +x tools/verify-slang-nupkg.sh
+          ./tools/verify-slang-nupkg.sh "$pkg"
 
       # ShadowDusk.GLSL's only bundled native is the Phase 50 android-arm64 SPIRV-Cross .so
       # (desktop SPIRV-Cross ships transitively via Silk.NET.SPIRV.Cross.Native; it is NOT
@@ -311,7 +345,7 @@ jobs:
         run: |
           pkg=$(find nupkg -maxdepth 1 -name 'ShadowDusk.GLSL.*.nupkg' ! -name '*.snupkg' | head -1)
           echo "Inspecting $pkg"
-          if ! unzip -l "$pkg" | grep -qF 'runtimes/android-arm64/native/libspirv-cross.so'; then
+          if ! unzip -Z1 "$pkg" | grep -qxF 'runtimes/android-arm64/native/libspirv-cross.so'; then
             echo "::error::$pkg is missing runtimes/android-arm64/native/libspirv-cross.so — an on-device Android compile would fail with DllNotFoundException at the SPIR-V to GLSL stage. Restore natives before packing (tools/restore.sh; RELEASING.md 'Native binaries')."
             exit 1
           fi
@@ -326,7 +360,7 @@ jobs:
         run: |
           pkg=$(find nupkg -maxdepth 1 -name 'ShadowDusk.MgcbPlugin.*.nupkg' ! -name '*.snupkg' | head -1)
           echo "Inspecting $pkg"
-          listing=$(unzip -l "$pkg")
+          listing=$(unzip -Z1 "$pkg")   # exact names, whole-line match (see the HLSL gate)
           missing=0
           for entry in \
             'tools/net8.0/any/ShadowDusk.MgcbPlugin.dll' \
@@ -343,7 +377,7 @@ jobs:
             'tools/net8.0/any/libvkd3d-shader.so.1' \
             'tools/net8.0/any/osx-x64/libvkd3d-shader.1.dylib' \
             'tools/net8.0/any/osx-arm64/libvkd3d-shader.1.dylib' ; do
-              if ! grep -qF "$entry" <<<"$listing"; then
+              if ! grep -qxF "$entry" <<<"$listing"; then
                 echo "::error::$pkg is missing $entry — an MGCB content build through this plugin would fail at the first P/Invoke on that RID (SD0103 / DllNotFoundException). Restore natives before packing (tools/restore.sh; RELEASING.md 'Native binaries')."
                 missing=1
               fi
@@ -368,9 +402,9 @@ jobs:
           pkg=$(find nupkg -maxdepth 1 -name 'ShadowDusk.ContentPipeline.*.nupkg' ! -name '*.snupkg' | head -1)
           test -n "$pkg" || (echo "::error::ShadowDusk.ContentPipeline .nupkg not produced" && exit 1)
           echo "Inspecting $pkg"
-          listing=$(unzip -l "$pkg")
+          listing=$(unzip -Z1 "$pkg")   # exact names, whole-line match (see the HLSL gate)
           missing=0
-          grep -qF 'lib/net8.0/ShadowDusk.ContentPipeline.dll' <<<"$listing" \
+          grep -qxF 'lib/net8.0/ShadowDusk.ContentPipeline.dll' <<<"$listing" \
             || { echo "::error::$pkg has no lib/net8.0/ShadowDusk.ContentPipeline.dll - a Content Builder project cannot reference it"; missing=1; }
           nuspec=$(unzip -p "$pkg" 'ShadowDusk.ContentPipeline.nuspec')
           grep -qF 'id="MonoGame.Framework.Content.Pipeline"' <<<"$nuspec" \
@@ -389,7 +423,7 @@ jobs:
           if-no-files-found: error
           retention-days: 30
 
-  # ── Pack the 8th package: ShadowDusk.Wasm (in-browser KNI/Blazor compiler) ──
+  # ── Pack the 10th package: ShadowDusk.Wasm (in-browser KNI/Blazor compiler) ──
   # Separate job because it needs the wasm-tools workload and the dxcompiler.wasm
   # restored into wwwroot/dxc/ (tools/restore copies the committed
   # .wasm-build/dxc-wasm-out/dxcompiler.wasm there; VerifyDxcWasmPresent gates pack).
@@ -685,8 +719,8 @@ jobs:
           name: nupkg-desktop
           path: nupkg/
 
-      # ShadowDusk.Wasm (the 9th package) is packed by the pack-wasm job in THIS run,
-      # so its artifact is available here. All nine packages publish together.
+      # ShadowDusk.Wasm (one of the ten packages) is packed by the pack-wasm job in THIS run,
+      # so its artifact is available here. All ten packages publish together.
       - name: Download Wasm package
         uses: actions/download-artifact@v8
         with:

@@ -13,24 +13,50 @@ namespace ShadowDusk.HLSL.Dxc;
 /// </summary>
 public sealed class DxcShaderCompiler : IDxcShaderCompiler, IDisposable
 {
-    private readonly IDxcCompiler3 _compiler;
+    private readonly IDxcCompiler3? _compiler;
+    private readonly ShaderError? _loadError;
     private bool _disposed;
 
     /// <summary>
-    /// Creates the DXC compiler instance, loading <c>dxil.dll</c> for DXIL validation on
-    /// Windows (a no-op on other platforms).
+    /// Creates the DXC compiler instance from ShadowDusk's pinned DXC natives (on Windows,
+    /// with the pinned <c>dxil.dll</c> validating and signing DXIL). If those natives cannot
+    /// be guaranteed, every compile returns an <c>SD0219</c> error instead.
     /// </summary>
     public DxcShaderCompiler()
     {
-        // macOS: hook Vortice's ResolveLibrary so our pinned libdxcompiler.dylib
-        // resolves (Vortice.Dxc ships no macOS native — Phase 37 A). Idempotent;
-        // no-op on Windows/Linux. Must precede the first DXC P/Invoke below.
-        DxcLoader.Register();
-
-        // Load dxil.dll for DXIL validation on Windows; no-op on other platforms.
-        LoadDxil();
-        _compiler = CreateDxcCompiler<IDxcCompiler3>();
+        // Loads the pinned natives by absolute path, after checking they are the pinned build
+        // (Windows/Linux/macOS; Android: bare SONAME from the APK), and answers Vortice's
+        // resolver ahead of Vortice's own handler. Idempotent. Must precede the first DXC
+        // P/Invoke below. The dlopen happens in there, outside DxcForkGate. Never call
+        // Vortice's Dxc.LoadDxil(): it is a bare LoadLibrary("dxil.dll") that walks PATH and
+        // let a foreign validator win.
+        _loadError = DxcLoader.Register();
+        if (_loadError is null)
+            _compiler = CreateDxcCompiler<IDxcCompiler3>();
     }
+
+    /// <summary>
+    /// The <c>SD0219</c> error to return instead of compiling, or null. Missing, unloadable or
+    /// foreign-build natives fail every request. A foreign DXIL validator fails only requests whose
+    /// output it decides (<paramref name="usesValidator"/>: validated DXIL, i.e. DirectX 12):
+    /// SPIR-V codegen, <c>-Vd</c> compiles and <c>-P</c> preprocessing never call it, so a host
+    /// that loaded its own <c>dxil.dll</c> must not cost the consumer those targets. Checked once,
+    /// before the native call: DXC binds its validator while its library loads (Windows
+    /// <c>DllMain</c>; the Unix library constructor), never during a compile, so there is
+    /// nothing to re-check afterwards.
+    /// </summary>
+    private ShaderError? NativeError(string? sourceFileName, bool usesValidator)
+    {
+        ShaderError? error = _loadError ?? (usesValidator ? DxcLoader.CheckBoundValidator() : null);
+        return error is null ? null : error with { File = sourceFileName ?? "" };
+    }
+
+    /// <summary>
+    /// True when DXC will run its DXIL validator (and, on Windows, signer) on this compile:
+    /// DXIL output (no <c>-spirv</c>) without <c>-Vd</c>.
+    /// </summary>
+    internal static bool UsesValidator(IReadOnlyList<string> arguments) =>
+        !arguments.Contains("-spirv") && !arguments.Contains("-Vd");
 
     /// <inheritdoc/>
     public Task<Result<PlatformBlob, ShaderError>> CompileAsync(
@@ -38,7 +64,7 @@ public sealed class DxcShaderCompiler : IDxcShaderCompiler, IDisposable
         CancellationToken cancellationToken = default)
     {
         cancellationToken.ThrowIfCancellationRequested();
-        return Task.Run(() => CompileCore(request), cancellationToken);
+        return Task.Run(() => CompileRejectingWaveOps(request), cancellationToken);
     }
 
     /// <inheritdoc/>
@@ -47,7 +73,7 @@ public sealed class DxcShaderCompiler : IDxcShaderCompiler, IDisposable
         CancellationToken cancellationToken = default)
     {
         cancellationToken.ThrowIfCancellationRequested();
-        return CompileCore(request);
+        return CompileRejectingWaveOps(request);
     }
 
     /// <inheritdoc/>
@@ -57,12 +83,15 @@ public sealed class DxcShaderCompiler : IDxcShaderCompiler, IDisposable
     {
         cancellationToken.ThrowIfCancellationRequested();
 
+        if (NativeError(request.SourceFileName, usesValidator: false) is { } loadError)
+            return Result<string, ShaderError>.Fail(loadError);
+
         IReadOnlyList<string> arguments = DxcFlagBuilder.BuildPreprocess(request.Macros);
 
         // Same raw vtable call the compile path uses (per-platform wchar_t arg encoding,
         // UTF-8 source). #includes are already flattened upstream, so no include handler.
         IDxcResult result = DxcNativeInterop.Compile(
-            _compiler,
+            _compiler!,
             request.HlslSource,
             arguments,
             includeHandler: null);
@@ -96,6 +125,24 @@ public sealed class DxcShaderCompiler : IDxcShaderCompiler, IDisposable
         }
     }
 
+    // Issue #229: on the Vulkan target DXC refuses wave/quad intrinsics at its default Vulkan
+    // 1.0 target env. ShadowDusk deliberately does NOT retry with -fspv-target-env=vulkan1.1:
+    // MonoGame's DesktopVK creates a Vulkan 1.0 instance with no subgroup support, and the
+    // SPIR-V 1.3 / GroupNonUniform module that flag produces was measured out of spec there by
+    // the Khronos validation layer. OpenGL's fixed SM5 profile hits the same DXC rejection. Both
+    // are relabelled (SD0218 / SD0624, shared with the real-slangc route, see
+    // WaveQuadIntrinsics), keeping DXC's location, its message verbatim, and its raw text.
+    private Result<PlatformBlob, ShaderError> CompileRejectingWaveOps(DxcCompileRequest request)
+    {
+        Result<PlatformBlob, ShaderError> result = CompileCore(request);
+
+        if (result.IsSuccess)
+            return result;
+
+        ShaderError? relabelled = WaveQuadIntrinsics.Relabel(result.Error, request.Platform, "DXC");
+        return relabelled is null ? result : Result<PlatformBlob, ShaderError>.Fail(relabelled);
+    }
+
     private Result<PlatformBlob, ShaderError> CompileCore(DxcCompileRequest request)
     {
         IReadOnlyList<string> arguments = DxcFlagBuilder.Build(
@@ -104,6 +151,19 @@ public sealed class DxcShaderCompiler : IDxcShaderCompiler, IDisposable
             request.EntryPoint,
             request.Macros,
             request.Options);
+        bool usesValidator = UsesValidator(arguments);
+
+        if (NativeError(request.SourceFileName, usesValidator) is { } loadError)
+            return Result<PlatformBlob, ShaderError>.Fail(loadError);
+
+        // A SPIR-V compile with debug information loads libdxcompiler by LEAF name from inside
+        // DXC to read the source for OpSource (issue #332). Refused (SD0223) when the dynamic
+        // linker would hand that load anything but the pinned build; no other request makes it.
+        if (DxcLeafNameLookup.CompileReadsSourceThroughLeafNameLoad(arguments)
+            && DxcLoader.CheckDebugSpirvLookup() is { } lookupError)
+        {
+            return Result<PlatformBlob, ShaderError>.Fail(lookupError with { File = request.SourceFileName ?? "" });
+        }
 
         // Raw vtable call instead of Vortice's IDxcCompiler3.Compile(string, string[], ...):
         // Vortice marshals the LPCWSTR* argument array as UTF-16 on every OS, but DXC's
@@ -111,7 +171,7 @@ public sealed class DxcShaderCompiler : IDxcShaderCompiler, IDisposable
         // reads garbage arguments and every compile fails with "Internal Compiler error:"
         // (Phase 37 Finding B). DxcNativeInterop encodes the arguments per-platform.
         IDxcResult result = DxcNativeInterop.Compile(
-            _compiler,
+            _compiler!,
             request.HlslSource,
             arguments,
             request.IncludeHandler);
@@ -163,7 +223,7 @@ public sealed class DxcShaderCompiler : IDxcShaderCompiler, IDisposable
                 errorText, request.SourceFileName);
 
             // DXIL signing (bug-hunt 2026-07-27 M7): dxil.dll validation/signing runs on
-            // Windows only (LoadDxil is a no-op elsewhere, and macOS ships no dxil at
+            // Windows only (this pin's Linux DXC never loads libdxil, and macOS ships no dxil at
             // all), so a DirectX12 compile on Linux/macOS produces UNSIGNED DXIL. That
             // loads only on machines with Developer Mode enabled — retail D3D12 rejects
             // unsigned DXIL at pipeline-state creation. Same source, different build
@@ -203,6 +263,6 @@ public sealed class DxcShaderCompiler : IDxcShaderCompiler, IDisposable
         if (_disposed)
             return;
         _disposed = true;
-        _compiler.Dispose();
+        _compiler?.Dispose();
     }
 }

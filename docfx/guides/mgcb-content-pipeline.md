@@ -79,7 +79,7 @@ a step you must take to get working output.
 
 | `/processorParam:` | Default | What it does |
 |---|---|---|
-| `DebugMode` | `Auto` | `Auto` follows the content build configuration, exactly like MonoGame's stock `EffectProcessor`. `Debug` / `Optimize` force it. |
+| `DebugMode` | `Auto` | Only `Debug` turns shader debug information on. `Auto` and `Optimize` optimize, whatever the content build configuration (`/config:Debug` included), exactly like MonoGame's stock `EffectProcessor`, which never reads the configuration. |
 | `Defines` | *(empty)* | Preprocessor macros in `mgfxc`'s `/Defines:` spelling: `NAME=VALUE` entries separated by `;` or `,`; a bare `NAME` defines it as `1`. Same property name and format as the stock processor, so an existing `/processorParam:Defines=…` carries over unchanged. |
 | `IncludeDirs` | *(empty)* | Extra `#include` search directories, `;`-separated. The including file's own directory is always searched first and needs no entry. Equivalent to the CLI's `/I`. |
 | `ShaderProfile` | *(empty)* | Overrides the target derived from `/platform:`. `DirectX_11`, `DirectX_12`, `OpenGL`, `Vulkan` — needed only on MGCB **before 3.8.5**, whose platform list cannot name [DirectX 12](../backends/directx12.md) or [Vulkan](../backends/vulkan.md); from 3.8.5 `WindowsDX12` and `DesktopVK` derive their target directly. Build DX12 content **on Windows**: DXIL signing needs the Windows-only `dxil.dll`, or the output is unsigned and retail D3D12 rejects it (`SD0214`). |
@@ -115,6 +115,26 @@ green on `dotnet mgcb` 3.8.2.1105, 3.8.3, 3.8.4, 3.8.4.1, and 3.8.5 — the gate
 pinned 3.8.4.1 and a real 3.8.5 (`Web`, `DesktopVK`, `WindowsDX12` included), and it runs the
 plugin-arm MGCB with a decoy `dxcompiler.dll` first on `PATH`, so a build that ever fell back to an
 OS-search-path DXC (a Vulkan SDK install puts one there) instead of the pinned one fails loudly.
+
+### Your build path stays out of the content
+
+There is one place the plugin's bytes deliberately differ from the CLI's. The MGFX v11 container,
+which `WindowsDX12` and `DesktopVK` always use, stores a source-file string per shader (the runtime
+shows it only in shader error messages). MGCB hands a processor your effect's **absolute** path. The
+CLI's `.mgfx` output records the path it is given, as `mgfxc` does; the plugin writes `<unknown>`,
+which is exactly what MonoGame's stock `EffectProcessor` writes (and so does the CLI when it writes an
+`.xnb`, since MGCB, not `mgfxc`, is the reference for content files). So a DirectX 12 or Vulkan `.xnb` never carries your
+build machine's directory or user name, and it is the same bytes wherever the project is checked out.
+Everything else in the payload is the CLI's, byte for byte, and build errors and warnings still name
+the real file, line and column. The gate checks all of it on a real `dotnet mgcb` 3.8.5: the string
+against the stock build's, the payload against the CLI's with only that string replaced, and the
+same effect built from a second directory for byte-identical output. OpenGL and DirectX 11 use MGFX
+v10, which has no such string.
+
+A `/config:Debug` build with the default `DebugMode=Auto` is the same bytes as a release build, as it
+is with the stock processor (the gate checks both). Only an explicit `DebugMode=Debug` turns debug
+information on, and that is different by design: the compiler's own debug information names the source file so a graphics
+debugger can find it, so those DirectX 12 and Vulkan effects do record the path.
 
 ## The other routes (still supported)
 

@@ -1,11 +1,12 @@
 #nullable enable
 
+using ShadowDusk.Compiler.Internal;
 using ShadowDusk.Core;
 using ShadowDusk.Core.Preprocessor;
-using ShadowDusk.Core.Reflection;
 using ShadowDusk.GLSL;
 using ShadowDusk.HLSL;
 using ShadowDusk.HLSL.Dxc;
+using ShadowDusk.HLSL.Ast;
 
 namespace ShadowDusk.Compiler.Sksl;
 
@@ -77,13 +78,13 @@ public static class SkslConverter
     /// <summary>
     /// <see cref="Convert(string, SkslConvertOptions, CancellationToken)"/> with the same
     /// backend-injection seam <see cref="EffectCompiler"/> has, so a host without the native
-    /// DXC/SPIRV-Cross (the browser/WASM host) can supply its own — the SAME faithful
+    /// DXC/SPIRV-Cross (the browser/WASM host) can supply its own: the SAME faithful
     /// components compiled for that host, never a substitute compiler.
     /// </summary>
     /// <param name="fxSource">The HLSL <c>.fx</c> effect source.</param>
     /// <param name="options">Conversion options; see <see cref="SkslConvertOptions"/>.</param>
-    /// <param name="dxcCompilerFactory">HLSL → SPIR-V frontend; <see langword="null"/> = bundled desktop DXC.</param>
-    /// <param name="glslTranspilerFactory">SPIR-V → GLSL transpiler; <see langword="null"/> = bundled SPIRV-Cross.</param>
+    /// <param name="dxcCompilerFactory">HLSL to SPIR-V frontend; <see langword="null"/> = bundled desktop DXC.</param>
+    /// <param name="glslTranspilerFactory">SPIR-V to GLSL transpiler; <see langword="null"/> = bundled SPIRV-Cross.</param>
     /// <param name="cancellationToken">Observed between pipeline stages.</param>
     public static Result<SkslConversion, ShaderError[]> Convert(
         string fxSource,
@@ -107,14 +108,56 @@ public static class SkslConverter
             ]);
         }
 
-        if (parse.Value.Techniques.Count == 0)
+        Result<SkslConversion, ShaderError[]> first = ConvertCore(
+            parse.Value, options, recovered: null, out bool shaderCompileFailed, cancellationToken,
+            dxcCompilerFactory, glslTranspilerFactory);
+        if (first.IsSuccess || !shaderCompileFailed)
+            return first;
+
+        // Legacy-sampler recovery (issues #308, #327): the same one CompilationPipeline.Run uses.
+        // The DXC compile failed; if the text it was given still holds legacy D3D9 sampler syntax
+        // once preprocessed (a declaration in an #include'd file, or one that comes out of a
+        // macro, which the raw pre-parse cannot see), repeat the pre-parse on the PREPROCESSED
+        // source and convert from that. Only ever reached on a failure, so an effect that
+        // converts from its raw source is converted from exactly that source, as before.
+        LegacySamplerRecovery.Outcome outcome = LegacySamplerRecovery.Evaluate(
+            fxSource,
+            options.SourceName,
+            PlatformMacros.For(PlatformTarget.OpenGL),
+            options.IncludeResolver ?? new FileSystemIncludeResolver(),
+            options.AdditionalIncludePaths);
+        return LegacySamplerRecovery.Apply(
+            first, outcome,
+            retry => ConvertCore(retry.Parsed.Parsed, options, retry, out _, cancellationToken,
+                dxcCompilerFactory, glslTranspilerFactory));
+    }
+
+    /// <summary>
+    /// One pass of the conversion over a pre-parse: the raw one (every conversion's first and
+    /// normally only pass), or, with <paramref name="recovered"/>, the pre-parse of the
+    /// preprocessed source (issue #308). <paramref name="shaderCompileFailed"/> is set when the
+    /// DXC compile (or the transpile behind it) is what failed on a first pass: the one failure
+    /// the recovery can be consulted for.
+    /// </summary>
+    private static Result<SkslConversion, ShaderError[]> ConvertCore(
+        FxParseResult parsed,
+        SkslConvertOptions options,
+        LegacySamplerRecovery.Outcome.Retry? recovered,
+        out bool shaderCompileFailed,
+        CancellationToken cancellationToken,
+        Func<IDxcShaderCompiler>? dxcCompilerFactory,
+        Func<ISpirvToGlslTranspiler>? glslTranspilerFactory)
+    {
+        shaderCompileFailed = false;
+
+        if (parsed.Techniques.Count == 0)
         {
             return Fail(options.SourceName, "SD0010", "Effect source contains no techniques.");
         }
 
         // v1 is deliberately single-technique, single-pass: SkSL has no technique/pass concept,
         // so "which pass becomes THE effect" would be a silent guess on anything larger.
-        if (parse.Value.Techniques.Count > 1 || parse.Value.Techniques[0].Passes.Count > 1)
+        if (parsed.Techniques.Count > 1 || parsed.Techniques[0].Passes.Count > 1)
         {
             return Fail(options.SourceName, "SD0615",
                 "the effect has multiple techniques/passes, and an SkSL runtime effect is a single " +
@@ -122,7 +165,7 @@ public static class SkslConverter
                 "guess. Split the effect, or convert a single-pass .fx.");
         }
 
-        var pass = parse.Value.Techniques[0].Passes[0];
+        var pass = parsed.Techniques[0].Passes[0];
 
         // The Gum lesson at stage level: a vertex shader cannot ride along (SkSL has no vertex
         // stage, by Skia's design), and quietly discarding it would change what the effect draws.
@@ -142,47 +185,41 @@ public static class SkslConverter
                 "function, so there is nothing to convert.");
         }
 
-        // 2. Preprocess with the OpenGL macro set — the arm the GL fixtures' `#if OPENGL`
-        //    headers select, and the one whose SM3-level profiles the corpus writes there.
-        var preprocess = new Preprocessor().Flatten(
-            parse.Value.StrippedHlsl,
-            options.SourceName,
-            PlatformMacros.For(PlatformTarget.OpenGL),
-            options.IncludeResolver ?? new FileSystemIncludeResolver(),
-            options.AdditionalIncludePaths);
-        if (preprocess.IsFailure)
-            return Result<SkslConversion, ShaderError[]>.Fail([preprocess.Error]);
-
-        // 3. HLSL -> SPIR-V, with the same faithful DXC every ShadowDusk compile uses.
-        var dxc = dxcCompilerFactory?.Invoke() ?? new DxcShaderCompiler();
-        using var _ = dxc as IDisposable;
-        var spirv = dxc.Compile(new DxcCompileRequest
+        // 2-4. HLSL -> SPIR-V -> modern GLSL, the shared seam BEFORE the MonoGame rewriter. A
+        // recovery's text already has its #includes inlined and its macros expanded (flattening
+        // it again would prepend the macro block a second time); a raw pre-parse is flattened here.
+        string compilerInput;
+        if (recovered is not null)
         {
-            HlslSource     = preprocess.Value.Text,
-            SourceFileName = options.SourceName,
-            EntryPoint     = pass.PixelEntryPoint,
-            Stage          = ShaderStage.Pixel,
-            Platform       = PlatformTarget.OpenGL,
-        }, cancellationToken);
-        if (spirv.IsFailure)
-            return Result<SkslConversion, ShaderError[]>.Fail([spirv.Error]);
+            compilerInput = parsed.StrippedHlsl;
+        }
+        else
+        {
+            var flattened = ModernGlslSeam.Flatten(
+                parsed.StrippedHlsl, options.SourceName, options.IncludeResolver, options.AdditionalIncludePaths);
+            if (flattened.IsFailure)
+                return Result<SkslConversion, ShaderError[]>.Fail([flattened.Error]);
+            compilerInput = flattened.Value.Text;
+        }
+
+        var seam = ModernGlslSeam.CompilePixel(compilerInput, pass.PixelEntryPoint, options.SourceName, cancellationToken,
+            dxcCompilerFactory, glslTranspilerFactory);
+        if (seam.IsFailure)
+        {
+            shaderCompileFailed = recovered is null;
+            return Result<SkslConversion, ShaderError[]>.Fail(seam.Error);
+        }
 
         // The HLSL texture name behind each combined sampler, in declaration order — the same
         // extraction the GL sampler table trusts (issue #189's allocator).
-        var pairs = SpirvCombinedSamplerPairs.Extract(spirv.Value.Bytes);
+        var pairs = seam.Value.SamplerPairs;
         IReadOnlyList<string> textureNames = pairs.IsSuccess
             ? pairs.Value.Select(p => p.TextureName).ToList()
             : [];
 
-        // 4. SPIR-V -> modern GLSL (SPIRV-Cross; the seam BEFORE the MonoGame rewriter).
-        var transpiler = glslTranspilerFactory?.Invoke() ?? new SpirvCrossGlslTranspiler();
-        var glsl = transpiler.Transpile(spirv.Value.Bytes, cancellationToken);
-        if (glsl.IsFailure)
-            return Result<SkslConversion, ShaderError[]>.Fail([glsl.Error]);
-
         // 5. GLSL -> SkSL.
         var mapped = SkslGlslMapper.Map(
-            glsl.Value.Text,
+            seam.Value.Glsl,
             textureNames,
             options.TreatVaryingsAsUniforms.ToHashSet(StringComparer.Ordinal),
             options.SourceName);

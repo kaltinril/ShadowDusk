@@ -15,8 +15,8 @@ release tag **`native-vkd3d-wasm-1.17`** (same hosting model as
 
 | File | Purpose |
 |---|---|
-| `sdw_vkd3d_wrapper.c` | Thin C wrapper exposing the flat `sdw_vkd3d_*` ABI over `vkd3d_shader_compile()`. **The ABI is a contract** — the C# `[JSImport]` interop side is written against it; do not change signatures without recording the change in the phase doc. |
-| `smoke-test.mjs` | Node gate run by the workflow: ps_2_0 → d3dbc (version token `0xFFFF0200`), ps_5_0 → dxbc-tpf (`DXBC` magic), and a fail-loudly diagnostics check. |
+| `sdw_vkd3d_wrapper.c` | Thin C wrapper exposing the flat `sdw_vkd3d_*` ABI over `vkd3d_shader_compile()`. **The ABI is a contract** — the C# `[JSImport]` interop side is written against it; do not change signatures without recording the change in the phase doc. **It decides no vkd3d compile option** (issue #295): the caller's list (`Vkd3dCompileContract.ResolveCompileOptions`, the one the desktop passes) arrives as (name, value) pairs and is forwarded untouched. Never hard-code one here; a second copy of the list is what made the browser compile differently from the desktop. |
+| `smoke-test.mjs` | Node gate run by the workflow: ps_2_0 → d3dbc (version token `0xFFFF0200`), ps_5_0 → dxbc-tpf (`DXBC` magic), a fail-loudly diagnostics check, and the option pass-through (SM1-3 struct semantics compile at ps_4_0 with `MAP_SEMANTIC_NAMES`, are refused without it, and an option list the wrapper cannot honour is refused). |
 
 ## Pins (never drift these silently)
 
@@ -30,7 +30,7 @@ release tag **`native-vkd3d-wasm-1.17`** (same hosting model as
 
 `emcc … -sMODULARIZE=1 -sEXPORT_ES6=1 -sEXPORT_NAME=createVkd3dModule
 -sFILESYSTEM=0 -sALLOW_MEMORY_GROWTH=1` with exported functions
-`_sdw_vkd3d_compile, _sdw_vkd3d_free_code, _sdw_vkd3d_free_messages, _malloc,
+`_sdw_vkd3d_compile_options, _sdw_vkd3d_free_code, _sdw_vkd3d_free_messages, _malloc,
 _free` and runtime methods `cwrap, ccall, getValue, setValue, UTF8ToString,
 stringToUTF8, lengthBytesUTF8`. The JS file default-exports the factory;
 `vkd3d-shader.wasm` is located relative to the JS via `import.meta.url`, so

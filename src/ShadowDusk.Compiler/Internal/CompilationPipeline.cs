@@ -64,6 +64,69 @@ internal sealed class CompilationPipeline
         CompilerOptions options,
         CancellationToken cancellationToken = default)
     {
+        Result<CompiledShader, ShaderError[]> first = RunCore(
+            hlslSource, options, recovered: null, out ShaderCompileFailure? compileFailure, cancellationToken);
+        if (first.IsSuccess || compileFailure is null)
+            return first;
+
+        // Legacy-sampler recovery (issue #308). A DXC shader compile failed. If the text DXC was
+        // given still holds legacy D3D9 sampler syntax once preprocessed (a declaration in an
+        // #include'd file, or one that comes out of a macro, which the raw pre-parse cannot
+        // see), repeat the pre-parse on the PREPROCESSED source and compile that. This runs only
+        // on a failure, so an effect that compiles from its raw source is compiled from exactly
+        // that source, byte for byte as before.
+        LegacySamplerRecovery.Outcome outcome = LegacySamplerRecovery.Evaluate(
+            hlslSource,
+            compileFailure.SourceFileName,
+            compileFailure.Macros,
+            compileFailure.IncludeResolver,
+            options.AdditionalIncludePaths);
+
+        // The outcome handling is LegacySamplerRecovery.Apply, shared with the raylib and SkSL
+        // converters (issue #327). A retry that still fails with legacy syntax left in the
+        // compiler's input gets SD0016 appended after the compiler's own verbatim diagnostics.
+        return LegacySamplerRecovery.Apply(
+            first, outcome, retry => RunCore(hlslSource, options, retry, out _, cancellationToken));
+    }
+
+    /// <summary>
+    /// What <see cref="Run"/> needs to consider the legacy-sampler recovery after a DXC shader
+    /// compile failed: the inputs that compile was built from.
+    /// </summary>
+    private sealed record ShaderCompileFailure(
+        string SourceFileName,
+        MacroSet Macros,
+        IIncludeResolver IncludeResolver);
+
+    /// <summary>
+    /// A failed shader compile is a candidate for the legacy-sampler recovery only on a target
+    /// that compiles through DXC (OpenGL, Vulkan, DirectX 12), which has no D3D9 sampler syntax.
+    /// DirectX 11 compiles through vkd3d / d3dcompiler, which parse that syntax themselves, and a
+    /// recovery pass is never recovered a second time.
+    /// </summary>
+    private static ShaderCompileFailure? LegacySamplerRecoveryCandidate(
+        PlatformTarget target,
+        LegacySamplerRecovery.Outcome.Retry? recovered,
+        string sourceFileName,
+        MacroSet macros,
+        IIncludeResolver includeResolver) =>
+        recovered is null && target != PlatformTarget.DirectX
+            ? new ShaderCompileFailure(sourceFileName, macros, includeResolver)
+            : null;
+
+    /// <summary>
+    /// One pass of the pipeline. With <paramref name="recovered"/> null it pre-parses the raw
+    /// source (every compile's first and normally only pass); with a recovery it compiles from
+    /// the pre-parse of the preprocessed source instead (issue #308).
+    /// </summary>
+    private Result<CompiledShader, ShaderError[]> RunCore(
+        string hlslSource,
+        CompilerOptions options,
+        LegacySamplerRecovery.Outcome.Retry? recovered,
+        out ShaderCompileFailure? compileFailure,
+        CancellationToken cancellationToken)
+    {
+        compileFailure = null;
         cancellationToken.ThrowIfCancellationRequested();
 
         // A CapabilityProfile fully specifies the output target, including the graphics backend, so
@@ -93,12 +156,21 @@ internal sealed class CompilationPipeline
 
         string sourceFileName = options.SourceFileName ?? "<source>";
 
-        // Stage 1: FX9 pre-parser.
-        var parseResult = FxPreParser.Parse(hlslSource, sourceFileName);
-        if (parseResult.IsFailure)
-            return Fail(FromFxParseError(parseResult.Error));
+        // Stage 1: FX9 pre-parser. A recovery pass (issue #308) arrives with the pre-parse of the
+        // preprocessed source already done.
+        FxParseResult fxParsed;
+        if (recovered is not null)
+        {
+            fxParsed = recovered.Parsed.Parsed;
+        }
+        else
+        {
+            var parseResult = FxPreParser.Parse(hlslSource, sourceFileName);
+            if (parseResult.IsFailure)
+                return Fail(FromFxParseError(parseResult.Error));
 
-        FxParseResult fxParsed = parseResult.Value;
+            fxParsed = parseResult.Value;
+        }
 
         // Stage 2: Preprocessor — inject platform macros and flatten #includes.
         // Pre-check (no exception-as-control-flow): an unsupported target is reported
@@ -129,17 +201,30 @@ internal sealed class CompilationPipeline
         IIncludeResolver includeResolver = options.IncludeResolver ?? new FileSystemIncludeResolver();
         var preprocessor = new Preprocessor();
 
-        var preprocessResult = preprocessor.Flatten(
-            fxParsed.StrippedHlsl,
-            sourceFileName,
-            macros,
-            includeResolver,
-            options.AdditionalIncludePaths);
+        PreprocessedSource preprocessed;
+        if (recovered is not null)
+        {
+            // The recovery's text already has its #includes inlined and its macros expanded, and
+            // carries the flattener's own #line directives, so it is the compiler input as is
+            // (flattening it again would prepend the macro block a second time).
+            preprocessed = new PreprocessedSource(
+                fxParsed.StrippedHlsl, macros.ToDxcFlags(), sourceFileName, recovered.Warnings);
+        }
+        else
+        {
+            var preprocessResult = preprocessor.Flatten(
+                fxParsed.StrippedHlsl,
+                sourceFileName,
+                macros,
+                includeResolver,
+                options.AdditionalIncludePaths);
 
-        if (preprocessResult.IsFailure)
-            return Fail(preprocessResult.Error);
+            if (preprocessResult.IsFailure)
+                return Fail(preprocessResult.Error);
 
-        PreprocessedSource preprocessed = preprocessResult.Value;
+            preprocessed = preprocessResult.Value;
+        }
+
         IReadOnlyList<ShaderError> preprocessWarnings = preprocessed.Warnings;
 
         // LAZY DXC instance, hoisted above the zero-technique fallback so the fallback's
@@ -323,11 +408,14 @@ internal sealed class CompilationPipeline
         // An injected host backend (the WASM vkd3d backend) takes precedence over both —
         // a host-appropriate default, not a consumer choice (CompilerOptions.DxbcBackend
         // selects between desktop natives that do not exist in the browser).
-        IDxbcShaderCompiler dxbcCompiler = _dxbcCompilerFactory?.Invoke() ?? options.DxbcBackend switch
-        {
-            DxbcBackend.D3DCompiler => new D3DCompilerShaderCompiler(),
-            _                       => new Vkd3dShaderCompiler(),
-        };
+        // Memoized per run (issue #255): an entry point named by several passes is compiled
+        // once, not once per pass. Same request, deterministic backend, so the same bytes.
+        IDxbcShaderCompiler dxbcCompiler = new MemoizingDxbcCompiler(
+            _dxbcCompilerFactory?.Invoke() ?? options.DxbcBackend switch
+            {
+                DxbcBackend.D3DCompiler => new D3DCompilerShaderCompiler(),
+                _                       => new Vkd3dShaderCompiler(),
+            });
         var dxbcReflectionPipe  = new DxbcReflectionPipeline(new DxbcReflectionExtractor());
 
         var extractor          = new DxilReflectionExtractor();
@@ -441,6 +529,44 @@ internal sealed class CompilationPipeline
         var runWarnings  = new List<ShaderError>(preprocessWarnings);
         var seenWarnings = new HashSet<(string File, int Line, int Column, string Code, string Message)>();
 
+        // OpenGL sampler-register reservations (issue #283): which modern
+        // `SamplerState X : register(sN)` declarations take a GL sampler register out of
+        // circulation is decided on the PREPROCESSED source, like mgfxc — not on the raw tokens
+        // the pre-parser saw (which counted dead #if branches, missed macro-spelled registers,
+        // and never saw #include'd files). Built from the RAW source (the pre-parser's rewrite
+        // turns legacy samplers into SamplerState, which must not start reserving), flattened
+        // with this compile's macros. A failure to build the view is DEFERRED until the DXC
+        // compiles below have accepted the source, so a genuinely malformed shader still
+        // reports DXC's own diagnostic; SD0009 only fires when our preprocessor is the one at
+        // fault.
+        //
+        // The sibling map rides on the same view (issue #299): the register an explicit
+        // `register(sN)` on a LEGACY `sampler` declaration pins its texture to. Read from the
+        // raw tokens it had the same two faults (`#if OPENGL sampler S = …; #else
+        // sampler S : register(s1) = …; #endif` pinned unit 1 where mgfxc emits ps_s0, and
+        // `register(REG)` through a macro was missed).
+        IReadOnlyDictionary<string, int> explicitGlSamplerSlots = fxParsed.ExplicitGlSamplerSlots;
+        IReadOnlySet<int> reservedGlSamplerSlots = fxParsed.ReservedGlSamplerSlots;
+        ShaderError? reservationError = null;
+        if (options.Target == PlatformTarget.OpenGL)
+        {
+            // A recovery pass (issue #308) has the flattened raw source in hand already, and its
+            // pre-parse names samplers as the preprocessed view does.
+            Result<GlSamplerSlots, ShaderError> reservation = recovered is not null
+                ? FxPreParser.CollectGlSamplerSlots(recovered.FlattenedRawSource, sourceFileName, fxParsed)
+                : GlSamplerReservation.Collect(
+                    hlslSource, sourceFileName, macros, includeResolver, options.AdditionalIncludePaths, fxParsed);
+            if (reservation.IsSuccess)
+            {
+                explicitGlSamplerSlots = reservation.Value.Explicit;
+                reservedGlSamplerSlots = reservation.Value.Reserved;
+            }
+            else
+            {
+                reservationError = reservation.Error;
+            }
+        }
+
         foreach (TechniqueInfo technique in fxParsed.Techniques)
         {
             var mgfxPasses = new List<MgfxPassInfo>();
@@ -471,15 +597,19 @@ internal sealed class CompilationPipeline
                         // + attribute/varying contract that lets MonoGame's GL runtime link it.
                         applyMonoGameGlsl: monoGameGl,
                         reflectFromSpirv: reflectFromSpirv,
-                        // The explicit register(sN) indices the pre-parser captured before the
-                        // SM4 rewrite dropped them, so the GLSL rewriter numbers ps_s{slot} the
-                        // same way the .mgfx sampler table will (issue #189).
-                        explicitGlSamplerSlots: fxParsed.ExplicitGlSamplerSlots,
-                        reservedGlSamplerSlots: fxParsed.ReservedGlSamplerSlots,
+                        // The explicit register(sN) indices of legacy samplers (which the SM4 rewrite
+                        // drops), read off the preprocessed view, so the GLSL rewriter numbers ps_s{slot} the
+                        // same way the .mgfx sampler table will (issues #189, #299).
+                        explicitGlSamplerSlots: explicitGlSamplerSlots,
+                        reservedGlSamplerSlots: reservedGlSamplerSlots,
                         cancellationToken);
 
                     if (compileOutput.Blob.IsFailure)
+                    {
+                        compileFailure = LegacySamplerRecoveryCandidate(
+                            options.Target, recovered, sourceFileName, macros, includeResolver);
                         return Fail(compileOutput.Blob.Error, runWarnings);
+                    }
 
                     AccumulateWarnings(runWarnings, seenWarnings, compileOutput.Warnings);
                     if (monoGameGl)
@@ -505,7 +635,7 @@ internal sealed class CompilationPipeline
                         Attributes = compileOutput.Attributes,
                         ShaderModel = ParseShaderModel(pass.VertexProfile),
                         // Diagnostic strings written only by MGFX v11+ (ignored by v10/KNIFX).
-                        SourceFile = options.SourceFileName ?? "<unknown>",
+                        SourceFile = EmbeddedSourceFile(options),
                         Entrypoint = pass.VertexEntryPoint ?? "<unknown>",
                     });
                 }
@@ -523,15 +653,19 @@ internal sealed class CompilationPipeline
                         compileOptions,
                         applyMonoGameGlsl: monoGameGl,
                         reflectFromSpirv: reflectFromSpirv,
-                        // The explicit register(sN) indices the pre-parser captured before the
-                        // SM4 rewrite dropped them, so the GLSL rewriter numbers ps_s{slot} the
-                        // same way the .mgfx sampler table will (issue #189).
-                        explicitGlSamplerSlots: fxParsed.ExplicitGlSamplerSlots,
-                        reservedGlSamplerSlots: fxParsed.ReservedGlSamplerSlots,
+                        // The explicit register(sN) indices of legacy samplers (which the SM4 rewrite
+                        // drops), read off the preprocessed view, so the GLSL rewriter numbers ps_s{slot} the
+                        // same way the .mgfx sampler table will (issues #189, #299).
+                        explicitGlSamplerSlots: explicitGlSamplerSlots,
+                        reservedGlSamplerSlots: reservedGlSamplerSlots,
                         cancellationToken);
 
                     if (compileOutput.Blob.IsFailure)
+                    {
+                        compileFailure = LegacySamplerRecoveryCandidate(
+                            options.Target, recovered, sourceFileName, macros, includeResolver);
                         return Fail(compileOutput.Blob.Error, runWarnings);
+                    }
 
                     AccumulateWarnings(runWarnings, seenWarnings, compileOutput.Warnings);
                     if (monoGameGl)
@@ -557,7 +691,7 @@ internal sealed class CompilationPipeline
                     {
                         ShaderModel = ParseShaderModel(pass.PixelProfile),
                         // Diagnostic strings written only by MGFX v11+ (ignored by v10/KNIFX).
-                        SourceFile = options.SourceFileName ?? "<unknown>",
+                        SourceFile = EmbeddedSourceFile(options),
                         Entrypoint = pass.PixelEntryPoint ?? "<unknown>",
                     });
                 }
@@ -637,6 +771,36 @@ internal sealed class CompilationPipeline
 
                     ReflectedEffect reflected = reflectResult.Value;
 
+                    // Issue #324: an ARRAY of textures or samplers has no representation in
+                    // MonoGame's Vulkan effect format (real mgfxc 3.8.5 reflects it as nothing
+                    // at all), and used to be silently dropped here too. Refuse it by name. On
+                    // DirectX 12 the table is mgfxc's (one parameter on the first slot) and ships
+                    // unchanged, but elements beyond [0] read as zero in the real engine, so the
+                    // consumer is warned.
+                    //
+                    // Issue #340: an ARRAY of samplers is refused by real mgfxc on every profile
+                    // in its own parser, so no reference table exists to match; DirectX 11 and
+                    // DirectX 12 refuse it by name too (SD0224) instead of compiling an effect
+                    // mgfxc never builds. (On DirectX 11 the per-element RDEF records of an
+                    // array have already been folded into one binding by the DXBC extractor,
+                    // issue #339, so a texture array there is mgfxc's one `Tex` parameter.)
+                    if ((directX || options.Target == PlatformTarget.DirectX12)
+                        && ResourceArrayDiagnostics.DirectXSamplerArrayError(reflected, glCompileSource.Text, sourceFileName, options.Target,
+                                                                              options.SamplerArraysFromCombinedSamplers) is { } samplerArrayError)
+                    {
+                        return Fail(samplerArrayError, runWarnings);
+                    }
+                    if (options.Target == PlatformTarget.Vulkan
+                        && ResourceArrayDiagnostics.VulkanError(reflected, glCompileSource.Text, sourceFileName) is { } arrayError)
+                    {
+                        return Fail(arrayError, runWarnings);
+                    }
+                    if (options.Target == PlatformTarget.DirectX12
+                        && ResourceArrayDiagnostics.DirectX12Warning(reflected, glCompileSource.Text, sourceFileName) is { } arrayWarning)
+                    {
+                        AccumulateWarnings(runWarnings, seenWarnings, [arrayWarning]);
+                    }
+
                     foreach (ConstantBufferReflection cb in reflected.ConstantBuffers)
                     {
                         if (seenCbufferNames.Add(cb.Name))
@@ -687,6 +851,12 @@ internal sealed class CompilationPipeline
                 Annotations: techAnnotations,
                 Passes: mgfxPasses));
         }
+
+        // Every DXC compile accepted the source, so a reservation view that could not be built
+        // is ShadowDusk's own preprocessor at fault: fail loudly rather than ship output whose
+        // GL sampler registers were allocated on a guess (issue #283).
+        if (reservationError is not null)
+            return Fail(reservationError, runWarnings);
 
         // GL (Phase 43 F4/F5): one cbuffer record PER SHADER, built from the uniform
         // register layout the GLSL rewriter returned for that shader, deduplicated
@@ -997,7 +1167,7 @@ internal sealed class CompilationPipeline
                     IReadOnlyList<CombinedSamplerPair> pairs = pairResult.Value;
                     IReadOnlyList<int> glSamplerSlots =
                         SpirvCombinedSamplerPairs.ResolveSlots(
-                            pairs, fxParsed.ExplicitGlSamplerSlots, fxParsed.ReservedGlSamplerSlots);
+                            pairs, explicitGlSamplerSlots, reservedGlSamplerSlots);
 
                     for (int k = 0; k < pairs.Count; k++)
                     {
@@ -1261,6 +1431,15 @@ internal sealed class CompilationPipeline
                 (dxcCompiler.Value as IDisposable)?.Dispose();
         }
     }
+
+    // The source-file string an MGFX v11 container stores per shader (issue #274). It is the
+    // ONLY place a caller's SourceFileName reaches the bytes of a non-debug compile, so it has
+    // its own option: a content build compiles from an absolute path (the diagnostics and
+    // #include resolution need one) but must not record it. Unset, it is SourceFileName as
+    // passed, which is what the mgfxc CLI writes for its own source argument; "<unknown>" is
+    // mgfxc's null-fallback. Diagnostics never read this: they use SourceFileName.
+    private static string EmbeddedSourceFile(CompilerOptions options) =>
+        options.EmbeddedSourceFileName ?? options.SourceFileName ?? "<unknown>";
 
     // Parse a pass profile string ("vs_3_0", "ps_2_0") into (Major, Minor) for the KNIFX
     // per-shader ShaderVersion. MGFX v10 ignores this; KNIFX v11 records it (and a non-(0,0)
@@ -1764,7 +1943,9 @@ internal sealed class CompilationPipeline
         // each blob's CTAB (the constant table MojoShader itself binds against).
         // Always vkd3d (never the d3dcompiler oracle); an injected host backend (the
         // WASM vkd3d backend) is the same vkd3d behind a different call mechanism.
-        IDxbcShaderCompiler fnaCompiler = _dxbcCompilerFactory?.Invoke() ?? new Vkd3dShaderCompiler();
+        // Memoized per run, like the DirectX path (issue #255).
+        IDxbcShaderCompiler fnaCompiler = new MemoizingDxbcCompiler(
+            _dxbcCompilerFactory?.Invoke() ?? new Vkd3dShaderCompiler());
         var renderStateParser = new RenderStateParser();
         var shaders = new List<Fx2Shader>();
         var ctabs = new List<CtabTable>();
@@ -1882,7 +2063,7 @@ internal sealed class CompilationPipeline
 
         // Stage 4: assemble the effect description and write the fx_2_0 container.
         var buildResult = Fx2EffectBuilder.Build(
-            techniqueSources, shaders, ctabs, fxParsed.Samplers, sourceFileName);
+            techniqueSources, shaders, ctabs, fxParsed.Samplers, sourceFileName, hlslSource);
         if (buildResult.IsFailure)
             return Fail(buildResult.Error, fnaWarnings);
 
@@ -1925,7 +2106,8 @@ internal sealed class CompilationPipeline
 
         var compileResult = compiler.Compile(request, ct);
         if (compileResult.IsFailure)
-            return Result<(Fx2Shader, CtabTable, IReadOnlyList<ShaderError>), ShaderError>.Fail(compileResult.Error);
+            return Result<(Fx2Shader, CtabTable, IReadOnlyList<ShaderError>), ShaderError>.Fail(
+                WaveQuadIntrinsics.Relabel(compileResult.Error, PlatformTarget.Fna, "FNA compiler") ?? compileResult.Error);
 
         // Canonicalize the instruction forms MojoShader rejects but vkd3d emits
         // (texkill partial writemask; texld src0 swizzle below SM3) — found by the
@@ -2083,7 +2265,8 @@ internal sealed class CompilationPipeline
 
             var dxbcResult = dxbcCompiler.Compile(dxbcRequest, ct);
             if (dxbcResult.IsFailure)
-                return (Result<byte[], ShaderError>.Fail(dxbcResult.Error), default, default, noAttributes, noUniforms, noWarnings);
+                return (Result<byte[], ShaderError>.Fail(
+                    WaveQuadIntrinsics.Relabel(dxbcResult.Error, platform, "DXBC compiler") ?? dxbcResult.Error), default, default, noAttributes, noUniforms, noWarnings);
 
             ReadOnlyMemory<byte> dxbc = dxbcResult.Value.Bytes;
             return (Result<byte[], ShaderError>.Ok(dxbc.ToArray()), dxbc, default, noAttributes, noUniforms, dxbcResult.Value.Warnings);

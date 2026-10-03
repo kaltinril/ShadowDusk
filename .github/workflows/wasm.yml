@@ -18,6 +18,8 @@
 #   browser-smoke     — Phase 24 Playwright harness: mode-1 render + the Phase 33
 #                       issue-#7 HiDef/WebGL2 regression guard (--corpus=sd-hidef),
 #                       plus the node G1 seam gate and the Phase 4.1 G2 browser gate.
+#                       Also builds the in-process slangc WASM module (issue 257) and runs
+#                       its node identity gate + the full-Slang browser gate.
 #   vkd3d-export-gate — standing (push-to-main + daily) minimal run of ONLY
 #                       browser-vkd3d-gate.mjs --require-module: pure compile, no
 #                       GPU/xvfb, headless Chromium byte-identity vs the manifest.
@@ -151,6 +153,18 @@ jobs:
           test -d "$fw" || (echo "::error::_framework/ missing in publish output" && exit 1)
           ls "$fw"/*.wasm >/dev/null 2>&1 || (echo "::error::no _framework/*.wasm in publish output" && exit 1)
           echo "WASM publish OK — _framework/*.wasm present."
+          # Issue 273: no desktop or Android native may ride into a browser publish (they reach
+          # the sample through the ShadowDusk.HLSL/GLSL/Slang project references; the root
+          # Directory.Build.targets drops them for browser projects). A browser cannot load
+          # any of these, so their presence is pure bloat and a packaging regression.
+          natives=$(find publish/shaderfiddle -type f \( -name '*.dll' -o -name '*.so' -o -name '*.so.*' -o -name '*.dylib' -o -name '*.exe' \) \
+            \( -iname 'libvkd3d*' -o -iname '*dxcompiler*' -o -iname 'dxil*' -o -iname '*spirv-cross*' -o -iname 'slangc*' -o -iname '*slang-compiler*' -o -iname 'slang*.dll' \) | sort)
+          if [ -n "$natives" ]; then
+            echo "::error::desktop/Android natives found in the browser publish output (issue 273):"
+            echo "$natives"
+            exit 1
+          fi
+          echo "No desktop/Android natives in the browser publish output."
 
       - name: Pack ShadowDusk.Wasm (6th NuGet package)
         if: steps.dxcwasm.outputs.present == 'true'
@@ -317,10 +331,51 @@ jobs:
         timeout-minutes: 25
         run: node node-test-vkd3d-wasm.mjs
 
+      # Issue #271: the DXC, SPIRV-Cross and vkd3d modules link an 8 MB stack (emscripten's
+      # 64 KB default hung, trapped or miscompiled on nested shaders the desktop compiles).
+      # The depth probe captures desktop ground truth for those shapes; node replays them
+      # through the product shims and requires byte-identity, then checks that a module that
+      # does trap is discarded and reloads. --require-module: a missing module is red.
+      - name: Issue 271 - WASM stack-depth gate (node)
+        working-directory: tests/ShadowDusk.BrowserTests
+        timeout-minutes: 25
+        run: node node-test-wasm-depth.mjs --require-module
+
       - name: Phase 4.1 G2 — in-browser DX/FNA byte-identity gate
         working-directory: tests/ShadowDusk.BrowserTests
         timeout-minutes: 25
         run: node browser-vkd3d-gate.mjs --require-module
+
+      # Issue 257 (Phase 67): full Slang input in the browser. The in-process slangc module is
+      # BUILT here from upstream's own prebuilt wasm static libraries (hash-pinned) with the
+      # committed glue + script; it is not committed or release-hosted yet. Cached on the
+      # recipe's own inputs, and re-proven against native slangc on every run below, so a
+      # cached module can never stand in for an unproven one.
+      - name: Cache in-process slangc WASM module
+        id: slangcwasm
+        uses: actions/cache@v5
+        with:
+          path: |
+            src/ShadowDusk.Slang.Wasm/wwwroot/slangc/shadowdusk-slangc.js
+            src/ShadowDusk.Slang.Wasm/wwwroot/slangc/shadowdusk-slangc.wasm
+          key: slangc-wasm-${{ hashFiles('.wasm-build/slang-wasm/build-slangc-wasm.ps1', '.wasm-build/slang-wasm/slangc-wasm-glue.cpp') }}
+
+      - name: Build in-process slangc WASM module (emsdk 6.0.0, upstream wasm libs)
+        if: steps.slangcwasm.outputs.cache-hit != 'true'
+        shell: pwsh
+        timeout-minutes: 30
+        run: ./.wasm-build/slang-wasm/build-slangc-wasm.ps1 -WorkDir "${{ runner.temp }}/slangc-wasm"
+
+      - name: Issue 257 - slangc WASM vs native slangc byte identity (node)
+        timeout-minutes: 25
+        run: node .wasm-build/slang-wasm/node-test-slangc-wasm.mjs src/ShadowDusk.Slang.Wasm/wwwroot/slangc
+
+      - name: Issue 257 - full Slang in the browser (manifest bytes + KNI WebGL render)
+        working-directory: tests/ShadowDusk.BrowserTests
+        timeout-minutes: 30
+        env:
+          LIBGL_ALWAYS_SOFTWARE: "1"
+        run: xvfb-run -a node browser-slang-gate.mjs --require-module
 
       - name: Upload browser results + diffs
         if: always()

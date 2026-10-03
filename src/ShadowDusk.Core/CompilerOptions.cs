@@ -46,8 +46,47 @@ public sealed class CompilerOptions
     /// The logical source file name used for include resolution and for the file path
     /// reported in <see cref="ShaderError"/> diagnostics. Optional when compiling a string
     /// literal in memory.
+    /// <para>
+    /// <b>It can also reach the output bytes.</b> An MGFX v11 container stores a source-file
+    /// string per shader, and <see cref="PlatformTarget.DirectX12"/> and
+    /// <see cref="PlatformTarget.Vulkan"/> are always v11 (as is any target compiled with
+    /// <see cref="MgfxVersion"/> <c>11</c>). Unless <see cref="EmbeddedSourceFileName"/> says
+    /// otherwise, that string is this value exactly as passed, which is what <c>mgfxc</c>
+    /// does with its own source argument: pass an absolute path and the compiled effect
+    /// carries it, and changes with it. With <see cref="Debug"/> set, the same name also goes
+    /// into the SPIR-V / DXIL debug information. MGFX v10, KNIFX and the FNA <c>fx_2_0</c>
+    /// container store no source name, so <see cref="PlatformTarget.OpenGL"/>,
+    /// <see cref="PlatformTarget.DirectX"/> and <see cref="PlatformTarget.Fna"/> output does
+    /// not depend on it.
+    /// </para>
     /// </summary>
     public string? SourceFileName { get; init; }
+
+    /// <summary>
+    /// The source-file string stored <b>inside</b> the compiled effect, for the containers
+    /// that have one (MGFX v11: always for <see cref="PlatformTarget.DirectX12"/> and
+    /// <see cref="PlatformTarget.Vulkan"/>, and for any target compiled with
+    /// <see cref="MgfxVersion"/> <c>11</c>). The runtime only ever shows it in shader error
+    /// messages; it has no effect on rendering.
+    /// <para>
+    /// Defaults to <see langword="null"/>, which stores <see cref="SourceFileName"/> exactly
+    /// as passed (what <c>mgfxc</c> does), or <c>&lt;unknown&gt;</c> when that is
+    /// <see langword="null"/> too. Only <see langword="null"/> falls back: any other value is
+    /// stored verbatim, so an empty string stores an empty string. Set it when the name the compiler needs is not a name
+    /// the output should carry: a build tool that compiles from absolute paths can keep
+    /// <see cref="SourceFileName"/> absolute, so <c>#include</c> resolution and
+    /// <see cref="ShaderError"/> locations stay exact, while the effect records a stable
+    /// string and stops changing with the checkout directory. ShadowDusk's own MonoGame
+    /// content processor, and the CLI when it writes an <c>.xnb</c>, set it to
+    /// <c>&lt;unknown&gt;</c>, which is what MonoGame's stock <c>EffectProcessor</c> writes.
+    /// </para>
+    /// <para>
+    /// This never changes diagnostics, include resolution, or the debug information emitted
+    /// under <see cref="Debug"/>, all of which use <see cref="SourceFileName"/>. Ignored by
+    /// the containers with no such field (MGFX v10, KNIFX, FNA <c>fx_2_0</c>).
+    /// </para>
+    /// </summary>
+    public string? EmbeddedSourceFileName { get; init; }
 
     /// <summary>
     /// When <see langword="true"/>, compiles with debug information enabled. Deliberately a
@@ -97,18 +136,41 @@ public sealed class CompilerOptions
     public IReadOnlyList<Preprocessor.UserDefine> Defines { get; init; } = [];
 
     /// <summary>
+    /// Internal seam for the real-slangc route (issues #302, #340): the names of the sampler
+    /// arrays slangc emitted as the sampler half of a combined-sampler ARRAY the author declared
+    /// (<c>Sampler2D T[N]</c> becomes <c>Texture2D T_texture_0[N]</c>, renamed to <c>T</c>, plus
+    /// <c>SamplerState T_sampler_0[N]</c>). Those are one author resource, lowered, not an author's
+    /// <c>SamplerState S[N]</c>, so the DirectX sampler-array refusal (<c>SD0224</c>) skips them and
+    /// the texture half carries the array diagnostics (<c>SD0221</c>, <c>SD0222</c>), giving the same
+    /// one-parameter table the hand-written <c>Texture2D T[N]; SamplerState S;</c> gets. Empty for
+    /// every <c>.fx</c> compile. Not a consumer setting: an author never needs it for correct output.
+    /// </summary>
+    internal IReadOnlyCollection<string> SamplerArraysFromCombinedSamplers { get; init; } = [];
+
+    /// <summary>
     /// Returns a copy with <see cref="Target"/> replaced by <paramref name="graphicsTarget"/>,
     /// preserving every other setting. The pipeline uses this to apply a
     /// <see cref="CapabilityProfile.GraphicsTarget"/> (a profile fully specifies its output
     /// backend, so a set <see cref="Profile"/> determines the backend).
     /// </summary>
-    public CompilerOptions WithGraphicsTarget(PlatformTarget graphicsTarget) => new()
+    public CompilerOptions WithGraphicsTarget(PlatformTarget graphicsTarget) =>
+        Copy(graphicsTarget, SamplerArraysFromCombinedSamplers);
+
+    /// <summary>
+    /// Returns a copy with <see cref="SamplerArraysFromCombinedSamplers"/> replaced, preserving every
+    /// other setting (the real-slangc route's seam; see that property).
+    /// </summary>
+    internal CompilerOptions WithSamplerArraysFromCombinedSamplers(IReadOnlyCollection<string> names) =>
+        Copy(Target, names);
+
+    private CompilerOptions Copy(PlatformTarget target, IReadOnlyCollection<string> samplerArraysFromCombinedSamplers) => new()
     {
-        Target                 = graphicsTarget,
+        Target                 = target,
         Profile                = Profile,
         IncludeResolver        = IncludeResolver,
         AdditionalIncludePaths = AdditionalIncludePaths,
         SourceFileName         = SourceFileName,
+        EmbeddedSourceFileName = EmbeddedSourceFileName,
         Debug                  = Debug,
         MgfxVersion            = MgfxVersion,
         Container              = Container,
@@ -120,5 +182,6 @@ public sealed class CompilerOptions
         // ValidateAsync (which calls this per target) reported on a different source than
         // CompileAsync would produce. A round-trip test pins this.
         Defines                = Defines,
+        SamplerArraysFromCombinedSamplers = samplerArraysFromCombinedSamplers,
     };
 }
