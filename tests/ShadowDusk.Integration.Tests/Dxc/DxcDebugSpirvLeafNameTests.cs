@@ -230,7 +230,7 @@ public sealed class DxcDebugSpirvLeafNameTests
         string rid = ForeignDxc.Rid;
         string foreign = Path.Combine(ForeignDxc.Dxc19Directory(rid),
             OperatingSystem.IsWindows() ? "dxcompiler.dll" : "libdxcompiler.so");
-        File.Exists(foreign).ShouldBeTrue($"the DXC 1.9 fixture is missing: {foreign}");
+        File.Exists(foreign).ShouldBeTrue(ForeignDxc.MissingFixture(foreign));
 
         Report report = await RunProbeAsync(NewTempDir("sd-dxc-leaf-"), preload: foreign, canary: null);
 

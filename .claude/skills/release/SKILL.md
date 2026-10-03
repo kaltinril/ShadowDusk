@@ -114,14 +114,13 @@ history, not just SemVer's letter):
    `dotnet build ShadowDusk.slnx -c Release` then
    `dotnet test ShadowDusk.slnx -c Release --no-build --settings ShadowDusk.runsettings`
    (the runsettings carry the 5-min `TestSessionTimeout` — see CLAUDE.md Phase 21, matching
-   the `/test` skill). Stop on failure. **This run regenerates
-   `plan/PHASE-41-appendix/structural-divergence-matrix.md`'s "ShadowDusk version:" stamp to
-   the new version** (`Phase41StructuralDivergenceMatrixTests` reads it off the built
-   assembly) — check `git status` after this step and carry that file into step 9. Two of the
-   last eight releases (0.12.0, 0.13.0) missed this and needed a separate follow-up commit;
-   don't repeat it.
+   the `/test` skill). Stop on failure. `git status` must be clean after this run: no test
+   rewrites a tracked file (issue #361). If `Phase41StructuralDivergenceMatrixTests` fails
+   because `plan/PHASE-41-appendix/structural-divergence-matrix.md` is stale, regenerate it as
+   `project_rules.md` says, review the diff, and carry it into step 9. The appendix no longer
+   stamps the version, so a bump alone never changes it.
 9. **Commit.** Stage the release files (`Directory.Build.props`, `CHANGELOG.md`,
-   `RELEASING.md`, the regenerated `structural-divergence-matrix.md` from step 8, and any doc
+   `RELEASING.md`, `structural-divergence-matrix.md` if step 8 had to regenerate it, and any doc
    fixes the user approved). Use a conventional message such as `chore(release): <version>`.
    Per CLAUDE.md Git Commit Conventions, the commit carries **NO `Co-Authored-By` trailer of
    any kind** (not Claude/Anthropic/Opus, not the user) and **no "Generated with Claude Code" /
@@ -160,8 +159,8 @@ history, not just SemVer's letter):
   kind** (CLAUDE.md Git Commit Conventions).
 - **Tests pass `--settings ShadowDusk.runsettings`** (the Phase 21 suite-timeout guardrail),
   matching the `/test` skill.
-- **The release-build test run regenerates `structural-divergence-matrix.md`'s version
-  stamp — it must ride in the same commit as the version bump**, not a follow-up (step 8).
+- **No test rewrites a tracked file**; a stale `structural-divergence-matrix.md` fails
+  `Phase41StructuralDivergenceMatrixTests` instead (issue #361, step 8).
 - **A new package/native/target in this release means checking `release.yml`,
   `pack-consume.yml`, `Brand/README.md`, and every hardcoded package-count mention too**
   (step 7's audit) — not just the usual docs list.

@@ -410,12 +410,13 @@ internal sealed class CompilationPipeline
         // selects between desktop natives that do not exist in the browser).
         // Memoized per run (issue #255): an entry point named by several passes is compiled
         // once, not once per pass. Same request, deterministic backend, so the same bytes.
-        IDxbcShaderCompiler dxbcCompiler = new MemoizingDxbcCompiler(
+        IDxbcShaderCompiler dxbcCompiler = WithDxbcMemo(
             _dxbcCompilerFactory?.Invoke() ?? options.DxbcBackend switch
             {
                 DxbcBackend.D3DCompiler => new D3DCompilerShaderCompiler(),
                 _                       => new Vkd3dShaderCompiler(),
-            });
+            },
+            options);
         var dxbcReflectionPipe  = new DxbcReflectionPipeline(new DxbcReflectionExtractor());
 
         var extractor          = new DxilReflectionExtractor();
@@ -1441,6 +1442,12 @@ internal sealed class CompilationPipeline
     private static string EmbeddedSourceFile(CompilerOptions options) =>
         options.EmbeddedSourceFileName ?? options.SourceFileName ?? "<unknown>";
 
+    // The per-run D3D-bytecode memo (issue #255) for the DirectX and FNA backends. The internal
+    // CompilerOptions.BypassDxbcMemo seam (issue #358) skips it so a test can prove memo and
+    // no-memo compiles give the same bytes; every real compile takes the memo.
+    private static IDxbcShaderCompiler WithDxbcMemo(IDxbcShaderCompiler backend, CompilerOptions options) =>
+        options.BypassDxbcMemo ? backend : new MemoizingDxbcCompiler(backend);
+
     // Parse a pass profile string ("vs_3_0", "ps_2_0") into (Major, Minor) for the KNIFX
     // per-shader ShaderVersion. MGFX v10 ignores this; KNIFX v11 records it (and a non-(0,0)
     // value selects KNI's GLSL-directory parse path). Defaults to (3,0) — the MojoShader GL
@@ -1944,8 +1951,8 @@ internal sealed class CompilationPipeline
         // Always vkd3d (never the d3dcompiler oracle); an injected host backend (the
         // WASM vkd3d backend) is the same vkd3d behind a different call mechanism.
         // Memoized per run, like the DirectX path (issue #255).
-        IDxbcShaderCompiler fnaCompiler = new MemoizingDxbcCompiler(
-            _dxbcCompilerFactory?.Invoke() ?? new Vkd3dShaderCompiler());
+        IDxbcShaderCompiler fnaCompiler = WithDxbcMemo(
+            _dxbcCompilerFactory?.Invoke() ?? new Vkd3dShaderCompiler(), options);
         var renderStateParser = new RenderStateParser();
         var shaders = new List<Fx2Shader>();
         var ctabs = new List<CtabTable>();

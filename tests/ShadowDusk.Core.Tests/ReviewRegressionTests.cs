@@ -37,6 +37,23 @@ public sealed class ReviewRegressionTests
     }
 
     [Fact]
+    public void WithGraphicsTarget_PreservesTheInternalDxbcMemoBypass()
+    {
+        // Issue #358: the memo-bypass seam is internal, so the public-property sweep below
+        // does not see it. A profile-normalized compile must keep it, or a "no memo" test arm
+        // would silently run memoized and compare the memo with itself.
+        var options = new CompilerOptions
+        {
+            Target         = PlatformTarget.OpenGL,
+            Profile        = CapabilityProfile.MonoGameDX_SM5,
+            BypassDxbcMemo = true,
+        };
+
+        options.WithGraphicsTarget(PlatformTarget.DirectX).BypassDxbcMemo.ShouldBeTrue();
+        new CompilerOptions().BypassDxbcMemo.ShouldBeFalse("every real compile takes the memo");
+    }
+
+    [Fact]
     public void WithGraphicsTarget_PreservesEveryOtherSetting()
     {
         // Broad guard so the NEXT property added to CompilerOptions cannot be silently
