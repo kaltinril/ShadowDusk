@@ -29,6 +29,10 @@
          above. HangDiagnostics comes with it: ChildProcess calls it for a pre-kill dump. -->
     <Compile Include="..\ShadowDusk.Integration.Tests\ChildProcess.cs" Link="ChildProcess.cs" />
     <Compile Include="..\ShadowDusk.Integration.Tests\HangDiagnostics.cs" Link="HangDiagnostics.cs" />
+    <!-- Issue #312: the in-process stall hint (thread counts, DxcForkGate state), written once
+         a minute after the host has been up for three minutes. BCL-only; reads the gate by
+         reflection. -->
+    <Compile Include="..\ShadowDusk.Integration.Tests\HostStallHint.cs" Link="HostStallHint.cs" />
   </ItemGroup>
 
   <ItemGroup>
