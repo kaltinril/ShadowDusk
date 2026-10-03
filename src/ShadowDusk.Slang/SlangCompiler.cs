@@ -390,7 +390,18 @@ public sealed class SlangCompiler
 
         string fxText = AssembleFx(mergedHlsl, entries, sourceName);
 
-        Result<CompiledShader, ShaderError[]> downstream = _downstreamCompiler.Compile(fxText, options, cancellationToken);
+        // Issue #340: slangc lowers an author's combined-sampler ARRAY (`Sampler2D T[N]`) to a
+        // texture array plus a sampler array (`SamplerState T_sampler_0[N]`). The sampler half is
+        // one author resource lowered, not the `SamplerState S[N]` mgfxc's parser refuses, so the
+        // DirectX sampler-array refusal (SD0223) must skip it and let the texture half carry the
+        // array diagnostics (SD0221, SD0222), as the hand-written `Texture2D T[N]; SamplerState S;`
+        // reference gets. An author-written `SamplerState S[N]` in Slang source is still refused.
+        IReadOnlyCollection<string> combinedHalves = CombinedSamplerArrayHalves(mergedHlsl);
+        CompilerOptions downstreamOptions = combinedHalves.Count == 0
+            ? options
+            : options.WithSamplerArraysFromCombinedSamplers(combinedHalves);
+
+        Result<CompiledShader, ShaderError[]> downstream = _downstreamCompiler.Compile(fxText, downstreamOptions, cancellationToken);
         if (downstream.IsFailure)
             return Result<CompiledShader, ShaderError[]>.Fail(RelocateResourceArrayErrors(downstream.Error, slangSource, sourceName));
         if (downstream.Value.Warnings.Any(w => w.Code == ResourceArrayWarningCode))
@@ -403,13 +414,35 @@ public sealed class SlangCompiler
         return downstream;
     }
 
-    /// <summary>The pipeline's codes for an array of textures or samplers (issue #324): the
-    /// Vulkan error and the DirectX 12 warning.</summary>
+    /// <summary>The pipeline's codes for an array of textures or samplers: the Vulkan error and
+    /// the DirectX 12 warning (issue #324), and the DirectX 11/12 sampler-array error (issue #340).</summary>
     private const string ResourceArrayCode = "SD0221";
     private const string ResourceArrayWarningCode = "SD0222";
+    private const string SamplerArrayCode = "SD0223";
 
-    // The resource name the SD0221/SD0222 message opens with: "Vulkan target: 'Tex' is ...".
-    private static readonly Regex ResourceArrayName = new(@"^(?:Vulkan|DirectX 12) target: '(?<name>[^']+)'", RegexOptions.Compiled);
+    // The resource name the SD0221/SD0222/SD0223 message opens with: "Vulkan target: 'Tex' is ...".
+    private static readonly Regex ResourceArrayName = new(@"^(?:Vulkan|DirectX 1[12]) target: '(?<name>[^']+)'", RegexOptions.Compiled);
+
+    // slangc's sampler half of a combined sampler, declared as an array:
+    // 'SamplerState  Comb_sampler_0[int(2)];' (the texture half is '<global>_texture_<n>', see
+    // SlangcHoistedResourceNames). Matched on the merged HLSL with comments and strings blanked.
+    private static readonly Regex CombinedSamplerArrayHalf = new(
+        @"\bSamplerState\s+(?<name>[A-Za-z_][A-Za-z0-9_]*_sampler_\d+)\s*\[",
+        RegexOptions.Compiled | RegexOptions.CultureInvariant);
+
+    /// <summary>
+    /// The names of the sampler arrays slangc emitted as the sampler half of a combined-sampler
+    /// array (<c>Sampler2D T[N]</c> → <c>SamplerState T_sampler_0[N]</c>) in
+    /// <paramref name="mergedHlsl"/>; see <see cref="CompilerOptions.SamplerArraysFromCombinedSamplers"/>.
+    /// </summary>
+    internal static IReadOnlyCollection<string> CombinedSamplerArrayHalves(string mergedHlsl)
+    {
+        string masked = ShadowDusk.Compiler.Internal.ResourceArrayDiagnostics.MaskCommentsAndStrings(mergedHlsl);
+        var names = new HashSet<string>(StringComparer.Ordinal);
+        foreach (Match m in CombinedSamplerArrayHalf.Matches(masked))
+            names.Add(m.Groups["name"].Value);
+        return names;
+    }
 
     /// <summary>
     /// Issue #324: the pipeline's <c>SD0221</c> (an array of textures or samplers on Vulkan) is
@@ -417,10 +450,12 @@ public sealed class SlangCompiler
     /// that declaration is slangc's hoisted half, whose <c>#line</c> names slangc's core module
     /// (<c>core</c>, <c>hlsl.meta.slang</c>), not the author's file. Point it at the author's
     /// declaration of the same name in the Slang source instead; every other error passes through.
+    /// The same for <c>SD0222</c> and for <c>SD0223</c> (an author-written <c>SamplerState S[N]</c>
+    /// on DirectX 11/12, issue #340).
     /// </summary>
     private static ShaderError[] RelocateResourceArrayErrors(ShaderError[] errors, string slangSource, string sourceName)
     {
-        if (!errors.Any(e => e.Code is ResourceArrayCode or ResourceArrayWarningCode))
+        if (!errors.Any(e => e.Code is ResourceArrayCode or ResourceArrayWarningCode or SamplerArrayCode))
             return errors;
 
         string masked = SlangSourceMask.Mask(slangSource);
@@ -428,7 +463,7 @@ public sealed class SlangCompiler
         for (int i = 0; i < errors.Length; i++)
         {
             ShaderError e = errors[i];
-            Match name = e.Code is ResourceArrayCode or ResourceArrayWarningCode ? ResourceArrayName.Match(e.Message) : Match.Empty;
+            Match name = e.Code is ResourceArrayCode or ResourceArrayWarningCode or SamplerArrayCode ? ResourceArrayName.Match(e.Message) : Match.Empty;
             bool atAnAuthorFile = e.File.IndexOfAny(['/', '\\']) >= 0 && e.File != sourceName;
             if (!name.Success || atAnAuthorFile)
             {

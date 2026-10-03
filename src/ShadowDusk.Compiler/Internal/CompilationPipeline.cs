@@ -801,7 +801,8 @@ internal sealed class CompilationPipeline
                     // array have already been folded into one binding by the DXBC extractor,
                     // issue #339, so a texture array there is mgfxc's one `Tex` parameter.)
                     if ((directX || options.Target == PlatformTarget.DirectX12)
-                        && ResourceArrayDiagnostics.DirectXSamplerArrayError(reflected, glCompileSource.Text, sourceFileName, options.Target) is { } samplerArrayError)
+                        && ResourceArrayDiagnostics.DirectXSamplerArrayError(reflected, glCompileSource.Text, sourceFileName, options.Target,
+                                                                              options.SamplerArraysFromCombinedSamplers) is { } samplerArrayError)
                     {
                         return Fail(samplerArrayError, runWarnings);
                     }

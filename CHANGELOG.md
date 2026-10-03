@@ -262,7 +262,13 @@ that loads and renders identically to `mgfxc`'s in the real MonoGame/KNI runtime
   WindowsDX and WindowsDX12 and drew with both textures sampled, so the refusal is for parity with
   the reference compiler (which builds nothing for the shape), not because the engine rejected it. New
   expect-diagnostic fixture `texture-arrays/SamplerArray2.fx` (no golden: `mgfxc` builds none).
-  `SD0222` now covers texture arrays only.
+  `SD0222` now covers texture arrays only. On the real-slangc route an author-written
+  `SamplerState S[N]` is refused the same way, relocated to the author's Slang line, while slangc's
+  own lowering of a combined-sampler array (`Sampler2D T[N]`, a texture array plus
+  `SamplerState T_sampler_0[N]`) stays exempt (an internal seam, `CompilerOptions.
+  SamplerArraysFromCombinedSamplers`): it is one author resource, and its table is the
+  hand-written `Texture2D T[N]; SamplerState S;` one on DirectX 11 (one `T` parameter, now that
+  issue #339 collapsed the per-element records) as it already was on DirectX 12.
 - **Texture arrays reflected a wrong parameter table on Vulkan (issue #324).** `Texture2D Tex[N]`
   is a pointer to an array of image types in SPIR-V, and the pure-managed reflector matched only
   a bare image or sampler type, so the texture vanished from the Vulkan effect while its sampler

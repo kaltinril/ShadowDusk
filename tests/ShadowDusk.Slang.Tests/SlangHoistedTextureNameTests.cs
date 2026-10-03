@@ -183,7 +183,10 @@ public sealed class SlangHoistedTextureNameTests : IDisposable
         data.Add("Sampler1D Comb;", "Comb.Sample(uv.x)", "", 6, PlatformTarget.DirectX);
         data.Add("Sampler2DArray Comb;", "Comb.Sample(float3(uv, 0))", "", 7, PlatformTarget.DirectX);
         data.Add("SamplerCubeArray Comb;", "Comb.Sample(float4(uv, 0, 0))", "", 9, PlatformTarget.DirectX);
-        data.Add("Sampler2D Comb[2];", "Comb[0].Sample(uv) + Comb[1].Sample(uv)", "[0]", 7, PlatformTarget.DirectX);
+        // A combined-sampler ARRAY is one parameter named by the author's global since issue #339
+        // (mgfxc's own DirectX_11 table for a texture array; before, the ps_5_0 RDEF's per-element
+        // records made it `Comb[0]`/`Comb[1]`).
+        data.Add("Sampler2D Comb[2];", "Comb[0].Sample(uv) + Comb[1].Sample(uv)", "", 7, PlatformTarget.DirectX);
         return data;
     }
 

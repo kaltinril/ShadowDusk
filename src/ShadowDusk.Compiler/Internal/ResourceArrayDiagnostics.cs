@@ -143,8 +143,17 @@ internal static class ResourceArrayDiagnostics
     /// as the fallback for the one case reflection cannot see, a 1-element sampler array on
     /// DirectX 12 (DXIL reports <c>BindCount</c> 1 for it, the same as a plain sampler), which mgfxc
     /// refuses all the same.</para>
+    ///
+    /// <para><paramref name="combinedSamplerHalves"/> names the sampler arrays the real-slangc
+    /// route emitted as the sampler half of an author's combined-sampler array (<c>Sampler2D
+    /// T[N]</c>; see <see cref="CompilerOptions.SamplerArraysFromCombinedSamplers"/>). Those are one
+    /// author resource, lowered, so they are skipped here and the texture half carries the array
+    /// diagnostics, which is the table the hand-written <c>Texture2D T[N]; SamplerState S;</c>
+    /// gets. Empty for every <c>.fx</c> compile.</para>
     /// </remarks>
-    public static ShaderError? DirectXSamplerArrayError(ReflectedEffect reflected, string compiledSource, string sourceFileName, PlatformTarget target)
+    public static ShaderError? DirectXSamplerArrayError(
+        ReflectedEffect reflected, string compiledSource, string sourceFileName, PlatformTarget target,
+        IReadOnlyCollection<string>? combinedSamplerHalves = null)
     {
         string targetName = target == PlatformTarget.DirectX12 ? "DirectX 12" : "DirectX 11";
         string masked = MaskCommentsAndStrings(compiledSource);
@@ -152,6 +161,8 @@ internal static class ResourceArrayDiagnostics
         Array? array = null;
         foreach (SamplerReflection sampler in reflected.Samplers)
         {
+            if (combinedSamplerHalves is not null && combinedSamplerHalves.Contains(sampler.Name))
+                continue;
             if (sampler.ArrayLength is { } length)
             {
                 array = new Array(sampler.Name, length, null);
