@@ -16,6 +16,8 @@ KNI does not ship a Vulkan platform, so this target is MonoGame-only.
 
 HLSL wave and quad intrinsics (`WaveActiveSum`, `QuadReadAcrossX`, ...) are **not supported** on this target and are rejected at compile time with `SD0218`, naming the intrinsic. MonoGame's DesktopVK creates a Vulkan 1.0 instance with no subgroup support, and the SPIR-V 1.3 module these intrinsics need was measured out of spec there by the Khronos validation layer (issue #229): a CPU driver rendered it, but a GPU driver is not required to. Keep them out of the Vulkan build (for example behind `#if !VULKAN`), or target DirectX 12, which supports them.
 
+An **array of textures or samplers** (`Texture2D Tex[N]`, `SamplerState S[N]`) is rejected at compile time with `SD0221`, located at the declaration (issue #324). MonoGame's Vulkan effect format binds one texture per descriptor slot and names it by one effect parameter, so the array has no representation: `mgfxc` 3.8.5's own `/Profile:Vulkan` output for it carries no parameter, no sampler record and no descriptor binding at all (measured for 1, 2 and 4 elements, with and without an explicit register), and that effect loads into real DesktopVK with nothing a game could set and draws nothing. ShadowDusk refuses the shape instead. Declare each element as its own texture and sample each by name, or keep the array out of the Vulkan build behind `#if !VULKAN`. The same applies to a Slang `Sampler2D T[N]` on the `ShadowDusk.Slang` route.
+
 A Vulkan `.mgfx` requires **at most one constant buffer per shader stage** — the same limit `mgfxc`'s own Vulkan writer enforces. ShadowDusk fails loudly (rather than mis-emitting) if a shader declares more than one (`SD0026`).
 
 ### Texture and sampler registers are assigned for you

@@ -114,9 +114,9 @@ internal sealed class SpirvReflectionParser
         // SPIR-V Binding (== HLSL declaration order), and assign 0-based slots within
         // the class. This recovers the same t#/s#/b# the oracle reports.
         var cbufferVars = new List<(uint Id, StructType Struct, int RawBinding, int RawSet)>();
-        var textureVars = new List<(uint Id, ImageType Image, int RawBinding, int RawSet)>();
-        var samplerVars = new List<(uint Id, int RawBinding, int RawSet)>();
-        var combinedVars = new List<(uint Id, ImageType Image, int RawBinding, int RawSet)>();
+        var textureVars = new List<(uint Id, ImageType Image, int RawBinding, int RawSet, int? ArrayLength)>();
+        var samplerVars = new List<(uint Id, int RawBinding, int RawSet, int? ArrayLength)>();
+        var combinedVars = new List<(uint Id, ImageType Image, int RawBinding, int RawSet, int? ArrayLength)>();
 
         foreach (var (resultId, typeId, storage) in _variables)
         {
@@ -134,19 +134,36 @@ internal sealed class SpirvReflectionParser
             int rawBinding = _binding.TryGetValue(resultId, out int b) ? b : 0;
             int rawSet     = _descriptorSet.TryGetValue(resultId, out int s) ? s : 0;
 
-            switch (pointee)
+            // An ARRAY of resources (`Texture2D Tex[N]`, `SamplerState S[N]`) is a pointer to an
+            // OpTypeArray (nested for `Tex[N][M]`) whose innermost element is the resource type.
+            // It used to fall through this switch unmatched, so the declaration silently vanished
+            // from the reflected effect (issue #324: a Vulkan texture array reflected NO texture
+            // parameter at all while its sampler survived). Unwrap it and carry the element count
+            // (the product of the lengths; 0 when any level is a runtime array), so the pipeline
+            // can decide per target what an array of resources means.
+            int? arrayLength = null;
+            SpirvType resource = pointee;
+            while (resource is ArrayType arr)
             {
-                case StructType st when _blockStructs.Contains(st.Id):
+                arrayLength = arrayLength is null
+                    ? arr.Length
+                    : arr.Length == 0 || arrayLength.Value == 0 ? 0 : arrayLength.Value * arr.Length;
+                resource = arr.Element;
+            }
+
+            switch (resource)
+            {
+                case StructType st when arrayLength is null && _blockStructs.Contains(st.Id):
                     cbufferVars.Add((resultId, st, rawBinding, rawSet));
                     break;
                 case ImageType img:
-                    textureVars.Add((resultId, img, rawBinding, rawSet));
+                    textureVars.Add((resultId, img, rawBinding, rawSet, arrayLength));
                     break;
                 case SamplerType:
-                    samplerVars.Add((resultId, rawBinding, rawSet));
+                    samplerVars.Add((resultId, rawBinding, rawSet, arrayLength));
                     break;
                 case SampledImageType si:
-                    combinedVars.Add((resultId, si.Image, rawBinding, rawSet));
+                    combinedVars.Add((resultId, si.Image, rawBinding, rawSet, arrayLength));
                     break;
             }
         }
@@ -157,7 +174,7 @@ internal sealed class SpirvReflectionParser
         // Separate-image textures get texture-class slots; separate samplers get
         // sampler-class slots. A combined sampled-image counts in BOTH classes.
         int textureSlot = 0;
-        foreach (var (id, image, rawBinding, rawSet) in textureVars.OrderBy(t => t.RawBinding))
+        foreach (var (id, image, rawBinding, rawSet, arrayLength) in textureVars.OrderBy(t => t.RawBinding))
             textures.Add(new TextureReflection
             {
                 Name             = ResourceName(id),
@@ -165,21 +182,23 @@ internal sealed class SpirvReflectionParser
                 Dimension        = image.Dimension,
                 RawBinding       = rawBinding,
                 RawDescriptorSet = rawSet,
+                ArrayLength      = arrayLength,
             });
 
         int samplerSlot = 0;
-        foreach (var (id, rawBinding, rawSet) in samplerVars.OrderBy(s => s.RawBinding))
+        foreach (var (id, rawBinding, rawSet, arrayLength) in samplerVars.OrderBy(s => s.RawBinding))
             samplers.Add(new SamplerReflection
             {
                 Name             = ResourceName(id),
                 BindSlot         = samplerSlot++,
                 RawBinding       = rawBinding,
                 RawDescriptorSet = rawSet,
+                ArrayLength      = arrayLength,
             });
 
         // Combined texture+sampler (Texture.Sample with a SamplerState merged into one
         // SPIR-V resource): surface in both classes, each with its own class slot.
-        foreach (var (id, image, rawBinding, rawSet) in combinedVars.OrderBy(c => c.RawBinding))
+        foreach (var (id, image, rawBinding, rawSet, arrayLength) in combinedVars.OrderBy(c => c.RawBinding))
         {
             string name = ResourceName(id);
             textures.Add(new TextureReflection
@@ -189,6 +208,7 @@ internal sealed class SpirvReflectionParser
                 Dimension        = image.Dimension,
                 RawBinding       = rawBinding,
                 RawDescriptorSet = rawSet,
+                ArrayLength      = arrayLength,
             });
             samplers.Add(new SamplerReflection
             {
@@ -197,6 +217,7 @@ internal sealed class SpirvReflectionParser
                 RawBinding       = rawBinding,
                 RawDescriptorSet = rawSet,
                 IsCombined       = true,
+                ArrayLength      = arrayLength,
             });
         }
 

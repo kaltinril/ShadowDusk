@@ -263,20 +263,25 @@ public sealed class DxilReflectionExtractor
 
             switch (bindDesc.Type)
             {
+                // BindCount above 1 is an array of resources (`Texture2D Tex[N]`): one SM6
+                // binding spanning N registers from BindPoint (issue #324). Unbounded arrays
+                // report 0 in the raw descriptor; carried through as 0.
                 case D3DShaderInputType.Texture:
                     textures.Add(new TextureReflection
                     {
-                        Name      = bindDesc.Name,
-                        BindSlot  = bindDesc.BindPoint,
-                        Dimension = MapSrvDimension(bindDesc.Dimension),
+                        Name        = bindDesc.Name,
+                        BindSlot    = bindDesc.BindPoint,
+                        Dimension   = MapSrvDimension(bindDesc.Dimension),
+                        ArrayLength = bindDesc.BindCount == 1 ? null : bindDesc.BindCount,
                     });
                     break;
 
                 case D3DShaderInputType.Sampler:
                     samplers.Add(new SamplerReflection
                     {
-                        Name     = bindDesc.Name,
-                        BindSlot = bindDesc.BindPoint,
+                        Name        = bindDesc.Name,
+                        BindSlot    = bindDesc.BindPoint,
+                        ArrayLength = bindDesc.BindCount == 1 ? null : bindDesc.BindCount,
                     });
                     break;
             }

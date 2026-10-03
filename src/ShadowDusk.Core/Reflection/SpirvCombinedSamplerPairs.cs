@@ -226,6 +226,9 @@ public static class SpirvCombinedSamplerPairs
         /// <summary>OpTypeSampledImage ids (an already-combined sampler — not producible by DXC).</summary>
         private readonly HashSet<uint> _sampledImageTypes = new();
 
+        /// <summary>OpTypeArray / OpTypeRuntimeArray id -> element type id (issue #324).</summary>
+        private readonly Dictionary<uint, uint> _arrayElement = new();
+
         /// <summary>Every OpVariable (module-level AND function-local), id -> declared type id.</summary>
         private readonly Dictionary<uint, uint> _variableTypes = new();
 
@@ -351,6 +354,14 @@ public static class SpirvCombinedSamplerPairs
 
                     case SpirvOpcode.OpTypeSampledImage when ops.Length >= 2:
                         _sampledImageTypes.Add(ops[0]);
+                        break;
+
+                    // OpTypeArray / OpTypeRuntimeArray: [resultId, elementTypeId, (length)]. An
+                    // array of separate images or samplers (`Texture2D Tex[N]`) is unmodelled, and
+                    // is named as such rather than as "not declared as a separate texture" (issue #324).
+                    case SpirvOpcode.OpTypeArray when ops.Length >= 2:
+                    case SpirvOpcode.OpTypeRuntimeArray when ops.Length >= 2:
+                        _arrayElement[ops[0]] = ops[1];
                         break;
 
                     // OpTypePointer: [resultId, storageClass, typeId].
@@ -539,6 +550,29 @@ public static class SpirvCombinedSamplerPairs
             }
 
             uint? pointee = PointeeOf(declared.TypeId);
+
+            // An ARRAY of separate images or samplers (`Texture2D Tex[N]`, `SamplerState S[N]`):
+            // the pointee is an OpTypeArray whose (innermost) element is the resource type. The GL
+            // runtime (MojoShader) binds one texture per named uniform and has no representation
+            // for it; the reference compiler fails on the shape too (`mgfxc /Profile:OpenGL`:
+            // "Sequence contains no matching element", measured 2026-10-02). Name it (issue #324).
+            bool isArray = false;
+            uint? element = pointee;
+            while (element is { } arrayId && _arrayElement.TryGetValue(arrayId, out uint elementId))
+            {
+                isArray = true;
+                element = elementId;
+            }
+            if (isArray && element is { } e &&
+                (expectImage ? _separateImageTypes.Contains(e) : _samplerTypes.Contains(e)))
+            {
+                throw new CombinedSamplerModelException(
+                    $"'{NameOf(id)}' is declared as an array of {kind}s, which MonoGame's OpenGL effect format " +
+                    $"has no representation for (one texture per named sampler uniform); real mgfxc fails on " +
+                    "the same declaration (\"Sequence contains no matching element\"). Declare each element " +
+                    $"as its own {kind} and sample each by name.");
+            }
+
             bool matches = pointee is { } p &&
                            (expectImage ? _separateImageTypes.Contains(p) : _samplerTypes.Contains(p));
             if (!matches)
