@@ -21,6 +21,17 @@ public sealed class GlContextUnavailableException : Exception
 }
 
 /// <summary>
+/// Thrown from <see cref="GlContextFixture.InitializeAsync"/> when the
+/// cross-host GL lock could not be taken in time. Never a soft-skip: the host
+/// HAS GL, another ImageTests host just would not let go of it.
+/// </summary>
+public sealed class GlHostSerializationException : Exception
+{
+    public GlHostSerializationException(string message)
+        : base(message) { }
+}
+
+/// <summary>
 /// xUnit class fixture that establishes a single hidden GLFW window + OpenGL
 /// 3.3 compatibility-profile context for the lifetime of the test class. All
 /// draw commands target offscreen FBOs created via <see cref="CreateRenderer"/>.
@@ -64,11 +75,37 @@ public sealed class GlContextUnavailableException : Exception
 /// the gate: requiring GL on a macOS runner is a misconfiguration and fails
 /// loudly rather than silently passing.
 /// </para>
+/// <para>
+/// <b>Never hang the host (issue #345):</b> the window lives on a dedicated
+/// owner thread (a window dies with the thread that created it), GL use is
+/// serialized across concurrently running ImageTests hosts by a named mutex,
+/// and every claim of the context goes through <see cref="GlContextGate"/>,
+/// which fails a test on a native make-current error instead of leaving the
+/// next test blocked, and ends the host if a GL call never returns.
+/// </para>
 /// </summary>
 public sealed class GlContextFixture : IAsyncLifetime
 {
-    private IWindow? _window;
-    private GL?      _gl;
+    /// <summary>Name of the cross-process mutex that serializes GL use across ImageTests hosts.</summary>
+    public const string HostLockName = "ShadowDusk.ImageTests.GlContext";
+
+    /// <summary>How long a host waits for another ImageTests host to finish rendering.</summary>
+    private static readonly TimeSpan HostLockTimeout = TimeSpan.FromMinutes(10);
+
+    /// <summary>How long a test waits for another test in this host to release the context.</summary>
+    private static readonly TimeSpan ContextAcquireTimeout = TimeSpan.FromMinutes(2);
+
+    /// <summary>
+    /// How long one test may hold the context. A render takes milliseconds; a
+    /// lease held this long is a GL call that will never return.
+    /// </summary>
+    private static readonly TimeSpan ContextHoldLimit = TimeSpan.FromMinutes(3);
+
+    private readonly ManualResetEventSlim _shutdown = new(false);
+    private Thread?        _ownerThread;
+    private IWindow?       _window;
+    private GL?            _gl;
+    private GlContextGate? _gate;
 
     public bool    IsSkipped  { get; private set; }
     public string? SkipReason { get; private set; }
@@ -99,6 +136,12 @@ public sealed class GlContextFixture : IAsyncLifetime
         }
     }
 
+    /// <summary>
+    /// <c>true</c> while the dedicated thread that created the window (and so
+    /// keeps it alive on Windows) is running. Issue #345 regression check.
+    /// </summary>
+    public bool IsOwnerThreadAlive => _ownerThread?.IsAlive ?? false;
+
     public Task InitializeAsync()
     {
         // This GL render proxy is N/A on macOS BY PLATFORM DESIGN — it is a deliberate
@@ -126,60 +169,36 @@ public sealed class GlContextFixture : IAsyncLifetime
             return Task.CompletedTask;
         }
 
+        // Issue #345: the window and context are created (and later destroyed) on a
+        // dedicated thread the fixture owns, never on whatever thread xUnit calls
+        // InitializeAsync on. Windows destroys a window when the thread that created it
+        // exits. That thread used to be a thread-pool worker; once the pool retired it
+        // (20 s idle by default, reached under a loaded full-solution run) the next
+        // wglMakeCurrent failed with "The handle is invalid".
+        var ready = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        _ownerThread = new Thread(() => OwnerThreadMain(ready))
+        {
+            IsBackground = true,
+            Name         = "ShadowDusk.ImageTests GL owner",
+        };
+        _ownerThread.Start();
+        return CompleteInitializationAsync(ready.Task);
+    }
+
+    private async Task CompleteInitializationAsync(Task ready)
+    {
         try
         {
-            // Preload the GLFW native by ABSOLUTE path (Linux). Phase 37 tail
-            // finding, proven by the probe below on ubuntu-latest CI: the
-            // deployed runtimes/linux-x64/native/libglfw.so.3 is a pristine
-            // ELF and dlopen()s fine by absolute path, but Silk.NET's
-            // name-based NativeLibrary resolution fails on the runner under
-            // `dotnet test <slnx> --no-build` ("Could not load from any of
-            // the possible library names!") — the testhost's native search
-            // directories miss the test project's RID assets there (the same
-            // bin output resolves fine locally and in a plain container).
-            // Loading it once by absolute path makes glibc return the
-            // already-loaded SONAME ("libglfw.so.3") for Silk's subsequent
-            // dlopen-by-name — the same preload pattern as SpvcLoader /
-            // DxcLoader / Vkd3dLoader in src/.
-            PreloadGlfwNative();
-
-            // Ensure the GLFW backend is chosen even if other windowing
-            // platforms (e.g., SDL) are present in the test environment.
-            Silk.NET.Windowing.Window.PrioritizeGlfw();
-
-            var options = WindowOptions.Default with
-            {
-                Size                       = new Vector2D<int>(1, 1),
-                Title                      = "ShadowDusk.ImageTests (offscreen)",
-                IsVisible                  = false,
-                ShouldSwapAutomatically    = false,
-                IsEventDriven              = true,
-                // Compatibility profile (not Core) so both modern GLSL 3.30+
-                // and legacy GLSL ES `varying`/`gl_FragColor` shaders link in
-                // the same context. ForwardCompatible is a Core-only flag and
-                // is intentionally omitted here.
-                API                        = new GraphicsAPI(
-                    ContextAPI.OpenGL,
-                    ContextProfile.Compatability,
-                    ContextFlags.Default,
-                    new APIVersion(3, 3)),
-                VSync                      = false,
-                PreferredDepthBufferBits   = 16,
-            };
-
-            _window = Silk.NET.Windowing.Window.Create(options);
-            _window.Initialize();
-            _gl = GL.GetApi(_window);
-
-            // _window.Initialize() leaves the context current on this thread.
-            // xUnit may dispatch the test method body on a different thread,
-            // and GLFW contexts are thread-local — so release it here and let
-            // each test claim it via MakeContextCurrent().
-            _window.GLContext?.Clear();
+            await ready.ConfigureAwait(false);
+        }
+        catch (GlHostSerializationException)
+        {
+            // Not "no GL on this host": another ImageTests host held the GL lock
+            // past the timeout. Fail every test loudly, never soft-skip.
+            throw;
         }
         catch (Exception ex)
         {
-            DisposeQuietly();
             string reason = $"OpenGL 3.3 context unavailable: {ex.GetType().Name}: {ex.Message}";
 
             // Silk.NET reports a native-load failure as the one-line
@@ -192,9 +211,154 @@ public sealed class GlContextFixture : IAsyncLifetime
                 reason += ProbeGlfwLoadDetail();
 
             MarkSkippedOrThrow(reason);
+            return;
         }
 
-        return Task.CompletedTask;
+        _gate = new GlContextGate(
+            makeCurrent:         () => _window!.GLContext?.MakeCurrent(),
+            clearCurrent:        () => _window!.GLContext?.Clear(),
+            acquireTimeout:      ContextAcquireTimeout,
+            holdLimit:           ContextHoldLimit,
+            onHoldLimitExceeded: OnContextHoldLimitExceeded);
+    }
+
+    /// <summary>
+    /// Body of the fixture's GL owner thread: takes the cross-host GL lock,
+    /// creates the hidden window + context, reports through <paramref name="ready"/>,
+    /// then stays alive (and so keeps the window alive) until
+    /// <see cref="DisposeAsync"/>, and destroys the window on this same thread,
+    /// as Win32 requires.
+    /// </summary>
+    private void OwnerThreadMain(TaskCompletionSource ready)
+    {
+        Mutex? hostLock = null;
+        try
+        {
+            hostLock = AcquireHostLock();
+            CreateWindowAndContext();
+        }
+        catch (Exception ex)
+        {
+            DisposeWindowQuietly();
+            ReleaseHostLock(hostLock);
+            ready.TrySetException(ex);
+            return;
+        }
+
+        ready.TrySetResult();
+        _shutdown.Wait();
+        DisposeWindowQuietly();
+        ReleaseHostLock(hostLock);
+    }
+
+    /// <summary>
+    /// Serializes GL use across ImageTests HOSTS (issue #345). A solution
+    /// <c>dotnet test</c> runs the net8.0 and net10.0 hosts at the same time,
+    /// each with its own window and context on the same desktop and GPU; this
+    /// named mutex makes the second host's GL collection wait for the first
+    /// one's to finish. Bounded: a host that cannot get the lock within
+    /// <see cref="HostLockTimeout"/> fails its GL tests loudly instead of
+    /// waiting forever. A mutex abandoned by a killed host is taken over.
+    /// </summary>
+    private static Mutex AcquireHostLock()
+    {
+        var mutex = new Mutex(initiallyOwned: false, HostLockName);
+        try
+        {
+            if (mutex.WaitOne(TimeSpan.Zero))
+                return mutex;
+
+            Console.Error.WriteLine(
+                "[ShadowDusk.ImageTests] Another ImageTests host is rendering; waiting for the "
+                + $"cross-host GL lock '{HostLockName}' (issue #345).");
+            if (mutex.WaitOne(HostLockTimeout))
+                return mutex;
+        }
+        catch (AbandonedMutexException)
+        {
+            // Ownership passes to this thread; the previous holder died mid-run.
+            Console.Error.WriteLine(
+                $"[ShadowDusk.ImageTests] Took over the cross-host GL lock '{HostLockName}' "
+                + "abandoned by a host that exited without releasing it.");
+            return mutex;
+        }
+        catch
+        {
+            mutex.Dispose();
+            throw;
+        }
+
+        mutex.Dispose();
+        throw new GlHostSerializationException(
+            $"Timed out after {HostLockTimeout.TotalMinutes:0} min waiting for the cross-host GL lock "
+            + $"'{HostLockName}': another ImageTests host held it the whole time. Failing instead of "
+            + "waiting forever (issue #345).");
+    }
+
+    private static void ReleaseHostLock(Mutex? hostLock)
+    {
+        if (hostLock is null)
+            return;
+
+        try
+        {
+            hostLock.ReleaseMutex();
+        }
+        finally
+        {
+            hostLock.Dispose();
+        }
+    }
+
+    private void CreateWindowAndContext()
+    {
+        // Preload the GLFW native by ABSOLUTE path (Linux). Phase 37 tail
+        // finding, proven by the probe below on ubuntu-latest CI: the
+        // deployed runtimes/linux-x64/native/libglfw.so.3 is a pristine
+        // ELF and dlopen()s fine by absolute path, but Silk.NET's
+        // name-based NativeLibrary resolution fails on the runner under
+        // `dotnet test <slnx> --no-build` ("Could not load from any of
+        // the possible library names!") — the testhost's native search
+        // directories miss the test project's RID assets there (the same
+        // bin output resolves fine locally and in a plain container).
+        // Loading it once by absolute path makes glibc return the
+        // already-loaded SONAME ("libglfw.so.3") for Silk's subsequent
+        // dlopen-by-name — the same preload pattern as SpvcLoader /
+        // DxcLoader / Vkd3dLoader in src/.
+        PreloadGlfwNative();
+
+        // Ensure the GLFW backend is chosen even if other windowing
+        // platforms (e.g., SDL) are present in the test environment.
+        Silk.NET.Windowing.Window.PrioritizeGlfw();
+
+        var options = WindowOptions.Default with
+        {
+            Size                       = new Vector2D<int>(1, 1),
+            Title                      = "ShadowDusk.ImageTests (offscreen)",
+            IsVisible                  = false,
+            ShouldSwapAutomatically    = false,
+            IsEventDriven              = true,
+            // Compatibility profile (not Core) so both modern GLSL 3.30+
+            // and legacy GLSL ES `varying`/`gl_FragColor` shaders link in
+            // the same context. ForwardCompatible is a Core-only flag and
+            // is intentionally omitted here.
+            API                        = new GraphicsAPI(
+                ContextAPI.OpenGL,
+                ContextProfile.Compatability,
+                ContextFlags.Default,
+                new APIVersion(3, 3)),
+            VSync                      = false,
+            PreferredDepthBufferBits   = 16,
+        };
+
+        _window = Silk.NET.Windowing.Window.Create(options);
+        _window.Initialize();
+        _gl = GL.GetApi(_window);
+
+        // _window.Initialize() leaves the context current on the owner thread.
+        // GLFW contexts are thread-local and test bodies run on other threads,
+        // so release it here and let each test claim it via MakeContextCurrent().
+        _window.GLContext?.Clear();
     }
 
     /// <summary>
@@ -296,7 +460,19 @@ public sealed class GlContextFixture : IAsyncLifetime
 
     public Task DisposeAsync()
     {
-        DisposeQuietly();
+        _shutdown.Set();
+
+        // The owner thread destroys the window and releases the cross-host lock.
+        // Bounded: a GLFW teardown stuck in the driver must not hold the host open
+        // (the thread is a background thread, so it cannot block process exit).
+        if (_ownerThread is not null && !_ownerThread.Join(TimeSpan.FromSeconds(30)))
+        {
+            Console.Error.WriteLine(
+                "[ShadowDusk.ImageTests] The GL owner thread did not finish tearing down the window "
+                + "within 30 s; leaving it to process exit.");
+        }
+
+        _gate?.Dispose();
         return Task.CompletedTask;
     }
 
@@ -325,47 +501,39 @@ public sealed class GlContextFixture : IAsyncLifetime
     /// "WGL: The requested resource is in use." because the context is still
     /// considered held by a different thread.
     /// </para>
+    /// <para>
+    /// A native make-current failure throws <see cref="GlContextLostException"/>
+    /// (failing this test and, at once, every later one) and never leaves the
+    /// context claimed, so the host keeps running to the end (issue #345).
+    /// </para>
     /// </summary>
     public IDisposable MakeContextCurrent()
     {
         SkipIfNoContext();
-        // Block other threads from concurrently grabbing the context. Each
-        // theory row holds the lock for the duration of the test.
-        System.Threading.Monitor.Enter(_contextLock);
-
-        var ctx = _window!.GLContext;
-        if (ctx is not null)
-            ctx.MakeCurrent();
-        return new ContextReleaseGuard(this);
+        return _gate!.Acquire(DescribeWindowState);
     }
 
-    private void ReleaseContext()
+    private string DescribeWindowState()
     {
-        try
-        {
-            _window?.GLContext?.Clear();
-        }
-        finally
-        {
-            System.Threading.Monitor.Exit(_contextLock);
-        }
+        string owner = $"GL owner thread alive: {IsOwnerThreadAlive}.";
+        if (!OperatingSystem.IsWindows())
+            return owner;
+
+        nint hwnd = _window?.Native?.Win32?.Hwnd ?? 0;
+        return $"{owner} Window handle 0x{hwnd:X} still valid: {IsWindow(hwnd)}.";
     }
 
-    private readonly object _contextLock = new();
+    [DllImport("user32.dll")]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static extern bool IsWindow(nint hWnd);
 
-    private sealed class ContextReleaseGuard : IDisposable
+    private static void OnContextHoldLimitExceeded(string message)
     {
-        private readonly GlContextFixture _fixture;
-        private bool _disposed;
+        if (System.Diagnostics.Debugger.IsAttached)
+            return;
 
-        public ContextReleaseGuard(GlContextFixture fixture) => _fixture = fixture;
-
-        public void Dispose()
-        {
-            if (_disposed) return;
-            _disposed = true;
-            _fixture.ReleaseContext();
-        }
+        Console.Error.WriteLine(message);
+        Environment.FailFast(message);
     }
 
     /// <summary>
@@ -379,7 +547,7 @@ public sealed class GlContextFixture : IAsyncLifetime
             throw new GlContextUnavailableException(SkipReason ?? "GL context unavailable.");
     }
 
-    private void DisposeQuietly()
+    private void DisposeWindowQuietly()
     {
         try
         {
