@@ -787,6 +787,15 @@ internal sealed class CompilationPipeline
 
                     ReflectedEffect reflected = reflectResult.Value;
 
+                    // Issue #324: an ARRAY of textures or samplers has no representation in
+                    // MonoGame's Vulkan effect format (real mgfxc 3.8.5 reflects it as nothing
+                    // at all), and used to be silently dropped here too. Refuse it by name.
+                    if (options.Target == PlatformTarget.Vulkan
+                        && VulkanResourceArrayRejection.Check(reflected, glCompileSource.Text, sourceFileName) is { } arrayError)
+                    {
+                        return Fail(arrayError, runWarnings);
+                    }
+
                     foreach (ConstantBufferReflection cb in reflected.ConstantBuffers)
                     {
                         if (seenCbufferNames.Add(cb.Name))

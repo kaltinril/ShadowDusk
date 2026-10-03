@@ -19,4 +19,13 @@ public sealed record TextureReflection
     public int RawBinding { get; init; }
     /// <summary>The raw SPIR-V <c>DescriptorSet</c> decoration. See <see cref="RawBinding"/>.</summary>
     public int RawDescriptorSet { get; init; }
+    /// <summary>
+    /// The declared element count when the texture is an ARRAY of textures
+    /// (<c>Texture2D Tex[N]</c>; <c>0</c> for an unbounded array), or <see langword="null"/> for a
+    /// single texture. One texture declaration in HLSL, N resource slots in the shader. A
+    /// SPIR-V reflection sets it from the <c>OpTypeArray</c> wrapping the image type, so a
+    /// 1-element array is still reported; a DXIL/DXBC reflection sets it from the binding's
+    /// <c>BindCount</c> when that is above 1 (issue #324).
+    /// </summary>
+    public int? ArrayLength { get; init; }
 }
