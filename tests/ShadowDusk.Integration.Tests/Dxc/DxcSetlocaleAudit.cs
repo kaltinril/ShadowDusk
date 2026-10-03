@@ -10,9 +10,13 @@ namespace ShadowDusk.Integration.Tests.Dxc;
 /// <summary>
 /// Measures, one DXC entry point at a time, which calls reach DXC's non-Windows
 /// <c>setlocale</c> shims (<c>lib/DxcSupport/Unicode.cpp</c>,
-/// <c>include/dxc/WinAdapter.h</c> <c>CA2W</c>/<c>CW2A</c>). Every such call must run inside
-/// <see cref="DxcForkGate"/>, or it can deadlock against a concurrent <c>fork()</c> on macOS.
-/// Runs in a fresh, single-threaded child process (it changes the process locale).
+/// <c>include/dxc/WinAdapter.h</c> <c>CA2W</c>/<c>CW2A</c>), and then that once the locale
+/// has settled no DXC call changes it again. The first half pins which calls can change the
+/// locale at all (only the native compile calls); the second half is the premise of
+/// <see cref="DxcForkGate"/>: after the one gated change, every <c>setlocale</c> DXC makes is
+/// a same-name call, which Apple's libc answers without allocating under the locale lock, so
+/// an ungated compile cannot deadlock against a concurrent <c>fork()</c>. Runs in a fresh,
+/// single-threaded child process (it changes the process locale).
 /// </summary>
 /// <remarks>
 /// <para>
@@ -26,15 +30,23 @@ namespace ShadowDusk.Integration.Tests.Dxc;
 /// blind and the test fails instead of passing vacuously.
 /// </para>
 /// <para>
-/// Output: one <c>STEP &lt;name&gt; &lt;yes|no&gt; &lt;locale after&gt;</c> line per step.
+/// Output: one <c>STEP &lt;name&gt; &lt;yes|no&gt; &lt;locale after&gt;</c> line per step of the
+/// first half, then <c>SETTLED &lt;locale&gt;</c> and one <c>STEADY &lt;name&gt; &lt;locale after&gt;</c>
+/// line per step of the second half, which never resets the locale.
 /// </para>
 /// </remarks>
 internal static class DxcSetlocaleAudit
 {
-    /// <summary>The steps that run inside <see cref="DxcForkGate"/> (the raw native compile call).</summary>
-    public static readonly IReadOnlySet<string> GatedSteps = new HashSet<string>(StringComparer.Ordinal)
+    /// <summary>
+    /// The steps that may change the locale from <c>C</c>: the raw native compile calls, where
+    /// DXC's shims live, and the two primes that exist to make that change under the fork gate.
+    /// Any other step changing it would be a new DXC entry point that calls <c>setlocale</c>,
+    /// to be measured before it is trusted.
+    /// </summary>
+    public static readonly IReadOnlySet<string> LocaleChangingSteps = new HashSet<string>(StringComparer.Ordinal)
     {
         "signal-isolation-prime",
+        "locale-settle",
         "compile-native-call",
         "failing-compile-native-call",
         "preprocess-native-call",
@@ -73,6 +85,7 @@ internal static class DxcSetlocaleAudit
 
         Step("create-compiler", () => compiler = Vortice.Dxc.Dxc.CreateDxcCompiler<IDxcCompiler3>());
         Step("signal-isolation-prime", () => DxcSignalIsolation.EnsureIsolated(compiler));
+        Step("locale-settle", () => DxcForkGate.SettleLocale(compiler));
         Step("compile-native-call", () => result = DxcNativeInterop.CompileRaw(
             compiler,
             Hlsl,
@@ -121,6 +134,57 @@ internal static class DxcSetlocaleAudit
         });
 
         Step("compiler-dispose", () => compiler.Dispose());
+
+        // Second half: settle once, then run every entry point WITHOUT resetting the locale.
+        // The locale must read the same after every step, or some compile makes a
+        // locale-changing setlocale call and the ungated compile path is not safe against fork().
+        compiler = Vortice.Dxc.Dxc.CreateDxcCompiler<IDxcCompiler3>();
+        DxcForkGate.SettleLocale(compiler);
+        Console.WriteLine($"SETTLED {ProbeLibc.CurrentLocale()}");
+
+        Steady("compile-native-call", () => result = DxcNativeInterop.CompileRaw(
+            compiler, Hlsl, DxcFlagBuilder.Build(PlatformTarget.DirectX, ShaderStage.Pixel, "PSMain", []), includeHandler: null));
+        Steady("result-object", () =>
+        {
+            using IDxcBlob blob = result.GetOutput(DxcOutKind.Object);
+            dxil = blob.AsBytes();
+            result.Dispose();
+        });
+        Steady("spirv-compile-native-call", () =>
+        {
+            using IDxcResult spirv = DxcNativeInterop.CompileRaw(
+                compiler, Hlsl, DxcFlagBuilder.Build(PlatformTarget.OpenGL, ShaderStage.Pixel, "PSMain", []), includeHandler: null);
+            if (spirv.GetStatus().Failure) throw new InvalidOperationException(spirv.GetErrors());
+        });
+        // The issue #312 shape: debug information on a SPIR-V target (the compile that dlopens).
+        Steady("debug-spirv-compile-native-call", () =>
+        {
+            using IDxcResult spirv = DxcNativeInterop.CompileRaw(
+                compiler,
+                Hlsl,
+                DxcFlagBuilder.Build(PlatformTarget.Vulkan, ShaderStage.Pixel, "PSMain", [], new DxcCompileOptions { EmbedDebugInfo = true }),
+                includeHandler: null);
+            if (spirv.GetStatus().Failure) throw new InvalidOperationException(spirv.GetErrors());
+        });
+        Steady("failing-compile-native-call", () =>
+        {
+            using IDxcResult failing = DxcNativeInterop.CompileRaw(
+                compiler, BrokenHlsl, DxcFlagBuilder.Build(PlatformTarget.DirectX, ShaderStage.Pixel, "PSMain", []), includeHandler: null);
+            if (!failing.GetStatus().Failure) throw new InvalidOperationException("the broken shader compiled");
+            failing.GetErrors();
+        });
+        Steady("preprocess-native-call", () =>
+        {
+            using IDxcResult pre = DxcNativeInterop.CompileRaw(compiler, Hlsl, DxcFlagBuilder.BuildPreprocess([]), includeHandler: null);
+            using IDxcBlob blob = pre.GetOutput(DxcOutKind.Hlsl);
+            if (blob.AsBytes().Length == 0) throw new InvalidOperationException("empty preprocess output");
+        });
+        Steady("reflection-extract", () =>
+        {
+            Result<ShadowDusk.Core.Reflection.ReflectedEffect, ShaderError> reflected = new DxilReflectionExtractor().Extract(dxil);
+            if (reflected.IsFailure) throw new InvalidOperationException(reflected.Error.FxcFormattedMessage);
+        });
+        Steady("compiler-dispose", () => compiler.Dispose());
         return 0;
     }
 
@@ -133,5 +197,11 @@ internal static class DxcSetlocaleAudit
 
         string after = ProbeLibc.CurrentLocale();
         Console.WriteLine($"STEP {name} {(after == "C" ? "no" : "yes")} {after}");
+    }
+
+    private static void Steady(string name, Action action)
+    {
+        action();
+        Console.WriteLine($"STEADY {name} {ProbeLibc.CurrentLocale()}");
     }
 }

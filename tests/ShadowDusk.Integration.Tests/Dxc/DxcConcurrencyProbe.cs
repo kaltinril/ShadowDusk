@@ -108,11 +108,11 @@ public static class DxcConcurrencyProbe
     /// deadlocks inside libc (DXC's <c>setlocale</c> against <c>fork()</c>'s atfork locking;
     /// see <c>DxcForkGate</c>), so the parent's watchdog, not this method, reports the failure.
     /// Two of the four compiler threads compile SPIR-V with debug information (<c>-Zi</c> on the
-    /// OpenGL and Vulkan targets, the source in a real file): that is the issue #312 shape. DXC's
-    /// SPIR-V emitter reads the source file for <c>OpSource</c> by <c>dlopen</c>ing
-    /// <c>libdxcompiler</c> itself, and a <c>fork()</c> that waits for such a compile while
-    /// holding dyld's dlopen lock (libSystem takes it before the client atfork handlers run)
-    /// deadlocks with it.
+    /// OpenGL and Vulkan targets): that is the issue #312 shape. DXC's SPIR-V emitter tries to
+    /// read the source file for <c>OpSource</c> by <c>dlopen</c>ing <c>libdxcompiler</c>
+    /// itself (whether or not the file exists), and a <c>fork()</c> that waits for such a
+    /// compile while holding dyld's dlopen lock (libSystem takes it before the client atfork
+    /// handlers run) deadlocks with it.
     /// </summary>
     /// <remarks>
     /// On Linux, .NET's <c>Process.Start</c> uses <c>vfork()</c> (glibc), which skips atfork
@@ -129,10 +129,6 @@ public static class DxcConcurrencyProbe
         int failures = 0;
         int compiles = 0, debugCompiles = 0, processStarts = 0, rawForks = 0, stuckChildren = 0;
 
-        // A real file, so DXC's OpSource path reads it the way a content build's would.
-        string sourceOnDisk = Path.Combine(Path.GetTempPath(), $"shadowdusk-fork-probe-{Environment.ProcessId}.fx");
-        File.WriteAllText(sourceOnDisk, Hlsl);
-
         IEnumerable<Thread> compilers = Enumerable.Range(0, 4).Select(w => new Thread(() =>
         {
             using var compiler = new DxcShaderCompiler();
@@ -145,7 +141,7 @@ public static class DxcConcurrencyProbe
             };
             while (DateTime.UtcNow < stop)
             {
-                string? error = Describe(Compile(compiler, platform, debug, debug ? sourceOnDisk : "probe.fx"));
+                string? error = Describe(Compile(compiler, platform, debug));
                 if (error is not null)
                 {
                     Console.Error.WriteLine(error);
@@ -190,8 +186,6 @@ public static class DxcConcurrencyProbe
         foreach (Thread t in threads) t.Start();
         foreach (Thread t in threads) t.Join();
 
-        try { File.Delete(sourceOnDisk); } catch (IOException) { }
-
         Console.WriteLine(
             $"FORKPROBE compiles={compiles} debugCompiles={debugCompiles} processStarts={processStarts} rawForks={rawForks} stuckChildren={stuckChildren}");
         return failures == 0 ? 0 : 1;
@@ -219,11 +213,11 @@ public static class DxcConcurrencyProbe
     }
 
     private static Result<PlatformBlob, ShaderError> Compile(
-        DxcShaderCompiler compiler, PlatformTarget platform, bool debug = false, string sourceFileName = "probe.fx")
+        DxcShaderCompiler compiler, PlatformTarget platform, bool debug = false)
         => compiler.Compile(new DxcCompileRequest
         {
             HlslSource = Hlsl,
-            SourceFileName = sourceFileName,
+            SourceFileName = "probe.fx",
             EntryPoint = "PSMain",
             Stage = ShaderStage.Pixel,
             Platform = platform,
