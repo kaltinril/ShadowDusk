@@ -375,9 +375,9 @@ is a CORRECT result, not a defect.
 | raylib/RetroHandheld.fx | DirectX_11 | PASS |  |  |
 | raylib/RetroHandheld.fx | OpenGL | PASS |  |  |
 | texture-arrays/TextureArray2.fx | DirectX_11 | PASS |  |  |
-| texture-arrays/TextureArray2.fx | OpenGL | FAIL | SD0217 | Cannot determine the OpenGL combined-sampler declaration order: 'Tex' is used as the texture half of a combined sampler but is not declared as a separate textur... |
+| texture-arrays/TextureArray2.fx | OpenGL | FAIL | SD0217 | Cannot determine the OpenGL combined-sampler declaration order: 'Tex' is declared as an array of textures, which MonoGame's OpenGL effect format has no represen... |
 | texture-arrays/TextureArray4NoRegister.fx | DirectX_11 | PASS |  |  |
-| texture-arrays/TextureArray4NoRegister.fx | OpenGL | FAIL | SD0217 | Cannot determine the OpenGL combined-sampler declaration order: 'Tex' is used as the texture half of a combined sampler but is not declared as a separate textur... |
+| texture-arrays/TextureArray4NoRegister.fx | OpenGL | FAIL | SD0217 | Cannot determine the OpenGL combined-sampler declaration order: 'Tex' is declared as an array of textures, which MonoGame's OpenGL effect format has no represen... |
 | textured.fx | DirectX_11 | PASS |  |  |
 | textured.fx | OpenGL | PASS |  |  |
 | textured_vs_ps.fx | DirectX_11 | FAIL | SD0010 | Effect source contains no techniques |
