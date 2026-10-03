@@ -345,6 +345,15 @@ per-container, pixel-stage only, no vertex stage. Phase 1 is shaders whose only 
       `ShadowDusk.*` library references it.
 - [x] The evidence model is stated as **rendered-image fidelity, never `mgfxc`-equivalence**,
       everywhere it appears (API doc-comments, error-codes rows, README, validation-matrix §8).
+- [x] **D1 (issue #368, 2026-10-03): `COLOR0` converts by default.** Owner decision: the converter
+      turns SpriteBatch's vertex color into the synthesized `float4` uniform `ShadowDusk_Color`
+      (reported in `SynthesizedUniforms`, `SD0614` warning) instead of refusing `SD0611`; Gum's
+      Skia renderer sets it to the container tint (white when untinted). Proven on XnaFiddle's
+      Fading, Grayscale, Invert, Tint and Mask examples (`SkslVertexColorUniformTests`; Pixelated
+      is refused `SD0612` for computed-UV sampling, a separate limit). Supersedes the
+      "default answer is the `SD0611` refusal" wording in §2.6 and above, which is kept as history.
+- [ ] **D2 (issue #369):** the Gum shader-parity render harness (same `.fx` on KNI vs through
+      Skia with `ShadowDusk_Color` set to the tint). Not started.
 - [ ] **Open (Area D, issues #368 and #369):** C1's cross-renderer harness (proven-GL render vs Skia render, image-diffed) as a
       standing driver, and a real Gum/SkiaGum consumer trial (OQ1's representativeness half).
 

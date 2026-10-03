@@ -185,6 +185,18 @@ that loads and renders identically to `mgfxc`'s in the real MonoGame/KNI runtime
 
 ### Changed
 
+- **SkSL converter: `COLOR0` (SpriteBatch's vertex color) now converts by default instead of
+  refusing with `SD0611` (issue #368).** A shader that reads `input.Color` (every XnaFiddle
+  example, and every `.fx` written for SpriteBatch) converts with the `float4` uniform
+  `ShadowDusk_Color` in its place. Set it each draw to the sprite's tint, white when untinted;
+  leaving it unset renders black. It is listed in `SkslConversion.SynthesizedUniforms` with an
+  `SD0614` warning, like `ShadowDusk_Resolution`. `TreatVaryingsAsUniforms` still governs every
+  other interpolant (still refused by name otherwise). Callers that listed `"COLOR0"` in it keep
+  working and get the same output, but the uniform is now named `ShadowDusk_Color`, not
+  `in_var_COLOR0`: rename the uniform in your draw code. A `COLOR0` read narrower than `float4`
+  is still refused (`SD0611`). `XnaFiddle`'s Pixelated is still refused, for computed-UV
+  sampling (`SD0612`), not for its color.
+
 - **`SD0620` on macOS older than 26 now says no self-built slangc is planned (issue #237).**
   The message asks the consumer to open an issue if they need one and points at the built-in
   `.slang` subset frontend, which runs on any macOS. No behavior change.

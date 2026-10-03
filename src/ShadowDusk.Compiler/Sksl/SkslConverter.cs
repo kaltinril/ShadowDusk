@@ -23,12 +23,19 @@ public sealed class SkslConvertOptions
     public IReadOnlyList<string> AdditionalIncludePaths { get; init; } = [];
 
     /// <summary>
-    /// Interpolant semantics (e.g. <c>"COLOR0"</c>) the caller explicitly accepts becoming
-    /// <b>uniforms</b> — per-draw constants instead of interpolated values. Off by default:
-    /// the converter's default answer to an unsupplyable interpolant is a loud <c>SD0611</c>,
-    /// because silently changing interpolation semantics is exactly the wrong-output class this
-    /// converter exists to prevent (Gum's own hand-port dropped its <c>COLOR0</c> tint that
-    /// way). Opting a semantic in is a documented, warned-about semantic change.
+    /// Interpolant semantics (e.g. <c>"TEXCOORD1"</c>) the caller explicitly accepts becoming
+    /// <b>uniforms</b> named <c>in_var_&lt;SEMANTIC&gt;</c> — per-draw constants instead of
+    /// interpolated values. Off by default: the converter's answer to an unsupplyable
+    /// interpolant is a loud <c>SD0611</c>, because silently changing interpolation semantics is
+    /// exactly the wrong-output class this converter exists to prevent. Opting a semantic in is a
+    /// documented, warned-about semantic change.
+    ///
+    /// <para><c>COLOR0</c> (SpriteBatch's vertex color) is <b>not</b> governed by this option: it
+    /// always converts, by default, to the synthesized <c>float4</c> uniform
+    /// <c>ShadowDusk_Color</c> (set it to the sprite's tint, white when untinted). Listing
+    /// <c>"COLOR0"</c> here is accepted and changes nothing, so callers written before that
+    /// default keep working, but they now get <c>ShadowDusk_Color</c> instead of
+    /// <c>in_var_COLOR0</c>.</para>
     /// </summary>
     public IReadOnlyList<string> TreatVaryingsAsUniforms { get; init; } = [];
 }
@@ -37,7 +44,12 @@ public sealed class SkslConvertOptions
 /// <param name="SkslText">The runtime-effect source for <c>SKRuntimeEffect.CreateShader</c>.</param>
 /// <param name="Warnings">Non-fatal findings — every synthesized uniform carries one.</param>
 /// <param name="ChildShaders">The <c>uniform shader</c> children to bind, in order, named after the HLSL textures.</param>
-/// <param name="SynthesizedUniforms">Uniforms the consumer must set each draw (see <see cref="MappedSksl.SynthesizedUniforms"/>).</param>
+/// <param name="SynthesizedUniforms">
+/// Uniforms the consumer must set each draw (see <see cref="MappedSksl.SynthesizedUniforms"/>):
+/// <c>ShadowDusk_Color</c> (the sprite's tint, for a shader that reads <c>COLOR0</c>) and
+/// <c>ShadowDusk_Resolution</c> (output size in pixels, for a shader that uses its UV
+/// arithmetically).
+/// </param>
 public sealed record SkslConversion(
     string SkslText,
     IReadOnlyList<ShaderError> Warnings,

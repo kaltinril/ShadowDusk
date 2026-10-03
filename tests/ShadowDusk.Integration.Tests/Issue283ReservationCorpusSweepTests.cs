@@ -38,6 +38,16 @@ public sealed class Issue283ReservationCorpusSweepTests(ITestOutputHelper output
         "VsWaveQuadIntrinsics.fx",
         "third-party/Apos.Shapes/apos-shapes-sm6.fx",
 
+        // Issue #368: the vendored XnaFiddle examples write `register(tN)` / `register(sN)` only in
+        // their `#if SM6` arm and use the legacy syntax in the arm OpenGL compiles (the
+        // apos-shapes-sm6 shape): raw [0] (or [0,1]), preprocessed [].
+        "third-party/XnaFiddle/XnaFiddle-Fading.fx",
+        "third-party/XnaFiddle/XnaFiddle-Grayscale.fx",
+        "third-party/XnaFiddle/XnaFiddle-Invert.fx",
+        "third-party/XnaFiddle/XnaFiddle-Mask.fx",
+        "third-party/XnaFiddle/XnaFiddle-Pixelated.fx",
+        "third-party/XnaFiddle/XnaFiddle-Tint.fx",
+
         // Issue #309 (2026-10-02): EVERY sampler type keyword with an explicit register reserves,
         // so a LEGACY sampler's register now moves the reservation set too wherever the raw text
         // and the preprocessed text disagree about it: a register only in a dead branch

@@ -15,8 +15,9 @@ namespace ShadowDusk.Compiler.Sksl;
 /// <c>SKRuntimeEffect.Uniforms</c>/children before creating the paint.
 /// </param>
 /// <param name="SynthesizedUniforms">
-/// Uniforms the mapping had to invent (e.g. <c>ShadowDusk_Resolution</c>, or a varying
-/// substituted per <see cref="SkslConvertOptions.TreatVaryingsAsUniforms"/>). The consumer must
+/// Uniforms the mapping had to invent (<c>ShadowDusk_Color</c> for <c>COLOR0</c>,
+/// <c>ShadowDusk_Resolution</c>, or a varying substituted per
+/// <see cref="SkslConvertOptions.TreatVaryingsAsUniforms"/>). The consumer must
 /// set every one of these each frame or the effect renders wrong — which is why each also
 /// carries a warning.
 /// </param>
@@ -41,11 +42,15 @@ public sealed record MappedSksl(
 ///   at exactly the interpolated UV maps to <c>child.eval(coord)</c> (the 1:1 post-process
 ///   case). Using the UV <i>arithmetically</i> maps to <c>coord / ShadowDusk_Resolution</c>
 ///   with a synthesized uniform the consumer must set (warned, never silent).</item>
-///   <item>Any other interpolant (<c>COLOR0</c>, …) is <b>rejected by name</b> (<c>SD0611</c>)
-///   unless the caller explicitly lists it in
-///   <see cref="SkslConvertOptions.TreatVaryingsAsUniforms"/>, in which case it becomes a
-///   uniform — a documented semantic change (interpolated → per-draw constant), opted into,
-///   warned about, and surfaced in <see cref="MappedSksl.SynthesizedUniforms"/>.</item>
+///   <item><c>COLOR0</c> (SpriteBatch's vertex color) converts <b>by default</b> to the
+///   synthesized <c>float4</c> uniform <c>ShadowDusk_Color</c>: the consumer sets it to the
+///   sprite's tint each draw (white when untinted). A documented semantic change
+///   (interpolated → per-draw constant), warned about (<c>SD0614</c>) and surfaced in
+///   <see cref="MappedSksl.SynthesizedUniforms"/>.</item>
+///   <item>Any other interpolant is <b>rejected by name</b> (<c>SD0611</c>) unless the caller
+///   explicitly lists it in <see cref="SkslConvertOptions.TreatVaryingsAsUniforms"/>, in which
+///   case it becomes a uniform named <c>in_var_&lt;SEMANTIC&gt;</c>, with the same warning and
+///   surfacing.</item>
 ///   <item>Sampling at computed coordinates is rejected (<c>SD0612</c>): SkSL's
 ///   <c>.eval()</c> takes child-space pixel coordinates and a child's bounds are unknowable
 ///   from inside the effect, so any guess could silently sample the wrong texel.</item>
@@ -79,6 +84,13 @@ internal static class SkslGlslMapper
 
     /// <summary>The synthesized viewport-size uniform's name.</summary>
     internal const string ResolutionUniform = "ShadowDusk_Resolution";
+
+    /// <summary>
+    /// The synthesized uniform that stands in for <c>COLOR0</c>, SpriteBatch's vertex color
+    /// (<c>float4</c>, straight RGBA). A runtime effect has no varyings, so the consumer sets it
+    /// per draw to the sprite's tint: white when untinted, which reproduces the untinted math.
+    /// </summary>
+    internal const string ColorUniform = "ShadowDusk_Color";
 
     /// <summary>
     /// Maps one pixel shader's SPIRV-Cross GLSL to SkSL.
@@ -131,6 +143,7 @@ internal static class SkslGlslMapper
 
         // 2. Varyings. TEXCOORD0 is representable; everything else is the Gum lesson.
         string? uvVar = null;
+        string? colorVar = null;
         var uniformSubstitutions = new List<(string Var, string Type, string Semantic)>();
         foreach (Match varying in VaryingIn.Matches(text))
         {
@@ -140,6 +153,26 @@ internal static class SkslGlslMapper
             if (semantic.Equals("TEXCOORD0", StringComparison.Ordinal))
             {
                 uvVar = "in_var_" + semantic;
+                continue;
+            }
+
+            // COLOR0 (a bare `: COLOR` input reaches here spelled "COLOR", index 0 implied) is
+            // SpriteBatch's vertex color. Every .fx written for MonoGame/KNI reads it, so it
+            // converts BY DEFAULT to one named, documented uniform instead of refusing. The
+            // semantic change (interpolated -> per-draw constant) is the one
+            // TreatVaryingsAsUniforms opts into, made the default for this one semantic
+            // because every sprite shader has it (issue #368).
+            if (semantic is "COLOR0" or "COLOR")
+            {
+                if (!type.Equals("vec4", StringComparison.Ordinal))
+                {
+                    return Fail(sourceName, "SD0611",
+                        $"the pixel shader reads its vertex color ('{semantic}') as '{type}', but the " +
+                        $"synthesized uniform '{ColorUniform}' is a float4 (SpriteBatch's RGBA tint). " +
+                        "Declare the COLOR0 input as float4; refusing rather than guessing how to " +
+                        "narrow the uniform.");
+                }
+                colorVar = "in_var_" + semantic;
                 continue;
             }
 
@@ -153,7 +186,8 @@ internal static class SkslGlslMapper
                 $"the pixel shader reads the interpolant '{semantic}', and an SkSL runtime effect " +
                 "has no varyings at all — a pixel shader gets the coordinate plus uniforms and " +
                 "nothing else. Refusing rather than silently dropping it (Gum's own hand-written " +
-                "SkSL port dropped its COLOR0 tint exactly this way). If a per-draw constant is " +
+                "SkSL port dropped its COLOR0 tint exactly this way; COLOR0 itself converts, to " +
+                $"the uniform '{ColorUniform}'). If a per-draw constant is " +
                 $"acceptable for '{semantic}', opt in with TreatVaryingsAsUniforms and set the " +
                 "uniform from your draw code.");
         }
@@ -168,6 +202,22 @@ internal static class SkslGlslMapper
                 Message: $"the interpolant '{semantic}' was substituted with the uniform '{var}' " +
                          "(TreatVaryingsAsUniforms): it is now a per-draw constant, not an " +
                          "interpolated value, and your draw code must set it.",
+                Severity: ShaderErrorSeverity.Warning));
+        }
+
+        if (colorVar is not null)
+        {
+            text = VaryingIn.Replace(text, m =>
+                m.Groups["semantic"].Value is "COLOR0" or "COLOR" ? $"uniform vec4 {ColorUniform};" : m.Value);
+            text = Regex.Replace(text, $@"\b{Regex.Escape(colorVar)}\b", ColorUniform);
+            synthesized.Add(ColorUniform);
+            warnings.Add(new ShaderError(
+                File: sourceName, Line: 0, Column: 0, Code: "SD0614",
+                Message: $"the vertex color (COLOR0) was converted to the uniform '{ColorUniform}' " +
+                         "(float4): SkSL has no vertex stage or varyings, so it is a per-draw " +
+                         "constant, not an interpolated value. Your draw code must set it to the " +
+                         "sprite's tint each draw (white when untinted), or the shader renders " +
+                         "black.",
                 Severity: ShaderErrorSeverity.Warning));
         }
 

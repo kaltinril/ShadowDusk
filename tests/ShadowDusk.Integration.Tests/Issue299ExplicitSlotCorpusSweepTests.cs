@@ -35,6 +35,13 @@ public sealed class Issue299ExplicitSlotCorpusSweepTests(ITestOutputHelper outpu
         "VsTransformColorTexture.fx",
         "VsWaveQuadIntrinsics.fx",
         "apos-shapes-sm6.fx",
+        // Issue #368: the vendored XnaFiddle examples, same `#if SM6` arm shape as apos-shapes-sm6.
+        "XnaFiddle-Fading.fx",
+        "XnaFiddle-Grayscale.fx",
+        "XnaFiddle-Invert.fx",
+        "XnaFiddle-Mask.fx",
+        "XnaFiddle-Pixelated.fx",
+        "XnaFiddle-Tint.fx",
     };
 
     [Fact]

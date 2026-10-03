@@ -348,8 +348,8 @@ jobs:
 
       # Issue #349: the HLSL -> SkSL converter in a real browser. Reuses the sample the G2 gate
       # above just published (--skip-publish). SkSL must be byte-identical to the desktop golden
-      # (tests/fixtures/golden/sksl/Grayscale.sksl, pinned by a desktop unit test), and the COLOR0
-      # refusal must hold in the browser too.
+      # (tests/fixtures/golden/sksl/Grayscale.sksl, pinned by a desktop unit test), and the
+      # refusal of an unsupplyable interpolant (TEXCOORD1) must hold in the browser too.
       - name: Issue #349 - in-browser SkSL conversion gate
         working-directory: tests/ShadowDusk.BrowserTests
         timeout-minutes: 25
@@ -462,8 +462,8 @@ jobs:
 
       # Issue #349: the HLSL -> SkSL converter in a real browser. Reuses the sample the G2 gate
       # above just published (--skip-publish). SkSL must be byte-identical to the desktop golden
-      # (tests/fixtures/golden/sksl/Grayscale.sksl, pinned by a desktop unit test), and the COLOR0
-      # refusal must hold in the browser too.
+      # (tests/fixtures/golden/sksl/Grayscale.sksl, pinned by a desktop unit test), and the
+      # refusal of an unsupplyable interpolant (TEXCOORD1) must hold in the browser too.
       - name: Issue #349 - in-browser SkSL conversion gate
         working-directory: tests/ShadowDusk.BrowserTests
         timeout-minutes: 25

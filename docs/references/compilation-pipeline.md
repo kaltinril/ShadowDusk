@@ -400,9 +400,11 @@ the MGFX writer entirely — it produces SkSL **text**, not a `.mgfx`.
 combined-sampler children rewritten to `uniform shader` values sampled with `.eval(coord)`
 rather than `texture()`, and cbuffer/`$Globals` members flattened to plain SkSL uniforms.
 SkSL runtime effects have **no vertex stage and no varyings at all**, so a shader that reads
-an interpolated input (a vertex color, a custom interpolant) is refused by name
-(`SD0610`–`SD0615`) rather than silently narrowed, with an explicit opt-in
-(`TreatVaryingsAsUniforms`) if treating it as a per-draw constant is acceptable.
+a custom interpolant is refused by name (`SD0610`–`SD0615`) rather than silently narrowed,
+with an explicit opt-in (`TreatVaryingsAsUniforms`) if treating it as a per-draw constant is
+acceptable. The vertex color `COLOR0`, which every sprite shader reads, converts by default to
+the synthesized `float4` uniform `ShadowDusk_Color` that the consumer sets to the sprite's tint
+(white when untinted).
 
 **Why.** SkiaSharp's `SKRuntimeEffect` is a thin, string-based P/Invoke binding
 (`CreateShader(string sksl, out string errors)`) with no bytecode entry point and no reference

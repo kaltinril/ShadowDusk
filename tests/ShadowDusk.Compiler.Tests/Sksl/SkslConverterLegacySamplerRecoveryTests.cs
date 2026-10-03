@@ -170,11 +170,11 @@ public sealed class SkslConverterLegacySamplerRecoveryTests
     /// direct one: refused by default (<c>SD0611</c>), converted with the opt-in.
     /// </summary>
     [Fact]
-    public void ARecoveredEffectReadingColor0_IsRefusedByDefault_AndConvertsWithTheOptInLikeTheDirectForm()
+    public void ARecoveredEffectReadingAnExtraInterpolant_IsRefusedByDefault_AndConvertsWithTheOptInLikeTheDirectForm()
     {
         const string body = """
 
-            float4 PS(float4 pos : SV_POSITION, float4 color : COLOR0, float2 uv : TEXCOORD0) : COLOR0 { return tex2D(S, uv) * color; }
+            float4 PS(float4 pos : SV_POSITION, float4 extra : TEXCOORD1, float2 uv : TEXCOORD0) : COLOR0 { return tex2D(S, uv) * extra; }
             technique T { pass P { PixelShader = compile PS_SHADERMODEL PS(); } }
             """;
         const string include = "sampler2D S : register(s0);";
@@ -183,10 +183,30 @@ public sealed class SkslConverterLegacySamplerRecoveryTests
         refused.IsFailure.ShouldBeTrue();
         refused.Error.Single().Code.ShouldBe("SD0611");
 
-        SkslConversion direct = ConvertOk(Header + include + body, varyingsAsUniforms: ["COLOR0"]);
-        SkslConversion recovered = ConvertOk(Header + "#include \"s.fxh\"" + body, include, ["COLOR0"]);
+        SkslConversion direct = ConvertOk(Header + include + body, varyingsAsUniforms: ["TEXCOORD1"]);
+        SkslConversion recovered = ConvertOk(Header + "#include \"s.fxh\"" + body, include, ["TEXCOORD1"]);
         Flatten(recovered).ShouldBe(Flatten(direct));
-        recovered.SynthesizedUniforms.ShouldContain("in_var_COLOR0");
+        recovered.SynthesizedUniforms.ShouldContain("in_var_TEXCOORD1");
+    }
+
+    /// <summary>
+    /// COLOR0 converts by default (issue #368), and that default is a mapper decision after the
+    /// seam, so a recovered effect gets it exactly as the direct form does.
+    /// </summary>
+    [Fact]
+    public void ARecoveredEffectReadingColor0_ConvertsByDefault_LikeTheDirectForm()
+    {
+        const string body = """
+
+            float4 PS(float4 pos : SV_POSITION, float4 color : COLOR0, float2 uv : TEXCOORD0) : COLOR0 { return tex2D(S, uv) * color; }
+            technique T { pass P { PixelShader = compile PS_SHADERMODEL PS(); } }
+            """;
+        const string include = "sampler2D S : register(s0);";
+
+        SkslConversion direct = ConvertOk(Header + include + body);
+        SkslConversion recovered = ConvertOk(Header + "#include \"s.fxh\"" + body, include);
+        Flatten(recovered).ShouldBe(Flatten(direct));
+        recovered.SynthesizedUniforms.ShouldContain("ShadowDusk_Color");
     }
 
     [Fact]

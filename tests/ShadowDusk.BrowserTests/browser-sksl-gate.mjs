@@ -4,11 +4,11 @@
 // and drives WasmShaderCompiler.ConvertToSksl through the [JSInvokable] TestSyncConvertSksl
 // hook, with the browser's WASM DXC + SPIRV-Cross injected into the converter. Checks:
 //   1. COLD: ConvertToSksl before InitializeAsync fails with the clear SD1903 error.
-//   2. After InitializeAsync, Gum's Grayscale.fx with TreatVaryingsAsUniforms=["COLOR0"] converts,
+//   2. After InitializeAsync, Gum's Grayscale.fx converts (COLOR0 becomes ShadowDusk_Color by default),
 //      and the SkSL text is BYTE-IDENTICAL to tests/fixtures/golden/sksl/Grayscale.sksl, the
 //      same file the desktop test SkslConverterTests pins to the desktop converter's output.
 //      So browser == golden == desktop.
-//   3. Without the opt-in, the same shader is refused in the browser too: SD0611 naming COLOR0.
+//   3. An interpolant other than TEXCOORD0/COLOR0 is refused in the browser too: SD0611 naming it.
 //
 // No Skia in the browser: byte-identity to the desktop text is the bar (the desktop
 // SkslSkiaEvidenceTests already prove Skia accepts that text).
@@ -78,13 +78,13 @@ try {
     () => typeof window.theInstance !== 'undefined' && window.theInstance !== null,
     { timeout: 120000 });
 
-  const convert = (varyings) => page.evaluate(
+  const convert = (varyings, src = source) => page.evaluate(
     async ({ src, varyings }) =>
       await window.theInstance.invokeMethodAsync('TestSyncConvertSksl', src, varyings, 'Grayscale.fx'),
-    { src: source, varyings });
+    { src, varyings });
 
   // 1. COLD, before anything has loaded the DXC module.
-  const cold = await convert('COLOR0');
+  const cold = await convert('');
   check('cold ConvertToSksl', typeof cold === 'string' && cold.startsWith('ERR:') && cold.includes('SD1903'),
     `expected SD1903, got: ${String(cold).slice(0, 200)}`);
 
@@ -92,9 +92,9 @@ try {
   const init = await page.evaluate(async () => await window.theInstance.invokeMethodAsync('TestInitializeCompiler'));
   check('InitializeAsync', init === 'OK', String(init).slice(0, 200));
 
-  const warm = await convert('COLOR0');
+  const warm = await convert('');
   if (typeof warm !== 'string' || !warm.startsWith('OK:')) {
-    check('warm ConvertToSksl with COLOR0 opt-in', false, `expected OK, got: ${String(warm).slice(0, 400)}`);
+    check('warm ConvertToSksl (COLOR0 by default)', false, `expected OK, got: ${String(warm).slice(0, 400)}`);
   } else {
     const sksl = warm.slice(3);
     check('browser SkSL byte-identical to the desktop golden', sksl === golden,
@@ -102,11 +102,14 @@ try {
         : `DIFFERS from golden.\n--- browser ---\n${sksl}\n--- golden ---\n${golden}`);
   }
 
-  // 3. Refusal path: no opt-in, refused by name.
-  const refused = await convert('');
-  check('refusal without the opt-in',
-    typeof refused === 'string' && refused.startsWith('ERR:') && refused.includes('SD0611') && refused.includes('COLOR0'),
-    `expected SD0611 naming COLOR0, got: ${String(refused).slice(0, 300)}`);
+  // 3. Refusal path: an interpolant SkSL cannot supply (not TEXCOORD0, not COLOR0) is refused by name.
+  const extraInterpolant = `float4 MainPS(float4 pos : SV_Position, float2 uv : TEXCOORD0, float4 extra : TEXCOORD1) : SV_Target
+{ return extra; }
+technique T { pass P { PixelShader = compile ps_3_0 MainPS(); } }`;
+  const refused = await convert('', extraInterpolant);
+  check('refusal of a non-COLOR0 interpolant',
+    typeof refused === 'string' && refused.startsWith('ERR:') && refused.includes('SD0611') && refused.includes('TEXCOORD1'),
+    `expected SD0611 naming TEXCOORD1, got: ${String(refused).slice(0, 300)}`);
 } finally {
   await browser.close();
   await srv.close();
@@ -117,4 +120,4 @@ if (failures.length > 0) {
   for (const f of failures) console.error('  - ' + f);
   process.exit(1);
 }
-console.log('SKSL BROWSER GATE PASSED: cold SD1903, SkSL byte-identical to the desktop golden, COLOR0 refusal by name.');
+console.log('SKSL BROWSER GATE PASSED: cold SD1903, SkSL byte-identical to the desktop golden, TEXCOORD1 refusal by name.');

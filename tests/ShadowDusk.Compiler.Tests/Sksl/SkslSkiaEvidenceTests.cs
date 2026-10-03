@@ -35,7 +35,6 @@ public sealed class SkslSkiaEvidenceTests
         var converted = SkslConverter.Convert(File.ReadAllText(fxPath), new SkslConvertOptions
         {
             SourceName = "Grayscale.fx",
-            TreatVaryingsAsUniforms = ["COLOR0"],
         });
         converted.IsSuccess.ShouldBeTrue(
             converted.IsFailure ? string.Join(" | ", converted.Error.Select(e => $"{e.Code}: {e.Message}")) : "");
@@ -55,7 +54,6 @@ public sealed class SkslSkiaEvidenceTests
         var converted = SkslConverter.Convert(File.ReadAllText(fxPath), new SkslConvertOptions
         {
             SourceName = "Grayscale.fx",
-            TreatVaryingsAsUniforms = ["COLOR0"],
         });
         converted.IsSuccess.ShouldBeTrue();
 
@@ -76,7 +74,7 @@ public sealed class SkslSkiaEvidenceTests
 
         var uniforms = new SKRuntimeEffectUniforms(effect)
         {
-            ["in_var_COLOR0"] = new[] { tint.r, tint.g, tint.b, tint.a },
+            [SkslGlslMapper.ColorUniform] = new[] { tint.r, tint.g, tint.b, tint.a },
         };
         var children = new SKRuntimeEffectChildren(effect) { ["SpriteTexture"] = child };
 
