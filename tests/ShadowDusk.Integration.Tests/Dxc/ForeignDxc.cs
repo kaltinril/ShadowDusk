@@ -81,6 +81,24 @@ internal static class ForeignDxc
         Path.Combine(AppContext.BaseDirectory, "foreign-dxc", "1.9", rid, "native");
 
     /// <summary>
+    /// The failure message for a DXC 1.9 file that is not beside the test assembly (issue #362):
+    /// names the file looked for AND the NuGet-cache directory the build copied it from, which is
+    /// where a custom <c>NUGET_PACKAGES</c> / <c>globalPackagesFolder</c> once made the glob miss.
+    /// </summary>
+    public static string MissingFixture(string expectedFile)
+    {
+        string? probed = typeof(ForeignDxc).Assembly
+            .GetCustomAttributes(typeof(System.Reflection.AssemblyMetadataAttribute), inherit: false)
+            .Cast<System.Reflection.AssemblyMetadataAttribute>()
+            .FirstOrDefault(a => a.Key == "ForeignDxcPackageRuntimes")?.Value;
+        string source = string.IsNullOrEmpty(probed)
+            ? "the build had no NuGetPackageRoot, so nothing was copied"
+            : $"the build copies it from {probed}{Rid}/native/ (Vortice.Dxc.Native 1.0.5, a PackageDownload of this project)";
+        return $"the DXC 1.9 fixture is missing: {expectedFile}; {source}. Restore and rebuild "
+            + "ShadowDusk.Integration.Tests, and check that directory exists in the NuGet global-packages folder.";
+    }
+
+    /// <summary>
     /// Copies DXC 1.9 (see <see cref="Dxc19Directory"/>) for the running RID into
     /// <paramref name="directory"/> under ShadowDusk's DXC file names, replacing what is there.
     /// </summary>
@@ -91,7 +109,7 @@ internal static class ForeignDxc
         foreach (string name in fileNames)
         {
             string from = Path.Combine(source, name);
-            File.Exists(from).ShouldBeTrue($"the DXC 1.9 fixture has no {from}");
+            File.Exists(from).ShouldBeTrue(MissingFixture(from));
             File.Copy(from, Path.Combine(directory, name), overwrite: true);
         }
     }
