@@ -138,6 +138,17 @@ none. While the restored module is the build hosted on `native-vkd3d-wasm-2.1` (
 the wrapper could take options), both gates report that fixture on DirectX as an EXPECTED
 DIFF, not counted as a pass, keyed on the module's SHA-256.
 
+**Warnings (issue #335).** A successful compile can carry a compiler's non-fatal diagnostics,
+which both hosts must surface as `CompiledShader.Warnings`. `ImplicitTruncationWarning.fx`
+(vkd3d `W5300`) is the corpus entry with a non-empty list. The browser gate compares the
+warnings the real `WasmShaderCompiler` returns (the test hooks print them after the artifact,
+one `FxcFormattedMessage` per line) against the committed
+`tests/fixtures/golden/byte-identity/warnings-manifest.json`, every entry, sync and async, and
+fails when that manifest lists no warning for the fixture. The node gate checks the same at
+the shim: `compile()` returns `{ code, messages }`, and the message text must equal what vkd3d
+returned to the desktop on every compile (recorded by the probe), with a control that fails
+when no corpus compile carries a non-empty text.
+
 Skips loudly (exit 0, "NOT RUN, NOT A PASS", `::warning::` in CI) when the wasm
 module is not restored; any compile failure, hash mismatch, missing published
 module, or unobserved `vkd3d-shader.wasm` fetch is a hard FAIL. No GPU/xvfb

@@ -267,6 +267,12 @@ internal readonly struct D3D12ShaderInputBindDesc
     /// <summary>Raw <c>D3D_SHADER_INPUT_TYPE</c>; compare against <see cref="D3DShaderInputType"/>.</summary>
     public uint   Type      { get; private init; }
     public int    BindPoint { get; private init; }
+    /// <summary>
+    /// The number of contiguous registers the binding spans from <see cref="BindPoint"/>: 1 for a
+    /// single resource, N for an array of resources (<c>Texture2D Tex[N]</c>), 0 for an
+    /// unbounded array (issue #324).
+    /// </summary>
+    public int    BindCount { get; private init; }
     /// <summary>Raw <c>D3D_SRV_DIMENSION</c>; mapped by <c>D3DReflectionMaps.MapSrvDimension</c>.</summary>
     public uint   Dimension { get; private init; }
 
@@ -275,6 +281,7 @@ internal readonly struct D3D12ShaderInputBindDesc
         Name      = Marshal.PtrToStringAnsi(native.Name)!,
         Type      = native.Type,
         BindPoint = native.BindPoint,
+        BindCount = native.BindCount,
         Dimension = native.Dimension,
     };
 }

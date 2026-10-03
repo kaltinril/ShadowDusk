@@ -186,6 +186,48 @@ public sealed class SlangRegisterPassCostTests
             "Sampler2D Comb : register ( t2 ) ;",
             [["-"]]),
 
+        // (g) Issue #325. A module global named like a hoist of an entry global ('tex_layer_0'
+        // beside the entry's 'tex') is the module author's own name: the module is read in the
+        // same run as the entry source, exactly like any other registered module declaration.
+        ["g: module global named like a hoist of an entry global"] = Make(
+            $"import \"{A}\";\nTexture2D tex;\nSamplerState S;\n",
+            $"#line 2 \"{A}\"\nTexture2D<float4 > tex_layer_0 : register(t3);\n#line 2 \"<stdin>\"\nTexture2D<float4 > tex : register(t0);\n#line 3\nSamplerState S : register(s0);\n",
+            $"import \"{A}\" ; Texture2D tex ; SamplerState S ;",
+            [["-", A]],
+            (A, "module a ; public Texture2D tex_layer_0 : register ( t3 ) ;")),
+
+        // The same module imported by a relative path: slangc locates it by the bare name it was
+        // written with (measured), which is a file to read, not slangc's core module.
+        ["g: the same, module imported by a relative path"] = Make(
+            "import \"m.slang\";\nTexture2D tex;\nSamplerState S;\n",
+            "#line 2 \"m.slang\"\nTexture2D<float4 > tex_layer_0 : register(t3);\n#line 2 \"<stdin>\"\nTexture2D<float4 > tex : register(t0);\n#line 3\nSamplerState S : register(s0);\n",
+            "import \"m.slang\" ; Texture2D tex ; SamplerState S ;",
+            [["-", "m.slang"]],
+            ("m.slang", "module m ; public Texture2D tex_layer_0 : register ( t3 ) ;")),
+
+        // (h) Issue #323. Namespaces whose globals all have distinct names: the raw text shows no
+        // candidate pair, so no slangc run is spent on the question.
+        ["h: namespaces, distinct global names"] = Make(
+            "namespace A { Texture2D TA; }\nnamespace B { Texture2D TB; }\nSamplerState S;\n",
+            "#line 1 \"<stdin>\"\nTexture2D<float4 > TA : register(t0);\n#line 2\nTexture2D<float4 > TB : register(t1);\n#line 3\nSamplerState S : register(s0);\n",
+            "namespace A { Texture2D TA ; } namespace B { Texture2D TB ; } SamplerState S ;",
+            []),
+
+        // The same with a directive in the source: still no candidate, still no run.
+        ["h: namespaces, distinct global names, with a directive"] = Make(
+            "#if OPENGL\nnamespace A { Texture2D TA; }\n#else\nnamespace B { Texture2D TB; }\n#endif\nSamplerState S;\n",
+            "#line 2 \"<stdin>\"\nTexture2D<float4 > TA : register(t0);\n#line 6\nSamplerState S : register(s0);\n",
+            "namespace A { Texture2D TA ; } SamplerState S ;",
+            []),
+
+        // A same-named pair in mutually exclusive #if branches: the raw text shows a candidate it
+        // cannot judge, so slangc's own preprocessor is asked once, and clears it.
+        ["h: same-named pair in exclusive #if branches"] = Make(
+            "#if OPENGL\nnamespace A { Texture2D T; }\n#else\nnamespace B { Texture2D T; }\n#endif\nSamplerState S;\n",
+            "#line 2 \"<stdin>\"\nTexture2D<float4 > T : register(t0);\n#line 6\nSamplerState S : register(s0);\n",
+            "namespace A { Texture2D T ; } SamplerState S ;",
+            [["-"]]),
+
         // Two modules on one level are read in one run, and a module imported twice only once.
         ["two quoted imports on one level, one shared"] = Make(
             $"import \"{A}\";\nimport \"{B}\";\n",

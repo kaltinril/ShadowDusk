@@ -1,6 +1,6 @@
 # Test Shader Corpus — Provenance & Fresh Examples
 
-**Last updated:** 2026-10-02 — issues #308 and #309 added `SamplerLegacyInclude.fx` (+ `SamplerLegacyInclude.fxh`), `SamplerLegacyMacroDecl.fx` and `SamplerReservationKeywords.fx` (the sampler-register set below, `OpenGL` **and** `DirectX_11` goldens), and the nine vendored MonoGame `Include.fxh` effects now compile for OpenGL. Earlier the same day issue #299 added `SamplerLegacyRegisterIfBranch.fx` and `SamplerLegacyRegisterMacro.fx`, and issue #283 added `SamplerReservationIfBranch.fx` and `SamplerReservationMacro.fx` (the sampler-register set below), all four with `OpenGL` **and** `DirectX_11` goldens. Previously 2026-09-10 — vkd3d 2.1 (Phase 56) reclassified `Reflection.fx` and the Apos.Shapes revisions as FNA-compiling; the `E5017` loop/ternary gaps they sat behind were compiler gaps, not shader-model limits. Previously 2026-09-09: added the Slang input corpus: 17 `.slang` fixtures under
+**Last updated:** 2026-10-02 — issues #339/#340 added `DirectX_11` goldens (`mgfxc` 3.8.4.1, the pinned oracle) for the two texture-array fixtures and the expect-diagnostic `SamplerArray2.fx` (no golden on any profile) to the `texture-arrays/` set; earlier the same day issue #324 added that set (`TextureArray2.fx`, `TextureArray4NoRegister.fx`, `DirectX_12` **and** `Vulkan` goldens from `mgfxc` 3.8.5; see §3). Earlier the same day issues #308 and #309 added `SamplerLegacyInclude.fx` (+ `SamplerLegacyInclude.fxh`), `SamplerLegacyMacroDecl.fx` and `SamplerReservationKeywords.fx` (the sampler-register set below, `OpenGL` **and** `DirectX_11` goldens), and the nine vendored MonoGame `Include.fxh` effects now compile for OpenGL. Earlier the same day issue #299 added `SamplerLegacyRegisterIfBranch.fx` and `SamplerLegacyRegisterMacro.fx`, and issue #283 added `SamplerReservationIfBranch.fx` and `SamplerReservationMacro.fx` (the sampler-register set below), all four with `OpenGL` **and** `DirectX_11` goldens. Previously 2026-09-10 — vkd3d 2.1 (Phase 56) reclassified `Reflection.fx` and the Apos.Shapes revisions as FNA-compiling; the `E5017` loop/ternary gaps they sat behind were compiler gaps, not shader-model limits. Previously 2026-09-09: added the Slang input corpus: 17 `.slang` fixtures under
 `slang/`, cross-validated against the real `slangc` compiler (see `docs/validation-matrix.md`
 §8.0 and `validation/SlangCorpus`). Previously 2026-08-02: the issue-#189 fix added
 `SamplerRegisterOrder.fx` and `SamplerRegisterSparse.fx` (the sampler-register set below), both
@@ -9,9 +9,9 @@ four `ExPhantom*` fixtures (the phantom-parameter set below). Previously 2026-07
 A10 added three DirectX-profile-floor fixtures and **reclassified the vendored Nez set**, whose
 DirectX column collapsed once ShadowDusk started enforcing mgfxc's own floor (see the note
 above that table).
-Corpus on disk: **157 `.fx` + 7 `.fxh`** — 66 in the fixture root, 50 in `examples/`, 1 in
-`shadertoy/`, 38 under `third-party/`, 2 under `raylib/` — plus **17 `.slang`** under `slang/`
-(a separate input corpus, not `.fx`; see §5).
+Corpus on disk (counted 2026-10-02): **167 `.fx` + 8 `.fxh`** — 73 in the fixture root, 50 in
+`examples/`, 1 in `shadertoy/`, 38 under `third-party/`, 2 under `raylib/`, 3 under
+`texture-arrays/` — plus **17 `.slang`** under `slang/` (a separate input corpus, not `.fx`; see §5).
 
 This document records (1) what is known about where the existing `.fx` test
 fixtures came from, (2) an integrity caveat about those fixtures, and (3) a set
@@ -266,7 +266,9 @@ they back `validation/SamplerPairsGl`:
   is what compiles it. BLUE sprite + RED MaskA + GREEN MaskB: **yellow = correct**, **green =
   compacted to units 0/1**; before the fix the candidate did not compile. Goldens on `OpenGL` +
   `DirectX_11` (DirectX 11 compiles the legacy syntax natively and ignores the registers, the
-  recorded `SamplerRegisterSparse` divergence).
+  recorded `SamplerRegisterSparse` divergence). Also the `LegacyInclude` arm of
+  `validation/RaylibRoute` (issue #327): the raylib converter recovers it the same way, both masks
+  bound by name on units 2 and 3.
 
 - **`SamplerLegacyMacroDecl.fx`** — GitHub issue **#308**, shape 2. MonoGame's `Macros.fxh` idiom
   spelled out in the file: `DECLARE_TEXTURE(MaskA, 2)` (a `sampler2D` with a token-pasted
@@ -275,6 +277,7 @@ they back `validation/SamplerPairsGl`:
   None of these is a sampler declaration or a `tex2D` call in the RAW token stream. Same colours
   and the same `ps_s2`/`ps_s3` as the include shape. Goldens on `OpenGL` + `DirectX_11` (the
   `DirectX_11` cell carries the recorded `SamplerRegisterSparse` divergence, like the include shape).
+  Also the `LegacyMacroDecl` arm of `validation/RaylibRoute` (issue #327).
 
 - **`SamplerReservationKeywords.fx`** — GitHub issue **#309**. Two textures read through ONE
   lowercase `sampler MaskSampler : register(s0)` by `Texture.Sample`, plus an unused
@@ -526,6 +529,36 @@ diagnostic. There is no skip list to quietly grow.
 
 ---
 
+### Resource-array set (`texture-arrays/`, issues #324, #339, #340)
+
+Three project-owned PS-only effects whose only unusual shape is an ARRAY of resources:
+`TextureArray2.fx` (`Texture2D Tex[2] : register(t0)` through one `SamplerState`, the render-row
+fixture), `TextureArray4NoRegister.fx` (`Texture2D Tex[4]`, no registers) and `SamplerArray2.fx`
+(two textures through `SamplerState Samplers[2]`, an expect-diagnostic fixture with no golden on
+any profile). They live in their own subdirectory, outside the root golden corpus, because the
+reference compiler itself cannot build them for every profile. Measured 2026-10-02 with
+`dotnet-mgfxc` 3.8.5 (v11 profiles) and 3.8.4.1 (the pinned v10 oracle), identical for 1, 2 and 4
+elements, with or without a register:
+
+| Profile | `mgfxc` | ShadowDusk |
+|---|---|---|
+| `DirectX_11` | one Object parameter `Tex`, one sampler record at the array's base slot (3.8.4.1 and 3.8.5; mgfxc compiles at the author's `ps_4_0`, where fxc reflects the array as ONE binding with `BindCount` N) | the same table since issue #339 (committed 3.8.4.1 golden `tests/fixtures/golden/DirectX_11/<stem>.mgfx`, compared record for record by `Issue339DirectX11ResourceArrayTests` on both DXBC backends; rendered against it by `validation/VsDrivenDx -- texarr`, maxd 0, element `[1]` read through `GraphicsDevice.Textures[1]`). Before: one parameter per element, `Tex[0]`, `Tex[1]`, from the `ps_5_0` RDEF's per-element records |
+| `DirectX_12` | one Object parameter `Tex`, one sampler record binding slot 0 to it, header `maxTextureSlot` 0 | the same table (committed golden `tests/fixtures/golden/DirectX_12/<stem>.mgfx`, compared record for record by `Issue324TextureArrayTests`; rendered against it by `validation/VsDrivenDx12 -- texarr`), plus the `SD0222` warning |
+| `Vulkan` | **no parameter, no sampler record, no descriptor binding** (the SPIR-V still samples the array), so the texture can never be set | refused loudly, `SD0221` at the declaration (the committed golden `tests/fixtures/golden/Vulkan/<stem>.mgfx` is mgfxc's empty-table output, kept as the evidence; `validation/VsDrivenVulkan -- texarr`) |
+| `OpenGL` | fails (`Sequence contains no matching element`) | fails (`SD0217`) |
+
+`SamplerArray2.fx` is refused by mgfxc on every profile before any shader compiles
+(`SamplerArray2.fx(31,22) : Unexpected token '[' found. Expected Semicolon, Comma, or
+CloseParenthesis.`); ShadowDusk refuses it with `SD0224` at the declaration on `DirectX_11` and
+`DirectX_12` (`validation/VsDrivenDx -- samparr`, `VsDrivenDx12 -- samparr`), `SD0221` on
+`Vulkan`, and `SD0100` (SPIRV-Cross) on `OpenGL`.
+
+The `DirectX_12` and `Vulkan` goldens are produced with the mgfxc those proofs use, not the pinned
+v10 oracle: `dotnet ~/.nuget/packages/dotnet-mgfxc/3.8.5/tools/net8.0/any/mgfxc.dll <fx> <out>
+/Profile:DirectX_12` (and `/Profile:Vulkan`). The `DirectX_11` goldens are the pinned oracle's:
+`tools/compile-fixtures.ps1 -ShaderDir tests/fixtures/shaders/texture-arrays -Profiles DirectX_11`
+(the script's default run deliberately does not see this directory).
+
 ## 5. Slang input corpus (`slang/`)
 
 A separate corpus from the `.fx` sets above, since it exercises a different input language,
@@ -551,5 +584,7 @@ originating request named. `CrtFilter.fx` (barrel curvature, RGB fringe,
 scanlines, vignette) and `RetroHandheld.fx` (luminance quantized onto a palette ramp, saturation
 mix, dot-matrix cell gaps). Both read only `TEXCOORD0` and `COLOR0`, so one source runs under
 MonoGame's `SpriteBatch` and behind raylib's built-in vertex shader. `validation/RaylibRoute`
-renders them (with the 10-shader GL corpus and Gum's Grayscale) in real Raylib-cs and real
-MonoGame; the in-suite census also compiles them on OpenGL and DirectX 11.
+renders them (with the 10-shader GL corpus, Gum's Grayscale and, since issue #327, the two
+issue #308 fixtures `SamplerLegacyInclude.fx` and `SamplerLegacyMacroDecl.fx`, whose legacy
+samplers an `#include` or a macro supplies) in real Raylib-cs and real MonoGame; the in-suite
+census also compiles them on OpenGL and DirectX 11.

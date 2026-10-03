@@ -38,6 +38,12 @@ public sealed class EffectImageRenderer : Game
 
     public List<ShaderOutcome> Outcomes { get; } = new();
 
+    /// <summary>
+    /// Raw pixels of each successful render (same order as the successful <see cref="Outcomes"/>),
+    /// so a driver can compare baseline vs candidate in process, without a PNG decoder.
+    /// </summary>
+    public List<(string Name, Color[] Pixels, int Width, int Height)> Captures { get; } = new();
+
     public EffectImageRenderer(
         string catPath, string outDir,
         IReadOnlyList<ShaderJob> jobs, Action<Effect, Texture2D> setParams)
@@ -125,6 +131,10 @@ public sealed class EffectImageRenderer : Game
             _sb.End();
 
             GraphicsDevice.SetRenderTarget(null);
+
+            var pixels = new Color[w * h];
+            rt.GetData(pixels);
+            Captures.Add((job.Name, pixels, w, h));
 
             string png = Path.Combine(_outDir, job.Name + ".png");
             using (var outFs = File.Create(png))

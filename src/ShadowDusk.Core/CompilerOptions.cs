@@ -136,14 +136,36 @@ public sealed class CompilerOptions
     public IReadOnlyList<Preprocessor.UserDefine> Defines { get; init; } = [];
 
     /// <summary>
+    /// Internal seam for the real-slangc route (issues #302, #340): the names of the sampler
+    /// arrays slangc emitted as the sampler half of a combined-sampler ARRAY the author declared
+    /// (<c>Sampler2D T[N]</c> becomes <c>Texture2D T_texture_0[N]</c>, renamed to <c>T</c>, plus
+    /// <c>SamplerState T_sampler_0[N]</c>). Those are one author resource, lowered, not an author's
+    /// <c>SamplerState S[N]</c>, so the DirectX sampler-array refusal (<c>SD0224</c>) skips them and
+    /// the texture half carries the array diagnostics (<c>SD0221</c>, <c>SD0222</c>), giving the same
+    /// one-parameter table the hand-written <c>Texture2D T[N]; SamplerState S;</c> gets. Empty for
+    /// every <c>.fx</c> compile. Not a consumer setting: an author never needs it for correct output.
+    /// </summary>
+    internal IReadOnlyCollection<string> SamplerArraysFromCombinedSamplers { get; init; } = [];
+
+    /// <summary>
     /// Returns a copy with <see cref="Target"/> replaced by <paramref name="graphicsTarget"/>,
     /// preserving every other setting. The pipeline uses this to apply a
     /// <see cref="CapabilityProfile.GraphicsTarget"/> (a profile fully specifies its output
     /// backend, so a set <see cref="Profile"/> determines the backend).
     /// </summary>
-    public CompilerOptions WithGraphicsTarget(PlatformTarget graphicsTarget) => new()
+    public CompilerOptions WithGraphicsTarget(PlatformTarget graphicsTarget) =>
+        Copy(graphicsTarget, SamplerArraysFromCombinedSamplers);
+
+    /// <summary>
+    /// Returns a copy with <see cref="SamplerArraysFromCombinedSamplers"/> replaced, preserving every
+    /// other setting (the real-slangc route's seam; see that property).
+    /// </summary>
+    internal CompilerOptions WithSamplerArraysFromCombinedSamplers(IReadOnlyCollection<string> names) =>
+        Copy(Target, names);
+
+    private CompilerOptions Copy(PlatformTarget target, IReadOnlyCollection<string> samplerArraysFromCombinedSamplers) => new()
     {
-        Target                 = graphicsTarget,
+        Target                 = target,
         Profile                = Profile,
         IncludeResolver        = IncludeResolver,
         AdditionalIncludePaths = AdditionalIncludePaths,
@@ -160,5 +182,6 @@ public sealed class CompilerOptions
         // ValidateAsync (which calls this per target) reported on a different source than
         // CompileAsync would produce. A round-trip test pins this.
         Defines                = Defines,
+        SamplerArraysFromCombinedSamplers = samplerArraysFromCombinedSamplers,
     };
 }

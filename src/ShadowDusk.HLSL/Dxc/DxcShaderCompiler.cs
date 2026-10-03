@@ -156,6 +156,15 @@ public sealed class DxcShaderCompiler : IDxcShaderCompiler, IDisposable
         if (NativeError(request.SourceFileName, usesValidator) is { } loadError)
             return Result<PlatformBlob, ShaderError>.Fail(loadError);
 
+        // A SPIR-V compile with debug information loads libdxcompiler by LEAF name from inside
+        // DXC to read the source for OpSource (issue #332). Refused (SD0223) when the dynamic
+        // linker would hand that load anything but the pinned build; no other request makes it.
+        if (DxcLeafNameLookup.CompileReadsSourceThroughLeafNameLoad(arguments)
+            && DxcLoader.CheckDebugSpirvLookup() is { } lookupError)
+        {
+            return Result<PlatformBlob, ShaderError>.Fail(lookupError with { File = request.SourceFileName ?? "" });
+        }
+
         // Raw vtable call instead of Vortice's IDxcCompiler3.Compile(string, string[], ...):
         // Vortice marshals the LPCWSTR* argument array as UTF-16 on every OS, but DXC's
         // non-Windows builds use the native 4-byte wchar_t — on Linux/macOS the compiler

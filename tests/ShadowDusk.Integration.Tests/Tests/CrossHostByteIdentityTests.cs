@@ -146,6 +146,13 @@ public sealed class CrossHostByteIdentityTests
         // this entry: browser-vkd3d-gate.mjs compiles it through the real browser host
         // against this manifest. Do not drop it from the DirectX arm.
         "Sm3SemanticStructs.fx",
+        // Issue #335: a shader that COMPILES with a non-fatal compiler diagnostic (a float4
+        // assigned to a float3: vkd3d W5300 on DirectX and FNA, DXC's -Wconversion on
+        // OpenGL). The one corpus fixture whose warnings-manifest.json entries are
+        // non-empty, so a host that drops a compiler's warnings on success (the browser
+        // vkd3d host did) cannot match them: browser-vkd3d-gate.mjs compiles it through the
+        // real browser host against that manifest. Do not drop it from any arm.
+        "ImplicitTruncationWarning.fx",
     ];
 
     /// <summary>
@@ -248,10 +255,16 @@ public sealed class CrossHostByteIdentityTests
         CancellationToken ct)
     {
         var actual = new SortedDictionary<string, string>(StringComparer.Ordinal);
+        var actualWarnings = new SortedDictionary<string, string[]>(StringComparer.Ordinal);
         foreach (string fx in fixtures)
         {
-            byte[] bytes = await CompileAsync(fx, target, ct);
-            actual[$"{targetKey}/{fx}"] = Convert.ToHexString(SHA256.HashData(bytes)).ToLowerInvariant();
+            CompiledShader compiled = await CompileShaderAsync(fx, target, ct);
+            actual[$"{targetKey}/{fx}"] = Convert.ToHexString(SHA256.HashData(compiled.Data)).ToLowerInvariant();
+            // The compiler's non-fatal diagnostics are part of the cross-host contract too
+            // (issue #335): one committed list per fixture x target, in the same canonical
+            // text the sample's test hook prints, so the real-browser gate can compare its
+            // CompiledShader.Warnings against the desktop's.
+            actualWarnings[$"{targetKey}/{fx}"] = compiled.Warnings.Select(w => w.FxcFormattedMessage).ToArray();
         }
 
         if (RegenerateRequested)
@@ -273,6 +286,7 @@ public sealed class CrossHostByteIdentityTests
                     "regenerating here would commit per-OS hashes and destroy the cross-host assertion.");
 
             RegenerateManifestSection(targetKey, actual);
+            RegenerateWarningsManifestSection(targetKey, actualWarnings);
             return;
         }
 
@@ -303,9 +317,44 @@ public sealed class CrossHostByteIdentityTests
                      $"output legitimately changed, regenerate via {RegenerateEnvVar}=1 on " +
                      "win-x64 and review the manifest diff. Discrepancies:\n" +
                      string.Join("\n", discrepancies));
+
+        // The warnings, the same way (issue #335): every key of this target must be in the
+        // committed warnings manifest with the identical list, and the corpus must carry at
+        // least one non-empty list, or a host that drops warnings on success would match it.
+        IReadOnlyDictionary<string, string[]> warningsManifest = LoadCommittedWarningsManifest();
+        var expectedWarnings = warningsManifest
+            .Where(kv => kv.Key.StartsWith(targetKey + "/", StringComparison.Ordinal))
+            .ToDictionary(kv => kv.Key, kv => kv.Value, StringComparer.Ordinal);
+        var warningDiscrepancies = new List<string>();
+        foreach ((string key, string[] expectedList) in expectedWarnings.OrderBy(kv => kv.Key, StringComparer.Ordinal))
+        {
+            if (!actualWarnings.TryGetValue(key, out string[]? actualList))
+                warningDiscrepancies.Add($"MISSING   {key}: the warnings manifest has an entry but the corpus no longer produces it");
+            else if (!actualList.SequenceEqual(expectedList, StringComparer.Ordinal))
+                warningDiscrepancies.Add($"MISMATCH  {key}: manifest(win-x64)=[{string.Join(" | ", expectedList)}] this-host=[{string.Join(" | ", actualList)}]");
+        }
+        foreach (string key in actualWarnings.Keys.Where(k => !expectedWarnings.ContainsKey(k)))
+            warningDiscrepancies.Add($"UNTRACKED {key}: compiled with [{string.Join(" | ", actualWarnings[key])}] but the committed warnings manifest has no entry");
+
+        warningDiscrepancies.ShouldBeEmpty($"every '{targetKey}' CompiledShader.Warnings list on {RuntimeInformation.OSDescription} " +
+                     $"({RuntimeInformation.OSArchitecture}) must equal the committed win-x64 warnings manifest " +
+                     "(issue #335: a compiler's non-fatal diagnostics are part of the cross-host contract, exactly like " +
+                     $"the bytes). If the compiler's warnings legitimately changed, regenerate via {RegenerateEnvVar}=1 on " +
+                     "win-x64 and review the manifest diff. Discrepancies:\n" +
+                     string.Join("\n", warningDiscrepancies));
+        actualWarnings.Values.ShouldContain(list => list.Length > 0,
+            $"the '{targetKey}' corpus must carry at least one warning-bearing compile (ImplicitTruncationWarning.fx), " +
+            "or this check and the real-browser gate could never notice a host that drops warnings on success (issue #335)");
     }
 
     private static async Task<byte[]> CompileAsync(
+        string fx,
+        PlatformTarget target,
+        CancellationToken ct,
+        string? sourceFileNameOverride = null) =>
+        (await CompileShaderAsync(fx, target, ct, sourceFileNameOverride)).Data;
+
+    private static async Task<CompiledShader> CompileShaderAsync(
         string fx,
         PlatformTarget target,
         CancellationToken ct,
@@ -334,7 +383,7 @@ public sealed class CrossHostByteIdentityTests
         result.IsSuccess.ShouldBeTrue($"'{fx}' for {target} is in the byte-identity corpus and must compile; " +
                      $"errors: {(result.IsFailure ? string.Join(" | ", result.Error.Select(e => $"{e.Code}: {e.Message}")) : "<none>")}");
 
-        return result.Value.Data;
+        return result.Value;
     }
 
     // -------------------------------------------------------------------------
@@ -343,6 +392,43 @@ public sealed class CrossHostByteIdentityTests
 
     private static string CopiedManifestPath =>
         Path.Combine(AppContext.BaseDirectory, "fixtures", "golden", "byte-identity", "manifest.json");
+
+    private static string CopiedWarningsManifestPath =>
+        Path.Combine(AppContext.BaseDirectory, "fixtures", "golden", "byte-identity", "warnings-manifest.json");
+
+    private static IReadOnlyDictionary<string, string[]> LoadCommittedWarningsManifest()
+    {
+        File.Exists(CopiedWarningsManifestPath).ShouldBeTrue($"the committed warnings manifest must be copied to test output at '{CopiedWarningsManifestPath}' " +
+                     "(the csproj copies tests/fixtures/golden/byte-identity/**)");
+        return JsonSerializer.Deserialize<Dictionary<string, string[]>>(
+                   File.ReadAllText(CopiedWarningsManifestPath))
+               ?? throw new InvalidOperationException("warnings manifest deserialized to null");
+    }
+
+    /// <summary>
+    /// The warnings twin of <see cref="RegenerateManifestSection"/>: replaces this target's
+    /// section of <c>warnings-manifest.json</c> in the source tree, preserving the other
+    /// targets' entries. One list per fixture x target, each line a <see cref="ShaderError.FxcFormattedMessage"/>.
+    /// </summary>
+    private static void RegenerateWarningsManifestSection(string targetKey, SortedDictionary<string, string[]> entries)
+    {
+        string manifestPath = Path.Combine(
+            FindRepoRoot(), "tests", "fixtures", "golden", "byte-identity", "warnings-manifest.json");
+
+        var merged = new SortedDictionary<string, string[]>(
+            (File.Exists(manifestPath)
+                ? JsonSerializer.Deserialize<Dictionary<string, string[]>>(File.ReadAllText(manifestPath))
+                : null) ?? new Dictionary<string, string[]>(),
+            StringComparer.Ordinal);
+
+        foreach (string stale in merged.Keys.Where(k => k.StartsWith(targetKey + "/", StringComparison.Ordinal)).ToList())
+            merged.Remove(stale);
+        foreach ((string key, string[] warnings) in entries)
+            merged[key] = warnings;
+
+        string json = JsonSerializer.Serialize(merged, new JsonSerializerOptions { WriteIndented = true });
+        File.WriteAllText(manifestPath, json.ReplaceLineEndings("\n") + "\n", new UTF8Encoding(false));
+    }
 
     private static IReadOnlyDictionary<string, string> LoadCommittedManifest()
     {

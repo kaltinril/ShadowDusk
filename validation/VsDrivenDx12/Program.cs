@@ -21,15 +21,16 @@ using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using Microsoft.Xna.Framework;
+using Microsoft.Xna.Framework.Graphics;
 using ShadowDusk.Compiler;
 using ShadowDusk.Core;
 using ShadowDusk.Core.Preprocessor;
 using ShadowDusk.Validation.Dx;
 
 string mode = args.Length > 0 ? args[0].Trim().ToLowerInvariant() : "vs";
-if (mode is not ("vs" or "apos"))
+if (mode is not ("vs" or "apos" or "texarr" or "samparr"))
 {
-    Console.Error.WriteLine($"unknown mode '{mode}' — expected 'vs' or 'apos'");
+    Console.Error.WriteLine($"unknown mode '{mode}' — expected 'vs', 'apos', 'texarr' or 'samparr'");
     return 2;
 }
 
@@ -37,8 +38,248 @@ string repoRoot = FindRepoRoot();
 
 if (mode == "vs")
     return await RunVsPhase();
+if (mode == "texarr")
+    return await RunTextureArrayPhase();
+if (mode == "samparr")
+    return await RunSamplerArrayPhase(args.Length > 1 ? args[1] : null);
 
 return await RunAposPhase();
+
+// ---------------------------------------------------------------------------------------
+// mode "texarr" - issue #324: an ARRAY of textures (`Texture2D Tex[2]`, one SamplerState,
+// explicit registers; tests/fixtures/shaders/texture-arrays/TextureArray2.fx) on real
+// MonoGame 3.8.5 WindowsDX12, ShadowDusk vs the real mgfxc 3.8.5 /Profile:DirectX_12 golden.
+//
+// What mgfxc puts in the table (measured 2026-10-02, the same for 1, 2 and 4 elements with
+// or without a register): ONE Object parameter `Tex`, ONE sampler record binding slot 0 to
+// it, header maxTextureSlot 0. So `effect.Parameters["Tex"]` reaches element [0] only; a
+// game binds the other elements through `GraphicsDevice.Textures[i]`, which is what this
+// mode does for element [1] (a flat green texture). The arms:
+//   baseline  = the committed mgfxc golden, tests/fixtures/golden/DirectX_12/TextureArray2.mgfx
+//   candidate = ShadowDusk's in-memory DirectX12 compile of the same .fx
+// Verdict: (1) the candidate's parameter table, sampler records (type, slots, parameter;
+// the record NAME is the known pre-existing DX12 divergence, mgfxc's HLSL sampler name vs
+// ShadowDusk's positional ps_s{slot}) and DX12 header equal the golden's; (2) both arms load
+// and draw; (3) the two renders match (tolerance 1). Reported, not asserted: (4) the candidate
+// against the CPU expectation of the shader's math with element [1] green, (cat + green) / 2.
+// MEASURED 2026-10-02 (RTX 3080): maxd 128, i.e. element [1] reads as ZERO for BOTH compilers'
+// effects, because the header sizes the descriptor range for one texture (maxTextureSlot 0),
+// so GraphicsDevice.Textures[1] never reaches the shader. That is the reference compiler's
+// behavior too, which is why ShadowDusk keeps the table and warns (SD0222) instead of
+// changing the output; the number is printed so a change in MonoGame's runtime shows up here.
+// ---------------------------------------------------------------------------------------
+async Task<int> RunTextureArrayPhase()
+{
+const string TexArrFixture = "TextureArray2";
+string fxPath     = Path.Combine(repoRoot, "tests", "fixtures", "shaders", "texture-arrays", TexArrFixture + ".fx");
+string goldenPath = Path.Combine(repoRoot, "tests", "fixtures", "golden", "DirectX_12", TexArrFixture + ".mgfx");
+string catPath    = Path.Combine(repoRoot, "samples", "ShaderViewer", "Content", "cat.jpg");
+string outDir     = Path.Combine(repoRoot, "validation", "output", "texarr-dx12");
+
+Console.WriteLine($"[texarr-dx12] fixture: {fxPath}");
+Console.WriteLine($"[texarr-dx12] golden:  {goldenPath}");
+
+var compiler = new EffectCompiler();
+var r = await compiler.CompileAsync(await File.ReadAllTextAsync(fxPath), new CompilerOptions
+{
+    Target = PlatformTarget.DirectX12,
+    IncludeResolver = new FileSystemIncludeResolver(),
+    SourceFileName = fxPath,
+});
+byte[]? candidateBytes = r.IsFailure ? null : r.Value.Data;
+string? candidateErr = r.IsFailure ? string.Join(" | ", r.Error.Select(e => $"{e.Code}: {e.Message}")) : null;
+byte[]? baselineBytes = File.Exists(goldenPath) ? await File.ReadAllBytesAsync(goldenPath) : null;
+string? baselineErr = baselineBytes is null ? $"golden not found: {goldenPath}" : null;
+
+Console.WriteLine($"[texarr-dx12] baseline:  {(baselineBytes is null ? baselineErr : baselineBytes.Length + " bytes")}");
+Console.WriteLine($"[texarr-dx12] candidate: {(candidateBytes is null ? "COMPILE FAIL: " + candidateErr : candidateBytes.Length + " bytes")}\n");
+if (candidateBytes is not null)
+{
+    Directory.CreateDirectory(outDir);
+    await File.WriteAllBytesAsync(Path.Combine(outDir, TexArrFixture + ".candidate.mgfx"), candidateBytes);
+}
+
+// (1) The table, record for record, against the reference compiler's.
+bool tableOk = false;
+if (baselineBytes is not null && candidateBytes is not null)
+{
+    var golden  = ShadowDusk.Integration.Tests.MgfxBlobReader.Parse(baselineBytes);
+    var subject = ShadowDusk.Integration.Tests.MgfxBlobReader.Parse(candidateBytes);
+    string Params(ShadowDusk.Integration.Tests.MgfxBlobReader e) => string.Join("; ",
+        e.Parameters.Select(p => $"{p.Name} class={p.Class} type={p.Type} {p.Rows}x{p.Columns} elems={p.ElementCount}"));
+    string Records(ShadowDusk.Integration.Tests.MgfxBlobReader e) => string.Join("; ",
+        e.Samplers.Select(s => $"sh{s.ShaderIndex} type={s.Type} t{s.TextureSlot} s{s.SamplerSlot} ->param {s.Parameter} state={(s.State is null ? "none" : "baked")}"));
+    string Header(ShadowDusk.Integration.Tests.MgfxBlobReader e)
+    {
+        var h = ShadowDusk.Integration.Tests.DirectX12ShaderCodeReader.Parse(e.Shaders.Single().Bytecode);
+        return $"maxTextureSlot={h.TextureMaxSlot} maxSamplerSlot={h.SamplerMaxSlot}";
+    }
+    Console.WriteLine($"[texarr-dx12] golden    params: {Params(golden)} | records: {Records(golden)} | {Header(golden)}");
+    Console.WriteLine($"[texarr-dx12] candidate params: {Params(subject)} | records: {Records(subject)} | {Header(subject)}");
+    tableOk = Params(golden) == Params(subject) && Records(golden) == Records(subject) && Header(golden) == Header(subject);
+    Console.WriteLine($"[texarr-dx12] table equals mgfxc's: {(tableOk ? "YES" : "NO")}\n");
+}
+
+// (2) Both arms in the real engine, identical draw path.
+Texture2D? green = null;
+Color[]? catPixels = null;
+void SetParams(Effect effect, Texture2D cat)
+{
+    if (catPixels is null)
+    {
+        // The cat as the draw sees it (the renderer draws it 1:1 into a target of its own size).
+        catPixels = new Color[cat.Width * cat.Height];
+        cat.GetData(catPixels);
+    }
+    var tex = effect.Parameters["Tex"];
+    Console.WriteLine($"  [texarr-dx12] Parameters[\"Tex\"] {(tex is null ? "MISSING" : $"present, Elements.Count={tex.Elements.Count}")}; " +
+                      $"all parameters: {string.Join(", ", Enumerable.Range(0, effect.Parameters.Count).Select(i => effect.Parameters[i].Name))}");
+    tex?.SetValue(cat);
+    for (int i = 0; i < (tex?.Elements.Count ?? 0); i++)
+        tex!.Elements[i].SetValue(cat);
+    green ??= Flat(effect.GraphicsDevice, new Color(0, 255, 0, 255));
+    // Element [1] is reachable only through the device's texture slots (mgfxc's table has no
+    // parameter for it); the shader averages [0] and [1].
+    effect.GraphicsDevice.Textures[1] = green;
+}
+
+var jobs = new List<ShaderJob>
+{
+    new("baseline-mgfxc", baselineBytes, baselineErr),
+    new("candidate-sd", candidateBytes, candidateErr),
+};
+using var game = new DxEffectImageRenderer(catPath, outDir, jobs, SetParams);
+game.Run();
+
+Console.WriteLine("[texarr-dx12] load + render results:");
+foreach (var o in game.Outcomes)
+    Console.WriteLine($"  [{(o is { Loaded: true, Rendered: true } ? "OK  " : "FAIL")}] {o.Name,-16} {o.Error ?? o.PngPath}");
+
+var caps = game.Captures.ToDictionary(c => c.Name, c => c);
+bool both = caps.ContainsKey("baseline-mgfxc") && caps.ContainsKey("candidate-sd");
+int maxd = both ? MaxDelta(caps["baseline-mgfxc"], caps["candidate-sd"]) : int.MaxValue;
+
+// (4) The CPU expectation: (cat + green) / 2 per channel, alpha (255 + 255) / 2.
+int cpuMaxd = int.MaxValue;
+if (caps.TryGetValue("candidate-sd", out var cand) && catPixels is { } cat && cat.Length == cand.Pixels.Length)
+{
+    cpuMaxd = 0;
+    for (int i = 0; i < cand.Pixels.Length; i++)
+    {
+        var e = new Color((cat[i].R + 0) / 2, (cat[i].G + 255) / 2, (cat[i].B + 0) / 2, 255);
+        cpuMaxd = Math.Max(cpuMaxd, Math.Max(Math.Max(Math.Abs(e.R - cand.Pixels[i].R), Math.Abs(e.G - cand.Pixels[i].G)),
+                                             Math.Max(Math.Abs(e.B - cand.Pixels[i].B), Math.Abs(e.A - cand.Pixels[i].A))));
+    }
+}
+
+Console.WriteLine();
+Console.WriteLine($"[texarr-dx12] baseline-vs-candidate maxd: {(maxd == int.MaxValue ? "n/a" : maxd)} (tol 1)");
+Console.WriteLine($"[texarr-dx12] candidate vs CPU (cat + green) / 2 maxd: {(cpuMaxd == int.MaxValue ? "n/a" : cpuMaxd)} " +
+                  $"(informational: element [1] through GraphicsDevice.Textures[1] is {(cpuMaxd <= 2 ? "READ" : "NOT read, as measured for mgfxc's own build; SD0222 tells the consumer")})");
+if (r.IsSuccess)
+{
+    foreach (var w in r.Value.Warnings)
+        Console.WriteLine($"[texarr-dx12] candidate warning {w.Code} {Path.GetFileName(w.File)}({w.Line},{w.Column}): {w.Message[..Math.Min(160, w.Message.Length)]}...");
+}
+
+bool pass = tableOk && both && maxd <= 1;
+Console.WriteLine($"\n[texarr-dx12] {(pass ? "PASS" : "FAIL")}: table {(tableOk ? "equal" : "DIFFERS")}, load+render {(both ? "2/2" : "<2")}, " +
+                  $"pixel-match vs golden {(maxd <= 1 ? "OK" : "DIVERGED")}.");
+return pass ? 0 : 1;
+}
+
+static Texture2D Flat(Microsoft.Xna.Framework.Graphics.GraphicsDevice device, Color color)
+{
+    var t = new Texture2D(device, 1, 1);
+    t.SetData(new[] { color });
+    return t;
+}
+
+// ---------------------------------------------------------------------------------------
+// mode "samparr" - issue #340: an ARRAY of samplers (`SamplerState Samplers[2]`, one per
+// texture; tests/fixtures/shaders/texture-arrays/SamplerArray2.fx). Real mgfxc 3.8.4.1 and
+// 3.8.5 refuse the shape on EVERY profile in their own parser ("SamplerArray2.fx(31,22) :
+// Unexpected token '[' found. Expected Semicolon, Comma, or CloseParenthesis."), so there is
+// no reference effect to render against and the gate is the refusal itself: ShadowDusk's
+// DirectX12 compile must FAIL with SD0224 naming `Samplers` at the declaration (31,14). Red
+// before the fix (it compiled, one record for slot 0, with the SD0222 warning).
+//
+// Optional evidence arm: a prebuilt .mgfx on the command line (a pre-fix build's DirectX_12
+// output) is loaded into the real WindowsDX12 engine and drawn with TexA = cat, TexB = flat
+// green, so what the refused shape used to do in this engine is on record. Informational.
+// The DirectX 11 twin is validation/VsDrivenDx -- samparr.
+// ---------------------------------------------------------------------------------------
+async Task<int> RunSamplerArrayPhase(string? evidenceFile)
+{
+const string SampArrFixture = "SamplerArray2";
+string fxPath  = Path.Combine(repoRoot, "tests", "fixtures", "shaders", "texture-arrays", SampArrFixture + ".fx");
+string catPath = Path.Combine(repoRoot, "samples", "ShaderViewer", "Content", "cat.jpg");
+string outDir  = Path.Combine(repoRoot, "validation", "output", "samparr-dx12");
+Console.WriteLine($"[samparr-dx12] fixture: {fxPath}");
+
+var r = await new EffectCompiler().CompileAsync(await File.ReadAllTextAsync(fxPath), new CompilerOptions
+{
+    Target = PlatformTarget.DirectX12,
+    IncludeResolver = new FileSystemIncludeResolver(),
+    SourceFileName = fxPath,
+});
+bool pass;
+if (r.IsSuccess)
+{
+    Console.WriteLine($"[samparr-dx12] DirectX12: COMPILED ({r.Value.Data.Length} bytes) -> FAIL: mgfxc refuses this shape, so must ShadowDusk");
+    pass = false;
+}
+else
+{
+    ShaderError? e = r.Error.FirstOrDefault(x => x.Code == "SD0224");
+    pass = e is not null && Path.GetFileName(e.File) == SampArrFixture + ".fx" && e.Line == 31 && e.Column == 14 && e.Message.Contains("'Samplers'", StringComparison.Ordinal);
+    Console.WriteLine($"[samparr-dx12] DirectX12: refused with {string.Join(", ", r.Error.Select(x => $"{x.Code} {Path.GetFileName(x.File)}({x.Line},{x.Column})"))} -> {(pass ? "PASS" : "FAIL")} (expected SD0224 at SamplerArray2.fx(31,14) naming 'Samplers')");
+    if (e is not null)
+        Console.WriteLine($"  {e.Message}");
+}
+
+if (evidenceFile is not null)
+{
+    Console.WriteLine($"\n[samparr-dx12] evidence: loading prebuilt {evidenceFile} into real WindowsDX12 (informational)");
+    byte[]? bytes = File.Exists(evidenceFile) ? await File.ReadAllBytesAsync(evidenceFile) : null;
+    if (bytes is not null)
+    {
+        var reader = ShadowDusk.Integration.Tests.MgfxBlobReader.Parse(bytes);
+        Console.WriteLine($"  params: {string.Join("; ", reader.Parameters.Select(p => $"{p.Name} class={p.Class} type={p.Type}"))} | " +
+                          $"records: {string.Join("; ", reader.Samplers.Select(s => $"sh{s.ShaderIndex} t{s.TextureSlot} s{s.SamplerSlot} name='{s.Name}' ->param {s.Parameter}"))}");
+    }
+    Texture2D? green = null;
+    Color[]? catPixels = null;
+    void SetParams(Effect effect, Texture2D cat)
+    {
+        if (catPixels is null) { catPixels = new Color[cat.Width * cat.Height]; cat.GetData(catPixels); }
+        Console.WriteLine($"  parameters: {string.Join(", ", Enumerable.Range(0, effect.Parameters.Count).Select(i => effect.Parameters[i].Name))}");
+        effect.Parameters["TexA"]?.SetValue(cat);
+        green ??= Flat(effect.GraphicsDevice, new Color(0, 255, 0, 255));
+        effect.Parameters["TexB"]?.SetValue(green);
+    }
+    using var game = new DxEffectImageRenderer(catPath, outDir, new List<ShaderJob> { new("evidence-prebuilt", bytes, bytes is null ? $"not found: {evidenceFile}" : null) }, SetParams);
+    game.Run();
+    foreach (var o in game.Outcomes)
+        Console.WriteLine($"  [{(o is { Loaded: true, Rendered: true } ? "OK  " : "FAIL")}] {o.Name,-16} {o.Error ?? o.PngPath}");
+    var cap = game.Captures.FirstOrDefault();
+    if (cap.Pixels is not null && catPixels is { } cat && cat.Length == cap.Pixels.Length)
+    {
+        int cpuMaxd = 0;
+        for (int i = 0; i < cap.Pixels.Length; i++)
+        {
+            var e = new Color((cat[i].R + 0) / 2, (cat[i].G + 255) / 2, (cat[i].B + 0) / 2, 255);
+            cpuMaxd = Math.Max(cpuMaxd, Math.Max(Math.Max(Math.Abs(e.R - cap.Pixels[i].R), Math.Abs(e.G - cap.Pixels[i].G)),
+                                                 Math.Max(Math.Abs(e.B - cap.Pixels[i].B), Math.Abs(e.A - cap.Pixels[i].A))));
+        }
+        Console.WriteLine($"  evidence vs CPU (cat + green) / 2: maxd={cpuMaxd} (both textures {(cpuMaxd <= 2 ? "sampled" : "NOT both sampled")})");
+    }
+}
+
+Console.WriteLine($"\n[samparr-dx12] {(pass ? "PASS" : "FAIL")}: SD0224 refusal on DirectX 12 {(pass ? "as mgfxc's own parser refuses the shape" : "MISSING")}.");
+return pass ? 0 : 1;
+}
+
 
 // ---------------------------------------------------------------------------------------
 // mode "vs" - the simple VS rig (POSITION/COLOR/TEXCOORD + a float4x4), vs the real mgfxc

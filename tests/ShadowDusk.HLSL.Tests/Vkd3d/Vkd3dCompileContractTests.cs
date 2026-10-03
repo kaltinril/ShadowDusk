@@ -186,6 +186,98 @@ public sealed class Vkd3dCompileContractTests
     }
 
     // -------------------------------------------------------------------------
+    // Source preparation — ONE text per request, for every host (issue #319)
+    // -------------------------------------------------------------------------
+
+    /// <summary>
+    /// What the real pipeline hands the backends for an effect with an include: the macro
+    /// prelude (ending in a <c>#line 1</c> back to the main file), the main file, and the
+    /// include flattener's <c>#line 1 "&lt;include&gt;"</c> / <c>#line N "&lt;main&gt;"</c> pair
+    /// around the included text (the exact shapes <c>MacroSet.ToTextPrepend</c> and
+    /// <c>Preprocessor.FlattenFile</c> emit).
+    /// </summary>
+    private const string FlattenedWithInclude =
+        "#line 1 \"MinimalWithInclude.fx\"\n" +
+        "\n" +
+        "// ShadowDusk platform macros — DO NOT EDIT (generated)\n" +
+        "#define MGFX 1\n" +
+        "#define HLSL 1\n" +
+        "#define SM4 1\n" +
+        "#line 1 \"MinimalWithInclude.fx\"\n" +
+        "// MinimalWithInclude.fx\n" +
+        "\n" +
+        "#line 1 \"includes/TestHelper.fxh\"\n" +
+        "float4 ApplyIdentity(float4 value) { return value; }\n" +
+        "#line 4 \"MinimalWithInclude.fx\"\n" +
+        "float4 PS(float4 c : COLOR0) : SV_TARGET { return ApplyIdentity(c); }\n";
+
+    private const string FlattenedWithIncludePrepared =
+        "\n" +
+        "\n" +
+        "// ShadowDusk platform macros — DO NOT EDIT (generated)\n" +
+        "#define MGFX 1\n" +
+        "#define HLSL 1\n" +
+        "#define SM4 1\n" +
+        "\n" +
+        "// MinimalWithInclude.fx\n" +
+        "\n" +
+        "\n" +
+        "float4 ApplyIdentity(float4 value) { return value; }\n" +
+        "\n" +
+        "float4 PS(float4 c : COLOR0) : SV_TARGET { return ApplyIdentity(c); }\n";
+
+    [Fact]
+    public void PrepareSource_BlanksEveryLineDirective_AndKeepsEveryOtherLine_ForAnIncludeFlattenedEffect()
+    {
+        // The desktop backend marshals PrepareSource(HlslSource) and the browser backend sends
+        // PrepareSource(HlslSource) through its shim: this literal IS the text both hosts hand
+        // vkd3d for an include-carrying effect. The directive lines become EMPTY lines (never
+        // deleted), so vkd3d's line numbers stay those of the directive-carrying text and
+        // Vkd3dSourceLocator can map them back through the directives (issue #202).
+        string prepared = Vkd3dCompileContract.PrepareSource(FlattenedWithInclude);
+
+        prepared.ShouldBe(FlattenedWithIncludePrepared);
+        prepared.Split('\n').Length.ShouldBe(FlattenedWithInclude.Split('\n').Length, "blanking must not move a line");
+        prepared.ShouldNotContain("#line", Case.Sensitive, "vkd3d prints a fixme per #line directive it is shown (issue #319)");
+        prepared.ShouldContain("#define MGFX 1", Case.Sensitive, "only #line goes; every other directive is vkd3d's to see");
+    }
+
+    [Theory]
+    [InlineData("#line 1 \"user.fx\"\nfloat x;\n",            "\nfloat x;\n")]       // the prelude's form
+    [InlineData("#line 42\nfloat x;\n",                        "\nfloat x;\n")]       // no file name
+    [InlineData("  #  line 7 \"a b/c.fxh\"\nfloat x;\n",        "\nfloat x;\n")]       // spaces, a path with a space
+    [InlineData("\t#line 3 \"u.fx\" // tail\nfloat x;\n",       "\nfloat x;\n")]       // tab indent, trailing comment
+    [InlineData("float x;\n#line 2 \"u.fx\"",                   "float x;\n")]         // last line, no newline after it
+    // CRLF text: the directive's CR goes with the directive (the pattern runs to the LF), the LF
+    // stays, so the line count holds. This is the desktop's long-standing behavior, pinned so a
+    // "tidier" rewrite cannot move a byte of what vkd3d is handed.
+    [InlineData("#line 1 \"u.fx\"\r\nfloat x;\r\n",             "\nfloat x;\r\n")]
+    public void PrepareSource_BlanksTheWholeDirectiveLine_InEveryShapeTheFlattenerAndAuthorsWrite(string source, string expected)
+    {
+        Vkd3dCompileContract.PrepareSource(source).ShouldBe(expected);
+    }
+
+    [Theory]
+    [InlineData("#define LINE 1\n")]            // not #line
+    [InlineData("#linefoo 1\n")]                // \b: 'line' must be a whole word
+    [InlineData("// #line 5 \"c.fx\"\n")]       // not at the start of the line (a comment)
+    [InlineData("float line = 1; // #line\n")]  // the word in code
+    [InlineData("#pragma once\n#if X\n#endif\n")]
+    public void PrepareSource_LeavesEverythingThatIsNotALineDirective(string source)
+    {
+        Vkd3dCompileContract.PrepareSource(source).ShouldBe(source);
+    }
+
+    [Fact]
+    public void PrepareSource_IsIdempotent_AndEmptyIsEmpty()
+    {
+        string once = Vkd3dCompileContract.PrepareSource(FlattenedWithInclude);
+
+        Vkd3dCompileContract.PrepareSource(once).ShouldBe(once);
+        Vkd3dCompileContract.PrepareSource(string.Empty).ShouldBe(string.Empty);
+    }
+
+    // -------------------------------------------------------------------------
     // Error mapping — verbatim diagnostics first, SD0212 fallback
     // -------------------------------------------------------------------------
 
@@ -224,5 +316,51 @@ public sealed class Vkd3dCompileContractTests
         // The reformatter wraps unmatched text as a raw-diagnostics error — the text
         // must remain reachable (constraint 5), whatever the wrapper shape.
         error.RawDiagnostics!.ShouldContain(messages, Case.Sensitive);
+    }
+
+    // -------------------------------------------------------------------------
+    // Warning mapping (issue #335) — a SUCCESSFUL compile's message text, both hosts
+    // -------------------------------------------------------------------------
+
+    [Fact]
+    public void MapCompileWarnings_ParsesVkd3dsOwnWarningLine_Verbatim()
+    {
+        // Exactly what vkd3d 2.1 writes for a float4 assigned to a float3 (measured).
+        const string messages = "user.fx:47:12: W5300: Implicit truncation of vector type.\n";
+
+        IReadOnlyList<ShaderError> warnings = Vkd3dCompileContract.MapCompileWarnings(messages, "user.fx");
+
+        warnings.Count.ShouldBe(1);
+        warnings[0].Severity.ShouldBe(ShaderErrorSeverity.Warning);
+        warnings[0].Code.ShouldBe("W5300");
+        warnings[0].Message.ShouldBe("Implicit truncation of vector type.", customMessage: "constraint 5: vkd3d's text, verbatim");
+        warnings[0].File.ShouldBe("user.fx");
+        warnings[0].Line.ShouldBe(47, customMessage: "vkd3d's OWN coordinates; the caller relocates them (Vkd3dSourceLocator)");
+        warnings[0].Column.ShouldBe(12);
+    }
+
+    [Theory]
+    [InlineData(null)]
+    [InlineData("")]
+    [InlineData("   \n")]
+    public void MapCompileWarnings_NothingSaid_IsNoWarning(string? messages)
+    {
+        Vkd3dCompileContract.MapCompileWarnings(messages, "user.fx").ShouldBeEmpty(
+            "a silent success has no warnings on either host; '' is what the shim and the P/Invoke both hand over for a NULL buffer");
+    }
+
+    [Fact]
+    public void MapCompileWarnings_ErrorSeverityTextOnASuccess_IsNormalizedToWarning_TextKept()
+    {
+        // A successful compile cannot carry an error; whatever vkd3d spelled, the entry is a
+        // warning, with every character of the message kept.
+        IReadOnlyList<ShaderError> warnings = Vkd3dCompileContract.MapCompileWarnings(
+            "user.fx:3:5: error: something vkd3d chose to call an error\nuser.fx:9:1: W5302: Unrecognized attribute 'foo'.", "user.fx");
+
+        warnings.Count.ShouldBe(2);
+        warnings[0].Severity.ShouldBe(ShaderErrorSeverity.Warning);
+        warnings[0].Message.ShouldBe("something vkd3d chose to call an error");
+        warnings[1].Code.ShouldBe("W5302");
+        warnings[1].Message.ShouldBe("Unrecognized attribute 'foo'.");
     }
 }

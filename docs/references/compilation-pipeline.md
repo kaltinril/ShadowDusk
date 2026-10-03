@@ -285,6 +285,25 @@ WebAssembly module, whose wrapper forwards it untouched. The wrapper once carrie
 list, so a browser compile of a shader with `POSITION0` / `COLOR0` on struct fields differed from
 the desktop's (issue #295); `Sm3SemanticStructs.fx` is the corpus fixture that now catches that.
 
+**Every host hands vkd3d the same text.** Before either host calls vkd3d, the preprocessed
+source goes through `Vkd3dCompileContract.PrepareSource`, which blanks every `#line` directive
+line: vkd3d's preprocessor ignores the directive and prints a fixme to stderr (the browser
+console) for each one, and blanking rather than deleting keeps the line count so the source
+locator can map vkd3d's coordinates back through the directives. The browser host once handed
+vkd3d the directives and wrote one console line per directive on every DirectX or FNA compile
+(issue #319); the directives were measured to change no output byte and no diagnostic position.
+
+**Every host surfaces the same warnings.** vkd3d's message buffer is populated on a successful
+compile too (both hosts compile at `LOG_WARNING`): a `float4` assigned to a `float3` compiles with
+`W5300: Implicit truncation of vector type.` Each host hands that text to
+`Vkd3dCompileContract.MapCompileWarnings`, the one place it becomes warnings (verbatim, never
+fatal), and relocates them with the same source locator that moves a failure's diagnostic onto the
+author's line; the pipeline returns them as `CompiledShader.Warnings`. The browser shim once returned
+the bytecode alone and dropped the text on success, so a browser compile had the desktop's exact
+bytes and no warnings (issue #335); its `compile()` now returns the code and the text together, and
+`ImplicitTruncationWarning.fx` is the corpus fixture whose warnings the cross-host manifest and the
+browser gates compare.
+
 ### Stage 3c — the FNA fx_2_0 path
 
 **What it is.** A wholly separate path for `PlatformTarget.Fna`

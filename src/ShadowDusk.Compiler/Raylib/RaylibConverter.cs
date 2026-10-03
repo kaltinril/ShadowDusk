@@ -123,7 +123,47 @@ public static class RaylibConverter
             ]);
         }
 
-        IReadOnlyList<TechniqueInfo> techniques = parse.Value.Techniques;
+        Result<RaylibShader, ShaderError[]> first = ConvertCore(
+            fxSource, parse.Value, options, recovered: null, out bool shaderCompileFailed, cancellationToken);
+        if (first.IsSuccess || !shaderCompileFailed)
+            return first;
+
+        // Legacy-sampler recovery (issues #308, #327): the same one CompilationPipeline.Run uses.
+        // The DXC compile failed; if the text it was given still holds legacy D3D9 sampler syntax
+        // once preprocessed (a declaration in an #include'd file, or one that comes out of a
+        // macro, which the raw pre-parse cannot see), repeat the pre-parse on the PREPROCESSED
+        // source and convert from that. Only ever reached on a failure, so an effect that
+        // converts from its raw source is converted from exactly that source, as before.
+        LegacySamplerRecovery.Outcome outcome = LegacySamplerRecovery.Evaluate(
+            fxSource,
+            file,
+            PlatformMacros.For(PlatformTarget.OpenGL),
+            options.IncludeResolver ?? new FileSystemIncludeResolver(),
+            options.AdditionalIncludePaths);
+        return LegacySamplerRecovery.Apply(
+            first, outcome,
+            retry => ConvertCore(fxSource, retry.Parsed.Parsed, options, retry, out _, cancellationToken));
+    }
+
+    /// <summary>
+    /// One pass of the conversion over a pre-parse: the raw one (every conversion's first and
+    /// normally only pass), or, with <paramref name="recovered"/>, the pre-parse of the
+    /// preprocessed source (issue #308). <paramref name="shaderCompileFailed"/> is set when the
+    /// DXC compile (or the transpile behind it) is what failed on a first pass: the one failure
+    /// the recovery can be consulted for.
+    /// </summary>
+    private static Result<RaylibShader, ShaderError[]> ConvertCore(
+        string fxSource,
+        FxParseResult parsed,
+        RaylibConvertOptions options,
+        LegacySamplerRecovery.Outcome.Retry? recovered,
+        out bool shaderCompileFailed,
+        CancellationToken cancellationToken)
+    {
+        shaderCompileFailed = false;
+        string file = options.SourceName;
+
+        IReadOnlyList<TechniqueInfo> techniques = parsed.Techniques;
         if (techniques.Count == 0)
             return Fail(file, 0, 0, "SD0010", "Effect source contains no techniques.");
 
@@ -179,15 +219,28 @@ public static class RaylibConverter
                 "Remove it from the pass and set the equivalent state around the raylib draw.");
         }
 
-        var seam = ModernGlslSeam.CompilePixel(
-            parse.Value.StrippedHlsl,
-            pass.PixelEntryPoint,
-            file,
-            options.IncludeResolver,
-            options.AdditionalIncludePaths,
-            cancellationToken);
+        // A recovery's text already has its #includes inlined and its macros expanded (flattening
+        // it again would prepend the macro block a second time); a raw pre-parse is flattened here.
+        string compilerInput;
+        if (recovered is not null)
+        {
+            compilerInput = parsed.StrippedHlsl;
+        }
+        else
+        {
+            var flattened = ModernGlslSeam.Flatten(
+                parsed.StrippedHlsl, file, options.IncludeResolver, options.AdditionalIncludePaths);
+            if (flattened.IsFailure)
+                return Result<RaylibShader, ShaderError[]>.Fail([flattened.Error]);
+            compilerInput = flattened.Value.Text;
+        }
+
+        var seam = ModernGlslSeam.CompilePixel(compilerInput, pass.PixelEntryPoint, file, cancellationToken);
         if (seam.IsFailure)
+        {
+            shaderCompileFailed = recovered is null;
             return Result<RaylibShader, ShaderError[]>.Fail(seam.Error);
+        }
 
         // A wrong pair order would bind the draw call's texture to the wrong sampler, so an
         // unmodeled shape is fatal here (the SkSL converter can tolerate it; this one cannot).
@@ -199,14 +252,17 @@ public static class RaylibConverter
         // Reservations (issue #283) and a legacy sampler's explicit register (issue #299) both
         // come from the preprocessed source with the OpenGL macro set the seam compiled with,
         // exactly as on the OpenGL target. DXC has already accepted the source, so a view that
-        // cannot be built is our preprocessor's fault: SD0009.
-        var samplerSlots = GlSamplerReservation.Collect(
-            fxSource,
-            file,
-            PlatformMacros.For(PlatformTarget.OpenGL),
-            options.IncludeResolver ?? new FileSystemIncludeResolver(),
-            options.AdditionalIncludePaths,
-            parse.Value);
+        // cannot be built is our preprocessor's fault: SD0009. A recovery pass has the flattened
+        // raw source in hand already, and its pre-parse names samplers as the preprocessed view does.
+        var samplerSlots = recovered is not null
+            ? FxPreParser.CollectGlSamplerSlots(recovered.FlattenedRawSource, file, parsed)
+            : GlSamplerReservation.Collect(
+                fxSource,
+                file,
+                PlatformMacros.For(PlatformTarget.OpenGL),
+                options.IncludeResolver ?? new FileSystemIncludeResolver(),
+                options.AdditionalIncludePaths,
+                parsed);
         if (samplerSlots.IsFailure)
             return Result<RaylibShader, ShaderError[]>.Fail([samplerSlots.Error]);
 
@@ -215,7 +271,7 @@ public static class RaylibConverter
         IReadOnlyList<int> slots = SpirvCombinedSamplerPairs.ResolveSlots(
             pairs, samplerSlots.Value.Explicit, samplerSlots.Value.Reserved);
 
-        var bakedStates = parse.Value.Samplers
+        var bakedStates = parsed.Samplers
             .GroupBy(s => s.Name, StringComparer.Ordinal)
             .ToDictionary(
                 g => g.Key,
@@ -234,7 +290,7 @@ public static class RaylibConverter
                     : new Dictionary<string, string>()))
             .ToList();
 
-        return RaylibGlslMapper.Map(seam.Value.Glsl, samplerInputs, parse.Value.StrippedHlsl, file);
+        return RaylibGlslMapper.Map(seam.Value.Glsl, samplerInputs, parsed.StrippedHlsl, file);
     }
 
     private static Result<RaylibShader, ShaderError[]> Fail(

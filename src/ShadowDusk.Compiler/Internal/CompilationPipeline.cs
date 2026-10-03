@@ -82,27 +82,11 @@ internal sealed class CompilationPipeline
             compileFailure.IncludeResolver,
             options.AdditionalIncludePaths);
 
-        switch (outcome)
-        {
-            case LegacySamplerRecovery.Outcome.Retry retry:
-            {
-                Result<CompiledShader, ShaderError[]> second = RunCore(
-                    hlslSource, options, retry, out _, cancellationToken);
-                if (second.IsSuccess || retry.Parsed.Residue is null)
-                    return second;
-
-                // Still failing with legacy syntax left in the compiler's input: a shape the
-                // rewrite does not model. The compiler's own diagnostics stay first and verbatim.
-                return Result<CompiledShader, ShaderError[]>.Fail(
-                    [.. second.Error, LegacySamplerRecovery.ResidueError(retry.Parsed.Residue)]);
-            }
-            case LegacySamplerRecovery.Outcome.Rejected rejected:
-                return Fail(rejected.Error);
-            case LegacySamplerRecovery.Outcome.Unmodelled unmodelled:
-                return Result<CompiledShader, ShaderError[]>.Fail([.. first.Error, unmodelled.Error]);
-            default:
-                return first;
-        }
+        // The outcome handling is LegacySamplerRecovery.Apply, shared with the raylib and SkSL
+        // converters (issue #327). A retry that still fails with legacy syntax left in the
+        // compiler's input gets SD0016 appended after the compiler's own verbatim diagnostics.
+        return LegacySamplerRecovery.Apply(
+            first, outcome, retry => RunCore(hlslSource, options, retry, out _, cancellationToken));
     }
 
     /// <summary>
@@ -786,6 +770,36 @@ internal sealed class CompilationPipeline
                         return Fail(reflectResult.Error, runWarnings);
 
                     ReflectedEffect reflected = reflectResult.Value;
+
+                    // Issue #324: an ARRAY of textures or samplers has no representation in
+                    // MonoGame's Vulkan effect format (real mgfxc 3.8.5 reflects it as nothing
+                    // at all), and used to be silently dropped here too. Refuse it by name. On
+                    // DirectX 12 the table is mgfxc's (one parameter on the first slot) and ships
+                    // unchanged, but elements beyond [0] read as zero in the real engine, so the
+                    // consumer is warned.
+                    //
+                    // Issue #340: an ARRAY of samplers is refused by real mgfxc on every profile
+                    // in its own parser, so no reference table exists to match; DirectX 11 and
+                    // DirectX 12 refuse it by name too (SD0224) instead of compiling an effect
+                    // mgfxc never builds. (On DirectX 11 the per-element RDEF records of an
+                    // array have already been folded into one binding by the DXBC extractor,
+                    // issue #339, so a texture array there is mgfxc's one `Tex` parameter.)
+                    if ((directX || options.Target == PlatformTarget.DirectX12)
+                        && ResourceArrayDiagnostics.DirectXSamplerArrayError(reflected, glCompileSource.Text, sourceFileName, options.Target,
+                                                                              options.SamplerArraysFromCombinedSamplers) is { } samplerArrayError)
+                    {
+                        return Fail(samplerArrayError, runWarnings);
+                    }
+                    if (options.Target == PlatformTarget.Vulkan
+                        && ResourceArrayDiagnostics.VulkanError(reflected, glCompileSource.Text, sourceFileName) is { } arrayError)
+                    {
+                        return Fail(arrayError, runWarnings);
+                    }
+                    if (options.Target == PlatformTarget.DirectX12
+                        && ResourceArrayDiagnostics.DirectX12Warning(reflected, glCompileSource.Text, sourceFileName) is { } arrayWarning)
+                    {
+                        AccumulateWarnings(runWarnings, seenWarnings, [arrayWarning]);
+                    }
 
                     foreach (ConstantBufferReflection cb in reflected.ConstantBuffers)
                     {

@@ -145,4 +145,78 @@ public sealed class SlangDiagnosticReformatterTests
         primary.Message.ShouldContain("MainVS", Case.Sensitive);
         primary.Message.ShouldContain("vertex", Case.Sensitive);
     }
+
+    [Theory]
+    // Windows reports a crash as its NTSTATUS (0xC0000005, an access violation, measured for
+    // issue #323's same-named constant-buffer members); Unix as 128 + the signal (SIGSEGV).
+    [InlineData(-1073741819, "0xC0000005")]
+    [InlineData(139, "0x0000008B")]
+    public void SelectPrimary_CrashExitCodeWithNoStderr_NamesTheCrashAndItsKnownTrigger(int exitCode, string hex)
+    {
+        ShaderError primary = SlangDiagnosticReformatter.SelectPrimary("", "f.slang", "MainPS", "fragment", exitCode);
+
+        primary.Code.ShouldBe("SD0622");
+        primary.Message.ShouldContain("terminated abnormally", Case.Sensitive);
+        primary.Message.ShouldContain($"exit code {exitCode}, {hex}", Case.Sensitive);
+        primary.Message.ShouldContain("'MainPS' (fragment)", Case.Sensitive);
+        primary.Message.ShouldContain("issue #323", Case.Sensitive);
+        primary.Message.ShouldContain("SD0643", Case.Sensitive);
+    }
+
+    [Fact]
+    public void SelectPrimary_PlainFailureExitCodeWithNoStderr_IsNotCalledACrash()
+    {
+        ShaderError primary = SlangDiagnosticReformatter.SelectPrimary("", "f.slang", "MainPS", "fragment", 1);
+
+        primary.Code.ShouldBe("SD0622");
+        primary.Message.ShouldContain("(exit code 1)", Case.Sensitive);
+        primary.Message.ShouldNotContain("crash", Case.Sensitive);
+    }
+
+    [Fact]
+    public void SelectPrimary_CrashWithUnstructuredStderr_KeepsSlangcsOwnWordsVerbatim_AfterNamingTheCrash()
+    {
+        const string words = "Segmentation fault (core dumped)";
+
+        ShaderError primary = SlangDiagnosticReformatter.SelectPrimary(words, "f.slang", "MainPS", "fragment", 139);
+
+        primary.Code.ShouldBe("SD0622");
+        primary.Message.ShouldContain("terminated abnormally", Case.Sensitive);
+        primary.Message.ShouldEndWith("\n" + words, Case.Sensitive);
+        primary.RawDiagnostics.ShouldBe(words);
+    }
+
+    [Fact]
+    public void SelectPrimary_CrashAfterWarningsOnly_IsTheCrash_NotAWarningPromotedToAnError()
+    {
+        // Measured (issue #323): slangc prints its 'implicit global shader parameter' warnings for
+        // both declarations and then dies; the first warning must not become the failure.
+        const string warnings = """
+            warning[E39019]: implicit global shader parameter
+             --> <stdin>:1:22
+              |
+            1 | namespace A { float4 Tint; }
+              |                      ^^^^ 'Tint' is implicitly a global shader parameter, not a global variable.
+            --'
+
+            """;
+
+        ShaderError primary = SlangDiagnosticReformatter.SelectPrimary(warnings, "f.slang", "MainPS", "fragment", -1073741819);
+
+        primary.Code.ShouldBe("SD0622");
+        primary.Severity.ShouldBe(ShaderErrorSeverity.Error);
+        primary.Message.ShouldContain("terminated abnormally", Case.Sensitive);
+        primary.Message.ShouldContain("after the output below", Case.Sensitive);
+        primary.Message.ShouldContain("warning[E39019]: implicit global shader parameter", Case.Sensitive);
+    }
+
+    [Fact]
+    public void SelectPrimary_CrashAfterAnError_IsSlangcsOwnError()
+    {
+        const string stderr = "error[E30015]: undefined identifier\n --> <stdin>:5:85\n";
+
+        ShaderError primary = SlangDiagnosticReformatter.SelectPrimary(stderr, "f.slang", "MainPS", "fragment", 139);
+
+        primary.Code.ShouldBe("E30015");
+    }
 }

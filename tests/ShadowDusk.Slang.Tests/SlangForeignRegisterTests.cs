@@ -578,4 +578,89 @@ public sealed class SlangForeignRegisterTests : IDisposable
         fx.ShouldContain("Texture2D<float4 > ModTex : register(t3);", Case.Sensitive);
         fx.ShouldContain("SamplerState S;", Case.Sensitive);
     }
+
+    // ---- Issue #325: a module global named like a hoist of an entry global ------------------
+
+    private const string LayerModule = """
+        module m;
+        public Texture2D tex_layer_0 : register(t3);
+        public SamplerState ModS;
+        public float4 fetchMod(float2 uv) { return tex_layer_0.Sample(ModS, uv); }
+        """;
+
+    private const string LayerEntry = """
+        Texture2D tex;
+        SamplerState S;
+
+        [shader("fragment")]
+        float4 MainPS(float4 pos : SV_Position, float2 uv : TEXCOORD0) : SV_Target
+        {
+            return fetchMod(uv) + tex.Sample(S, uv);
+        }
+        """;
+
+    // What slangc compiles the two files to, written out by hand: the module author's t3 on
+    // tex_layer_0, nothing on the entry's tex (slangc's own number).
+    private const string LayerResolvedFx = """
+        Texture2D tex_layer_0 : register(t3);
+        SamplerState ModS;
+        Texture2D tex;
+        SamplerState S;
+
+        float4 MainPS(float4 pos : SV_Position, float2 uv : TEXCOORD0) : SV_Target
+        {
+            return tex_layer_0.Sample(ModS, uv) + tex.Sample(S, uv);
+        }
+        """;
+
+    [Theory]
+    [InlineData(PlatformTarget.DirectX)]
+    [InlineData(PlatformTarget.OpenGL)]
+    public void ModuleTextureNamedLikeAHoistOfAnEntryGlobal_KeepsItsRegister(PlatformTarget target)
+    {
+        // 'tex_layer_0' is the module author's own name; the entry's plain 'tex' is its prefix.
+        // Measured (v2026.14.1): before this fix the entry's 'tex' claimed the name as its hoist
+        // and the module's register(t3) was stripped, moving the texture to another slot.
+        string module = WriteModule("m.slang", LayerModule);
+
+        var (effect, fx) = Slang($"import \"{module}\";\n" + LayerEntry, target);
+
+        fx.ShouldContain("Texture2D<float4 > tex_layer_0 : register(t3);", Case.Sensitive);
+        fx.ShouldContain("Texture2D<float4 > tex;", Case.Sensitive);
+        fx.ShouldContain("SamplerState ModS;", Case.Sensitive);
+        Named(effect).ShouldBe(Named(Fx(LayerResolvedFx, target)));
+        effect.Parameters.Select(p => p.Name).ShouldContain("tex_layer_0");
+        if (target == PlatformTarget.DirectX)
+            Named(effect).ShouldContain(s => s.Texture == "tex_layer_0" && s.TextureSlot == 3);
+    }
+
+    [Theory]
+    [InlineData(PlatformTarget.DirectX)]
+    [InlineData(PlatformTarget.OpenGL)]
+    public void ModuleTextureNamedLikeAHoistOfAnEntryGlobal_WithTheRegisterOnThePrefix_IsStripped(PlatformTarget target)
+    {
+        // The reverse: the ENTRY writes register(t1) on 'tex' and the module's 'tex_layer_0' has
+        // none. The prefix must not keep slangc's own number on the module's texture either.
+        string module = WriteModule("m.slang", LayerModule.Replace(" : register(t3)", "", StringComparison.Ordinal));
+
+        var (_, fx) = Slang($"import \"{module}\";\n" + LayerEntry.Replace("Texture2D tex;", "Texture2D tex : register(t1);", StringComparison.Ordinal), target);
+
+        fx.ShouldContain("Texture2D<float4 > tex_layer_0;", Case.Sensitive);
+        fx.ShouldContain("Texture2D<float4 > tex : register(t1);", Case.Sensitive);
+    }
+
+    [Theory]
+    [InlineData(PlatformTarget.DirectX)]
+    [InlineData(PlatformTarget.OpenGL)]
+    public void ModuleTextureNamedLikeAHoist_CostsTheSameAsAnyRegisteredModuleDeclaration(PlatformTarget target)
+    {
+        string module = WriteModule("m.slang", LayerModule);
+
+        var (result, runs) = CompileCounting($"import \"{module}\";\n" + LayerEntry, target);
+
+        result.IsSuccess.ShouldBeTrue(result.IsFailure ? string.Join("; ", result.Error.Select(e => e.FxcFormattedMessage)) : "");
+        // One compile, one preprocess run reading the entry source and the module together.
+        runs.Count.ShouldBe(2);
+        runs[1].SkipWhile(a => a != "--").ShouldBe(["--", "-", module]);
+    }
 }

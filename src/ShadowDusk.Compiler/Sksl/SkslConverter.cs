@@ -4,6 +4,7 @@ using ShadowDusk.Compiler.Internal;
 using ShadowDusk.Core;
 using ShadowDusk.Core.Preprocessor;
 using ShadowDusk.HLSL;
+using ShadowDusk.HLSL.Ast;
 
 namespace ShadowDusk.Compiler.Sksl;
 
@@ -86,14 +87,52 @@ public static class SkslConverter
             ]);
         }
 
-        if (parse.Value.Techniques.Count == 0)
+        Result<SkslConversion, ShaderError[]> first = ConvertCore(
+            parse.Value, options, recovered: null, out bool shaderCompileFailed, cancellationToken);
+        if (first.IsSuccess || !shaderCompileFailed)
+            return first;
+
+        // Legacy-sampler recovery (issues #308, #327): the same one CompilationPipeline.Run uses.
+        // The DXC compile failed; if the text it was given still holds legacy D3D9 sampler syntax
+        // once preprocessed (a declaration in an #include'd file, or one that comes out of a
+        // macro, which the raw pre-parse cannot see), repeat the pre-parse on the PREPROCESSED
+        // source and convert from that. Only ever reached on a failure, so an effect that
+        // converts from its raw source is converted from exactly that source, as before.
+        LegacySamplerRecovery.Outcome outcome = LegacySamplerRecovery.Evaluate(
+            fxSource,
+            options.SourceName,
+            PlatformMacros.For(PlatformTarget.OpenGL),
+            options.IncludeResolver ?? new FileSystemIncludeResolver(),
+            options.AdditionalIncludePaths);
+        return LegacySamplerRecovery.Apply(
+            first, outcome,
+            retry => ConvertCore(retry.Parsed.Parsed, options, retry, out _, cancellationToken));
+    }
+
+    /// <summary>
+    /// One pass of the conversion over a pre-parse: the raw one (every conversion's first and
+    /// normally only pass), or, with <paramref name="recovered"/>, the pre-parse of the
+    /// preprocessed source (issue #308). <paramref name="shaderCompileFailed"/> is set when the
+    /// DXC compile (or the transpile behind it) is what failed on a first pass: the one failure
+    /// the recovery can be consulted for.
+    /// </summary>
+    private static Result<SkslConversion, ShaderError[]> ConvertCore(
+        FxParseResult parsed,
+        SkslConvertOptions options,
+        LegacySamplerRecovery.Outcome.Retry? recovered,
+        out bool shaderCompileFailed,
+        CancellationToken cancellationToken)
+    {
+        shaderCompileFailed = false;
+
+        if (parsed.Techniques.Count == 0)
         {
             return Fail(options.SourceName, "SD0010", "Effect source contains no techniques.");
         }
 
         // v1 is deliberately single-technique, single-pass: SkSL has no technique/pass concept,
         // so "which pass becomes THE effect" would be a silent guess on anything larger.
-        if (parse.Value.Techniques.Count > 1 || parse.Value.Techniques[0].Passes.Count > 1)
+        if (parsed.Techniques.Count > 1 || parsed.Techniques[0].Passes.Count > 1)
         {
             return Fail(options.SourceName, "SD0615",
                 "the effect has multiple techniques/passes, and an SkSL runtime effect is a single " +
@@ -101,7 +140,7 @@ public static class SkslConverter
                 "guess. Split the effect, or convert a single-pass .fx.");
         }
 
-        var pass = parse.Value.Techniques[0].Passes[0];
+        var pass = parsed.Techniques[0].Passes[0];
 
         // The Gum lesson at stage level: a vertex shader cannot ride along (SkSL has no vertex
         // stage, by Skia's design), and quietly discarding it would change what the effect draws.
@@ -121,16 +160,29 @@ public static class SkslConverter
                 "function, so there is nothing to convert.");
         }
 
-        // 2-4. HLSL -> SPIR-V -> modern GLSL, the shared seam BEFORE the MonoGame rewriter.
-        var seam = ModernGlslSeam.CompilePixel(
-            parse.Value.StrippedHlsl,
-            pass.PixelEntryPoint,
-            options.SourceName,
-            options.IncludeResolver,
-            options.AdditionalIncludePaths,
-            cancellationToken);
+        // 2-4. HLSL -> SPIR-V -> modern GLSL, the shared seam BEFORE the MonoGame rewriter. A
+        // recovery's text already has its #includes inlined and its macros expanded (flattening
+        // it again would prepend the macro block a second time); a raw pre-parse is flattened here.
+        string compilerInput;
+        if (recovered is not null)
+        {
+            compilerInput = parsed.StrippedHlsl;
+        }
+        else
+        {
+            var flattened = ModernGlslSeam.Flatten(
+                parsed.StrippedHlsl, options.SourceName, options.IncludeResolver, options.AdditionalIncludePaths);
+            if (flattened.IsFailure)
+                return Result<SkslConversion, ShaderError[]>.Fail([flattened.Error]);
+            compilerInput = flattened.Value.Text;
+        }
+
+        var seam = ModernGlslSeam.CompilePixel(compilerInput, pass.PixelEntryPoint, options.SourceName, cancellationToken);
         if (seam.IsFailure)
+        {
+            shaderCompileFailed = recovered is null;
             return Result<SkslConversion, ShaderError[]>.Fail(seam.Error);
+        }
 
         // The HLSL texture name behind each combined sampler, in declaration order — the same
         // extraction the GL sampler table trusts (issue #189's allocator).

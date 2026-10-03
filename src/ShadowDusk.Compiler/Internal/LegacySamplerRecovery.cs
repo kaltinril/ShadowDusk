@@ -133,6 +133,51 @@ internal static class LegacySamplerRecovery
         return new Outcome.Retry(parsed.Value, flattenedRaw.Value.Text, flattenedRaw.Value.Warnings);
     }
 
+    /// <summary>
+    /// Turns <see cref="Evaluate"/>'s verdict into the final result of a compile or conversion
+    /// whose first attempt (<paramref name="first"/>) failed on a DXC shader compile. Shared by
+    /// <c>CompilationPipeline.Run</c> and the raylib and SkSL converters (issue #327), so the
+    /// three agree on what each outcome means:
+    /// <list type="bullet">
+    /// <item><see cref="Outcome.Retry"/>: <paramref name="retry"/> runs the same work again from
+    /// the preprocessed pre-parse. Its result stands, unless it fails AND legacy syntax is still
+    /// in the compiler's input: then <c>SD0016</c> names the unmodelled shape after the compiler's
+    /// own verbatim diagnostics.</item>
+    /// <item><see cref="Outcome.Rejected"/>: the pre-parser's own <c>FXnnnn</c> verdict on the
+    /// preprocessed source replaces the compiler's diagnostics (it is the effect's real error, at
+    /// the author's line).</item>
+    /// <item><see cref="Outcome.Unmodelled"/>: the first attempt's diagnostics, then the <c>SD0016</c>.</item>
+    /// <item><see cref="Outcome.NotApplicable"/>: the first attempt's result, untouched.</item>
+    /// </list>
+    /// </summary>
+    public static Result<T, ShaderError[]> Apply<T>(
+        Result<T, ShaderError[]> first,
+        Outcome outcome,
+        Func<Outcome.Retry, Result<T, ShaderError[]>> retry)
+    {
+        ArgumentNullException.ThrowIfNull(outcome);
+        ArgumentNullException.ThrowIfNull(retry);
+
+        switch (outcome)
+        {
+            case Outcome.Retry recovered:
+            {
+                Result<T, ShaderError[]> second = retry(recovered);
+                if (second.IsSuccess || recovered.Parsed.Residue is null)
+                    return second;
+
+                return Result<T, ShaderError[]>.Fail(
+                    [.. second.Error, ResidueError(recovered.Parsed.Residue)]);
+            }
+            case Outcome.Rejected rejected:
+                return Result<T, ShaderError[]>.Fail([rejected.Error]);
+            case Outcome.Unmodelled unmodelled:
+                return Result<T, ShaderError[]>.Fail([.. first.Error, unmodelled.Error]);
+            default:
+                return first;
+        }
+    }
+
     private static ShaderError PredefinedMacroError(CompilerPredefinedMacroTest predefined) => Unmodelled(
         predefined.File, predefined.Line,
         "the effect uses legacy D3D9 sampler syntax (sampler2D / sampler_state / tex2D) that may reach " +
