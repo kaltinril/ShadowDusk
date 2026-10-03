@@ -14,6 +14,10 @@ that loads and renders identically to `mgfxc`'s in the real MonoGame/KNI runtime
 
 ### Added
 
+- **`SkslConverter` can run in the browser (issue #349).** `SkslConverter.Convert` has an overload taking
+  DXC / SPIRV-Cross factories (like `EffectCompiler`), and `WasmShaderCompiler.ConvertToSksl` is the
+  synchronous entry point after `InitializeAsync()`. The default desktop path is unchanged.
+
 - **Build-time warning `SD0220` when a consumer's graph lifts Vortice.Dxc (issue #282).**
   ShadowDusk.HLSL now ships `buildTransitive/ShadowDusk.HLSL.targets`, so a project that references
   it directly or through ShadowDusk.Compiler / ShadowDusk.ContentPipeline is told AT BUILD TIME when

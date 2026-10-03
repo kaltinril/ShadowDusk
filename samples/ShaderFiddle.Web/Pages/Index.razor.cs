@@ -382,6 +382,40 @@ public partial class Index
     }
 
     /// <summary>
+    /// Issue #349 headless-test entry point: HLSL <c>.fx</c> to SkSL through the synchronous
+    /// <see cref="WasmShaderCompiler.ConvertToSksl"/>. <paramref name="treatVaryingsAsUniformsCsv"/>
+    /// is a comma-separated semantic list ("" = none). Protocol:
+    /// <c>"OK:&lt;sksl text&gt;"</c> or <c>"ERR:&lt;code&gt;: &lt;message&gt; | ..."</c>.
+    /// Test-only and UI-invisible (the <see cref="TestSyncCompileExport"/> pattern).
+    /// </summary>
+    [JSInvokable]
+    public string TestSyncConvertSksl(string source, string treatVaryingsAsUniformsCsv, string sourceFileName)
+    {
+        try
+        {
+            var result = _compiler.ConvertToSksl(source, new ShadowDusk.Compiler.Sksl.SkslConvertOptions
+            {
+                SourceName = sourceFileName,
+                TreatVaryingsAsUniforms = treatVaryingsAsUniformsCsv.Length == 0
+                    ? []
+                    : treatVaryingsAsUniformsCsv.Split(','),
+            });
+
+            if (result.IsFailure)
+            {
+                return "ERR:" + string.Join(" | ",
+                    System.Linq.Enumerable.Select(result.Error, d => $"{d.Code}: {d.Message}"));
+            }
+
+            return "OK:" + result.Value.SkslText;
+        }
+        catch (Exception ex)
+        {
+            return "ERR:" + ex.Message;
+        }
+    }
+
+    /// <summary>
     /// Phase 42 (issue #28) headless-test entry point: drives the one-time
     /// <see cref="WasmShaderCompiler.InitializeAsync"/> warm-up (awaited twice to prove
     /// idempotency) that makes the synchronous <see cref="TestSyncCompileExport"/> path
