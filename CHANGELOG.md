@@ -311,6 +311,44 @@ that loads and renders identically to `mgfxc`'s in the real MonoGame/KNI runtime
   one parameter per element where `mgfxc` 3.8.4.1 emits a single `Tex`, a separate divergence
   tracked as issue #339; a sampler array, which `mgfxc` refuses on every profile, still compiles on
   DirectX 11 and 12 (issue #340).
+- **`ShadowDusk.Slang`: a module's author register survives an entry global spelled like the name's
+  prefix (issue #325).** The issue #292 register pass read a module's `public Texture2D tex_layer_0 :
+  register(t3);` as a resource slangc might have hoisted out of the entry's `Texture2D tex;` (the
+  name has the hoisted shape `<global>_<field>_<n>`), judged it from the entry text and stripped the
+  author's `t3`, silently moving the texture to another slot (measured through real slangc v2026.14.1
+  on DirectX and OpenGL). The hoisted shape now counts as a hoist only for a name NO read text
+  spells: slangc locates an author's global at its own declaration and a hoisted resource in its
+  core module (measured), so a name spelled by the text of the file slangc locates it in is matched
+  verbatim and only verbatim, by that file's own text; an unread file is claimed by nobody's prefix
+  (its verdict waits for the file, or fails as `SD0628`). Found on the way and fixed: a module
+  imported by a RELATIVE path is located by a bare name (`#line 2 "m.slang"`, measured), which the
+  pass mistook for slangc's core module; slangc's core-module file names are now matched by name;
+  and a registered resource declared inside a `namespace` block in a module (or the entry) is a
+  global declaration like any other, where it used to fail as `SD0628`. No extra slangc run for any
+  shape (`SlangRegisterPassCostTests`, plus the same count through real slangc); the Slang corpus
+  bytes are unchanged.
+- **`ShadowDusk.Slang`: two globals of one name in different namespaces fail as the new `SD0643`
+  instead of compiling to a silently merged program or crashing slangc (issue #323).** Measured,
+  slangc v2026.14.1 with `-no-mangle` (adopted in Phase 66 A4 so parameter names reach the effect as
+  written): `namespace A { Texture2D T; } namespace B { Texture2D T; }` is emitted as ONE `T` both
+  reads use; the same for a namespaced global beside a plain one, nested, dotted and `::`
+  namespaces, two combined `Sampler2D`, two samplers, two struct- or `ParameterBlock`-typed globals,
+  two `cbuffer` blocks of one name, two `static`/`static const` (the first initializer wins), a
+  module's `namespace A { T }` beside the entry's `namespace B { T }`, and two modules each declaring
+  a plain `public Texture2D T` used inside themselves; two same-named implicit or `uniform`
+  constant-buffer members crash slangc (`0xC0000005`, empty stderr), which the route could only
+  report as a blank `SD0622`. ShadowDusk cannot fix slangc; it now refuses the pair by name, with
+  both declarations and their file, line and column: from the raw entry text before slangc runs
+  (so the crashing shape never reaches it) when no directive or `-D` value can rewrite that text,
+  confirmed by slangc's own `-E` output otherwise (one run, paid only by a source whose raw text
+  shows a candidate; a pair in mutually exclusive `#if` branches is cleared by it), and on every
+  text the issue #292 register pass read (the entry's `-E` text and the modules reached by
+  quoted-path import), which catches a macro-formed or cross-module pair at no extra run. Same-named
+  functions and types are left alone (slangc prefixes those with the namespace). A slangc crash
+  the texts could not foresee is still loud: `SD0622` names the crash, its exit code and this
+  trigger, keeps slangc's own output verbatim after it, and no longer promotes slangc's warnings to
+  the failure. What no read text can show stays open as issue #337. No existing shape pays an extra
+  slangc run (pinned by `SlangRegisterPassCostTests`); corpus bytes unchanged.
 - **Browser DirectX compiles handed vkd3d no compile options, so a shader with SM1-3 semantics on
   struct fields compiled differently from the desktop, or not at all (issue #295).** Since 0.20.0 the
   desktop vkd3d backend passes `BACKWARD_COMPATIBILITY`/`MAP_SEMANTIC_NAMES` on the SM4+ target, but

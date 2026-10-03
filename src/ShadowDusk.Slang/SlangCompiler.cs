@@ -265,6 +265,25 @@ public sealed class SlangCompiler
             }
         }
 
+        // Issue #323: two globals of one name in different namespaces, which slangc's -no-mangle
+        // output silently merges (or, for constant-buffer members, crashes on). The raw text is
+        // read first, before slangc runs at all, and decides on its own when nothing can rewrite
+        // it; otherwise a candidate pair it shows is confirmed by slangc's own preprocess-only
+        // output below (one run, paid only by a source whose raw text shows a pair).
+        IReadOnlyList<SlangcGlobalNameCollisions.GlobalDeclaration> rawDeclarations = [];
+        bool confirmCollisionsByPreprocess = false;
+        if (SlangcGlobalNameCollisions.MaySpellNamespace(slangSource, options.Defines))
+        {
+            rawDeclarations = SlangcGlobalNameCollisions.Scan(slangSource, sourceName, rawSource: true);
+            IReadOnlyList<SlangcGlobalNameCollisions.Collision> rawCollisions =
+                SlangcGlobalNameCollisions.FindCollisions(rawDeclarations, sourceName);
+            bool rawIsFinal = SlangcGlobalNameCollisions.RawTextIsWhatSlangcCompiles(slangSource, options.Defines);
+            if (rawCollisions.Count > 0 && rawIsFinal)
+                return Fail(SlangcGlobalNameCollisions.Error(rawCollisions[0], sourceName));
+            confirmCollisionsByPreprocess = !rawIsFinal
+                && (rawCollisions.Count > 0 || !slangSource.Contains("namespace", StringComparison.Ordinal));
+        }
+
         // Issue #257: the in-process route has no executable to find or prepare; everything
         // from the argument list onward is shared with the process route below.
         string? runnableSlangc = null;
@@ -300,6 +319,32 @@ public sealed class SlangCompiler
             ? PlatformMacros.For(options.Target, options.Container).Macros
             : [];
 
+        // Issue #323, the confirmation run: the raw text showed a candidate pair but a directive
+        // or a -D value may rewrite it, so slangc's own -E text decides. Before the compiles,
+        // because the constant-buffer-member shape crashes slangc; trusted only when the
+        // preprocessor reported no error (its exit code is 0 either way, measured), so a
+        // preprocessing error is still slangc's own, from the compile that follows.
+        (int ExitCode, string Text, string Stderr)? preprocessedEntry = null;
+        if (confirmCollisionsByPreprocess)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            ShaderError? startError = InvokeSlangc(
+                SlangcArguments.BuildPreprocess(platformMacros, options.Defines),
+                slangSource, sourceName, runnableSlangc, toolDirectory,
+                out int exitCode, out string stdout, out string stderr);
+            if (startError is not null)
+                return Fail(startError);
+            if (exitCode == 0 && !stderr.Contains("error[", StringComparison.Ordinal)
+                && CheckEntryPreprocessOutput((0, stdout, stderr), entries, sourceName, "", "") is null)
+            {
+                preprocessedEntry = (0, stdout, stderr);
+                IReadOnlyList<SlangcGlobalNameCollisions.Collision> collisions = SlangcGlobalNameCollisions.FindCollisions(
+                    SlangcGlobalNameCollisions.Scan(stdout, sourceName, rawSource: false), sourceName);
+                if (collisions.Count > 0)
+                    return Fail(SlangcGlobalNameCollisions.Error(SlangcGlobalNameCollisions.Locate(collisions[0], rawDeclarations), sourceName));
+            }
+        }
+
         // Sequential, not parallel: every invocation shares the SAME writable directory (and
         // therefore the same first-compile cache write into it), so running entries one at a
         // time sidesteps any question of concurrent-write safety in slangc itself, which
@@ -319,7 +364,7 @@ public sealed class SlangCompiler
 
             if (exitCode != 0)
             {
-                return Fail(SlangDiagnosticReformatter.SelectPrimary(stderr, sourceName, entry.Name, stage));
+                return Fail(SlangDiagnosticReformatter.SelectPrimary(stderr, sourceName, entry.Name, stage, exitCode));
             }
 
             perEntryHlsl.Add(stdout);
@@ -333,9 +378,23 @@ public sealed class SlangCompiler
         // imported module or an __include'd file, and to a combined Sampler2D's split halves.
         Result<RegisterDecision, ShaderError> kept = DecideAuthorRegisters(
             perEntryHlsl, entries, slangSource, sourceName, options.Defines, platformMacros,
-            runnableSlangc, toolDirectory, cancellationToken);
+            runnableSlangc, toolDirectory, cancellationToken, preprocessedEntry);
         if (kept.IsFailure)
             return Fail(kept.Error);
+
+        // Issue #323, on the texts the register pass read (the entry source as slangc's
+        // preprocessor leaves it, and the modules reached by quoted-path import): a pair formed
+        // through macros, or spread across modules, is found here at no extra slangc run.
+        if (kept.Value.ReadTexts.Count > 0)
+        {
+            var declarations = new List<SlangcGlobalNameCollisions.GlobalDeclaration>();
+            foreach ((string file, string text) in kept.Value.ReadTexts)
+                declarations.AddRange(SlangcGlobalNameCollisions.Scan(text, file, rawSource: false));
+            IReadOnlyList<SlangcGlobalNameCollisions.Collision> collisions =
+                SlangcGlobalNameCollisions.FindCollisions(declarations, sourceName);
+            if (collisions.Count > 0)
+                return Fail(SlangcGlobalNameCollisions.Error(SlangcGlobalNameCollisions.Locate(collisions[0], rawDeclarations), sourceName));
+        }
 
         // Stripped per entry, before the merge, so both entries' copies of a shared
         // declaration stay identical.
@@ -501,19 +560,24 @@ public sealed class SlangCompiler
         IReadOnlyList<MacroDefinition> platformMacros,
         string? runnableSlangc,
         string? toolDirectory,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        (int ExitCode, string Text, string Stderr)? preprocessedEntry = null)
     {
         static Result<RegisterDecision, ShaderError> Failed(ShaderError error) =>
             Result<RegisterDecision, ShaderError>.Fail(error);
         static Result<RegisterDecision, ShaderError> Decided(
-            IReadOnlySet<string> keep, SlangcHoistedResourceNames.PreprocessedTexts? texts) =>
-            Result<RegisterDecision, ShaderError>.Ok(new RegisterDecision(keep, texts));
+            IReadOnlySet<string> keep, SlangcHoistedResourceNames.PreprocessedTexts? texts,
+            IReadOnlyList<(string File, string Text)>? readTexts = null) =>
+            Result<RegisterDecision, ShaderError>.Ok(new RegisterDecision(keep, texts, readTexts ?? []));
 
         var keep = new HashSet<string>(StringComparer.Ordinal);
         List<SlangcRegisterStripper.EmittedResource> emitted =
             perEntryHlsl.SelectMany(SlangcRegisterStripper.FindRegistered).Distinct().ToList();
         if (emitted.Count == 0)
-            return Decided(keep, texts: null);
+        {
+            return Decided(keep, texts: null,
+                preprocessedEntry is { } already ? [(sourceName, already.Text)] : null);
+        }
 
         // Nothing can be the author's when the entry source cannot spell 'register' (through
         // its own text, an #include, a paste, a splice or a -D value) and no declaration can
@@ -522,23 +586,33 @@ public sealed class SlangCompiler
         if (!SlangcRegisterStripper.MayWriteRegister(slangSource, defines)
             && !(fromOtherFiles && SlangcRegisterStripper.MayImport(slangSource, defines)))
         {
-            return Decided(keep, texts: null);
+            return Decided(keep, texts: null,
+                preprocessedEntry is { } already ? [(sourceName, already.Text)] : null);
         }
 
         // Pass 1: the entry source plus, in the same invocation, every file slangc's #line names
         // for a registered declaration. Reading those files here is speculative: their text is
-        // used only once the file is proven to be a module (below).
+        // used only once the file is proven to be a module (below). An entry text already read
+        // (issue #323's confirmation run) is reused when it is all this pass needs.
         List<string> named = emitted
             .Where(r => r.File != SlangcRegisterStripper.EntrySourceFile && !r.IsCoreHoist)
             .Select(r => r.File)
             .DistinctBy(SlangcRegisterStripper.PathKey, StringComparer.Ordinal)
             .ToList();
         var reads = new Dictionary<string, FileRead>(StringComparer.Ordinal);
-        ShaderError? startError = PreprocessFiles(
-            includeEntry: true, named, platformMacros, defines, slangSource, sourceName, runnableSlangc,
-            toolDirectory, cancellationToken, reads, out (int ExitCode, string Text, string Stderr) entry);
-        if (startError is not null)
-            return Failed(startError);
+        (int ExitCode, string Text, string Stderr) entry;
+        if (named.Count == 0 && preprocessedEntry is { } preprocessed)
+        {
+            entry = preprocessed;
+        }
+        else
+        {
+            ShaderError? startError = PreprocessFiles(
+                includeEntry: true, named, platformMacros, defines, slangSource, sourceName, runnableSlangc,
+                toolDirectory, cancellationToken, reads, out entry);
+            if (startError is not null)
+                return Failed(startError);
+        }
 
         // Never guess which registers are the author's: without the preprocessed source the
         // strip could silently move a texture to another slot, and a pass that printed nothing
@@ -554,17 +628,19 @@ public sealed class SlangCompiler
 
         // Only when the combined run above did not come back clean and the entry source was read
         // alone: read the named files now, and only those of declarations the entry text does
-        // not decide (a fragment the entry source #includes may not preprocess on its own).
+        // not decide VERBATIM (a fragment the entry source #includes may not preprocess on its
+        // own). Issue #325: a prefix match through an entry global ('tex' for 'tex_layer_0') is
+        // not a decision; the file has to be read to tell a hoist from an author's name.
         List<string> unreadNamed = emitted
             .Where(r => r.File != SlangcRegisterStripper.EntrySourceFile && !r.IsCoreHoist
                         && !reads.ContainsKey(SlangcRegisterStripper.PathKey(r.File))
-                        && !entryBindings.Binds(r) && !entryBindings.Declares(r))
+                        && !entryBindings.Binds(r, hoisted: false) && !entryBindings.DeclaresPlainly(r, hoisted: false))
             .Select(r => r.File)
             .DistinctBy(SlangcRegisterStripper.PathKey, StringComparer.Ordinal)
             .ToList();
         if (unreadNamed.Count > 0)
         {
-            startError = PreprocessFiles(
+            ShaderError? startError = PreprocessFiles(
                 includeEntry: false, unreadNamed, platformMacros, defines, slangSource, sourceName, runnableSlangc,
                 toolDirectory, cancellationToken, reads, out _);
             if (startError is not null)
@@ -577,16 +653,33 @@ public sealed class SlangCompiler
         // macros do not cross those, so its own -E output is what slangc compiled. A file that
         // is neither may be an #include'd fragment, whose text depends on its includer.
         var modules = new Dictionary<string, SlangcRegisterStripper.AuthorBindings>(StringComparer.Ordinal);
+        var parsed = new Dictionary<string, SlangcRegisterStripper.AuthorBindings>(StringComparer.Ordinal);
         var frontier = new Queue<string>();
         var reached = new HashSet<string>(StringComparer.Ordinal);
         string? unreadableImport = null;
+
+        // Every read text, trusted or not, parsed once: what it SPELLS tells an author's name
+        // from a hoist (issue #325) even before the file is proven to be a module.
+        SlangcRegisterStripper.AuthorBindings Parsed(FileRead read)
+        {
+            string key = SlangcRegisterStripper.PathKey(read.Path);
+            if (!parsed.TryGetValue(key, out SlangcRegisterStripper.AuthorBindings? bindings))
+                parsed[key] = bindings = SlangcRegisterStripper.AuthorBindings.Parse(read.Text!);
+            return bindings;
+        }
+
+        SlangcRegisterStripper.AuthorBindings? Located(SlangcRegisterStripper.EmittedResource resource) =>
+            resource.File != SlangcRegisterStripper.EntrySourceFile && !resource.IsCoreHoist
+            && reads.TryGetValue(SlangcRegisterStripper.PathKey(resource.File), out FileRead? read) && read.Text is not null
+                ? Parsed(read)
+                : null;
 
         void Trust(FileRead read)
         {
             string key = SlangcRegisterStripper.PathKey(read.Path);
             if (modules.ContainsKey(key))
                 return;
-            modules[key] = SlangcRegisterStripper.AuthorBindings.Parse(read.Text!);
+            modules[key] = Parsed(read);
             foreach (string imported in SlangcRegisterStripper.QuotedImports(read.Text!, read.Path))
                 frontier.Enqueue(imported);
         }
@@ -620,16 +713,16 @@ public sealed class SlangCompiler
             bool closureComplete = level.Count == 0;
             verdicts = emitted
                 .Select(r => SlangcRegisterStripper.Judge(
-                    r, entryBindings, modules, closureComplete, closureBroken: unreadableImport is not null))
+                    r, entryBindings, modules, closureComplete, closureBroken: unreadableImport is not null, Located(r)))
                 .ToList();
             if (closureComplete || !verdicts.Contains(SlangcRegisterStripper.RegisterVerdict.Pending))
                 break;
 
-            startError = PreprocessFiles(
+            ShaderError? levelError = PreprocessFiles(
                 includeEntry: false, level, platformMacros, defines, slangSource, sourceName, runnableSlangc,
                 toolDirectory, cancellationToken, reads, out _);
-            if (startError is not null)
-                return Failed(startError);
+            if (levelError is not null)
+                return Failed(levelError);
             foreach (string path in level)
             {
                 FileRead read = reads[SlangcRegisterStripper.PathKey(path)];
@@ -685,17 +778,30 @@ public sealed class SlangCompiler
             return Failed(Unprovable(resource, sourceName, located, reason));
         }
 
-        // Issue #302: the texts this pass read also say which names the author wrote.
+        // Issue #302: the texts this pass read also say which names the author wrote. Issue
+        // #323: the entry text and the texts proven to be modules are what the name-collision
+        // check reads (an unproven fragment's own text is not what slangc compiled).
+        var readTexts = new List<(string File, string Text)> { (sourceName, entry.Text) };
+        foreach (FileRead read in reads.Values)
+        {
+            if (read.Text is not null && modules.ContainsKey(SlangcRegisterStripper.PathKey(read.Path)))
+                readTexts.Add((read.Path, read.Text));
+        }
         return Decided(keep, new SlangcHoistedResourceNames.PreprocessedTexts(
-            entry.Text, reads.Values.Where(read => read.Text is not null).Select(read => read.Text!)));
+            entry.Text, reads.Values.Where(read => read.Text is not null).Select(read => read.Text!)), readTexts);
     }
 
     /// <summary>What <see cref="DecideAuthorRegisters"/> settled.</summary>
     /// <param name="Keep">The emitted declarations whose register the author wrote.</param>
     /// <param name="Texts">The preprocess-only output the pass read, or null when it did not
     /// have to run.</param>
+    /// <param name="ReadTexts">The entry source's preprocess-only text (keyed by the source name)
+    /// and that of every file proven to be a module (keyed by its path), for the issue #323
+    /// name-collision check; empty when nothing was read.</param>
     private sealed record RegisterDecision(
-        IReadOnlySet<string> Keep, SlangcHoistedResourceNames.PreprocessedTexts? Texts);
+        IReadOnlySet<string> Keep,
+        SlangcHoistedResourceNames.PreprocessedTexts? Texts,
+        IReadOnlyList<(string File, string Text)> ReadTexts);
 
     /// <summary>
     /// Issue #302: renames the texture half of every combined sampler slangc split

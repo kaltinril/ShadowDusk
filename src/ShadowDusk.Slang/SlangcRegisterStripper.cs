@@ -90,6 +90,11 @@ internal static class SlangcRegisterStripper
         """(?:\b(?<type>[A-Za-z_]\w*)|>)\s+(?<name>[A-Za-z_]\w*)\s*(?:\[[^\];{}]*\]\s*)?;""",
         RegexOptions.Compiled);
 
+    // 'namespace A {', 'namespace A.B {', 'namespace A::B {': the brace that opens a namespace.
+    private static readonly Regex NamespaceBlock = new(
+        """\bnamespace\s+[A-Za-z_]\w*(?:\s*(?:\.|::)\s*[A-Za-z_]\w*)*\s*(?<brace>\{)""",
+        RegexOptions.Compiled);
+
     private static readonly HashSet<string> NotATypeKeyword = new(StringComparer.Ordinal)
     {
         "return", "import", "module", "implementing", "__include", "using", "goto", "break", "continue",
@@ -226,35 +231,46 @@ internal static class SlangcRegisterStripper
     /// read. Until then a declaration that needs them all is <see cref="RegisterVerdict.Pending"/>.</param>
     /// <param name="closureBroken">A quoted-path import could not be read, so "no module declares
     /// it" proves nothing.</param>
+    /// <param name="located">The preprocessed text of the file slangc's <c>#line</c> locates the
+    /// declaration in, when that is a file other than the entry source and it was read (proven
+    /// a module or not); null when it is the entry source, slangc's core module, or unread.</param>
     /// <remarks>
-    /// In order: the entry text decides whatever it binds or declares (its own declarations and
-    /// those of the files it <c>#include</c>s, which <c>-E</c> expands). A declaration slangc
+    /// <para>In order: the entry text decides whatever it binds or declares (its own declarations
+    /// and those of the files it <c>#include</c>s, which <c>-E</c> expands). A declaration slangc
     /// locates in a module is decided by that module's own text alone. Anything else (a
     /// resource hoisted out of an aggregate, whose location is slangc's core module, or one
     /// located in a file not proven to be a module, which may be a fragment <c>#include</c>d
-    /// by one) is decided by all the modules together, and only when they agree.
+    /// by one) is decided by all the modules together, and only when they agree.</para>
+    /// <para>Issue #325: the hoisted shape (<c>&lt;global&gt;_&lt;field&gt;_&lt;n&gt;</c>) is
+    /// read as a hoist, and matched through the globals it may come from, only for a name NO
+    /// read text spells (<see cref="IsHoistedName"/>). An author's own <c>tex_layer_0</c> is
+    /// spelled by the text of the file slangc locates it in (measured: slangc locates an author's
+    /// global at its declaration and a hoisted resource in its core module), so it is matched
+    /// verbatim and only verbatim; an entry global <c>tex</c> can never claim it.</para>
     /// </remarks>
     public static RegisterVerdict Judge(
         EmittedResource resource,
         AuthorBindings entry,
         IReadOnlyDictionary<string, AuthorBindings> modules,
         bool closureComplete,
-        bool closureBroken = false)
+        bool closureBroken = false,
+        AuthorBindings? located = null)
     {
-        if (entry.Binds(resource))
+        bool hoisted = IsHoistedName(resource, entry, located);
+        if (entry.Binds(resource, hoisted))
             return RegisterVerdict.Keep;
         // Written in the entry source (or a file it #includes, which -E expands) without one.
-        if (resource.File == EntrySourceFile || entry.Declares(resource))
+        if (resource.File == EntrySourceFile || entry.Declares(resource, hoisted))
             return RegisterVerdict.Strip;
 
         if (modules.TryGetValue(PathKey(resource.File), out AuthorBindings? own))
         {
-            if (own.Binds(resource))
+            if (own.Binds(resource, hoisted))
             {
-                if (!own.DeclaresPlainly(resource))
+                if (!own.DeclaresPlainly(resource, hoisted))
                     return RegisterVerdict.Keep;
             }
-            else if (own.Declares(resource))
+            else if (own.Declares(resource, hoisted))
             {
                 return RegisterVerdict.Strip;
             }
@@ -267,9 +283,27 @@ internal static class SlangcRegisterStripper
 
         // Bound in one module and plainly declared in another: the two readings disagree, and
         // which one slangc compiled cannot be told from here.
-        if (modules.Values.Any(m => m.Binds(resource)))
-            return modules.Values.Any(m => m.DeclaresPlainly(resource)) ? RegisterVerdict.Unproven : RegisterVerdict.Keep;
-        return modules.Values.Any(m => m.Declares(resource)) ? RegisterVerdict.Strip : RegisterVerdict.Unproven;
+        if (modules.Values.Any(m => m.Binds(resource, hoisted)))
+            return modules.Values.Any(m => m.DeclaresPlainly(resource, hoisted)) ? RegisterVerdict.Unproven : RegisterVerdict.Keep;
+        return modules.Values.Any(m => m.Declares(resource, hoisted)) ? RegisterVerdict.Strip : RegisterVerdict.Unproven;
+    }
+
+    /// <summary>
+    /// Issue #325: a resource shaped like a hoist counts as one only when no read text spells
+    /// its name: neither the entry text nor the text of the file slangc locates it in. One
+    /// located in slangc's core module (where every hoisted resource is located, measured) is a
+    /// hoist unless the entry spells the name verbatim (then an author global of that spelling
+    /// exists too, issue #302's <c>SD0641</c>). One located in another file whose text is unread
+    /// is NOT a hoist: nothing may claim it through a prefix before that text is read, so its
+    /// verdict waits for the file or fails as <c>SD0628</c>.
+    /// </summary>
+    internal static bool IsHoistedName(EmittedResource resource, AuthorBindings entry, AuthorBindings? located)
+    {
+        if (!resource.IsHoisted || entry.Spells(resource.Name))
+            return false;
+        if (resource.IsCoreHoist || resource.File == EntrySourceFile)
+            return true;
+        return located is not null && !located.Spells(resource.Name);
     }
 
     /// <summary>
@@ -323,11 +357,25 @@ internal static class SlangcRegisterStripper
         public bool IsHoisted => HoistBases(Name).Any();
 
         /// <summary>
-        /// <see cref="IsHoisted"/> and located in a file with a bare name: slangc's embedded
-        /// core module, which is not a file anyone can preprocess.
+        /// <see cref="IsHoisted"/> and located in slangc's embedded core module (<c>core</c>,
+        /// <c>hlsl.meta.slang</c>, <c>core.meta.slang</c>, measured), which is not a file anyone
+        /// can preprocess.
         /// </summary>
-        public bool IsCoreHoist => IsHoisted && File.IndexOfAny(['/', '\\']) < 0;
+        public bool IsCoreHoist => IsHoisted && IsCoreModuleFile(File);
     }
+
+    /// <summary>
+    /// A <c>#line</c> file name that is one of slangc's own embedded modules: a bare name with
+    /// no directory and either no extension (<c>core</c>, <c>glsl</c>) or the <c>.meta.slang</c>
+    /// one its standard-library sources carry (<c>hlsl.meta.slang</c>, <c>core.meta.slang</c>).
+    /// A file imported by a relative path is located by a bare name too (<c>import "m.slang"</c>
+    /// gives <c>#line 2 "m.slang"</c>, measured, issue #325), which is why "no separator" alone
+    /// is not the test.
+    /// </summary>
+    public static bool IsCoreModuleFile(string file) =>
+        file != EntrySourceFile
+        && file.IndexOfAny(['/', '\\']) < 0
+        && (!file.Contains('.') || file.EndsWith(".meta.slang", StringComparison.Ordinal));
 
     // 'import "path" ;', '__exported import "path" ;' or '__include "path" ;' in a preprocessed
     // token stream. Read from the unmasked text: the mask blanks string contents.
@@ -386,6 +434,9 @@ internal static class SlangcRegisterStripper
     {
         private readonly Dictionary<string, HashSet<char>> _bound = new(StringComparer.Ordinal);
         private readonly HashSet<string> _plain = new(StringComparer.Ordinal);
+        private readonly HashSet<string> _spelled = new(StringComparer.Ordinal);
+
+        private static readonly Regex Identifier = new("""[A-Za-z_]\w*""", RegexOptions.Compiled);
 
         /// <summary>Nothing bound, nothing declared.</summary>
         public static AuthorBindings None { get; } = new();
@@ -409,6 +460,8 @@ internal static class SlangcRegisterStripper
             // The preprocessor already dropped comments; the mask still blanks string-literal
             // contents (an attribute argument that happens to read 'X : register(').
             string masked = SlangSourceMask.Mask(preprocessed);
+            foreach (Match m in Identifier.Matches(masked))
+                _spelled.Add(m.Value);
             foreach (Match m in AuthorRegister.Matches(masked))
             {
                 string name = m.Groups["name"].Value;
@@ -421,6 +474,13 @@ internal static class SlangcRegisterStripper
                 }
             }
 
+            // A namespace block's braces do not nest its declarations away from the global scope:
+            // 'namespace A { Texture2D T; }' declares a global (slangc even drops the namespace
+            // from the emitted name, issue #323), so those braces are not counted as depth.
+            var namespaceBraces = new HashSet<int>();
+            foreach (Match m in NamespaceBlock.Matches(masked))
+                namespaceBraces.Add(m.Groups["brace"].Index);
+            var braces = new Stack<bool>();
             int depth = 0;
             int scanned = 0;
             foreach (Match m in PlainDeclaration.Matches(masked))
@@ -428,9 +488,17 @@ internal static class SlangcRegisterStripper
                 for (; scanned < m.Index; scanned++)
                 {
                     if (masked[scanned] == '{')
-                        depth++;
+                    {
+                        bool isNamespace = namespaceBraces.Contains(scanned);
+                        braces.Push(isNamespace);
+                        if (!isNamespace)
+                            depth++;
+                    }
                     else if (masked[scanned] == '}')
-                        depth--;
+                    {
+                        if (!(braces.Count > 0 && braces.Pop()))
+                            depth--;
+                    }
                 }
                 if (depth != 0)
                     continue;
@@ -440,12 +508,22 @@ internal static class SlangcRegisterStripper
             }
         }
 
+        /// <summary>The text spells the identifier <paramref name="name"/> anywhere (issue #325:
+        /// an author's own name, whatever its shape, is spelled by the text that declares it).</summary>
+        public bool Spells(string name) => _spelled.Contains(name);
+
         /// <summary>The author wrote this emitted declaration's register.</summary>
-        public bool Binds(EmittedResource resource)
+        /// <param name="resource">The emitted declaration.</param>
+        /// <param name="hoisted">Also match through the globals the name may have been hoisted
+        /// out of (<see cref="HoistBases"/>); false for a name some read text spells, which is
+        /// matched verbatim only (<see cref="IsHoistedName"/>).</param>
+        public bool Binds(EmittedResource resource, bool hoisted)
         {
             // An emitted name the author wrote verbatim (any class, as since issue #252).
             if (_bound.ContainsKey(resource.Name))
                 return true;
+            if (!hoisted)
+                return false;
             // Hoisted out of an author global: only a register of this resource's own class counts.
             char cls = resource.RegisterClass;
             return HoistBases(resource.Name).Any(
@@ -456,8 +534,8 @@ internal static class SlangcRegisterStripper
         /// The author declared this emitted declaration's resource here without a register for
         /// it: plainly, or (hoisted out of an aggregate) with a register of the other class only.
         /// </summary>
-        public bool Declares(EmittedResource resource) =>
-            DeclaresPlainly(resource) || HoistBases(resource.Name).Any(_bound.ContainsKey);
+        public bool Declares(EmittedResource resource, bool hoisted) =>
+            DeclaresPlainly(resource, hoisted) || (hoisted && HoistBases(resource.Name).Any(_bound.ContainsKey));
 
         /// <summary>
         /// The text declares a global called <paramref name="name"/>, with or without a register
@@ -466,7 +544,7 @@ internal static class SlangcRegisterStripper
         public bool DeclaresGlobal(string name) => _plain.Contains(name) || _bound.ContainsKey(name);
 
         /// <summary>The author declared this emitted declaration's resource here with no register at all.</summary>
-        public bool DeclaresPlainly(EmittedResource resource) =>
-            _plain.Contains(resource.Name) || HoistBases(resource.Name).Any(_plain.Contains);
+        public bool DeclaresPlainly(EmittedResource resource, bool hoisted) =>
+            _plain.Contains(resource.Name) || (hoisted && HoistBases(resource.Name).Any(_plain.Contains));
     }
 }

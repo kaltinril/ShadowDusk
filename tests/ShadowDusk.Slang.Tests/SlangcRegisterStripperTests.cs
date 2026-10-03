@@ -387,4 +387,120 @@ public sealed class SlangcRegisterStripperTests
     [Fact]
     public void QuotedImports_DoNotFollowAnImportByModuleName() =>
         SlangcRegisterStripper.QuotedImports("module outer ; __exported import inner ;", "C:/a/outer.slang").ShouldBeEmpty();
+
+    // ---- Issue #325: an author's name shaped like a hoist ------------------------------------
+
+    private const string PrefixEntry = "import \"C:/a/m.slang\" ; Texture2D tex ; SamplerState S ;";
+    private const string ModuleFile = "C:/a/m.slang";
+
+    private static SlangcRegisterStripper.AuthorBindings Bindings(string text) =>
+        SlangcRegisterStripper.AuthorBindings.Parse(text);
+
+    [Fact]
+    public void Judge_ModuleGlobalNamedLikeAHoistOfAnEntryGlobal_IsMatchedVerbatim_NeverThroughThePrefix()
+    {
+        // 'tex_layer_0' has the hoisted shape ('<global>_<field>_<n>') and the entry declares a
+        // plain 'tex'. slangc locates it in the module, whose text spells it: it is the module
+        // author's own name, and its register is the module's to decide.
+        var layer = Emitted("tex_layer_0", 't', ModuleFile);
+        const string bound = "module m ; public Texture2D tex_layer_0 : register ( t3 ) ; public SamplerState ModS ;";
+        const string plain = "module m ; public Texture2D tex_layer_0 ; public SamplerState ModS ;";
+
+        SlangcRegisterStripper.Judge(layer, Bindings(PrefixEntry), Modules((ModuleFile, bound)), closureComplete: true, located: Bindings(bound))
+            .ShouldBe(SlangcRegisterStripper.RegisterVerdict.Keep);
+        SlangcRegisterStripper.Judge(layer, Bindings(PrefixEntry), Modules((ModuleFile, plain)), closureComplete: true, located: Bindings(plain))
+            .ShouldBe(SlangcRegisterStripper.RegisterVerdict.Strip);
+        // The module's text is read but not yet proven a module: its own verdict waits for the
+        // closure, and the entry's 'tex' still does not claim the name.
+        SlangcRegisterStripper.Judge(layer, Bindings(PrefixEntry), Modules(), closureComplete: false, located: Bindings(bound))
+            .ShouldBe(SlangcRegisterStripper.RegisterVerdict.Pending);
+        // Unread (the file could not be preprocessed): nothing may claim it through a prefix.
+        SlangcRegisterStripper.Judge(layer, Bindings(PrefixEntry), Modules(), closureComplete: true, closureBroken: true)
+            .ShouldBe(SlangcRegisterStripper.RegisterVerdict.Unproven);
+        SlangcRegisterStripper.Judge(layer, Bindings(PrefixEntry), Modules(), closureComplete: false)
+            .ShouldBe(SlangcRegisterStripper.RegisterVerdict.Pending);
+    }
+
+    [Fact]
+    public void Judge_EntryRegisterOnThePrefix_DoesNotReachAModulesLiteralName()
+    {
+        // The reverse hole: 'Texture2D tex : register(t1)' in the entry must not KEEP a register
+        // slangc numbered on the module's own plain 'tex_layer_0'.
+        var layer = Emitted("tex_layer_0", 't', ModuleFile);
+        const string entry = "import \"C:/a/m.slang\" ; Texture2D tex : register ( t1 ) ;";
+        const string plain = "module m ; public Texture2D tex_layer_0 ;";
+
+        SlangcRegisterStripper.Judge(layer, Bindings(entry), Modules((ModuleFile, plain)), closureComplete: true, located: Bindings(plain))
+            .ShouldBe(SlangcRegisterStripper.RegisterVerdict.Strip);
+    }
+
+    [Fact]
+    public void IsHoistedName_OnlyForANameNoReadTextSpells()
+    {
+        var entry = Bindings(PrefixEntry);
+        var module = Bindings("module m ; public Texture2D tex_layer_0 : register ( t3 ) ;");
+        var other = Bindings("module m ; public Sampler2D tex : register ( t3 ) ;");
+
+        // Located in slangc's core module: a hoist (of the entry's or a module's global).
+        SlangcRegisterStripper.IsHoistedName(Emitted("tex_texture_0", 't', "core"), entry, null).ShouldBeTrue();
+        SlangcRegisterStripper.IsHoistedName(Emitted("tex_texture_0", 't', "hlsl.meta.slang"), entry, null).ShouldBeTrue();
+        // Spelled verbatim by the entry: the author's own global (issue #302's collision case).
+        SlangcRegisterStripper.IsHoistedName(Emitted("tex", 't', "core"), entry, null).ShouldBeFalse();
+        // Located in a file whose read text spells it: the author's.
+        SlangcRegisterStripper.IsHoistedName(Emitted("tex_layer_0", 't', ModuleFile), entry, module).ShouldBeFalse();
+        // Located in a file whose read text does not spell it: hoisted out of something there.
+        SlangcRegisterStripper.IsHoistedName(Emitted("tex_texture_0", 't', ModuleFile), entry, other).ShouldBeTrue();
+        // Located in a file not read: not a hoist until the text says so.
+        SlangcRegisterStripper.IsHoistedName(Emitted("tex_layer_0", 't', ModuleFile), entry, null).ShouldBeFalse();
+        // Not shaped like a hoist at all.
+        SlangcRegisterStripper.IsHoistedName(Emitted("ModTex", 't', "core"), entry, null).ShouldBeFalse();
+    }
+
+    [Theory]
+    // slangc's own embedded modules (measured #line file names).
+    [InlineData("core", true)]
+    [InlineData("hlsl.meta.slang", true)]
+    [InlineData("core.meta.slang", true)]
+    [InlineData("glsl", true)]
+    // A file imported by a relative path is located by a bare name too (measured, issue #325).
+    [InlineData("m.slang", false)]
+    [InlineData("./m.slang", false)]
+    [InlineData("sub/m.slang", false)]
+    [InlineData("C:/a/m.slang", false)]
+    [InlineData("C:\\a\\m.slang", false)]
+    [InlineData("<stdin>", false)]
+    public void IsCoreModuleFile_IsSlangcsOwnModules_NotARelativeImport(string file, bool expected)
+    {
+        SlangcRegisterStripper.IsCoreModuleFile(file).ShouldBe(expected);
+        new SlangcRegisterStripper.EmittedResource("Comb_texture_0", 't', file, 1).IsCoreHoist.ShouldBe(expected);
+    }
+
+    [Fact]
+    public void Judge_DeclarationInsideANamespaceBlock_IsAGlobalDeclaration()
+    {
+        // 'namespace A { ... }' does not nest its declarations away from the global scope (slangc
+        // even drops the namespace from the emitted name, issue #323), in the entry and in a
+        // module alike; a struct's or function's braces still do.
+        const string entry = "namespace A { Texture2D T ; namespace X { SamplerState S : register ( s2 ) ; } } struct M { Texture2D InStruct ; } ;";
+        Judge(Emitted("T", 't'), entry).ShouldBe(SlangcRegisterStripper.RegisterVerdict.Strip);
+        Judge(Emitted("S", 's'), entry).ShouldBe(SlangcRegisterStripper.RegisterVerdict.Keep);
+        Judge(Emitted("InStruct", 't', "C:/a/m.slang"), entry).ShouldBe(SlangcRegisterStripper.RegisterVerdict.Unproven);
+
+        const string module = "module m ; namespace A . B { public Texture2D ModTex ; public SamplerState MS : register ( s1 ) ; }";
+        Judge(Emitted("ModTex", 't', ModuleFile), "import \"C:/a/m.slang\" ;", (ModuleFile, module))
+            .ShouldBe(SlangcRegisterStripper.RegisterVerdict.Strip);
+        Judge(Emitted("MS", 's', ModuleFile), "import \"C:/a/m.slang\" ;", (ModuleFile, module))
+            .ShouldBe(SlangcRegisterStripper.RegisterVerdict.Keep);
+    }
+
+    [Fact]
+    public void AuthorBindings_Spells_EveryIdentifierOfTheText_OutsideStrings()
+    {
+        var bindings = Bindings("module m ; public Texture2D tex_layer_0 : register ( t3 ) ; [ shader ( \"tex_other_0\" ) ]");
+
+        bindings.Spells("tex_layer_0").ShouldBeTrue();
+        bindings.Spells("register").ShouldBeTrue();
+        bindings.Spells("tex").ShouldBeFalse();
+        bindings.Spells("tex_other_0").ShouldBeFalse();
+    }
 }
