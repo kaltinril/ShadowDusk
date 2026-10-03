@@ -183,6 +183,45 @@ try {
     console.log(`  [${ok ? 'PASS' : 'FAIL'}] trap recovery: ${trap.slice(0, 100)} -> next compile ${afterSha === probe.expected ? 'matches manifest' : 'FAILED'}`);
   }
 
+  // 1c. Issue #302: a combined 'Sampler2D Comb' must reflect its texture as 'Comb', the name the
+  // author wrote, not slangc's hoisted 'Comb_texture_0'. The in-process slangc shares
+  // SlangCompiler with the desktop route, so the same decision must come out of the page: the
+  // compiled bytes carry the parameter name 'Comb' and never the generated one (MGFX stores
+  // parameter names as plain strings), a combined sampler declared through a macro pays the one
+  // extra in-process preprocess run and lands on the same name, and a texture held in a struct
+  // is refused with SD0640 before anything is compiled downstream.
+  {
+    const entry = '[shader("fragment")]\nfloat4 MainPS(float4 pos : SV_Position, float2 uv : TEXCOORD0) : SV_Target\n{\n    return Comb.Sample(uv);\n}\n';
+    const names = [
+      { key: 'OpenGL/Sampler2D Comb', target: 'OpenGL', src: 'Sampler2D Comb;\n' + entry },
+      { key: 'DirectX_Vkd3d/Sampler2D Comb', target: 'DirectX', src: 'Sampler2D Comb;\n' + entry },
+      { key: 'OpenGL/Sampler2D through a macro', target: 'OpenGL', src: '#define DECLARE(n) Sampler2D n;\nDECLARE(Comb)\n' + entry },
+    ];
+    for (const n of names) {
+      const out = await page.evaluate(
+        async ({ s, t }) => await window.theInstance.invokeMethodAsync('TestCompileSlang', s, t, 'Comb.slang'), { s: n.src, t: n.target });
+      let ok = false;
+      let note = out.slice(0, 160);
+      if (out.startsWith('OK:')) {
+        const text = Buffer.from(out.slice(3), 'base64').toString('latin1');
+        const hasAuthor = text.includes('Comb');
+        const hasGenerated = text.includes('Comb_texture_0');
+        ok = hasAuthor && !hasGenerated;
+        note = `parameter 'Comb' ${hasAuthor ? 'present' : 'MISSING'}, 'Comb_texture_0' ${hasGenerated ? 'PRESENT' : 'absent'}`;
+      }
+      if (!ok) failures.push(`issue #302 ${n.key}: ${note}`);
+      rows.bytes.push({ key: `#302 ${n.key}`, verdict: ok ? 'PASS' : 'FAIL', note: note.replace(/\|/g, '/'), ms: 0 });
+      console.log(`  [${ok ? 'PASS' : 'FAIL'}] #302 ${n.key}: ${note}`);
+    }
+    const held = 'struct M { Texture2D t; SamplerState s; };\nM gM;\n[shader("fragment")]\nfloat4 MainPS(float4 pos : SV_Position, float2 uv : TEXCOORD0) : SV_Target\n{\n    return gM.t.Sample(gM.s, uv);\n}\n';
+    const refused = await page.evaluate(
+      async ({ s }) => await window.theInstance.invokeMethodAsync('TestCompileSlang', s, 'OpenGL', 'Held.slang'), { s: held });
+    const ok = refused.startsWith('ERR:SD0640') && refused.includes("'gM'");
+    if (!ok) failures.push(`issue #302 struct-held texture: expected ERR:SD0640 naming 'gM', got '${refused.slice(0, 200)}'`);
+    rows.bytes.push({ key: '#302 struct-held texture refused (SD0640)', verdict: ok ? 'PASS' : 'FAIL', note: refused.slice(0, 80).replace(/\|/g, '/'), ms: 0 });
+    console.log(`  [${ok ? 'PASS' : 'FAIL'}] #302 struct-held texture: ${refused.slice(0, 120)}`);
+  }
+
   // 2. Render: slangc route vs subset route, real KNI WebGL Effect, read back.
   await page.waitForFunction(() => typeof window.__sd_readback === 'function', { timeout: 60000 });
   const readback = async () => {

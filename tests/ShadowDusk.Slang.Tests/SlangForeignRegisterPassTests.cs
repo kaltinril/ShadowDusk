@@ -241,8 +241,11 @@ public sealed class SlangForeignRegisterPassTests
 
         result.IsSuccess.ShouldBeTrue();
         string fx = downstream.Captured.ShouldNotBeNull();
-        fx.ShouldContain("Texture2D<float4 > ModComb_texture_0 : register(t6);", Case.Sensitive);
+        // The texture half carries the module's own name for the global (issue #302), decided
+        // from the module text this pass already read: no further slangc run.
+        fx.ShouldContain("Texture2D<float4 > ModComb : register(t6);", Case.Sensitive);
         fx.ShouldContain("SamplerState ModComb_sampler_0;", Case.Sensitive);
+        fx.ShouldContain("return ModComb.Sample(ModComb_sampler_0, uv_0);", Case.Sensitive);
         // The core module is never handed to slangc as a file to preprocess.
         slangc.PreprocessInputs.ShouldBe([["-"], [ModulePath]]);
     }

@@ -24,6 +24,12 @@ self-contained. Two host floors come from the upstream binaries themselves:
 
 On any other host, `SlangCompiler` returns `SD0620` naming the reason instead of crashing.
 
+Parameter names are the ones you wrote: cbuffer members, `Texture2D`/`SamplerState` globals,
+and a combined `Sampler2D Comb;`, whose texture reflects as `Comb`
+(`effect.Parameters["Comb"].SetValue(texture)`). A texture held in a struct global, in a
+`cbuffer`/`ParameterBlock`, or taken as an entry-point `uniform` parameter has no name you
+wrote that could identify it and is rejected with `SD0640`; declare it as a global of its own.
+
 This is a separate, **optional** package. A consumer who does not add it pays zero size or
 dependency cost. `ShadowDusk.Compiler`'s own `.slang` support (an HLSL-compatible subset, no
 extra package, every host including the browser) is untouched.

@@ -241,6 +241,30 @@ that loads and renders identically to `mgfxc`'s in the real MonoGame/KNI runtime
   `tools/restore.*` (one upload now covers this and the #271 stack fix below), the browser keeps the
   old module and this defect, warns once on the console, and the gates report the fixture as an
   expected difference keyed on the old module's hash. No emitted byte changes on the desktop.
+- **`ShadowDusk.Slang`: a combined `Sampler2D Comb` now reflects as `Comb`, so
+  `effect.Parameters["Comb"]` finds the texture (issue #302).** slangc hoists every resource out of
+  an aggregate under a name it generates, even with `-no-mangle`: `Sampler2D Comb` is emitted as
+  `Comb_texture_0` plus `Comb_sampler_0`, and that generated name was the compiled effect's
+  parameter, so a consumer had to know slangc's suffix to set their own texture. The texture half
+  of a combined sampler declared as a global (every `Sampler1D`/`2D`/`3D`/`Cube`, the `Array` and
+  `Shadow` forms, arrays of them, a global in an imported module) is now renamed to the global's
+  name in slangc's HLSL before the `.fx` is assembled, which is the table the hand-written
+  `Texture2D Comb; SamplerState ...` produces through the `.fx` route on every target and the name
+  `mgfxc` gives the equivalent legacy `sampler2D Comb` (measured, 3.8.4.1). The sampler half keeps
+  slangc's name; nothing sets a sampler by name. A texture hoisted out of anything else, a struct
+  global's field (`gM_t_0`), a texture inside a `cbuffer`/`ParameterBlock`, or an entry-point
+  `uniform Texture2D`, has no name the author wrote and the reference compiler rejects the shape
+  outright (fxc `X3090`), so it now fails as the new `SD0640` at the aggregate's declaration instead
+  of reaching the effect under a generated name; a hoisted SAMPLER alone still compiles. slangc
+  emits an author global spelled like a hoisted name (`Sampler2D Comb; Texture2D Comb_texture_0;`)
+  as two declarations of one name: `SD0641`, as is an author name slangc's output already uses. A
+  name is treated as generated only when the source provably never spells it (the raw text, or
+  slangc's `#line` for an author's own global, or slangc's own `-E` text, reusing what the register
+  pass read); what no read text can explain fails as `SD0642`. No slangc run is added for any shape
+  pinned before (a combined sampler declared plainly still costs one run), and no byte moves on the
+  Slang corpus. Proven in real MonoGame DesktopGL by a new `validation/SlangTexturedGl` row that
+  sets a second texture through `effect.Parameters["Comb"]` and renders (maxd 1), and pinned on
+  DirectX, OpenGL, Vulkan, DirectX12 and FNA by `SlangHoistedTextureNameTests`.
 - **Browser compiles of nested shaders hung, crashed or miscompiled (issue #271).** The in-browser
   DXC, SPIRV-Cross and vkd3d WebAssembly modules were linked with emscripten's 64 KB default stack
   (the desktop natives get 1 MB on Windows, 8 MB on Linux/macOS), and with emscripten's layout an

@@ -15,6 +15,10 @@ namespace ShadowDusk.Slang.Tests;
 /// of growing silently. The same counts through REAL slangc are pinned by
 /// <c>SlangForeignRegisterTests.RegisterPass_CostsTheSameThroughRealSlangc</c>; the wall-time
 /// measurement is in <c>project_facts.md</c>.
+/// <para>Issue #302 added a second reason to ask slangc's preprocessor: naming a hoisted texture
+/// after the author's global. It costs nothing for any shape that was here before (the raw
+/// source decides, or the register pass's own texts are reused); the <c>f:</c> shapes pin the
+/// only ones that pay a run for it.</para>
 /// </summary>
 public sealed class SlangRegisterPassCostTests
 {
@@ -157,6 +161,30 @@ public sealed class SlangRegisterPassCostTests
             "#line 1 \"C:/shaders/frag.hlsli\"\nTexture2D<float4 > IncTex : register(t7);\n#line 2 \"<stdin>\"\nSamplerState Samp : register(s0);\n",
             "Texture2D IncTex : register ( t7 ) ; SamplerState Samp ;",
             [["-", "C:/shaders/frag.hlsli"], ["-"]]),
+
+        // (f) Issue #302. A texture the author named like a hoisted resource ('<global>_<field>_<n>')
+        // is told apart from one for free: slangc locates it at the line that spells it.
+        ["f: author texture with a hoisted-looking name"] = Make(
+            "Texture2D tex_layer_0;\nSamplerState Samp;\n",
+            "#line 1 \"<stdin>\"\nTexture2D<float4 > tex_layer_0 : register(t0);\n#line 2\nSamplerState Samp : register(s0);\n",
+            "Texture2D tex_layer_0 ; SamplerState Samp ;",
+            []),
+
+        // A combined sampler declared through a macro: the raw text never declares 'Comb'
+        // plainly, so slangc's preprocessor says which global the halves were hoisted from.
+        ["f: combined Sampler2D declared through a macro"] = Make(
+            "#define DECLARE(n) Sampler2D n;\nDECLARE(Comb)\n",
+            "#line 93 \"core\"\nTexture2D<float4 > Comb_texture_0 : register(t0);\n#line 1188 \"hlsl.meta.slang\"\nSamplerState Comb_sampler_0 : register(s0);\n",
+            "Sampler2D Comb ;",
+            [["-"]]),
+
+        // The same with an author register: the register pass already preprocessed the entry
+        // source, and its text is reused. No second run.
+        ["f: combined Sampler2D declared through a macro, author register"] = Make(
+            "#define DECLARE(n) Sampler2D n : register(t2);\nDECLARE(Comb)\n",
+            "#line 93 \"core\"\nTexture2D<float4 > Comb_texture_0 : register(t2);\n#line 1188 \"hlsl.meta.slang\"\nSamplerState Comb_sampler_0 : register(s0);\n",
+            "Sampler2D Comb : register ( t2 ) ;",
+            [["-"]]),
 
         // Two modules on one level are read in one run, and a module imported twice only once.
         ["two quoted imports on one level, one shared"] = Make(
