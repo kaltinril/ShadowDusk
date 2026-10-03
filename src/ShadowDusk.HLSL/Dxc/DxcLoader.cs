@@ -80,11 +80,19 @@ namespace ShadowDusk.HLSL.Dxc;
 /// loaded, and <c>DxilLibIsEnabled</c> never retries after a miss. We ship no <c>libdxil</c>
 /// and cannot pre-empt a library we do not ship, so on macOS <see cref="Register"/> checks,
 /// right after its own load, whether any <c>libdxil</c> image is in the process and fails
-/// DirectX 12 loudly if so. That one <c>dlopen</c> happens inside <see cref="Register"/>. The
-/// only other library load DXC makes is its SPIR-V emitter <c>dlopen</c>ing <c>libdxcompiler</c>
-/// itself, by leaf name, from inside every <c>-Zi</c> SPIR-V compile to read the source for
-/// <c>OpSource</c> (<c>clang::spirv::ReadSourceCode</c>; issue #312): it reaches dyld's lock,
-/// which is why <see cref="DxcForkGate"/> never makes a <c>fork()</c> wait for a compile.</para>
+/// DirectX 12 loudly if so. That one <c>dlopen</c> happens inside <see cref="Register"/>.</para>
+///
+/// <para><b>One load DOES happen later, inside a compile (issues #312, #332).</b> DXC's SPIR-V
+/// emitter loads <c>libdxcompiler</c> itself, by LEAF name, from inside every <c>-Zi</c>
+/// SPIR-V compile to read the source for <c>OpSource</c> (<c>clang::spirv::ReadSourceCode</c>
+/// -&gt; <c>DxcDllSupport::Initialize</c>). It reaches dyld's lock, which is why
+/// <see cref="DxcForkGate"/> never makes a <c>fork()</c> wait for a compile; and a leaf name is
+/// a name search, which this class otherwise never allows. What that search answers is decided
+/// by the dynamic linker, not by us: Windows and dyld from macOS 14 hand back the already-loaded
+/// pinned image (by base name; by its <c>@rpath/</c> install name), glibc and older dyld search
+/// their directories. <see cref="DxcLeafNameLookup"/> asks the linker, without loading anything,
+/// right after the pinned load, and <see cref="CheckDebugSpirvLookup"/> refuses the debug SPIR-V
+/// compiles (<c>SD0223</c>) when the answer is not the pinned build: never silently a decoy.</para>
 ///
 /// <para><b>Where the natives are found.</b> Windows and Linux:
 /// <see cref="GetPinnedPairDirectories"/>. macOS: <see cref="GetMacCandidates"/>; the dylib
@@ -131,6 +139,10 @@ internal static class DxcLoader
     private static ShaderError? _loadError;
     private static ShaderError? _foreignValidatorError;
     private static IntPtr _pinnedDxcHandle;
+    private static DxcLeafNameLookup.Outcome? _leafNameLookup;
+    private static string? _pinnedMappedPath;
+    private static string? _pinnedIdentity;
+    private static string? _pinnedDirectory;
 
     /// <summary>
     /// Idempotently makes DXC resolvable as ShadowDusk's own pinned build. Must run before the
@@ -277,6 +289,37 @@ internal static class DxcLoader
     /// <see cref="Register"/> has already decided this: nothing a compile does can change it.
     /// </summary>
     internal static ShaderError? CheckBoundValidator() => _foreignValidatorError;
+
+    /// <summary>
+    /// The error to return instead of running a SPIR-V compile with debug information, whose
+    /// source read loads <c>libdxcompiler</c> by leaf name from inside DXC (issue #332), or
+    /// <c>null</c> when that load is known to resolve to the pinned image. Callers ask only for
+    /// the compiles that make the load (<see cref="DxcLeafNameLookup.CompileReadsSourceThroughLeafNameLoad"/>).
+    /// <para>Decided once, in <see cref="Register"/>, where the answer cannot change afterwards:
+    /// Windows returns the first module loaded under the base name for the life of the process,
+    /// and glibc's search path is fixed at process start (<c>LD_LIBRARY_PATH</c> is read once).
+    /// On macOS the one-time answer stands only when dyld matched the leaf to the already-loaded
+    /// pinned image (macOS 14 and later, by install name); when it did not, dyld would search
+    /// the working directory, which can change, so the lookup is re-evaluated per compile there.
+    /// Android's linker resolves the APK's own SONAME and is not asked.</para>
+    /// </summary>
+    internal static ShaderError? CheckDebugSpirvLookup()
+    {
+        DxcLeafNameLookup.Outcome? outcome = _leafNameLookup;
+        if (outcome is null || outcome.ResolvesToPinned)
+            return null;
+
+        if (OperatingSystem.IsMacOS())
+            outcome = DxcLeafNameLookup.Evaluate(_pinnedMappedPath!, _pinnedIdentity!, _pinnedDirectory!);
+
+        return outcome.Error;
+    }
+
+    /// <summary>
+    /// What the dynamic linker answered for DXC's leaf-name load at <see cref="Register"/> time
+    /// (<c>null</c> before it ran, or on Android). For diagnostics and the integration probes.
+    /// </summary>
+    internal static DxcLeafNameLookup.Outcome? LeafNameLookup => _leafNameLookup;
 
     /// <summary>True for the leaf names DXC's non-Windows builds <c>dlopen</c> as their validator.</summary>
     internal static bool IsDxilLeafName(string fileName) =>
@@ -442,6 +485,14 @@ internal static class DxcLoader
                 dxilPath is not null ? VerifyBoundWindowsDxil(dxilPath, pinnedValidator)
                 : mac ? VerifyNoMacDxil()
                 : null;
+
+            // What DXC's own leaf-name load of this library, made from inside every debug
+            // SPIR-V compile, would be handed (issue #332). Asked of the dynamic linker now,
+            // without loading anything; see CheckDebugSpirvLookup for when it is asked again.
+            _pinnedMappedPath = MappedDxcImagePath() ?? dxcPath;
+            _pinnedIdentity = pinnedCompiler;
+            _pinnedDirectory = Path.GetDirectoryName(dxcPath) ?? "";
+            _leafNameLookup = DxcLeafNameLookup.Evaluate(_pinnedMappedPath, _pinnedIdentity, _pinnedDirectory);
             return null;
         }
 
@@ -741,8 +792,8 @@ internal static class DxcLoader
         }
     }
 
-    /// <summary>Win32 module lookups for <see cref="VerifyBoundWindowsDxil"/>.</summary>
-    private static class WindowsModules
+    /// <summary>Win32 module lookups for <see cref="VerifyBoundWindowsDxil"/> and <see cref="DxcLeafNameLookup"/>.</summary>
+    internal static class WindowsModules
     {
         /// <summary>
         /// The full path of the module a bare-name <c>LoadLibrary(name)</c> would return right
