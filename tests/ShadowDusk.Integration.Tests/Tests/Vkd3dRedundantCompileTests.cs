@@ -15,8 +15,8 @@ namespace ShadowDusk.Integration.Tests.Tests;
 /// pass that named one. MonoGame's stock <c>BasicEffect.fx</c> made 64 vkd3d calls for 30
 /// distinct shaders (measured: about 530 ms of vkd3d time, now about half). The pipeline now
 /// compiles each distinct request once; the output is pinned unchanged by the golden and
-/// cross-host byte-identity suites, so these tests pin only the call count, against the
-/// real vkd3d.
+/// cross-host byte-identity suites, so these tests pin the call count (against the real
+/// vkd3d) and the memo's premise that a repeat request gives the same bytes.
 /// </summary>
 [Trait("Category", "Integration")]
 [Trait("Platform", "FNA")]
@@ -27,6 +27,9 @@ public sealed class Vkd3dRedundantCompileTests
         private readonly Vkd3dShaderCompiler _inner = new();
         public List<(string Entry, ShaderStage Stage, string? Profile)> Requests { get; } = [];
 
+        /// <summary>The full request and the bytes (null on failure) vkd3d returned for it.</summary>
+        public List<(D3DCompileRequest Request, byte[]? Bytes)> Calls { get; } = [];
+
         public Task<Result<PlatformBlob, ShaderError>> CompileAsync(
             D3DCompileRequest request, CancellationToken cancellationToken = default)
             => Task.FromResult(Compile(request, cancellationToken));
@@ -35,8 +38,56 @@ public sealed class Vkd3dRedundantCompileTests
             D3DCompileRequest request, CancellationToken cancellationToken = default)
         {
             Requests.Add((request.EntryPoint, request.Stage, request.ProfileOverride));
-            return _inner.Compile(request, cancellationToken);
+            var result = _inner.Compile(request, cancellationToken);
+            Calls.Add((request, result.IsSuccess ? result.Value.Bytes.ToArray() : null));
+            return result;
         }
+    }
+
+    /// <summary>
+    /// MonoGame's stock effects, with the count of distinct shaders their techniques name
+    /// (measured against the real vkd3d). SkinnedEffect on FNA is absent: it exceeds the
+    /// vs_2_0 register file and fails loudly (SD0305, project_facts.md), so it never reaches
+    /// a full compile.
+    /// </summary>
+    public static TheoryData<string, PlatformTarget, int> StockEffectCounts => new()
+    {
+        { "SkinnedEffect.fx", PlatformTarget.DirectX, 12 },
+        { "EnvironmentMapEffect.fx", PlatformTarget.DirectX, 8 },
+        { "EnvironmentMapEffect.fx", PlatformTarget.Fna, 8 },
+        { "DualTextureEffect.fx", PlatformTarget.DirectX, 6 },
+        { "DualTextureEffect.fx", PlatformTarget.Fna, 6 },
+        { "AlphaTestEffect.fx", PlatformTarget.DirectX, 8 },
+        { "AlphaTestEffect.fx", PlatformTarget.Fna, 8 },
+        { "SpriteEffect.fx", PlatformTarget.DirectX, 2 },
+        { "SpriteEffect.fx", PlatformTarget.Fna, 2 },
+    };
+
+    public static TheoryData<string, PlatformTarget> StockEffects => new()
+    {
+        { "BasicEffect.fx", PlatformTarget.DirectX },
+        { "BasicEffect.fx", PlatformTarget.Fna },
+        { "SkinnedEffect.fx", PlatformTarget.DirectX },
+        { "SkinnedEffect.fx", PlatformTarget.Fna },
+        { "EnvironmentMapEffect.fx", PlatformTarget.DirectX },
+        { "EnvironmentMapEffect.fx", PlatformTarget.Fna },
+        { "DualTextureEffect.fx", PlatformTarget.DirectX },
+        { "DualTextureEffect.fx", PlatformTarget.Fna },
+        { "AlphaTestEffect.fx", PlatformTarget.DirectX },
+        { "AlphaTestEffect.fx", PlatformTarget.Fna },
+        { "SpriteEffect.fx", PlatformTarget.DirectX },
+        { "SpriteEffect.fx", PlatformTarget.Fna },
+    };
+
+    private static async Task<(CountingVkd3d Backend, Result<CompiledShader, ShaderError[]> Result)> CompileAsync(
+        string fx, PlatformTarget target)
+    {
+        string path = TestHelpers.FixturePath(fx);
+        var counting = new CountingVkd3d();
+        var result = await new EffectCompiler(dxbcCompilerFactory: () => counting).CompileAsync(
+            await File.ReadAllTextAsync(path),
+            new CompilerOptions { Target = target, SourceFileName = path });
+        return (counting, result);
     }
 
     [FnaTheory]
@@ -44,12 +95,7 @@ public sealed class Vkd3dRedundantCompileTests
     [InlineData(PlatformTarget.Fna)]
     public async Task BasicEffect_CompilesEachDistinctEntryPointOnce(PlatformTarget target)
     {
-        string path = TestHelpers.FixturePath("BasicEffect.fx");
-        var counting = new CountingVkd3d();
-
-        var result = await new EffectCompiler(dxbcCompilerFactory: () => counting).CompileAsync(
-            await File.ReadAllTextAsync(path),
-            new CompilerOptions { Target = target, SourceFileName = path });
+        var (counting, result) = await CompileAsync("BasicEffect.fx", target);
 
         result.IsSuccess.ShouldBeTrue(result.IsFailure ? result.Error[0].Message : null);
         counting.Requests.Count.ShouldBe(counting.Requests.Distinct().Count(),
@@ -57,4 +103,69 @@ public sealed class Vkd3dRedundantCompileTests
         // 32 techniques x (VS + PS) name 30 distinct shaders.
         counting.Requests.Count.ShouldBe(30);
     }
+
+    [FnaTheory]
+    [MemberData(nameof(StockEffectCounts))]
+    public async Task StockEffect_CompilesEachDistinctEntryPointOnce(
+        string fx, PlatformTarget target, int distinctShaders)
+    {
+        var (counting, result) = await CompileAsync(fx, target);
+
+        result.IsSuccess.ShouldBeTrue(result.IsFailure ? result.Error[0].Message : null);
+        counting.Requests.Count.ShouldBe(counting.Requests.Distinct().Count(),
+            "every request reaching vkd3d must be a distinct one");
+        counting.Requests.Count.ShouldBe(distinctShaders);
+    }
+
+    [FnaTheory]
+    [MemberData(nameof(StockEffects))]
+    public async Task EveryStockEffect_NeverSendsVkd3dTheSameRequestTwice(string fx, PlatformTarget target)
+    {
+        // Success is not required: SkinnedEffect on FNA fails loudly mid-compile (SD0305), and
+        // the requests made up to that point must still be distinct. Compared on the FULL
+        // request, not just (entry, stage, profile): a repeat differing in no field is the bug.
+        var (counting, _) = await CompileAsync(fx, target);
+
+        counting.Calls.ShouldNotBeEmpty();
+        counting.Calls.Select(c => RequestKey(c.Request)).Distinct().Count()
+            .ShouldBe(counting.Calls.Count, "the memo key must catch every repeat");
+    }
+
+    /// <summary>
+    /// The memo's premise (issue #255): vkd3d is deterministic, so replaying a request would
+    /// have produced the bytes the first call did. Re-run every distinct request fresh, and the
+    /// whole compile twice; all must be byte-identical. The pipeline always wraps the backend
+    /// in the memo, so an un-memoized pipeline run is not reachable from a test without a
+    /// production seam; this checks the property that makes the memo output-neutral, and the
+    /// goldens / cross-host manifest pin the bytes themselves.
+    /// </summary>
+    [FnaTheory]
+    [MemberData(nameof(StockEffects))]
+    public async Task MemoizedOutput_EqualsFreshVkd3dBytes_AndIsRepeatable(string fx, PlatformTarget target)
+    {
+        var (first, firstResult) = await CompileAsync(fx, target);
+        var (second, secondResult) = await CompileAsync(fx, target);
+
+        var fresh = new Vkd3dShaderCompiler();
+        foreach (var (request, bytes) in first.Calls)
+        {
+            var again = fresh.Compile(request);
+            if (bytes is null)
+            {
+                again.IsFailure.ShouldBeTrue($"{request.EntryPoint}: failed once, must fail again");
+                continue;
+            }
+            again.IsSuccess.ShouldBeTrue(again.IsFailure ? again.Error.Message : null);
+            again.Value.Bytes.ToArray().ShouldBe(bytes, $"{request.EntryPoint}: a repeat must give the cached bytes");
+        }
+
+        firstResult.IsSuccess.ShouldBe(secondResult.IsSuccess);
+        if (firstResult.IsSuccess)
+            secondResult.Value.Data.ShouldBe(firstResult.Value.Data);
+        second.Calls.Select(c => c.Bytes).ShouldBe(first.Calls.Select(c => c.Bytes));
+    }
+
+    private static string RequestKey(D3DCompileRequest r) =>
+        string.Join('\u001f', r.SourceFileName, r.EntryPoint, r.Stage, r.ProfileOverride,
+            r.EmbedDebugInfo, r.AllowWarnings, r.HlslSource);
 }
