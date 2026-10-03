@@ -113,6 +113,79 @@ public sealed class Vkd3dCompileContractTests
     }
 
     // -------------------------------------------------------------------------
+    // Compile options — ONE list per target type, for every host (issue #295)
+    // -------------------------------------------------------------------------
+
+    [Fact]
+    public void ResolveCompileOptions_DxbcTpf_IsBackwardCompatibilityMapSemanticNames()
+    {
+        // The desktop marshals this list into vkd3d_shader_compile_info and the browser
+        // sends it through its shim into the WASM wrapper. Issue #295 was the browser
+        // wrapper carrying its own (empty) list; the values are pinned here against
+        // vkd3d_shader.h so neither the list nor its ABI encoding can move unnoticed.
+        IReadOnlyList<Vkd3dCompileOption> options =
+            Vkd3dCompileContract.ResolveCompileOptions(Vkd3dCompileContract.TargetTypeDxbcTpf);
+
+        options.Count.ShouldBe(1);
+        options[0].Name.ShouldBe(Vkd3dCompileOptionName.BackwardCompatibility);
+        options[0].Value.ShouldBe((uint)Vkd3dBackwardCompatibility.MapSemanticNames);
+        Vkd3dCompileContract.FlattenCompileOptions(options).ShouldBe(
+            [0x00000008, 0x00000001],
+            customMessage: "VKD3D_SHADER_COMPILE_OPTION_BACKWARD_COMPATIBILITY = 8, " +
+                           "VKD3D_SHADER_COMPILE_OPTION_BACKCOMPAT_MAP_SEMANTIC_NAMES = 1");
+    }
+
+    [Fact]
+    public void ResolveCompileOptions_D3dBytecode_IsEmpty()
+    {
+        // On the SM1-3 target POSITION / COLOR ARE the native semantics: no option.
+        Vkd3dCompileContract.ResolveCompileOptions(Vkd3dCompileContract.TargetTypeD3dBytecode)
+            .ShouldBeEmpty();
+        Vkd3dCompileContract.FlattenCompileOptions(
+                Vkd3dCompileContract.ResolveCompileOptions(Vkd3dCompileContract.TargetTypeD3dBytecode))
+            .ShouldBeEmpty();
+    }
+
+    [Theory]
+    [InlineData("vs_4_0")]
+    [InlineData("ps_4_0_level_9_1")]
+    [InlineData("ps_5_0")]
+    [InlineData("vs_2_0")]
+    [InlineData("ps_3_0")]
+    public void ResolveCompileOptions_FollowsTheProfilesTargetType(string profile)
+    {
+        // The options hang off the target type the profile routes to, the same value both
+        // hosts pass to vkd3d, so an SM4+ profile always carries the option and an SM1-3
+        // profile never does.
+        int targetType = Vkd3dCompileContract.ResolveTargetType(profile);
+
+        Vkd3dCompileContract.FlattenCompileOptions(Vkd3dCompileContract.ResolveCompileOptions(targetType))
+            .ShouldBe(Vkd3dCompileContract.IsSm3OrBelow(profile) ? [] : [8, 1]);
+    }
+
+    [Fact]
+    public void FlattenCompileOptions_IsNameValuePairsInOrder_ValueCarriedBitForBit()
+    {
+        // The (name, value) word pairs are the sdw_vkd3d_compile_options ABI: the wrapper
+        // reads options[2*i] as the name and options[2*i + 1] as the unsigned value.
+        var options = new Vkd3dCompileOption[]
+        {
+            new() { Name = Vkd3dCompileOptionName.BackwardCompatibility, Value = 3 },
+            new() { Name = (Vkd3dCompileOptionName)0x0000000c, Value = 0xFFFFFFFF },
+        };
+
+        Vkd3dCompileContract.FlattenCompileOptions(options).ShouldBe([8, 3, 12, -1]);
+    }
+
+    [Fact]
+    public void CompileOption_LayoutIsTwo32BitWords()
+    {
+        // struct vkd3d_shader_compile_option { enum name; unsigned int value; }: the
+        // desktop marshals an array of these, so the managed layout is the C layout.
+        System.Runtime.InteropServices.Marshal.SizeOf<Vkd3dCompileOption>().ShouldBe(8);
+    }
+
+    // -------------------------------------------------------------------------
     // Error mapping — verbatim diagnostics first, SD0212 fallback
     // -------------------------------------------------------------------------
 

@@ -20,8 +20,8 @@
 
 ## Headline
 
-- Golden-backed cells (fixture x target): **110**
-  - Structurally **clean**: **80**
+- Golden-backed cells (fixture x target): **112**
+  - Structurally **clean**: **82**
   - **Divergent** (>=1 level): **20**
   - Compile/parse **failures**: **10**
 - Non-golden census cells: **206** (**140** compile, **66** fail with a code)
@@ -120,6 +120,8 @@ Legend: `OK` = match, `XX` = diverge, `--` = compile/parse failed (see notes). L
 | SimpleLightShader | OpenGL | OK | OK | OK | OK | OK |  |
 | SkinnedEffect | DirectX_11 | OK | OK | OK | XX | OK | `SkinnedEffect_VertexLighting_OneBone` pass[0] name `P0` vs ``; `SkinnedEffect_VertexLighting_OneBone_NoFog` pass[0] name `P0` vs ``; `SkinnedEffect_VertexLighting_TwoBone` pass[0] name `P0` vs ``; `SkinnedEffect_VertexLighting_TwoBone_NoFog` pass[0] name `P0` vs ``; `SkinnedEffect_VertexLighting_FourBone` pass[0] name `P0` vs ``; `SkinnedEffect_VertexLighting_FourBone_NoFog` pass[0] name `P0` vs ``; `SkinnedEffect_OneLight_OneBone` pass[0] name `P0` vs ``; `SkinnedEffect_OneLight_OneBone_NoFog` pass[0] name `P0` vs ``; `SkinnedEffect_OneLight_TwoBone` pass[0] name `P0` vs ``; `SkinnedEffect_OneLight_TwoBone_NoFog` pass[0] name `P0` vs ``; `SkinnedEffect_OneLight_FourBone` pass[0] name `P0` vs ``; `SkinnedEffect_OneLight_FourBone_NoFog` pass[0] name `P0` vs ``; `SkinnedEffect_PixelLighting_OneBone` pass[0] name `P0` vs ``; `SkinnedEffect_PixelLighting_OneBone_NoFog` pass[0] name `P0` vs ``; `SkinnedEffect_PixelLighting_TwoBone` pass[0] name `P0` vs ``; `SkinnedEffect_PixelLighting_TwoBone_NoFog` pass[0] name `P0` vs ``; `SkinnedEffect_PixelLighting_FourBone` pass[0] name `P0` vs ``; `SkinnedEffect_PixelLighting_FourBone_NoFog` pass[0] name `P0` vs `` |
 | SkinnedEffect | OpenGL | -- | -- | -- | -- | -- | COMPILE FAIL SD0010: Effect source contains no techniques |
+| Sm3SemanticStructs | DirectX_11 | OK | OK | OK | OK | OK |  |
+| Sm3SemanticStructs | OpenGL | OK | OK | OK | OK | OK |  |
 | SpriteAlphaTest | DirectX_11 | OK | OK | OK | OK | OK |  |
 | SpriteAlphaTest | OpenGL | OK | OK | OK | OK | OK |  |
 | SpriteEffect | DirectX_11 | OK | OK | OK | XX | OK | `SpriteBatch` pass[0] name `P0` vs `` |

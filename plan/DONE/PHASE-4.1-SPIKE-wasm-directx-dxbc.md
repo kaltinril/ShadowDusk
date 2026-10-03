@@ -65,6 +65,19 @@ source-name are C strings (`source_name` may be NULL). Module shape: emscripten
 MODULARIZE=1 + EXPORT_ES6 (`export default createVkd3dModule`), locating its `.wasm`
 via `import.meta.url`.
 
+> **ABI change, 2026-10-02 (issue #295).** `sdw_vkd3d_compile` is replaced by
+> `sdw_vkd3d_compile_options`, the same call with two parameters inserted after
+> `target_type`: `const unsigned int* options, int option_count`, the caller's
+> `vkd3d_shader_compile_option` list as `option_count` (name, value) pairs of 32-bit
+> words, forwarded to vkd3d untouched (more than 16, a negative count, or a NULL list
+> with a non-zero count is `VKD3D_ERROR_INVALID_ARGUMENT`). The contract as first written
+> had the wrapper pass `options = NULL`; when the desktop backend gained
+> `BACKWARD_COMPATIBILITY` = `MAP_SEMANTIC_NAMES` (Phase 56) the two hosts stopped running
+> the same compile. The list is now chosen only in `Vkd3dCompileContract`, and the shim's
+> `compile()` takes it as a sixth argument. The old export is removed, not kept alongside.
+> The shim still accepts a module that only has `sdw_vkd3d_compile` (the one hosted on
+> `native-vkd3d-wasm-2.1`) until the rebuilt module is pinned.
+
 **Glue expectations beyond the C ABI** (deviation-class notes for the build half —
 the shim was written to need the MINIMUM runtime surface):
 

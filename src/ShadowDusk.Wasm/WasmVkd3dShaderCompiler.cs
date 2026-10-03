@@ -27,10 +27,11 @@ namespace ShadowDusk.Wasm;
 ///
 /// <para>Request→ABI mapping and error mapping are the SHARED
 /// <see cref="Vkd3dCompileContract"/> — same profile defaults (vs_5_0/ps_5_0),
-/// same SM ≤ 3 routing, same verbatim-diagnostic surfacing (constraint 5) as the
-/// desktop backend. When the WASM module itself cannot be loaded (e.g.
-/// <c>vkd3d-shader.wasm</c> not restored/hosted yet) the compile fails loudly with
-/// <c>SD1902</c> — the WASM sibling of the desktop's SD0211 native-not-found.</para>
+/// same SM ≤ 3 routing, same vkd3d compile options (issue #295), same
+/// verbatim-diagnostic surfacing (constraint 5) as the desktop backend. When the WASM
+/// module itself cannot be loaded (e.g. <c>vkd3d-shader.wasm</c> not restored/hosted yet)
+/// the compile fails loudly with <c>SD1902</c> — the WASM sibling of the desktop's SD0211
+/// native-not-found.</para>
 /// </summary>
 [SupportedOSPlatform("browser")]
 internal sealed class WasmVkd3dShaderCompiler : IDxbcShaderCompiler
@@ -86,6 +87,13 @@ internal sealed class WasmVkd3dShaderCompiler : IDxbcShaderCompiler
         int targetType     = Vkd3dCompileContract.ResolveTargetType(profile);
         BlobKind blobKind  = Vkd3dCompileContract.ResolveBlobKind(profile);
 
+        // The compile options are the shared contract's too (issue #295): the list the
+        // desktop marshals into vkd3d_shader_compile_info, flattened for the JS boundary.
+        // The shim and the WASM wrapper forward it untouched, so this host can never
+        // compile with a different option set than the desktop. Never build a list here.
+        int[] options = Vkd3dCompileContract.FlattenCompileOptions(
+            Vkd3dCompileContract.ResolveCompileOptions(targetType));
+
         try
         {
             // Source bytes are UTF-8 and NOT null-terminated (vkd3d_shader_code carries
@@ -98,7 +106,8 @@ internal sealed class WasmVkd3dShaderCompiler : IDxbcShaderCompiler
                 request.EntryPoint,
                 profile,
                 request.SourceFileName,
-                targetType);
+                targetType,
+                options);
 
             return Result<PlatformBlob, ShaderError>.Ok(new PlatformBlob(blobKind, code));
         }
@@ -133,7 +142,7 @@ internal sealed class WasmVkd3dShaderCompiler : IDxbcShaderCompiler
                 try
                 {
                     Vkd3dInterop.Compile(
-                        Encoding.UTF8.GetBytes(source), request.EntryPoint, profile, request.SourceFileName, targetType);
+                        Encoding.UTF8.GetBytes(source), request.EntryPoint, profile, request.SourceFileName, targetType, options);
                     return null;
                 }
                 catch (JSException probeEx) when (WasmCompilerInitialization.IsTrap(probeEx, "vkd3d"))
