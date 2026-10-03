@@ -90,6 +90,11 @@ internal static class SlangcRegisterStripper
         """(?:\b(?<type>[A-Za-z_]\w*)|>)\s+(?<name>[A-Za-z_]\w*)\s*(?:\[[^\];{}]*\]\s*)?;""",
         RegexOptions.Compiled);
 
+    // 'namespace A {', 'namespace A.B {', 'namespace A::B {': the brace that opens a namespace.
+    private static readonly Regex NamespaceBlock = new(
+        """\bnamespace\s+[A-Za-z_]\w*(?:\s*(?:\.|::)\s*[A-Za-z_]\w*)*\s*(?<brace>\{)""",
+        RegexOptions.Compiled);
+
     private static readonly HashSet<string> NotATypeKeyword = new(StringComparer.Ordinal)
     {
         "return", "import", "module", "implementing", "__include", "using", "goto", "break", "continue",
@@ -468,6 +473,13 @@ internal static class SlangcRegisterStripper
                 }
             }
 
+            // A namespace block's braces do not nest its declarations away from the global scope:
+            // 'namespace A { Texture2D T; }' declares a global (slangc even drops the namespace
+            // from the emitted name, issue #323), so those braces are not counted as depth.
+            var namespaceBraces = new HashSet<int>();
+            foreach (Match m in NamespaceBlock.Matches(masked))
+                namespaceBraces.Add(m.Groups["brace"].Index);
+            var braces = new Stack<bool>();
             int depth = 0;
             int scanned = 0;
             foreach (Match m in PlainDeclaration.Matches(masked))
@@ -475,9 +487,17 @@ internal static class SlangcRegisterStripper
                 for (; scanned < m.Index; scanned++)
                 {
                     if (masked[scanned] == '{')
-                        depth++;
+                    {
+                        bool isNamespace = namespaceBraces.Contains(scanned);
+                        braces.Push(isNamespace);
+                        if (!isNamespace)
+                            depth++;
+                    }
                     else if (masked[scanned] == '}')
-                        depth--;
+                    {
+                        if (!(braces.Count > 0 && braces.Pop()))
+                            depth--;
+                    }
                 }
                 if (depth != 0)
                     continue;

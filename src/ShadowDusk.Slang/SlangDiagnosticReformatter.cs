@@ -115,15 +115,41 @@ internal static partial class SlangDiagnosticReformatter
         string slangcStderr, string sourceFileName, string entryName, string stageLabel, int exitCode)
     {
         bool crashed = exitCode < 0 || exitCode >= 128;
-        string how = crashed
-            ? $"slangc terminated abnormally (exit code {exitCode}, 0x{(uint)exitCode:X8}: a crash, not a compile error) " +
-              $"while compiling entry point '{entryName}' ({stageLabel}), with no diagnostic output. The one trigger " +
-              "known to crash slangc this way (v2026.14.1, issue #323) is two shader parameters of one name declared " +
-              "in different namespaces, which its -no-mangle output cannot keep apart; ShadowDusk reports that shape " +
-              "as SD0643 when a text it reads shows both declarations, so look for a pair formed through macros or " +
-              "spread across imported modules, and give each global a unique name."
-            : $"slangc failed compiling entry point '{entryName}' ({stageLabel}) with no diagnostic output (exit code {exitCode}).";
-        return SelectPrimary(slangcStderr, sourceFileName, how);
+        if (!crashed)
+        {
+            return SelectPrimary(
+                slangcStderr, sourceFileName,
+                $"slangc failed compiling entry point '{entryName}' ({stageLabel}) with no diagnostic output (exit code {exitCode}).");
+        }
+
+        // A crash: slangc's own ERROR, when it printed one, is still the primary. Warnings alone
+        // are not (measured: the issue #323 shape prints its 'implicit global shader parameter'
+        // warnings and then dies); they are kept verbatim after the crash's own description.
+        IReadOnlyList<ShaderError> errors = Reformat(slangcStderr, sourceFileName);
+        foreach (ShaderError e in errors)
+        {
+            // slangc's own structured error; the SD0622 Reformat gives unstructured text is not one.
+            if (e.Severity == ShaderErrorSeverity.Error && e.Code != "SD0622")
+                return e;
+        }
+        string raw = string.IsNullOrWhiteSpace(slangcStderr) ? "" : slangcStderr.TrimEnd();
+        string how =
+            $"slangc terminated abnormally (exit code {exitCode}, 0x{(uint)exitCode:X8}: a crash, not a compile error) " +
+            $"while compiling entry point '{entryName}' ({stageLabel})" +
+            (raw.Length > 0 ? ", after the output below" : ", with no diagnostic output") +
+            ". The one trigger known to crash slangc this way (v2026.14.1, issue #323) is two shader parameters of " +
+            "one name declared in different namespaces, which its -no-mangle output cannot keep apart; ShadowDusk " +
+            "reports that shape as SD0643 when a text it reads shows both declarations, so look for a pair formed " +
+            "through macros or spread across imported modules, and give each global a unique name." +
+            (raw.Length > 0 ? "\n" + raw : "");
+        return new ShaderError(
+            File: sourceFileName,
+            Line: 0,
+            Column: 0,
+            Code: "SD0622",
+            Message: how,
+            Severity: ShaderErrorSeverity.Error,
+            RawDiagnostics: raw.Length > 0 ? raw : null);
     }
 
     /// <summary>

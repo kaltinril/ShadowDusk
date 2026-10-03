@@ -24,7 +24,9 @@ public enum SlangcTransport
 internal sealed class ScriptedSlangc(
     string emission,
     string entryPreprocessed,
-    IReadOnlyDictionary<string, string>? files = null)
+    IReadOnlyDictionary<string, string>? files = null,
+    int compileExitCode = 0,
+    string compileStderr = "")
 {
     public const string FakePath = "fake-tools/slangc";
 
@@ -44,7 +46,7 @@ internal sealed class ScriptedSlangc(
     {
         Calls.Add(arguments);
         if (!arguments.Contains("-E"))
-            return (0, emission, "");
+            return compileExitCode == 0 ? (0, emission, "") : (compileExitCode, "", compileStderr);
 
         var stdout = new StringBuilder();
         var stderr = new StringBuilder();
