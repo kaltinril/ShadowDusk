@@ -73,9 +73,16 @@ public sealed class DeepShaderStackTests
     /// (project_decisions: compiles stay parallel). Eight deep compiles through the public API
     /// at once all succeed, produce identical bytes, and need more than one worker.
     /// </summary>
+    /// <remarks>
+    /// The eight callers are dedicated threads, not thread-pool tasks: a barrier across pool
+    /// tasks blocks the pool threads it waits on, and a starved CI runner can take longer than
+    /// the barrier's timeout to supply the eighth one (seen on windows-latest). Dedicated threads
+    /// start at once, and the synchronous <c>Compile</c> keeps the pool out of the handoff too,
+    /// so the only thing measured is the worker pool.
+    /// </remarks>
     [Fact]
     [Trait("Platform", "OpenGL")]
-    public async Task CompileAsync_ParallelDeepCompiles_AllSucceedOnSeparateWorkers()
+    public void Compile_ParallelDeepCompiles_AllSucceedOnSeparateWorkers()
     {
         const int parallel = 8;
         string fx = DeepShaderProbe.Effect("add", 1600);
@@ -84,16 +91,28 @@ public sealed class DeepShaderStackTests
 
         int workersBefore = NativeCompileStack.WorkersStarted;
         using var start = new Barrier(parallel);
-        Task<Result<CompiledShader, ShaderError[]>>[] tasks = Enumerable.Range(0, parallel)
-            .Select(_ => Task.Run(() =>
+        var results = new Result<CompiledShader, ShaderError[]>[parallel];
+        var failures = new Exception?[parallel];
+        Thread[] callers = Enumerable.Range(0, parallel)
+            .Select(i => new Thread(() =>
             {
-                start.SignalAndWait(TimeSpan.FromSeconds(30)).ShouldBeTrue("the parallel compiles never all started");
-                return compiler.CompileAsync(fx, options);
-            }))
+                try
+                {
+                    start.SignalAndWait(TimeSpan.FromSeconds(30)).ShouldBeTrue("the parallel compiles never all started");
+                    results[i] = compiler.Compile(fx, options);
+                }
+                catch (Exception ex)
+                {
+                    failures[i] = ex;
+                }
+            }) { IsBackground = true, Name = $"deep-compile-{i}" })
             .ToArray();
 
-        Result<CompiledShader, ShaderError[]>[] results = await Task.WhenAll(tasks);
+        foreach (Thread caller in callers) caller.Start();
+        foreach (Thread caller in callers)
+            caller.Join(TimeSpan.FromMinutes(4)).ShouldBeTrue($"{caller.Name} did not finish");
 
+        failures.Where(f => f is not null).ToArray().ShouldBeEmpty();
         foreach (var result in results)
             result.IsSuccess.ShouldBeTrue(result.IsFailure ? result.Error[0].FxcFormattedMessage : "");
         results.Select(r => Convert.ToHexString(r.Value.Data)).Distinct().Count().ShouldBe(1, "parallel compiles of one source produced different bytes");
