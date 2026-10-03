@@ -493,6 +493,21 @@ jobs:
           echo "--- TestResults/hang-dumps"
           ls -la TestResults/hang-dumps 2>/dev/null || true
           rm -f TestResults/hang-dumps/watchdog.pid
+          # A dump is analyzed HERE, where the matching runtime and the symbol server are at
+          # hand, so the artifact carries the managed stacks and sync blocks as text and never
+          # depends on another machine being able to open a macOS core.
+          shopt -s nullglob
+          dumps=(TestResults/hang-dumps/*.dmp)
+          if [ "${#dumps[@]}" -gt 0 ]; then
+            dotnet tool install -g dotnet-dump >/dev/null 2>&1 || dotnet tool update -g dotnet-dump >/dev/null 2>&1 || true
+            export PATH="$PATH:$HOME/.dotnet/tools"
+            for d in "${dumps[@]}"; do
+              echo "--- dotnet-dump analyze $d"
+              dotnet-dump analyze "$d" -c "threads" -c "clrstack -all" -c "syncblk" -c "exit" \
+                > "${d%.dmp}-managed.txt" 2>&1 || echo "dotnet-dump analyze failed for $d (see ${d%.dmp}-managed.txt)"
+              head -c 20000 "${d%.dmp}-managed.txt"
+            done
+          fi
 
       # Guard the line above: if someone reverts to a fixed LogFileName, the run still goes
       # green while 13 of 14 assemblies' results vanish. The solution always has more than
