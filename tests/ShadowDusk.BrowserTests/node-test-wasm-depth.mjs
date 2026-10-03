@@ -17,11 +17,6 @@
 //      '<module> trapped:' error (WasmShaderCompiler maps it to SD1907), refuse the next call
 //      until ensureReady(), and after ensureReady() compile correctly again.
 //
-// The vkd3d module is hosted on a release tag and re-pinned in tools/restore.*; while the
-// restored module is still the pre-#271 build (64 KB stack), its depth arm is reported
-// loudly as NOT RUN rather than failed, and runs automatically once the rebuilt module is
-// pinned.
-//
 // SKIP-WITH-NOTICE (never a fabricated pass): modules not restored, or the desktop natives
 // not restored (probe exit 3). --require-module turns a missing module into a failure.
 //
@@ -38,10 +33,6 @@ const repoRoot = path.resolve(__dirname, '..', '..');
 const www = path.join(repoRoot, 'src', 'ShadowDusk.Wasm', 'wwwroot');
 const outDir = path.join(__dirname, '.depth-gate');
 const CASE_TIMEOUT_MS = 240000;
-
-// SHA-256 of the vkd3d-shader.wasm hosted on native-vkd3d-wasm-2.1, linked before issue #271
-// with emscripten's 64 KB default stack (it traps on the depth cases).
-const VKD3D_WASM_PRE_271 = '3e8c85104ab9a793220615e2ff22c3dc882d6dd1348cc20e16e7c9cfb7251a00';
 
 const eq = (a, b) => a.length === b.length && a.every((x, i) => x === b[i]);
 const shim = (name) => import(pathToFileURL(path.join(www, name)).href);
@@ -117,7 +108,7 @@ if (probe.status !== 0) { console.error(`[wasm-depth gate] FAIL: the depth probe
 
 const manifest = JSON.parse(readFileSync(path.join(outDir, 'manifest.json'), 'utf8'));
 const vkd3dSha = createHash('sha256').update(readFileSync(path.join(www, 'vkd3d', 'vkd3d-shader.wasm'))).digest('hex');
-const vkd3dPre271 = vkd3dSha === VKD3D_WASM_PRE_271;
+console.log(`[wasm-depth gate] restored vkd3d-shader.wasm sha256 ${vkd3dSha}`);
 const failures = [];
 let pass = 0;
 
@@ -133,10 +124,6 @@ console.log(`\n[wasm-depth gate] 1. depth cases (${manifest.length} shapes x DXC
 for (const c of manifest) {
   for (const stage of ['dxc', 'spirv-cross', 'vkd3d']) {
     const label = `${c.id} ${stage}`;
-    if (stage === 'vkd3d' && vkd3dPre271) {
-      console.log(`  [NOT RUN] ${label}: the restored vkd3d module is the pre-#271 64 KB-stack build`);
-      continue;
-    }
     const verdict = runCase(stage, c.id);
     if (verdict === 'OK') { pass++; console.log(`  [OK]   ${label}: byte-identical to the desktop`); }
     else { failures.push(`${label}: ${verdict}`); console.error(`  [FAIL] ${label}: ${verdict}`); }
@@ -211,11 +198,6 @@ async function trapRecovery(label, trap, again, isRight, reload) {
 }
 
 console.log('');
-if (vkd3dPre271) {
-  console.log('[wasm-depth gate] NOTICE: the vkd3d depth arm did NOT run: the restored module ' +
-    `(sha256 ${vkd3dSha.slice(0, 12)}...) is the pre-#271 64 KB-stack build. It runs once the rebuilt ` +
-    'module (vkd3d-wasm-build.yml, 8 MB stack) is hosted and re-pinned in tools/restore.*.');
-}
 if (failures.length > 0) {
   console.error(`[wasm-depth gate] FAIL: ${pass} passed, ${failures.length} failed:`);
   for (const f of failures) console.error('  - ' + f);

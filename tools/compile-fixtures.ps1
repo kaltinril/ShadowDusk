@@ -77,7 +77,9 @@ if (-not $MgfxcVersion) {
     if (-not $MgfxcVersion) { Write-Error "No dotnet-mgcb version pinned in $toolsJson"; exit 1 }
 }
 
-$mgfxcDll = Join-Path $env:USERPROFILE ".nuget\packages\dotnet-mgcb\$MgfxcVersion\tools\net8.0\any\mgfxc.dll"
+# NUGET_PACKAGES first (issue #362): a custom global-packages folder is where the tool restored.
+$nugetPackages = if ($env:NUGET_PACKAGES) { $env:NUGET_PACKAGES } else { Join-Path $env:USERPROFILE ".nuget\packages" }
+$mgfxcDll = Join-Path $nugetPackages "dotnet-mgcb\$MgfxcVersion\tools\net8.0\any\mgfxc.dll"
 if (-not (Test-Path $mgfxcDll)) {
     Write-Error @"
 mgfxc $MgfxcVersion not found at:

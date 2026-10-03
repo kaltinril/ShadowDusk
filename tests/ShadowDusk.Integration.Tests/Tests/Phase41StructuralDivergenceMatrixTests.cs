@@ -26,10 +26,14 @@ namespace ShadowDusk.Integration.Tests.Tests;
 /// output and that is EXPECTED. Bytecode-blob byte/size differences are deliberately
 /// excluded from the divergence verdict.</para>
 ///
-/// <para>Running the <see cref="GenerateDivergenceMatrixReport"/> fact writes
-/// <c>plan/PHASE-41-appendix/structural-divergence-matrix.md</c> as a deterministic side
-/// effect. It never overwrites any committed golden; ShadowDusk candidates are compiled in
-/// memory only.</para>
+/// <para>The <see cref="GenerateDivergenceMatrixReport"/> fact builds the report for
+/// <c>plan/PHASE-41-appendix/structural-divergence-matrix.md</c> and, in a normal run, FAILS if
+/// the committed file differs (issue #361: it used to rewrite the tracked file on every
+/// <c>dotnet test</c>, so the tree went dirty whenever a fixture was added). It writes the file
+/// only when <see cref="RegenerateEnvVar"/> is <c>1</c>. The report holds nothing tied to the
+/// host or the version (it once stamped the assembly version, which moved on every release), so
+/// the same tree gives the same file on every OS. It never overwrites any committed golden;
+/// ShadowDusk candidates are compiled in memory only.</para>
 /// </summary>
 [Trait("Category", "Integration")]
 public sealed class Phase41StructuralDivergenceMatrixTests
@@ -74,21 +78,72 @@ public sealed class Phase41StructuralDivergenceMatrixTests
         }
 
         string report = BuildReport(matrixRows, censusRows);
-
-        string appendixDir = Path.Combine(repoRoot, "plan", "PHASE-41-appendix");
-        Directory.CreateDirectory(appendixDir);
-        string reportPath = Path.Combine(appendixDir, "structural-divergence-matrix.md");
-        await WriteReportAsync(reportPath, report, ct);
-
-        _output.WriteLine($"Wrote {reportPath}");
         _output.WriteLine($"Golden-backed cells: {matrixRows.Count}; non-golden census cells: {censusRows.Count}");
 
         // Sanity: the run must cover the expected corpus shape so a future fixture
-        // add/remove is noticed. (46 golden-backed * 2 targets, 30 non-golden * 2 —
-        // the count grows as Phase-45 example fixtures are added under shaders/examples.)
+        // add/remove is noticed.
         matrixRows.Count.ShouldBe(goldenBacked.Count * 2);
         censusRows.Count.ShouldBe(nonGolden.Count * 2);
-        File.Exists(reportPath).ShouldBeTrue();
+
+        string reportPath = Path.Combine(repoRoot, "plan", "PHASE-41-appendix", "structural-divergence-matrix.md");
+        if (Environment.GetEnvironmentVariable(RegenerateEnvVar) == "1")
+        {
+            // Explicit regenerate mode: the ONLY way this test writes the tracked file.
+            await WriteReportAsync(reportPath, report, ct);
+            _output.WriteLine($"Wrote {reportPath}");
+            return;
+        }
+
+        // A normal run never rewrites a tracked file (issue #361): it compares, and a fixture or
+        // compiler change that moves a cell fails here until the appendix is regenerated and the
+        // diff reviewed. EOLs are normalized: a Windows checkout may hold the file as CRLF.
+        File.Exists(reportPath).ShouldBeTrue($"{reportPath} is missing. {RegenerateHint}");
+        string committed = Normalize(await File.ReadAllTextAsync(reportPath, ct));
+        string fresh = Normalize(report);
+        if (committed != fresh)
+            throw new Xunit.Sdk.XunitException(DriftMessage(committed, fresh));
+    }
+
+    /// <summary>Set to <c>1</c> to write the appendix instead of comparing against it.</summary>
+    internal const string RegenerateEnvVar = "SHADOWDUSK_REGENERATE_PHASE41_APPENDIX";
+
+    private const string RegenerateHint =
+        "Regenerate it, review the diff (a moved cell is a real signal), and commit it: set "
+        + RegenerateEnvVar + "=1 and run dotnet test tests/ShadowDusk.Integration.Tests "
+        + "--filter FullyQualifiedName~Phase41StructuralDivergenceMatrixTests (see project_rules.md).";
+
+    private static string Normalize(string text) => text.Replace("\r\n", "\n", StringComparison.Ordinal);
+
+    /// <summary>Names the first lines that differ, so the failure says WHAT drifted.</summary>
+    private static string DriftMessage(string committed, string fresh)
+    {
+        string[] was = committed.Split('\n');
+        string[] now = fresh.Split('\n');
+        var sb = new StringBuilder();
+        sb.AppendLine("plan/PHASE-41-appendix/structural-divergence-matrix.md is out of date with this tree. " + RegenerateHint);
+        // Lines only one side has (a moved cell, an added fixture row), not a positional diff,
+        // which one inserted row would turn into a wall of shifted lines.
+        AppendOnlyIn(sb, "only in the committed file", was, now);
+        AppendOnlyIn(sb, "only in this tree's report", now, was);
+        return sb.ToString();
+    }
+
+    private static void AppendOnlyIn(StringBuilder sb, string heading, string[] side, string[] other)
+    {
+        var remaining = other.GroupBy(l => l, StringComparer.Ordinal).ToDictionary(g => g.Key, g => g.Count(), StringComparer.Ordinal);
+        var only = new List<string>();
+        for (int i = 0; i < side.Length; i++)
+        {
+            if (remaining.TryGetValue(side[i], out int n) && n > 0)
+                remaining[side[i]] = n - 1;
+            else
+                only.Add($"    {i + 1}: {Truncate(side[i], 200)}");
+        }
+        sb.AppendLine($"  {heading} ({only.Count} line(s)):");
+        foreach (string line in only.Take(12))
+            sb.AppendLine(line);
+        if (only.Count > 12)
+            sb.AppendLine($"    ... and {only.Count - 12} more");
     }
 
     // -----------------------------------------------------------------------
@@ -566,12 +621,14 @@ public sealed class Phase41StructuralDivergenceMatrixTests
         sb.AppendLine("# Phase 41 — Structural Divergence Matrix (ShadowDusk vs mgfxc goldens)");
         sb.AppendLine();
         sb.AppendLine("> Generated by `Phase41StructuralDivergenceMatrixTests.GenerateDivergenceMatrixReport`");
-        sb.AppendLine("> (`tests/ShadowDusk.Integration.Tests`). Deterministic; re-run to regenerate.");
+        sb.AppendLine("> (`tests/ShadowDusk.Integration.Tests`). Deterministic. A normal test run FAILS when this file");
+        sb.AppendLine($"> no longer matches the tree; regenerate with `{RegenerateEnvVar}=1` (see `project_rules.md`).");
         sb.AppendLine();
 
         sb.AppendLine("## Provenance & the \"byte-identity is not the bar\" note");
         sb.AppendLine();
-        sb.AppendLine($"- **ShadowDusk version:** {ShadowDuskVersion()} (DX target = vkd3d-shader default, GL target = DXC -> SPIRV-Cross).");
+        // No version stamp (issue #361): it changed on every release bump without any cell moving.
+        sb.AppendLine("- **ShadowDusk:** the tree this file is committed with (DX target = vkd3d-shader default, GL target = DXC -> SPIRV-Cross).");
         sb.AppendLine("- **Goldens:** committed `tests/fixtures/golden/{DirectX_11,OpenGL}/*.mgfx`, produced by the real");
         sb.AppendLine("  `dotnet-mgfxc 3.8.2.1105` (fxc.exe -> DXBC for DX; MojoShader/GLSL for GL). The locally installed");
         sb.AppendLine("  mgfxc is 3.8.4.1, but the **3.8.2.1105 goldens are the canonical reference** and are treated as");
@@ -820,16 +877,6 @@ public sealed class Phase41StructuralDivergenceMatrixTests
         return buckets.Values
             .Select(b => new DivergenceClass(b.Title, b.Desc, b.Cells.ToList()))
             .ToList();
-    }
-
-    private static string ShadowDuskVersion()
-    {
-        try
-        {
-            var asm = typeof(EffectCompiler).Assembly;
-            return asm.GetName().Version?.ToString() ?? "unknown";
-        }
-        catch { return "unknown"; }
     }
 
     private static string V(bool match) => match ? "OK" : "XX";

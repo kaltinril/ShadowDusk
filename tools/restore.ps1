@@ -388,12 +388,12 @@ Restore-DxcWasm
 # Mirrors Restore-DxcWasm (local-build copy) + Restore-DxcMacos (pinned download with
 # the PENDING-FIRST-HOSTED-BUILD placeholder pattern). Runs unconditionally.
 #
-# Pins: SHA-256 of the assets hosted on the native-vkd3d-wasm-2.1 prerelease (built
+# Pins: SHA-256 of the assets hosted on the native-vkd3d-wasm-2.1-r2 prerelease (built
 # by .github/workflows/vkd3d-wasm-build.yml from the pinned vkd3d-2.1 tarball,
 # emscripten 3.1.34). Re-running the build workflow re-pins here + in SHA256SUMS.
-$Vkd3dWasmReleaseUrl = 'https://github.com/kaltinril/ShadowDusk/releases/download/native-vkd3d-wasm-2.1'
-$Vkd3dWasmJsSha256   = 'cc2c9499c5e91f8e04f93f868aae442e089df6ba1f0ce18d0bbdb0d7f8eb7e2c'
-$Vkd3dWasmWasmSha256 = '3e8c85104ab9a793220615e2ff22c3dc882d6dd1348cc20e16e7c9cfb7251a00'
+$Vkd3dWasmReleaseUrl = 'https://github.com/kaltinril/ShadowDusk/releases/download/native-vkd3d-wasm-2.1-r2'
+$Vkd3dWasmJsSha256   = 'cc7e540c6a8d2ec035f76f9a0ac6eb460123b65a72659224badcaf3558e3c8f0'
+$Vkd3dWasmWasmSha256 = 'cb3f875a1ab7a152928700290979d081e4781ad1861304ac6744005b93122ea7'
 
 function Restore-Vkd3dWasmFile([string]$Asset, [string]$Sha256) {
     $PkgVkd3dDir = Join-Path $RepoRoot 'src' 'ShadowDusk.Wasm' 'wwwroot' 'vkd3d'

@@ -134,9 +134,8 @@ fields, mapped to `SV_Position` / `SV_Target` only by `MAP_SEMANTIC_NAMES`), so 
 end-to-end check that the browser host passes the same list as the desktop. The node gate
 (`node-test-vkd3d-wasm.mjs`) checks the same at the shim: it replays every compile with the
 options the desktop really passed, and requires that fixture to differ when replayed with
-none. While the restored module is the build hosted on `native-vkd3d-wasm-2.1` (from before
-the wrapper could take options), both gates report that fixture on DirectX as an EXPECTED
-DIFF, not counted as a pass, keyed on the module's SHA-256.
+none. The shim refuses to load a module that cannot take options (the pre-#295 build), so
+both gates enforce that fixture like every other entry.
 
 **Warnings (issue #335).** A successful compile can carry a compiler's non-fatal diagnostics,
 which both hosts must surface as `CompiledShader.Warnings`. `ImplicitTruncationWarning.fx`

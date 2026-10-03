@@ -408,3 +408,20 @@ jobs:
           chmod +x tools/verify-slang-packaging.sh
           ./tools/verify-slang-packaging.sh \
             "${{ steps.version.outputs.smoke }}" "${{ matrix.tfm }}" "$RUNNER_TEMP/sd-slang"
+
+      # ── The packaged osx-x64 slangc actually runs (issue #352) ─────────────────────────────
+      # macos-latest is arm64, so the step above only ever executes the osx-arm64 slangc; the
+      # nupkg gate merely proves the osx-x64 one is present. This extracts both macOS natives
+      # from the SAME nupkg the step above packed and consumed, runs the osx-x64 slangc under
+      # Rosetta 2 (installed if the runner lacks it) and the osx-arm64 one natively on the same
+      # inputs and flags, and fails unless the x64 binary is x86_64-only, translation is in
+      # effect, every entry point compiles, and the two HLSL outputs are byte-identical.
+      # TFM-independent (no .NET involved), so it runs once per macOS matrix pair.
+      - name: Run packaged osx-x64 slangc under Rosetta 2 (== osx-arm64 output)
+        if: runner.os == 'macOS' && matrix.tfm == 'net8.0'
+        shell: bash
+        run: |
+          chmod +x tools/verify-slang-osx-x64-rosetta.sh
+          ./tools/verify-slang-osx-x64-rosetta.sh \
+            "$RUNNER_TEMP/sd-slang/slang-feed/ShadowDusk.Slang.${{ steps.version.outputs.smoke }}.nupkg" \
+            "$RUNNER_TEMP/sd-slang-rosetta"

@@ -100,6 +100,8 @@ ShadowDusk/
 │   │                              #   Never built in place. Its pack gate is tools/verify-slang-nupkg.sh <nupkg>,
 │   │                              #   the ONE exact-name list of the eight slangc natives + notice, also run by
 │   │                              #   release.yml (issue #226) and runnable locally against any packed nupkg.
+│   │                              #   tools/verify-slang-osx-x64-rosetta.sh <nupkg> (pack-consume.yml, macOS)
+│   │                              #   runs the packaged osx-x64 slangc under Rosetta 2 vs osx-arm64 (issue #352).
 │   ├── vortice-conflict-consumer/ # The scratch consumer (Program.cs + csproj) that
 │   │                              #   tools/verify-vortice-dxc-conflict.sh (run by pack-consume.yml) COPIES out of
 │   │                              #   tree and builds against Vortice.Dxc 3.8.3, then 3.3.4, then none (issue #282:

@@ -44,6 +44,17 @@
     </PackageReference>
   </ItemGroup>
 
+  <!-- Issue #345 regression guard. Windows destroys a window when the thread that created
+       it exits, and the GL fixture once created its hidden GLFW window on a thread-pool
+       thread: when the pool retired that thread (20 s idle by default, reached only under a
+       loaded full-solution run), the next wglMakeCurrent failed with "The handle is invalid".
+       Retiring idle pool threads after 100 ms makes that intermittent failure happen on every
+       run, so the fixture's dedicated owner thread (GlContextFixture) is proven by every
+       ImageTests run instead of by luck. -->
+  <ItemGroup Label="Thread-pool churn (issue 345)">
+    <RuntimeHostConfigurationOption Include="System.Threading.ThreadPool.ThreadTimeoutMs" Value="100" />
+  </ItemGroup>
+
   <ItemGroup Label="Rendering">
     <PackageReference Include="Silk.NET.OpenGL" />
     <PackageReference Include="Silk.NET.Windowing.Glfw" />
