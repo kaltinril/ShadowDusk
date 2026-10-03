@@ -104,6 +104,29 @@ internal static partial class SlangDiagnosticReformatter
             $"slangc failed compiling entry point '{entryName}' ({stageLabel}) with no diagnostic output.");
 
     /// <summary>
+    /// <see cref="SelectPrimary(string, string, string, string)"/> with the exit code in the
+    /// no-output text. A code that is not a plain failure status (negative on Windows, where a
+    /// crash reports its NTSTATUS such as <c>0xC0000005</c>; 128 or more on Unix, a signal) is
+    /// named as a crash of slangc, with the one trigger known to produce it with empty stderr
+    /// (issue #323: two same-named constant-buffer members in different namespaces, which
+    /// <c>SlangCompiler</c> reports as <c>SD0643</c> whenever a text it read shows the pair).
+    /// </summary>
+    public static ShaderError SelectPrimary(
+        string slangcStderr, string sourceFileName, string entryName, string stageLabel, int exitCode)
+    {
+        bool crashed = exitCode < 0 || exitCode >= 128;
+        string how = crashed
+            ? $"slangc terminated abnormally (exit code {exitCode}, 0x{(uint)exitCode:X8}: a crash, not a compile error) " +
+              $"while compiling entry point '{entryName}' ({stageLabel}), with no diagnostic output. The one trigger " +
+              "known to crash slangc this way (v2026.14.1, issue #323) is two shader parameters of one name declared " +
+              "in different namespaces, which its -no-mangle output cannot keep apart; ShadowDusk reports that shape " +
+              "as SD0643 when a text it reads shows both declarations, so look for a pair formed through macros or " +
+              "spread across imported modules, and give each global a unique name."
+            : $"slangc failed compiling entry point '{entryName}' ({stageLabel}) with no diagnostic output (exit code {exitCode}).";
+        return SelectPrimary(slangcStderr, sourceFileName, how);
+    }
+
+    /// <summary>
     /// <see cref="SelectPrimary(string, string, string, string)"/> for a slangc run that is not
     /// an entry-point compile: <paramref name="noOutputMessage"/> is the synthesized
     /// <c>SD0622</c> text when slangc exited non-zero and wrote nothing.
