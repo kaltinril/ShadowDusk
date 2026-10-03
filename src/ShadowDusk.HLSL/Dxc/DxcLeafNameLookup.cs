@@ -20,9 +20,10 @@ namespace ShadowDusk.HLSL.Dxc;
 /// <c>dlopen("libdxcompiler.so" | "libdxcompiler.dylib", RTLD_LAZY)</c> or
 /// <c>LoadLibraryW(L"dxcompiler.dll")</c>, a LEAF name (<c>dxcapi.use.h</c> at the pinned
 /// commit), then <c>DxcCreateInstance(CLSID_DxcLibrary)</c> on whatever came back,
-/// <c>CreateBlobFromFile</c> on the input name (<c>hlsl.hlsl</c>, relative to the working
-/// directory, since ShadowDusk compiles from memory) and <c>dlclose</c>. A failed load, or a
-/// missing file, falls back to the in-memory source. Nothing else DXC does during a compile
+/// <c>CreateBlobFromFile</c> on the file each <c>OpSource</c> names (the input name, and every
+/// <c>#line</c> file) and <c>dlclose</c>. A failed load, or a missing file, falls back to the
+/// in-memory source. What the read returns never reaches the output
+/// (<see cref="DxcDebugSpirvSource"/>, issue #343), but the load still happens. Nothing else DXC does during a compile
 /// loads a library: the validator is bound once while the library itself loads
 /// (<see cref="DxcLoader"/>), and release compiles never reach <c>ReadSourceCode</c>.
 /// </para>

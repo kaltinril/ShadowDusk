@@ -305,6 +305,29 @@ that loads and renders identically to `mgfxc`'s in the real MonoGame/KNI runtime
   test project retires idle pool threads after 100 ms, which reproduced the old failure on every run,
   so every ImageTests run now re-proves the fix. Test infrastructure only; no shipped package changes.
 
+- **Debug output no longer depends on the files in the working directory or on the host (issue
+  #343).** With `Debug` set, DXC's SPIR-V emitter (OpenGL, Vulkan) fills each `OpSource` by
+  reading the file it names wherever its leaf-name self-load succeeds (Windows, macOS 14+, Linux
+  with a copy of the pinned build on `LD_LIBRARY_PATH`): the main input, DXC's default `hlsl.hlsl`
+  in the working directory, and, found while fixing this, every file a `#line` directive names,
+  which includes a relative or absolute `SourceFileName` and the files it includes. So a
+  `hlsl.hlsl` in the working directory replaced the compiled source in the debug Vulkan module, and
+  any file at the `SourceFileName` path was embedded verbatim (measured on Windows with decoys:
+  both texts in the output); a plain Linux host embedded neither, so the same compile gave
+  different debug bytes per host. Debug SPIR-V compiles now name their input
+  `/dev/null/<shadowdusk-in-memory>/hlsl.hlsl`, which no host can open (not a directory on
+  Linux/macOS, an illegal Win32 name on Windows), so the main `OpSource` is always the in-memory
+  text; and every other `OpSource` drops any text DXC read (`DxcDebugSpirvSource`), which is what
+  it carries when the file does not exist. The browser build runs the same step (its DXC never
+  reads a file; its debug SPIR-V for the new arguments was measured byte-identical to desktop's).
+  Debug Vulkan bytes change once (the main file name, and no disk text); release output, DirectX
+  12 debug output and OpenGL debug output are byte-identical to before (measured over all 174
+  corpus fixtures, four targets, release and debug). A module the step cannot walk is `SD0225`.
+  Guarded by `DxcDebugSourceWorkingDirectoryTests` (every OS: decoys for `hlsl.hlsl` and the
+  `SourceFileName` in the child's working directory, outputs hashed against a clean directory, a
+  pre-fix positive control that must read both decoys, and the debug Vulkan hash pinned to
+  win-x64's so every lane proves cross-host identity) and `DxcDebugSpirvSourceTests`.
+
 - **The raylib and SkSL converters compile a legacy sampler declared in an `#include` or through a
   macro (issue #327).** `RaylibConverter.Convert` and `SkslConverter.Convert` pre-parse the raw main
   file and hand its text to the shared DXC seam, so every shape issue #308 fixed on the OpenGL route
