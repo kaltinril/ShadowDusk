@@ -32,9 +32,12 @@ namespace ShadowDusk.HLSL.Dxc;
 /// a leaf name against the names each loaded object was found under and its <c>SONAME</c>;
 /// the pinned <c>libdxcompiler.so</c> is loaded by absolute path and its <c>SONAME</c> is
 /// <c>libdxcompiler.so.3.7</c>, so the leaf never matches it, and glibc searches
-/// <c>LD_LIBRARY_PATH</c>, the caller's <c>RUNPATH</c> (<c>$ORIGIN/../lib</c>),
-/// <c>ld.so.cache</c> and the default directories, where a different DXC (the Vulkan SDK's,
-/// when its <c>setup-env.sh</c> is sourced) would be loaded and initialized inside the compile.
+/// <c>LD_LIBRARY_PATH</c>, <c>ld.so.cache</c> and the default directories (measured with
+/// <c>LD_DEBUG=libs</c> on the ubuntu lane: <c>LD_LIBRARY_PATH</c>, then
+/// <c>/lib/x86_64-linux-gnu</c>, <c>/usr/lib/x86_64-linux-gnu</c>, <c>/lib</c>, <c>/usr/lib</c>;
+/// the pinned build's <c>RUNPATH</c> <c>$ORIGIN/../lib</c> did not appear), where a different
+/// DXC (the Vulkan SDK's, when its <c>setup-env.sh</c> is sourced) would be loaded and
+/// initialized inside the compile, as a byte copy placed there measurably is.
 /// dyld from macOS 14 (dyld-1122) treats a leaf-name <c>dlopen</c> as <c>@rpath/leaf</c> when
 /// an image with that install name is already loaded, and the pinned dylib's install name is
 /// <c>@rpath/libdxcompiler.dylib</c>, so there the leaf resolves to the pinned image before any

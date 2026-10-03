@@ -249,8 +249,9 @@ that loads and renders identically to `mgfxc`'s in the real MonoGame/KNI runtime
   DirectX 11 and FNA never make the load and are untouched. No emitted byte moves: the probe loads
   nothing and what DXC's own load returns is unchanged (every scenario's output is hashed against the
   no-decoy compile in `DxcDebugSpirvLeafNameTests`, which runs the linker's own trace,
-  `LD_DEBUG=libs` / `DYLD_PRINT_SEARCHING`, on the ubuntu and macOS lanes). One-time cost about a
-  millisecond, nothing per compile beyond an argument check.
+  `LD_DEBUG=libs` / `DYLD_PRINT_SEARCHING`, on the ubuntu and macOS lanes). One-time cost per
+  process: 1 to 1.5 ms on Windows, 2 to 22 ms on the macOS lane, 18 to 92 ms on the ubuntu lane
+  (glibc opens each candidate); nothing per compile beyond an argument check.
 - **Browser DirectX compiles handed vkd3d no compile options, so a shader with SM1-3 semantics on
   struct fields compiled differently from the desktop, or not at all (issue #295).** Since 0.20.0 the
   desktop vkd3d backend passes `BACKWARD_COMPATIBILITY`/`MAP_SEMANTIC_NAMES` on the SM4+ target, but
