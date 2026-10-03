@@ -144,7 +144,9 @@ public sealed class SkslVertexColorUniformTests
 
     /// <summary>
     /// Renders <paramref name="shader"/> at the center pixel with <c>ShadowDusk_Color</c> set to
-    /// <paramref name="tint"/> (<see langword="null"/>: left unset, i.e. zero).
+    /// <paramref name="tint"/> (<see langword="null"/>: zero, written explicitly, because
+    /// <c>SKRuntimeEffectUniforms</c> does not zero its buffer and an unwritten uniform can read a
+    /// previous render's value).
     /// </summary>
     private static (byte R, byte G, byte B) Render(string shader, (float R, float G, float B, float A)? tint)
     {
@@ -153,8 +155,8 @@ public sealed class SkslVertexColorUniformTests
         effect.ShouldNotBeNull(errors);
 
         var uniforms = new SKRuntimeEffectUniforms(effect);
-        if (tint is { } t)
-            uniforms[SkslGlslMapper.ColorUniform] = new[] { t.R, t.G, t.B, t.A };
+        (float R, float G, float B, float A) t = tint ?? (0f, 0f, 0f, 0f);
+        uniforms[SkslGlslMapper.ColorUniform] = new[] { t.R, t.G, t.B, t.A };
         if (conversion.SynthesizedUniforms.Contains(SkslGlslMapper.ResolutionUniform))
             uniforms[SkslGlslMapper.ResolutionUniform] = new[] { (float)Size, Size };
         if (shader == "XnaFiddle-Tint.fx")
