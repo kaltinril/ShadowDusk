@@ -260,6 +260,18 @@ that loads and renders identically to `mgfxc`'s in the real MonoGame/KNI runtime
 
 ### Fixed
 
+- **`ShadowDusk.ImageTests` no longer fails with `WGL: Failed to make context current: The handle is
+  invalid` and then hangs the test host on Windows (issue #345).** The GL fixture created its hidden
+  window on a thread-pool thread, and Windows destroys a window when its creating thread exits: once
+  the pool retired that thread (20 s idle, reached only under a loaded full-solution run) the context
+  was gone. The window now lives on a thread the fixture owns. The failure also hung the host, because
+  the fixture threw out of make-current while holding its lock; a make-current failure now fails that
+  test and every later GL test at once, a claim of the context waits at most 2 minutes, and a GL call
+  that never returns ends the host after 3 minutes instead of hanging the run. The net8.0 and net10.0
+  hosts that a solution `dotnet test` runs together are serialized around GL by a named mutex. The
+  test project retires idle pool threads after 100 ms, which reproduced the old failure on every run,
+  so every ImageTests run now re-proves the fix. Test infrastructure only; no shipped package changes.
+
 - **The raylib and SkSL converters compile a legacy sampler declared in an `#include` or through a
   macro (issue #327).** `RaylibConverter.Convert` and `SkslConverter.Convert` pre-parse the raw main
   file and hand its text to the shared DXC seam, so every shape issue #308 fixed on the OpenGL route
