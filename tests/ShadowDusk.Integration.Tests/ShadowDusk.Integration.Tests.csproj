@@ -94,8 +94,12 @@
   <ItemGroup Label="Foreign DXC fixture">
     <PackageDownload Include="Vortice.Dxc.Native" Version="[1.0.5]" />
   </ItemGroup>
+  <!-- EnsureTrailingSlash: a custom NUGET_PACKAGES / globalPackagesFolder (e.g. F:\packages)
+       yields NuGetPackageRoot WITHOUT a trailing slash, and the plain concatenation then
+       globbed "F:\packagesvortice.dxc.native", matched nothing, and the foreign-DXC tests
+       failed with "fixture is missing" instead of running. -->
   <ItemGroup Condition="'$(NuGetPackageRoot)' != ''">
-    <None Include="$(NuGetPackageRoot)vortice.dxc.native/1.0.5/runtimes/*/native/*"
+    <None Include="$([MSBuild]::EnsureTrailingSlash('$(NuGetPackageRoot)'))vortice.dxc.native/1.0.5/runtimes/*/native/*"
           CopyToOutputDirectory="PreserveNewest"
           Link="foreign-dxc/1.9/%(RecursiveDir)%(Filename)%(Extension)" />
   </ItemGroup>
