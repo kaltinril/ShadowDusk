@@ -390,7 +390,66 @@ public sealed class SlangCompiler
 
         string fxText = AssembleFx(mergedHlsl, entries, sourceName);
 
-        return _downstreamCompiler.Compile(fxText, options, cancellationToken);
+        Result<CompiledShader, ShaderError[]> downstream = _downstreamCompiler.Compile(fxText, options, cancellationToken);
+        return downstream.IsFailure
+            ? Result<CompiledShader, ShaderError[]>.Fail(RelocateResourceArrayErrors(downstream.Error, slangSource, sourceName))
+            : downstream;
+    }
+
+    /// <summary>The pipeline's code for an array of textures or samplers on Vulkan (issue #324).</summary>
+    private const string ResourceArrayCode = "SD0221";
+
+    // The resource name the SD0221 message opens with: "Vulkan target: 'Tex' is ...".
+    private static readonly Regex ResourceArrayName = new(@"^Vulkan target: '(?<name>[^']+)'", RegexOptions.Compiled);
+
+    /// <summary>
+    /// Issue #324: the pipeline's <c>SD0221</c> (an array of textures or samplers on Vulkan) is
+    /// located at the declaration in the HLSL it compiled. For a combined <c>Sampler2D T[N]</c>
+    /// that declaration is slangc's hoisted half, whose <c>#line</c> names slangc's core module
+    /// (<c>core</c>, <c>hlsl.meta.slang</c>), not the author's file. Point it at the author's
+    /// declaration of the same name in the Slang source instead; every other error passes through.
+    /// </summary>
+    private static ShaderError[] RelocateResourceArrayErrors(ShaderError[] errors, string slangSource, string sourceName)
+    {
+        if (!errors.Any(e => e.Code == ResourceArrayCode))
+            return errors;
+
+        string masked = SlangSourceMask.Mask(slangSource);
+        var relocated = new ShaderError[errors.Length];
+        for (int i = 0; i < errors.Length; i++)
+        {
+            ShaderError e = errors[i];
+            Match name = e.Code == ResourceArrayCode ? ResourceArrayName.Match(e.Message) : Match.Empty;
+            bool atAnAuthorFile = e.File.IndexOfAny(['/', '\\']) >= 0 && e.File != sourceName;
+            if (!name.Success || atAnAuthorFile)
+            {
+                relocated[i] = e; // not ours, or already at a file the author can open
+                continue;
+            }
+
+            Match decl = Regex.Match(masked, @"\b" + Regex.Escape(name.Groups["name"].Value) + @"\s*\[", RegexOptions.CultureInvariant);
+            relocated[i] = decl.Success
+                ? e with { File = sourceName, Line = LineOf(masked, decl.Index), Column = ColumnOf(masked, decl.Index) }
+                : e with { File = sourceName, Line = 0, Column = 0 };
+        }
+        return relocated;
+    }
+
+    private static int LineOf(string text, int offset)
+    {
+        int line = 1;
+        for (int i = 0; i < offset; i++)
+        {
+            if (text[i] == '\n')
+                line++;
+        }
+        return line;
+    }
+
+    private static int ColumnOf(string text, int offset)
+    {
+        int lineStart = offset == 0 ? -1 : text.LastIndexOf('\n', offset - 1);
+        return offset - lineStart;
     }
 
     /// <summary>
