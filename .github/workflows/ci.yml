@@ -452,6 +452,18 @@ jobs:
           echo $! > TestResults/hang-dumps/watchdog.pid
           echo "stall watchdog started, pid $(cat TestResults/hang-dumps/watchdog.pid)"
 
+      # Issue #373: on windows-latest one test host at a time can complete no test for 40 to
+      # 160 s while the other hosts keep going. This samples CPU, run queue, memory, paging,
+      # disk queue and every test host's thread states for the whole step, so such a freeze can
+      # be lined up with what that process was doing. tools/ci/load-sampler.ps1. Never fails.
+      - name: Start the load sampler (Windows, issue #373)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force -Path TestResults/load | Out-Null
+          Start-Process pwsh -WindowStyle Hidden -ArgumentList '-NoProfile', '-File', 'tools/ci/load-sampler.ps1', "$PWD/TestResults/load", '2'
+          Write-Host "load sampler started"
+
       - name: dotnet test (integration)
         timeout-minutes: 14
         env:
@@ -508,6 +520,23 @@ jobs:
               head -c 20000 "${d%.dmp}-managed.txt"
             done
           fi
+
+      - name: Stop the load sampler (Windows)
+        if: always() && runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          New-Item -ItemType File -Force -Path TestResults/load/stop | Out-Null
+          Start-Sleep -Seconds 8
+          Get-ChildItem TestResults/load -ErrorAction SilentlyContinue | Format-Table Name, Length
+
+      - name: Upload the load samples (Windows)
+        if: always() && runner.os == 'Windows'
+        uses: actions/upload-artifact@v7
+        with:
+          name: integration-load-${{ matrix.os }}-attempt${{ github.run_attempt }}
+          path: TestResults/load/
+          retention-days: 14
+          if-no-files-found: ignore
 
       # Guard the line above: if someone reverts to a fixed LogFileName, the run still goes
       # green while 13 of 14 assemblies' results vanish. The solution always has more than
