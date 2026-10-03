@@ -9,7 +9,7 @@ using ShadowDusk.HLSL.Dxc;
 
 namespace ShadowDusk.Compiler.Sksl;
 
-/// <summary>Options for <see cref="SkslConverter.Convert"/>.</summary>
+/// <summary>Options for <see cref="SkslConverter.Convert(string, SkslConvertOptions, CancellationToken)"/>.</summary>
 public sealed class SkslConvertOptions
 {
     /// <summary>The logical source name used in diagnostics. Defaults to <c>"&lt;memory&gt;.fx"</c>.</summary>
@@ -71,6 +71,25 @@ public static class SkslConverter
     public static Result<SkslConversion, ShaderError[]> Convert(
         string fxSource,
         SkslConvertOptions options,
+        CancellationToken cancellationToken = default) =>
+        Convert(fxSource, options, dxcCompilerFactory: null, glslTranspilerFactory: null, cancellationToken);
+
+    /// <summary>
+    /// <see cref="Convert(string, SkslConvertOptions, CancellationToken)"/> with the same
+    /// backend-injection seam <see cref="EffectCompiler"/> has, so a host without the native
+    /// DXC/SPIRV-Cross (the browser/WASM host) can supply its own — the SAME faithful
+    /// components compiled for that host, never a substitute compiler.
+    /// </summary>
+    /// <param name="fxSource">The HLSL <c>.fx</c> effect source.</param>
+    /// <param name="options">Conversion options; see <see cref="SkslConvertOptions"/>.</param>
+    /// <param name="dxcCompilerFactory">HLSL → SPIR-V frontend; <see langword="null"/> = bundled desktop DXC.</param>
+    /// <param name="glslTranspilerFactory">SPIR-V → GLSL transpiler; <see langword="null"/> = bundled SPIRV-Cross.</param>
+    /// <param name="cancellationToken">Observed between pipeline stages.</param>
+    public static Result<SkslConversion, ShaderError[]> Convert(
+        string fxSource,
+        SkslConvertOptions options,
+        Func<IDxcShaderCompiler>? dxcCompilerFactory,
+        Func<ISpirvToGlslTranspiler>? glslTranspilerFactory,
         CancellationToken cancellationToken = default)
     {
         // 1. Parse the FX9 layer.
@@ -135,7 +154,8 @@ public static class SkslConverter
             return Result<SkslConversion, ShaderError[]>.Fail([preprocess.Error]);
 
         // 3. HLSL -> SPIR-V, with the same faithful DXC every ShadowDusk compile uses.
-        using var dxc = new DxcShaderCompiler();
+        var dxc = dxcCompilerFactory?.Invoke() ?? new DxcShaderCompiler();
+        using var _ = dxc as IDisposable;
         var spirv = dxc.Compile(new DxcCompileRequest
         {
             HlslSource     = preprocess.Value.Text,
@@ -155,7 +175,8 @@ public static class SkslConverter
             : [];
 
         // 4. SPIR-V -> modern GLSL (SPIRV-Cross; the seam BEFORE the MonoGame rewriter).
-        var glsl = new SpirvCrossGlslTranspiler().Transpile(spirv.Value.Bytes, cancellationToken);
+        var transpiler = glslTranspilerFactory?.Invoke() ?? new SpirvCrossGlslTranspiler();
+        var glsl = transpiler.Transpile(spirv.Value.Bytes, cancellationToken);
         if (glsl.IsFailure)
             return Result<SkslConversion, ShaderError[]>.Fail([glsl.Error]);
 

@@ -14,6 +14,10 @@ that loads and renders identically to `mgfxc`'s in the real MonoGame/KNI runtime
 
 ### Added
 
+- **`SkslConverter` can run in the browser (issue #349).** `SkslConverter.Convert` has an overload taking
+  DXC / SPIRV-Cross factories (like `EffectCompiler`), and `WasmShaderCompiler.ConvertToSksl` is the
+  synchronous entry point after `InitializeAsync()`. The default desktop path is unchanged.
+
 - **New package: `ShadowDusk.Slang`, a real-slangc compile route for genuine Slang (Phase 66,
   opt-in, win-x64 today).** A consumer who needs real Slang — `import`, generics, `interface`
   conformances, everything real slangc accepts, none of which `ShadowDusk.Compiler`'s built-in

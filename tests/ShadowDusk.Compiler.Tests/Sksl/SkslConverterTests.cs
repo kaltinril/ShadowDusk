@@ -181,6 +181,27 @@ public sealed class SkslConverterTests
         technique T { pass P { PixelShader = compile ps_3_0 MainPS(); } }
         """;
 
+    [Fact]
+    public void InjectedBackends_AreUsed_AndProduceTheSameSkslAsTheDefaults()
+    {
+        // Issue #349: the WASM host injects its own DXC/SPIRV-Cross. Wrapping the desktop
+        // ones proves the seam routes every call through the factories and that the output
+        // is byte-identical to the default path.
+        string fx = File.ReadAllText(GumGrayscalePath);
+        var options = new SkslConvertOptions { SourceName = "Grayscale.fx", TreatVaryingsAsUniforms = ["COLOR0"] };
+        int dxcCreated = 0, glslCreated = 0;
+
+        var viaDefaults = SkslConverter.Convert(fx, options);
+        var viaFactories = SkslConverter.Convert(fx, options,
+            () => { dxcCreated++; return new ShadowDusk.HLSL.Dxc.DxcShaderCompiler(); },
+            () => { glslCreated++; return new ShadowDusk.GLSL.SpirvCrossGlslTranspiler(); });
+
+        viaFactories.IsSuccess.ShouldBeTrue();
+        dxcCreated.ShouldBe(1);
+        glslCreated.ShouldBe(1);
+        string.Equals(viaFactories.Value.SkslText, viaDefaults.Value.SkslText, StringComparison.Ordinal).ShouldBeTrue();
+    }
+
     internal static string FindFixture(params string[] parts)
     {
         for (DirectoryInfo? dir = new(AppContext.BaseDirectory); dir is not null; dir = dir.Parent)
