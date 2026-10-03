@@ -124,17 +124,9 @@ public sealed class D3DCompilerShaderCompiler : IDxbcShaderCompiler
 
         // No defines / include handler: the preprocessor has already flattened
         // #includes and applied platform macros before reaching this backend.
-        SharpGen.Runtime.Result status = Compiler.Compile(
-            request.HlslSource,
-            defines:    Array.Empty<ShaderMacro>(),
-            include:    null!,
-            entryPoint: request.EntryPoint,
-            sourceName: request.SourceFileName,
-            profile:    profile,
-            shaderFlags: flags,
-            effectFlags: EffectFlags.None,
-            out Blob? code,
-            out Blob? errorBlob);
+        // On a large-stack worker like the other native compilers (issue #306).
+        (SharpGen.Runtime.Result status, Blob? code, Blob? errorBlob) = NativeCompileStack.Run(
+            () => InvokeNative(request, profile, flags));
 
         try
         {
@@ -167,5 +159,27 @@ public sealed class D3DCompilerShaderCompiler : IDxbcShaderCompiler
             code?.Dispose();
             errorBlob?.Dispose();
         }
+    }
+
+    private static (SharpGen.Runtime.Result Status, Blob? Code, Blob? ErrorBlob) InvokeNative(
+        D3DCompileRequest request, string profile, ShaderFlags flags)
+    {
+        // Re-asserted for the platform analyzer (CA1416), which does not carry CompileCore's
+        // guard into the delegate this runs in.
+        if (!OperatingSystem.IsWindows())
+            throw new PlatformNotSupportedException("DXBC oracle backend requires Windows");
+
+        SharpGen.Runtime.Result status = Compiler.Compile(
+            request.HlslSource,
+            defines:    Array.Empty<ShaderMacro>(),
+            include:    null!,
+            entryPoint: request.EntryPoint,
+            sourceName: request.SourceFileName,
+            profile:    profile,
+            shaderFlags: flags,
+            effectFlags: EffectFlags.None,
+            out Blob? code,
+            out Blob? errorBlob);
+        return (status, code, errorBlob);
     }
 }

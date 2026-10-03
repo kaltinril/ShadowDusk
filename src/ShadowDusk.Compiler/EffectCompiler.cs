@@ -85,21 +85,32 @@ public sealed class EffectCompiler : IShaderCompiler
     /// A thin asynchronous shell over the same synchronous pipeline core
     /// <see cref="Compile"/> runs (one implementation — output is byte-identical by
     /// construction). The compile is offloaded to the thread pool so the caller's thread
-    /// is never blocked by the native compiler work.
+    /// is never blocked by the native compiler work, and the pool thread hands the whole
+    /// pipeline to one <c>NativeCompileStack</c> worker (64 MB stack, issue #306): every
+    /// native compiler call inside then runs on that worker inline, where the synchronous
+    /// <see cref="Compile"/> pays one handoff per native call instead (measured about
+    /// 0.1 ms each; a pixel-shader effect makes four to six). The pool still decides how
+    /// many compiles run at once, exactly as before.
     /// </remarks>
     public Task<Result<CompiledShader, ShaderError[]>> CompileAsync(
         string hlslSource,
         CompilerOptions options,
         CancellationToken cancellationToken = default)
     {
-        return Task.Run(() => Compile(hlslSource, options, cancellationToken), cancellationToken);
+        return Task.Run(
+            () => NativeCompileStack.Run(() => Compile(hlslSource, options, cancellationToken)),
+            cancellationToken);
     }
 
     /// <inheritdoc/>
     /// <remarks>
     /// On desktop no prior <see cref="InitializeAsync"/> is required: the native
     /// compilers (DXC via Vortice.Dxc, SPIRV-Cross, vkd3d-shader, d3dcompiler_47) load
-    /// lazily on first use, synchronously, inside this call.
+    /// lazily on first use, synchronously, inside this call. The pipeline, including any
+    /// <see cref="CompilerOptions.IncludeResolver"/> callback, runs on the calling thread;
+    /// each native compiler call runs on a ShadowDusk worker thread with a 64 MB stack while
+    /// the calling thread waits for it (issue #306), so the depth of shader the compiler can
+    /// take does not depend on the caller's stack size.
     /// </remarks>
     public Result<CompiledShader, ShaderError[]> Compile(
         string hlslSource,

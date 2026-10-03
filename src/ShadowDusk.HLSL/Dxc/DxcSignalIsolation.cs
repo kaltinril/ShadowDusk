@@ -103,12 +103,16 @@ internal static unsafe class DxcSignalIsolation
 
                 try
                 {
-                    // Any -P preprocess reaches RemoveFileOnSignal -> RegisterHandlers.
+                    // Any -P preprocess reaches RemoveFileOnSignal -> RegisterHandlers. It is
+                    // also the first DXC call in the process, so it performs DXC's one-time
+                    // locale change: under the fork gate (see DxcForkGate), which is sound for
+                    // a preprocess because it never reaches the SPIR-V emitter's dlopen.
                     using IDxcResult result = DxcNativeInterop.CompileRaw(
                         compiler,
                         PrimeSource,
                         DxcFlagBuilder.BuildPreprocess([]),
-                        includeHandler: null);
+                        includeHandler: null,
+                        forkGated: true);
                 }
                 finally
                 {

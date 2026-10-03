@@ -19,9 +19,11 @@
 #   * Vulkan-Headers / SPIRV-Headers are compile-time-only (header-only) and
 #     pinned to upstream tags; they cannot leak into the runtime artifact.
 #
-# The wrapper ABI (sdw_vkd3d_compile / sdw_vkd3d_free_code / sdw_vkd3d_free_messages)
-# is a CONTRACT with the C# [JSImport] interop side — see tools/vkd3d-wasm/
-# sdw_vkd3d_wrapper.c and the phase doc before changing anything.
+# The wrapper ABI (sdw_vkd3d_compile_options / sdw_vkd3d_free_code /
+# sdw_vkd3d_free_messages) is a CONTRACT with the C# [JSImport] interop side — see
+# tools/vkd3d-wasm/sdw_vkd3d_wrapper.c and the phase doc before changing anything.
+# The wrapper passes the CALLER'S vkd3d compile options through and decides none
+# itself (issue #295); the smoke gate below fails a build whose wrapper does not.
 name: Build vkd3d-shader WASM
 
 on:
@@ -192,7 +194,7 @@ jobs:
             -sSTACK_SIZE=8MB \
             -sGLOBAL_BASE=8388608 \
             -Wl,--stack-first \
-            -sEXPORTED_FUNCTIONS=_sdw_vkd3d_compile,_sdw_vkd3d_free_code,_sdw_vkd3d_free_messages,_malloc,_free \
+            -sEXPORTED_FUNCTIONS=_sdw_vkd3d_compile_options,_sdw_vkd3d_free_code,_sdw_vkd3d_free_messages,_malloc,_free \
             -sEXPORTED_RUNTIME_METHODS=HEAPU8,getValue,setValue,UTF8ToString
           ls -la out/
 
@@ -200,7 +202,9 @@ jobs:
       # the sdw_* ABI under node. ps_2_0 -> d3dbc must carry the 0xFFFF0200
       # version token (FNA fx_2_0 path); ps_5_0 -> dxbc-tpf must carry the "DXBC"
       # magic (MonoGame DX11 path); a broken shader must fail loudly with
-      # verbatim diagnostics. Red here = no artifact.
+      # verbatim diagnostics; the caller's compile options must reach vkd3d
+      # (issue #295: SM1-3 struct semantics compile with MAP_SEMANTIC_NAMES and are
+      # refused without it). Red here = no artifact.
       - name: Smoke-test (node, sdw_* ABI)
         run: |
           mkdir -p smoke

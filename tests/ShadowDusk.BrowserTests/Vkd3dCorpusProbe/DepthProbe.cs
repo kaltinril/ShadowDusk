@@ -11,7 +11,7 @@
 // For each case it drives the REAL pipeline (EffectCompiler) twice: OpenGL with a recording
 // DXC decorator (the exact preprocessed HLSL + DXC argument list + SPIR-V, then the desktop
 // SpirvCrossGlslTranspiler's GLSL from that SPIR-V) and DirectX with a recording vkd3d
-// decorator (source, entry point, profile, target type, DXBC).
+// decorator (source, entry point, profile, target type, compile options, DXBC).
 //
 // Usage: dotnet run --project Vkd3dCorpusProbe -- --depth <repoRoot> <outDir>
 
@@ -106,16 +106,16 @@ internal static class DepthProbe
                 return 1;
             }
 
-            var vk = new RecordingVkd3d();
+            var vk = new RecordingVkd3dCompiler();
             var dx = await new EffectCompiler(dxbcCompilerFactory: () => vk).CompileAsync(
                 fx, new CompilerOptions { Target = PlatformTarget.DirectX, SourceFileName = "depth.fx", DxbcBackend = DxbcBackend.Vkd3d });
-            if (dx.IsFailure || vk.Last is null)
+            if (dx.IsFailure || vk.Captures.Count == 0)
             {
                 Console.Error.WriteLine($"DepthProbe: {id} (DirectX) failed on the desktop: " +
                     (dx.IsFailure ? string.Join(" | ", dx.Error.Select(e => $"{e.Code}: {e.Message}")) : "no vkd3d compile captured"));
                 return dx.IsFailure && dx.Error.Any(e => e.Code == "SD0211") ? 3 : 1;
             }
-            (D3DCompileRequest request, byte[] dxbc) = vk.Last.Value;
+            (D3DCompileRequest request, int[] options, byte[] dxbc) = vk.Captures[^1];
             string profile = Vkd3dCompileContract.ResolveProfile(request);
 
             File.WriteAllText(Path.Combine(outDir, $"{id}.dxc.hlsl"), dxc.Hlsl!, utf8);
@@ -133,6 +133,8 @@ internal static class DepthProbe
                 ["entryPoint"] = request.EntryPoint,
                 ["profile"] = profile,
                 ["targetType"] = Vkd3dCompileContract.ResolveTargetType(profile),
+                // The vkd3d compile options the desktop passed, as flat (name, value) pairs.
+                ["options"] = options,
                 ["sourceName"] = request.SourceFileName,
             });
             Console.WriteLine($"DepthProbe: {id}: SPIR-V {dxc.Spirv.Length} B, GLSL {glsl.Value.Text.Length} chars, DXBC {dxbc.Length} B");
@@ -181,28 +183,5 @@ internal static class DepthProbe
         }
 
         public void Dispose() => _inner.Dispose();
-    }
-
-    /// <summary>Records the last vkd3d compile and its output.</summary>
-    private sealed class RecordingVkd3d : IDxbcShaderCompiler
-    {
-        private readonly Vkd3dShaderCompiler _inner = new();
-        public (D3DCompileRequest Request, byte[] Output)? Last { get; private set; }
-
-        public async Task<Result<PlatformBlob, ShaderError>> CompileAsync(D3DCompileRequest request, CancellationToken cancellationToken = default)
-        {
-            var result = await _inner.CompileAsync(request, cancellationToken).ConfigureAwait(false);
-            if (result.IsSuccess)
-                Last = (request, result.Value.Bytes.ToArray());
-            return result;
-        }
-
-        public Result<PlatformBlob, ShaderError> Compile(D3DCompileRequest request, CancellationToken cancellationToken = default)
-        {
-            var result = _inner.Compile(request, cancellationToken);
-            if (result.IsSuccess)
-                Last = (request, result.Value.Bytes.ToArray());
-            return result;
-        }
     }
 }

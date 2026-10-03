@@ -152,7 +152,8 @@ ShadowDusk/
 │                                  #     invocation SlangCompiler uses, real DirectX_11 Effect load - Phase 66),
 │                                  #   Slang textured GL (SlangTexturedGl: the real-slangc route's textured
 │                                  #     shaders in real DesktopGL with SpriteBatch's unit-0 texture, sampler
-│                                  #     table + CPU-math render + Invert vs the mgfxc golden - issue #252),
+│                                  #     table + CPU-math render + Invert vs the mgfxc golden - issue #252;
+│                                  #     plus a combined Sampler2D set by the author's name - issue #302),
 │                                  #   Slang DX12/Vulkan/FNA (SlangFullCorpusDx12, SlangFullCorpusVulkan and
 │                                  #     FnaValidation's `-- slang` mode: the 21-shader real-slangc corpus vs
 │                                  #     mgfxc 3.8.5 DirectX_12/Vulkan or fxc fx_2_0 on the same assembled .fx,

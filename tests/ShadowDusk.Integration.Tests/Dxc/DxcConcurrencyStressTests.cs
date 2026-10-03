@@ -68,7 +68,11 @@ public sealed class DxcConcurrencyStressTests
     /// test, with the hung child's native stacks and a core captured first
     /// (<see cref="HangDiagnostics"/>). On Linux it is the measurement behind leaving the gate
     /// off there (issue #256): glibc's fork path, exercised for real, against DXC's
-    /// <c>setlocale</c> on four threads.
+    /// <c>setlocale</c> on four threads. Half of the compiles are SPIR-V with debug
+    /// information, the issue #312 shape: DXC's SPIR-V emitter <c>dlopen</c>s its own library
+    /// to read the source for <c>OpSource</c>, and a <c>fork()</c> that waited for such a
+    /// compile under the first fork gate deadlocked with it on dyld's dlopen lock (measured in
+    /// CI on macOS 26 arm64 with lldb stacks: issue #312).
     /// </summary>
     [UnixSignalFact]
     [Trait("Platform", "OpenGL")]
@@ -87,6 +91,7 @@ public sealed class DxcConcurrencyStressTests
             // A probe that raced nothing proves nothing: every operation must actually have run.
             Dictionary<string, int> counts = ParseCounts(output, "FORKPROBE");
             counts["compiles"].ShouldBeGreaterThan(0, output);
+            counts["debugCompiles"].ShouldBeGreaterThan(0, output);
             counts["processStarts"].ShouldBeGreaterThan(0, output);
             if (OperatingSystem.IsLinux())
                 counts["rawForks"].ShouldBeGreaterThan(0, output);
@@ -97,15 +102,19 @@ public sealed class DxcConcurrencyStressTests
     private const int ForkProbeSeconds = 6;
 
     /// <summary>
-    /// Every DXC call that reaches DXC's <c>setlocale</c> shims must run inside
-    /// <c>DxcForkGate</c> (issue #256). The fresh-process audit resets the C locale before each
-    /// DXC entry point ShadowDusk uses and reports which ones changed it; the raw native
-    /// compile is the positive control, so a blind detector fails rather than passes.
+    /// Two halves of the premise behind <c>DxcForkGate</c> (issues #256 and #312). First: the
+    /// only DXC calls that change the process locale are the native compile calls (the fresh
+    /// process resets the C locale before each entry point ShadowDusk uses and reports which
+    /// ones changed it; the raw native compile is the positive control, so a blind detector
+    /// fails rather than passes). Second: once the locale has settled, no DXC call, the debug
+    /// SPIR-V compile that <c>dlopen</c>s included, changes it again, so every later
+    /// <c>setlocale</c> is a same-name call that cannot deadlock against <c>fork()</c> and the
+    /// compiles can run ungated.
     /// </summary>
     [UnixSignalFact]
     [Trait("Platform", "OpenGL")]
     [Trait("Platform", "DirectX")]
-    public async Task SetlocaleCalls_HappenOnlyInsideTheForkGatedCompileCall()
+    public async Task SetlocaleCalls_HappenOnlyInTheNativeCompileCalls_AndNeverOnceTheLocaleHasSettled()
     {
         string output = await RunProbeAsync(
             "DXC setlocale audit", TimeSpan.FromSeconds(60), DxcConcurrencyProbe.SetlocaleProbeArgument);
@@ -121,13 +130,29 @@ public sealed class DxcConcurrencyStressTests
             "setlocale on this host (DXC fixed its restore bug, or the en_US UTF-8 locale is not " +
             "installed). Rework the detector before trusting the rest:\n" + output);
 
-        string[] ungated = steps
-            .Where(s => s.Value && !DxcSetlocaleAudit.GatedSteps.Contains(s.Key))
+        string[] unexpected = steps
+            .Where(s => s.Value && !DxcSetlocaleAudit.LocaleChangingSteps.Contains(s.Key))
             .Select(s => s.Key)
             .ToArray();
-        ungated.ShouldBeEmpty(
-            "these DXC calls run setlocale OUTSIDE DxcForkGate and can deadlock against a " +
-            "concurrent fork() on macOS; gate their native call:\n" + output);
+        unexpected.ShouldBeEmpty(
+            "these DXC calls change the process locale although they are not native compile calls; " +
+            "a new setlocale path in DXC must be measured against fork() before it is trusted:\n" + output);
+
+        string settled = output.Split('\n')
+            .Single(l => l.StartsWith("SETTLED ", StringComparison.Ordinal)).Trim()["SETTLED ".Length..];
+        settled.ShouldNotBe("C", "the settle step did not change the locale, so the steady-state half measures nothing:\n" + output);
+
+        string[] changedAfterSettling = output.Split('\n')
+            .Where(l => l.StartsWith("STEADY ", StringComparison.Ordinal))
+            .Select(l => l.Trim().Split(' '))
+            .Where(p => p[2] != settled)
+            .Select(p => $"{p[1]} -> {p[2]}")
+            .ToArray();
+        output.Split('\n').Count(l => l.StartsWith("STEADY ", StringComparison.Ordinal)).ShouldBeGreaterThanOrEqualTo(8, output);
+        changedAfterSettling.ShouldBeEmpty(
+            "a DXC call changed the process locale after it had settled, so its setlocale allocates under " +
+            "the locale lock and the ungated compile can deadlock against a concurrent fork() on macOS " +
+            "(issue #312 fix premise):\n" + output);
     }
 
     /// <summary>

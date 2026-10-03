@@ -27,7 +27,7 @@ public sealed class DxcShaderCompiler : IDxcShaderCompiler, IDisposable
         // Loads the pinned natives by absolute path, after checking they are the pinned build
         // (Windows/Linux/macOS; Android: bare SONAME from the APK), and answers Vortice's
         // resolver ahead of Vortice's own handler. Idempotent. Must precede the first DXC
-        // P/Invoke below. The dlopen happens in there, never under DxcForkGate. Never call
+        // P/Invoke below. The dlopen happens in there, outside DxcForkGate. Never call
         // Vortice's Dxc.LoadDxil(): it is a bare LoadLibrary("dxil.dll") that walks PATH and
         // let a foreign validator win.
         _loadError = DxcLoader.Register();

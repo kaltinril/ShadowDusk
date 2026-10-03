@@ -331,7 +331,7 @@ public sealed class SlangCompiler
         // compiles above saw: a register in an inactive #if branch is not this target's intent,
         // and one written through a macro is. Issue #292 extends it to declarations from an
         // imported module or an __include'd file, and to a combined Sampler2D's split halves.
-        Result<IReadOnlySet<string>, ShaderError> kept = DecideAuthorRegisters(
+        Result<RegisterDecision, ShaderError> kept = DecideAuthorRegisters(
             perEntryHlsl, entries, slangSource, sourceName, options.Defines, platformMacros,
             runnableSlangc, toolDirectory, cancellationToken);
         if (kept.IsFailure)
@@ -340,7 +340,7 @@ public sealed class SlangCompiler
         // Stripped per entry, before the merge, so both entries' copies of a shared
         // declaration stay identical.
         for (int i = 0; i < perEntryHlsl.Count; i++)
-            perEntryHlsl[i] = SlangcRegisterStripper.Strip(perEntryHlsl[i], kept.Value);
+            perEntryHlsl[i] = SlangcRegisterStripper.Strip(perEntryHlsl[i], kept.Value.Keep);
 
         string mergedHlsl = SlangHlslMerger.TryMerge(
             perEntryHlsl, entries.Select(e => e.Name).ToArray(), out var mergeConflicts);
@@ -358,6 +358,17 @@ public sealed class SlangCompiler
                          "so the name cannot be kept unique. Rename the shader parameter or resource, " +
                          "or give each entry point its own source file."));
         }
+        // Issue #302: a texture slangc hoisted out of a combined sampler takes the name the
+        // author wrote (effect.Parameters["Comb"], not "Comb_texture_0"); one hoisted out of
+        // anything else has no author-written name and is rejected. Before the FNA respelling,
+        // so the DX9 texture it declares carries the author's name too.
+        Result<string, ShaderError> named = NameHoistedTextures(
+            mergedHlsl, kept.Value.Texts, entries, slangSource, sourceName, options.Defines, platformMacros,
+            runnableSlangc, toolDirectory, cancellationToken);
+        if (named.IsFailure)
+            return Fail(named.Error);
+        mergedHlsl = named.Value;
+
         // Issue #230: FNA's fx_2_0 needs DX9 effect texture syntax; slangc only emits texture
         // objects, which compiled but crashed real FNA on the first draw. See the respeller.
         if (options.Target == PlatformTarget.Fna)
@@ -413,7 +424,7 @@ public sealed class SlangCompiler
     /// the same lists; on the in-process (browser) route slangc opens each path in its own
     /// virtual file system exactly as its compile did.</para>
     /// </remarks>
-    private Result<IReadOnlySet<string>, ShaderError> DecideAuthorRegisters(
+    private Result<RegisterDecision, ShaderError> DecideAuthorRegisters(
         List<string> perEntryHlsl,
         IReadOnlyList<SlangEntryPoint> entries,
         string slangSource,
@@ -424,14 +435,17 @@ public sealed class SlangCompiler
         string? toolDirectory,
         CancellationToken cancellationToken)
     {
-        static Result<IReadOnlySet<string>, ShaderError> Failed(ShaderError error) =>
-            Result<IReadOnlySet<string>, ShaderError>.Fail(error);
+        static Result<RegisterDecision, ShaderError> Failed(ShaderError error) =>
+            Result<RegisterDecision, ShaderError>.Fail(error);
+        static Result<RegisterDecision, ShaderError> Decided(
+            IReadOnlySet<string> keep, SlangcHoistedResourceNames.PreprocessedTexts? texts) =>
+            Result<RegisterDecision, ShaderError>.Ok(new RegisterDecision(keep, texts));
 
         var keep = new HashSet<string>(StringComparer.Ordinal);
         List<SlangcRegisterStripper.EmittedResource> emitted =
             perEntryHlsl.SelectMany(SlangcRegisterStripper.FindRegistered).Distinct().ToList();
         if (emitted.Count == 0)
-            return Result<IReadOnlySet<string>, ShaderError>.Ok(keep);
+            return Decided(keep, texts: null);
 
         // Nothing can be the author's when the entry source cannot spell 'register' (through
         // its own text, an #include, a paste, a splice or a -D value) and no declaration can
@@ -440,7 +454,7 @@ public sealed class SlangCompiler
         if (!SlangcRegisterStripper.MayWriteRegister(slangSource, defines)
             && !(fromOtherFiles && SlangcRegisterStripper.MayImport(slangSource, defines)))
         {
-            return Result<IReadOnlySet<string>, ShaderError>.Ok(keep);
+            return Decided(keep, texts: null);
         }
 
         // Pass 1: the entry source plus, in the same invocation, every file slangc's #line names
@@ -458,35 +472,15 @@ public sealed class SlangCompiler
         if (startError is not null)
             return Failed(startError);
 
-        if (entry.ExitCode != 0)
-        {
-            // Never guess which registers are the author's: without the preprocessed
-            // source the strip could silently move a texture to another slot.
-            return Failed(SlangDiagnosticReformatter.SelectPrimary(
-                entry.Stderr, sourceName,
-                "slangc failed its preprocess-only pass (-E, which finds the registers the " +
-                "author wrote) with no diagnostic output, after every entry point compiled."));
-        }
-
-        // A successful pass that printed nothing (or dropped an entry point the compile
-        // just found) is not "the author wrote no register": reading it that way would strip
-        // every author register silently. Fail by name instead.
-        string? missingEntry = string.IsNullOrWhiteSpace(entry.Text)
-            ? null
-            : entries.Select(e => e.Name).FirstOrDefault(
-                name => !Regex.IsMatch(entry.Text, $@"\b{Regex.Escape(name)}\b"));
-        if (string.IsNullOrWhiteSpace(entry.Text) || missingEntry is not null)
-        {
-            return Failed(new ShaderError(
-                File: sourceName, Line: 0, Column: 0, Code: PreprocessOutputUnusableCode,
-                Message: "slangc's preprocess-only pass (-E, which finds the registers the author " +
-                         "wrote) exited 0 but its output " +
-                         (missingEntry is null
-                             ? "was empty"
-                             : $"does not contain the entry point '{missingEntry}' that slangc just compiled") +
-                         ", so ShadowDusk cannot tell which texture/sampler registers are the author's " +
-                         "and will not guess (guessing would silently move textures to other slots)."));
-        }
+        // Never guess which registers are the author's: without the preprocessed source the
+        // strip could silently move a texture to another slot, and a pass that printed nothing
+        // is not "the author wrote no register".
+        ShaderError? unusable = CheckEntryPreprocessOutput(
+            entry, entries, sourceName, "which finds the registers the author wrote",
+            "cannot tell which texture/sampler registers are the author's and will not guess (guessing would " +
+            "silently move textures to other slots)");
+        if (unusable is not null)
+            return Failed(unusable);
 
         var entryBindings = SlangcRegisterStripper.AuthorBindings.Parse(entry.Text);
 
@@ -622,7 +616,110 @@ public sealed class SlangCompiler
                 reason += $"; and '{unreadableImport}', imported by quoted path, could not be preprocessed on its own";
             return Failed(Unprovable(resource, sourceName, located, reason));
         }
-        return Result<IReadOnlySet<string>, ShaderError>.Ok(keep);
+
+        // Issue #302: the texts this pass read also say which names the author wrote.
+        return Decided(keep, new SlangcHoistedResourceNames.PreprocessedTexts(
+            entry.Text, reads.Values.Where(read => read.Text is not null).Select(read => read.Text!)));
+    }
+
+    /// <summary>What <see cref="DecideAuthorRegisters"/> settled.</summary>
+    /// <param name="Keep">The emitted declarations whose register the author wrote.</param>
+    /// <param name="Texts">The preprocess-only output the pass read, or null when it did not
+    /// have to run.</param>
+    private sealed record RegisterDecision(
+        IReadOnlySet<string> Keep, SlangcHoistedResourceNames.PreprocessedTexts? Texts);
+
+    /// <summary>
+    /// Issue #302: renames the texture half of every combined sampler slangc split
+    /// (<c>Comb_texture_0</c>) to the global the author declared (<c>Comb</c>), and fails on a
+    /// hoisted texture that has no author-written name. See
+    /// <see cref="SlangcHoistedResourceNames"/> for the rule and its evidence.
+    /// </summary>
+    /// <remarks>
+    /// <b>Cost:</b> no slangc run for a source whose own text decides (every shader with no
+    /// hoisted texture, and a combined sampler declared plainly in a source that cannot form an
+    /// identifier it does not spell), and none when the register pass already preprocessed the
+    /// source (<paramref name="texts"/>). One preprocess-only run otherwise: a hoisted name the
+    /// source also spells, or a combined sampler declared through a macro. Pinned by
+    /// <c>SlangRegisterPassCostTests</c>.
+    /// </remarks>
+    private Result<string, ShaderError> NameHoistedTextures(
+        string mergedHlsl,
+        SlangcHoistedResourceNames.PreprocessedTexts? texts,
+        IReadOnlyList<SlangEntryPoint> entries,
+        string slangSource,
+        string sourceName,
+        IReadOnlyList<UserDefine> defines,
+        IReadOnlyList<MacroDefinition> platformMacros,
+        string? runnableSlangc,
+        string? toolDirectory,
+        CancellationToken cancellationToken)
+    {
+        SlangcHoistedResourceNames.Decision decision =
+            SlangcHoistedResourceNames.Decide(mergedHlsl, slangSource, sourceName, defines, texts);
+        if (decision.NeedsPreprocess)
+        {
+            var reads = new Dictionary<string, FileRead>(StringComparer.Ordinal);
+            ShaderError? startError = PreprocessFiles(
+                includeEntry: true, [], platformMacros, defines, slangSource, sourceName, runnableSlangc,
+                toolDirectory, cancellationToken, reads, out (int ExitCode, string Text, string Stderr) entry);
+            if (startError is not null)
+                return Result<string, ShaderError>.Fail(startError);
+            ShaderError? unusable = CheckEntryPreprocessOutput(
+                entry, entries, sourceName, "which finds the names the author wrote",
+                "cannot tell which resource names are the author's and will not guess (guessing would silently " +
+                "rename an effect parameter)");
+            if (unusable is not null)
+                return Result<string, ShaderError>.Fail(unusable);
+
+            decision = SlangcHoistedResourceNames.Decide(
+                mergedHlsl, slangSource, sourceName, defines,
+                new SlangcHoistedResourceNames.PreprocessedTexts(entry.Text, []));
+        }
+
+        return decision.Error is not null
+            ? Result<string, ShaderError>.Fail(decision.Error)
+            : Result<string, ShaderError>.Ok(SlangcHoistedResourceNames.Apply(mergedHlsl, decision.Renames));
+    }
+
+    /// <summary>
+    /// A preprocess-only run of the entry source is usable only when slangc exited 0 and its
+    /// output is the source: not empty, and holding every entry point the compile found.
+    /// Returns the error to fail with otherwise (slangc's own diagnostic, or <c>SD0629</c>).
+    /// </summary>
+    private static ShaderError? CheckEntryPreprocessOutput(
+        (int ExitCode, string Text, string Stderr) entry,
+        IReadOnlyList<SlangEntryPoint> entries,
+        string sourceName,
+        string purpose,
+        string consequence)
+    {
+        if (entry.ExitCode != 0)
+        {
+            // Never guess: without the preprocessed source the decision would be a silent one.
+            return SlangDiagnosticReformatter.SelectPrimary(
+                entry.Stderr, sourceName,
+                $"slangc failed its preprocess-only pass (-E, {purpose}) with no diagnostic output, " +
+                "after every entry point compiled.");
+        }
+
+        // A successful pass that printed nothing (or dropped an entry point the compile just
+        // found) is not "the author wrote nothing": fail by name instead.
+        string? missingEntry = string.IsNullOrWhiteSpace(entry.Text)
+            ? null
+            : entries.Select(e => e.Name).FirstOrDefault(
+                name => !Regex.IsMatch(entry.Text, $@"\b{Regex.Escape(name)}\b"));
+        if (string.IsNullOrWhiteSpace(entry.Text) || missingEntry is not null)
+        {
+            return new ShaderError(
+                File: sourceName, Line: 0, Column: 0, Code: PreprocessOutputUnusableCode,
+                Message: $"slangc's preprocess-only pass (-E, {purpose}) exited 0 but its output " +
+                         (missingEntry is null
+                             ? "was empty"
+                             : $"does not contain the entry point '{missingEntry}' that slangc just compiled") +
+                         $", so ShadowDusk {consequence}.");
+        }
+        return null;
     }
 
     /// <summary>One file's preprocess-only result: its text, or why it could not be read.</summary>

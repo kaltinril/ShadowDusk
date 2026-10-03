@@ -14,13 +14,22 @@ namespace ShadowDusk.HLSL.Preprocessing;
 /// object-like and function-like macros expanded (with <c>#</c>, <c>##</c> and
 /// <c>__VA_ARGS__</c>), honoring <c>#define</c>/<c>#undef</c> in source order.
 ///
-/// <para><b>What it is for, and what it is not.</b> It never produces compiler input: DXC still
-/// preprocesses and compiles the real source. It exists so a decision ShadowDusk makes itself
-/// (today: which <c>SamplerState … : register(sN)</c> declarations reserve an OpenGL sampler
-/// register, issue #283) is made on the same text <c>mgfxc</c> decides it on, the preprocessed
-/// one, and identically on every host. The browser's DXC build has no preprocess-only export, so
-/// asking DXC would have made the desktop and browser reservations differ; this pass is plain C#
-/// and runs the same everywhere.</para>
+/// <para><b>What it is for.</b> A decision ShadowDusk makes itself (which
+/// <c>SamplerState … : register(sN)</c> declarations reserve an OpenGL sampler register,
+/// issue #283; which register a legacy sampler pins, issue #299) is made on the same text
+/// <c>mgfxc</c> decides it on, the preprocessed one, and identically on every host. The browser's
+/// DXC build has no preprocess-only export, so asking DXC would have made the desktop and browser
+/// answers differ; this pass is plain C# and runs the same everywhere.</para>
+///
+/// <para><b>When its output is compiler input, and when it is not.</b> For every effect that
+/// compiles from its raw source, DXC still preprocesses and compiles that raw source and this
+/// view only informs the decisions above (<see cref="Process(string, string)"/>). The one
+/// exception is the legacy-sampler recovery of issue #308
+/// (<see cref="ProcessForCompiler"/>): an effect DXC has already REJECTED, whose legacy
+/// <c>sampler</c> / <c>tex2D</c> syntax the pre-parser could not rewrite because it lives in an
+/// <c>#include</c>d file or comes out of a macro, is pre-parsed again on this preprocessed text
+/// and that text is what DXC then compiles. That mode keeps the source's line structure and
+/// passes <c>#line</c>, <c>#pragma</c>, <c>#error</c> and <c>#warning</c> through.</para>
 ///
 /// <para><b>Fail loudly.</b> A directive or expression it cannot evaluate is an <c>SD0009</c>
 /// error carrying the file and line, never a guess. Callers only surface that error for source
@@ -38,9 +47,20 @@ internal sealed class FxMacroPreprocessor
     private int _line;
     private int _expansionSteps;
 
-    private FxMacroPreprocessor(string sourceFile)
+    // Compiler-input mode (issue #308): the output keeps one line per line of the flattened
+    // source, so a token's line in the output IS its line in the input and the flattener's own
+    // '#line' directives, passed through verbatim, keep mapping it to the author's file.
+    private readonly bool _compilerInput;
+    // The (1-based) physical line of the flattened source the output cursor is on.
+    private int _cursorLine = 1;
+    // The first compiler-predefined macro a conditional tested, which this preprocessor cannot
+    // know the value of (DXC defines it; nothing here does).
+    private CompilerPredefinedMacroUse? _predefinedUse;
+
+    private FxMacroPreprocessor(string sourceFile, bool compilerInput = false)
     {
         _file = sourceFile;
+        _compilerInput = compilerInput;
     }
 
     /// <summary>
@@ -50,6 +70,49 @@ internal sealed class FxMacroPreprocessor
     /// </summary>
     public static Result<string, ShaderError> Process(string flattenedSource, string sourceFile)
         => new FxMacroPreprocessor(sourceFile).Run(flattenedSource);
+
+    /// <summary>
+    /// A conditional (<c>#if</c>, <c>#elif</c>, <c>#ifdef</c>, <c>#ifndef</c>, <c>defined</c>)
+    /// that tested a macro only the compiler defines.
+    /// </summary>
+    internal sealed record CompilerPredefinedMacroUse(string Name, string File, int Line);
+
+    /// <summary>
+    /// The preprocessed source in the form that can be handed to the compiler (issue #308), and
+    /// whether building it had to assume the value of a compiler-predefined macro.
+    /// </summary>
+    internal sealed record CompilerInput(string Text, CompilerPredefinedMacroUse? PredefinedMacroUse);
+
+    /// <summary>
+    /// Builds the preprocessed view of <paramref name="flattenedSource"/> as COMPILER INPUT: the
+    /// same conditional evaluation and macro expansion as <see cref="Process(string, string)"/>,
+    /// laid out so the compiler's diagnostics still point at the author's source.
+    /// <list type="bullet">
+    ///   <item><description>Output line N holds what input line N held: a skipped line, a
+    ///   <c>#define</c> or a conditional directive becomes an empty line, never a removed
+    ///   one.</description></item>
+    ///   <item><description>Active <c>#line</c>, <c>#pragma</c>, <c>#error</c> and
+    ///   <c>#warning</c> directives are passed through verbatim on their own line, so the
+    ///   compiler maps lines to files exactly as it does for the flattened source and still acts
+    ///   on (or fails on) the others.</description></item>
+    ///   <item><description>Whitespace is kept and a comment is replaced by spaces of the same
+    ///   width, so a line no macro touched keeps its columns.</description></item>
+    /// </list>
+    ///
+    /// <para>A conditional that tests a compiler-predefined macro (<c>__HLSL_VERSION</c>,
+    /// <c>__hlsl_dx_compiler</c>, …) is evaluated as if it were undefined, which is what
+    /// <c>mgfxc</c>'s own preprocessor does and NOT what DXC does. The use is reported in
+    /// <see cref="CompilerInput.PredefinedMacroUse"/> so the caller can refuse to compile a
+    /// text that may not be the one DXC would have produced.</para>
+    /// </summary>
+    internal static Result<CompilerInput, ShaderError> ProcessForCompiler(string flattenedSource, string sourceFile)
+    {
+        var preprocessor = new FxMacroPreprocessor(sourceFile, compilerInput: true);
+        Result<string, ShaderError> view = preprocessor.Run(flattenedSource);
+        return view.IsFailure
+            ? Result<CompilerInput, ShaderError>.Fail(view.Error)
+            : Result<CompilerInput, ShaderError>.Ok(new CompilerInput(view.Value, preprocessor._predefinedUse));
+    }
 
     /// <summary>
     /// The preprocessed view, plus what each of <paramref name="identifiers"/> expands to once the
@@ -105,7 +168,7 @@ internal sealed class FxMacroPreprocessor
 
     private Result<string, ShaderError> Run(string source)
     {
-        string text = StripComments(source.Replace("\r\n", "\n").Replace('\r', '\n'));
+        string text = StripComments(source.Replace("\r\n", "\n").Replace('\r', '\n'), keepWidth: _compilerInput);
         string[] physical = text.Split('\n');
 
         var output = new StringBuilder();
@@ -120,6 +183,7 @@ internal sealed class FxMacroPreprocessor
         {
             // Splice backslash-newline continuations into one logical line.
             int lineNo = ++_line;
+            int physicalLine = i + 1;
             string logical = physical[i];
             while (logical.EndsWith('\\') && i + 1 < physical.Length)
             {
@@ -137,8 +201,18 @@ internal sealed class FxMacroPreprocessor
                         pendingLine = lineNo;
                         pendingFile = _file;
                     }
-                    Tokenize(logical, pending);
-                    pending.Add(Tok.Newline);
+                    if (_compilerInput)
+                    {
+                        Tokenize(logical, pending, physicalLine);
+                        // The line break itself is re-created from the line tags when the text is
+                        // written out; what is kept here is the token SEPARATION it provides.
+                        pending.Add(new Tok(TokKind.Newline, " ") { Line = physicalLine });
+                    }
+                    else
+                    {
+                        Tokenize(logical, pending);
+                        pending.Add(Tok.Newline);
+                    }
                 }
                 continue;
             }
@@ -250,6 +324,9 @@ internal sealed class FxMacroPreprocessor
                         }
                         case "line":
                         {
+                            // The compiler needs the same line-to-file mapping the flattener wrote.
+                            if (_compilerInput)
+                                EmitDirectiveVerbatim(output, physicalLine, logical);
                             // '#line N "file"' (or the GNU '# N "file"' form): the next line is N.
                             int n = SkipWs(rest, 0);
                             if (n < rest.Count && rest[n].Kind == TokKind.Number &&
@@ -269,6 +346,10 @@ internal sealed class FxMacroPreprocessor
                         case "warning":
                         case "ident":
                         case "sccs":
+                            // As compiler input they have to survive: '#pragma pack_matrix' changes
+                            // code generation, and an '#error' must still stop the compile.
+                            if (_compilerInput)
+                                EmitDirectiveVerbatim(output, physicalLine, logical);
                             break;
                         case "include":
                             return Fail(lineNo,
@@ -301,9 +382,42 @@ internal sealed class FxMacroPreprocessor
         pending.Clear();
         if (expanded.IsFailure)
             return expanded.Error;
+        if (_compilerInput)
+        {
+            foreach (Tok t in expanded.Value)
+            {
+                AdvanceCursorTo(output, t.Line);
+                // A line's own break is re-created by the next line's tokens. Only one that was
+                // carried INTO a later line (a macro argument spanning lines, used after a later
+                // one) still has to separate the tokens around it.
+                if (t.Kind == TokKind.Newline && t.Line >= _cursorLine)
+                    continue;
+                output.Append(t.Text);
+            }
+            return null;
+        }
         foreach (Tok t in expanded.Value)
             output.Append(t.Text);
         return null;
+    }
+
+    /// <summary>
+    /// Compiler-input mode: moves the output cursor down to <paramref name="physicalLine"/> of
+    /// the flattened source by writing the missing line breaks. A token tagged with an EARLIER
+    /// line (a macro argument the body uses after a later one) stays where the cursor is.
+    /// </summary>
+    private void AdvanceCursorTo(StringBuilder output, int physicalLine)
+    {
+        if (physicalLine <= _cursorLine)
+            return;
+        output.Append('\n', physicalLine - _cursorLine);
+        _cursorLine = physicalLine;
+    }
+
+    private void EmitDirectiveVerbatim(StringBuilder output, int physicalLine, string directiveLine)
+    {
+        AdvanceCursorTo(output, physicalLine);
+        output.Append(directiveLine.TrimEnd());
     }
 
     private Result<string, ShaderError> Fail(int line, string message)
@@ -418,6 +532,7 @@ internal sealed class FxMacroPreprocessor
                 var rep = Substitute(macro, null, t.Hide.Add(macro.Name), file, line);
                 if (rep.IsFailure)
                     return rep;
+                StampLine(rep.Value, t.Line);
                 PushAll(stack, rep.Value);
                 continue;
             }
@@ -479,10 +594,28 @@ internal sealed class FxMacroPreprocessor
             var replaced = Substitute(macro, args, hide, file, line);
             if (replaced.IsFailure)
                 return replaced;
+            StampLine(replaced.Value, t.Line);
             PushAll(stack, replaced.Value);
         }
 
         return Result<List<Tok>, ShaderError>.Ok(output);
+    }
+
+    /// <summary>
+    /// Compiler-input mode: a token that came out of a macro body (or a paste, or a stringize) has
+    /// no source line of its own, so it takes the line of the macro NAME that was invoked. That is
+    /// what keeps <c>DECLARE_TEXTURE(S, 1);</c> on the line the author wrote it on. Argument tokens
+    /// already carry their own line and keep it.
+    /// </summary>
+    private void StampLine(List<Tok> replacement, int invocationLine)
+    {
+        if (!_compilerInput || invocationLine == 0)
+            return;
+        for (int i = 0; i < replacement.Count; i++)
+        {
+            if (replacement[i].Line == 0)
+                replacement[i] = replacement[i] with { Line = invocationLine };
+        }
     }
 
     private Result<List<Tok>, ShaderError> Substitute(
@@ -608,6 +741,7 @@ internal sealed class FxMacroPreprocessor
         if (n >= rest.Count || rest[n].Kind != TokKind.Identifier)
             return Result<bool, ShaderError>.Fail(Error(_file, line, $"#{(negate ? "ifndef" : "ifdef")} needs a macro name"));
         bool defined = _macros.ContainsKey(rest[n].Text);
+        NoteCompilerPredefined(rest[n].Text, line);
         return Result<bool, ShaderError>.Ok(negate ? !defined : defined);
     }
 
@@ -636,6 +770,7 @@ internal sealed class FxMacroPreprocessor
             {
                 // C++ (which DXC's HLSL front end is built on) evaluates true/false; every other
                 // identifier left after expansion is 0.
+                NoteCompilerPredefined(t.Text, line);
                 tokens.Add(new Tok(TokKind.Number, t.Text == "true" ? "1" : "0"));
                 continue;
             }
@@ -675,11 +810,42 @@ internal sealed class FxMacroPreprocessor
                 if (n >= tokens.Count || tokens[n].Kind != TokKind.Punct || tokens[n].Text != ")")
                     return Result<List<Tok>, ShaderError>.Fail(Error(_file, line, "'defined(' is missing its ')'"));
             }
+            NoteCompilerPredefined(name, line);
             result.Add(new Tok(TokKind.Number, _macros.ContainsKey(name) ? "1" : "0"));
             i = n;
         }
         return Result<List<Tok>, ShaderError>.Ok(result);
     }
+
+    /// <summary>
+    /// Records the first conditional that tests a macro the COMPILER predefines and the source
+    /// does not define itself. This preprocessor evaluates it as undefined (as <c>mgfxc</c>'s
+    /// does); DXC would not, so a text built on that assumption may not be the one DXC compiles.
+    /// </summary>
+    private void NoteCompilerPredefined(string name, int line)
+    {
+        if (_predefinedUse is null && !_macros.ContainsKey(name) && IsCompilerPredefined(name))
+            _predefinedUse = new CompilerPredefinedMacroUse(name, _file, line);
+    }
+
+    /// <summary>
+    /// The macro names DXC (and the clang front end it is built on) defines without being asked:
+    /// <c>__hlsl_dx_compiler</c>, <c>__HLSL_VERSION</c>, <c>__SHADER_TARGET_*</c>,
+    /// <c>__DXC_VERSION_*</c>, <c>__spirv__</c> (with <c>-spirv</c>) and the standard
+    /// <c>__LINE__</c> / <c>__FILE__</c> family.
+    /// </summary>
+    internal static bool IsCompilerPredefined(string name) =>
+        name.StartsWith("__SHADER_", StringComparison.Ordinal) ||
+        name.StartsWith("__HLSL_", StringComparison.Ordinal) ||
+        name.StartsWith("__hlsl_", StringComparison.Ordinal) ||
+        name.StartsWith("__DXC_", StringComparison.Ordinal) ||
+        name.StartsWith("__SPIRV_", StringComparison.Ordinal) ||
+        name.StartsWith("__spirv", StringComparison.Ordinal) ||
+        name.StartsWith("__clang", StringComparison.Ordinal) ||
+        name.StartsWith("__has_", StringComparison.Ordinal) ||
+        name is "__LINE__" or "__FILE__" or "__COUNTER__" or "__DATE__" or "__TIME__" or "__TIMESTAMP__"
+            or "__INCLUDE_LEVEL__" or "__BASE_FILE__" or "__cplusplus" or "__STDC__"
+            or "__STDC_VERSION__" or "__STDC_HOSTED__" or "__VERSION__";
 
     /// <summary>Integer constant-expression evaluator over the C operator set.</summary>
     private sealed class ExpressionEvaluator
@@ -862,6 +1028,13 @@ internal sealed class FxMacroPreprocessor
     internal sealed record Tok(TokKind Kind, string Text)
     {
         public ImmutableHashSet<string> Hide { get; init; } = ImmutableHashSet<string>.Empty;
+
+        /// <summary>
+        /// Compiler-input mode only: the (1-based) physical line of the flattened source this
+        /// token is written on. 0 everywhere else, and for a token no source line owns yet.
+        /// </summary>
+        public int Line { get; init; }
+
         public bool IsWhitespace => Kind is TokKind.Whitespace or TokKind.Newline;
 
         public static readonly Tok Space = new(TokKind.Whitespace, " ");
@@ -876,7 +1049,19 @@ internal sealed class FxMacroPreprocessor
         "+=", "-=", "*=", "/=", "%=", "&=", "|=", "^=",
     ];
 
-    private static void Tokenize(string text, List<Tok> into)
+    /// <summary>
+    /// Compiler-input mode: tokenizes one source line, keeping each whitespace run as written and
+    /// tagging every token with the physical line it sits on.
+    /// </summary>
+    private static void Tokenize(string text, List<Tok> into, int line)
+    {
+        int first = into.Count;
+        Tokenize(text, into, keepWhitespace: true);
+        for (int i = first; i < into.Count; i++)
+            into[i] = into[i] with { Line = line };
+    }
+
+    private static void Tokenize(string text, List<Tok> into, bool keepWhitespace = false)
     {
         int i = 0;
         while (i < text.Length)
@@ -886,7 +1071,7 @@ internal sealed class FxMacroPreprocessor
             if (c is ' ' or '\t' or '\f' or '\v' or '\n')
             {
                 while (i < text.Length && text[i] is ' ' or '\t' or '\f' or '\v' or '\n') i++;
-                into.Add(Tok.Space);
+                into.Add(keepWhitespace ? new Tok(TokKind.Whitespace, text[start..i]) : Tok.Space);
                 continue;
             }
             if (char.IsAsciiLetter(c) || c == '_')
@@ -948,7 +1133,7 @@ internal sealed class FxMacroPreprocessor
     /// Replaces every comment with a space (a block comment keeps its newlines so line numbers
     /// survive), leaving string and character literals intact.
     /// </summary>
-    private static string StripComments(string text)
+    private static string StripComments(string text, bool keepWidth = false)
     {
         var sb = new StringBuilder(text.Length);
         int i = 0;
@@ -973,13 +1158,19 @@ internal sealed class FxMacroPreprocessor
             }
             if (c == '/' && i + 1 < text.Length && text[i + 1] == '*')
             {
+                // keepWidth (compiler-input mode): the comment becomes spaces of its own width, so
+                // the code after it on the same line keeps its column.
                 i += 2;
                 sb.Append(' ');
+                if (keepWidth) sb.Append(' ');
                 while (i < text.Length && !(text[i] == '*' && i + 1 < text.Length && text[i + 1] == '/'))
                 {
                     if (text[i] == '\n') sb.Append('\n');
+                    else if (keepWidth) sb.Append(' ');
                     i++;
                 }
+                if (keepWidth && i < text.Length)
+                    sb.Append(' ', 2);
                 i = Math.Min(i + 2, text.Length);
                 continue;
             }

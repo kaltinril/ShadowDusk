@@ -114,10 +114,16 @@ other targets keep the unmodified SPIRV-Cross dialect. The pixel-stage transform
     conditionals evaluated and macros expanded with the compile's own macros), the way `mgfxc`
     reads them: a register inside an inactive `#if` branch does not count and one spelled
     through a macro does, for the reservation (issue #283) and for the legacy pin (issue #299)
-    alike. The SM4 rewrite that drops the clauses still works on the raw text, which is why a
-    legacy sampler it cannot recognize there (declared in an `#include`d file or through a
-    function-like macro) does not compile for OpenGL (issue #308;
-    `docs/validation-matrix.md` §7).
+    alike. The reservation is made by EVERY sampler type keyword (`sampler`, `sampler2D`,
+    `samplerCUBE`, `SamplerComparisonState`, not only `SamplerState`), whether or not anything
+    reads the sampler and in every entry point of the effect, because fxc keeps an explicitly
+    bound register out of circulation for the whole source (issue #309, measured on 20 shapes);
+    a legacy sampler a `tex2D` reads is therefore pinned for its own pair and reserved for every
+    other. The SM4 rewrite that drops the clauses works on the raw text; a legacy sampler it
+    cannot recognize there (declared in an `#include`d file, or declared or read through a macro)
+    makes the raw compile fail, after which the pre-parse is repeated on the preprocessed source
+    and the compile runs again on that text (issue #308, `LegacySamplerRecovery`; an effect that
+    compiles from its raw source is never touched).
   - **Per pair, not per sampler.** Two textures read through one shared `SamplerState` (the
     diffuse+lightmap idiom) produce **two** records; two samplers over one texture (the
     linear+point idiom) also produce two, each with its own state. Keying on the reflected

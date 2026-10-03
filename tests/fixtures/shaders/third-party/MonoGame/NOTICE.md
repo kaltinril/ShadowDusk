@@ -53,32 +53,40 @@ fixture to either produce a structurally valid Vulkan container or fail with a d
 
 | File | GL | DX11 | Vulkan | FNA | Notes |
 |---|---|---|---|---|---|
-| `Bevels.fx` | — | OK | OK | OK | |
-| `BlackOut.fx` | — | OK | OK | OK | |
-| `ColorFlip.fx` | — | OK | OK | OK | |
-| `CustomSpriteBatchEffect.fx` | — | OK | OK | OK | Two texture/sampler pairs at explicit registers |
+| `Bevels.fx` | OK (since #308) | OK | OK | OK | |
+| `BlackOut.fx` | OK (since #308) | OK | OK | OK | |
+| `ColorFlip.fx` | OK (since #308) | OK | OK | OK | |
+| `CustomSpriteBatchEffect.fx` | OK (since #308) | OK | OK | OK | Two texture/sampler pairs at explicit registers (`ps_s0`/`ps_s1` on GL, as mgfxc) |
 | `CustomSpriteBatchEffectComparisonSampler.fx` | — | OK | OK | — | FNA: `FX0013` (`SamplerComparisonState` has no SM1-3 lowering) |
 | `DefinesTest.fx` | — | — | — | — | Needs `-DMACRO_DEFINE_TEST=3`; deliberately hides invalid syntax behind an undefined `#if` |
-| `Grayscale.fx` | — | OK | OK | OK | |
-| `HighContrast.fx` | — | OK | OK | OK | |
+| `Grayscale.fx` | OK (since #308) | OK | OK | OK | |
+| `HighContrast.fx` | OK (since #308) | OK | OK | OK | |
 | `Instancing.fx` | — | OK | OK | OK | **VS-driven, matrix vertex input (`float4x4 : BLENDWEIGHT`)** |
-| `Invert.fx` | — | OK | OK | OK | |
-| `NoEffect.fx` | — | OK | OK | OK | |
+| `Invert.fx` | OK (since #308) | OK | OK | OK | |
+| `NoEffect.fx` | OK (since #308) | OK | OK | OK | |
 | `ParameterTypes.fx` | — | — | OK | — | DX/FNA: DXC `E5017` (non-constant vector addressing / flatten not implemented) |
 | `ParserTest.fx` | — | OK | OK | OK | The reference compiler's own parser torture test |
 | `PreprocessorTest.fx` | — | — | — | — | Needs `-DTEST=<n>`; also probes an intentionally malformed `#if foo(TEST)` |
-| `RainbowH.fx` | — | OK | OK | OK | |
+| `RainbowH.fx` | OK (since #308) | OK | OK | OK | |
 | `TextureArrayEffect.fx` | — | OK | OK | — | FNA: `FX0013` (`Texture2DArray` has no SM1-3 equivalent) |
 | `VertexTextureEffect.fx` | — | — | — | OK | `FX0012` (`tex2Dlod` has no 1:1 modern rewrite) on GL/DX/Vulkan; FNA compiles it natively through vkd3d |
 
-### Why every one of them fails on OpenGL
+### OpenGL: why they all failed until issue #308, and how they compile now
 
 `Include.fxh` selects its branch on `SM6` / `SM4`; ShadowDusk's OpenGL macro set is
 deliberately `{MGFX, GLSL, OPENGL}` with **no shader-model macro**, so these expand to the
-legacy DX9 branch (`sampler2D`, `tex2D`, `COLOR0`) inside a *macro body* — where FxPreParser's
-legacy-to-modern conversion cannot see the declaration to rewrite it, and DXC then rejects
-`sampler2D`. This is the known **GL macro-model gap** (Phase 41 follow-up), not a new defect;
-these fixtures now give it concrete, reproducible evidence.
+legacy DX9 branch (`sampler2D`, `tex2D`, `COLOR0`) inside a *macro body*, where FxPreParser's
+legacy-to-modern conversion of the raw main file cannot see the declaration to rewrite it, and
+DXC then rejected `sampler2D`. Since issue #308 (2026-10-02) that failure triggers a recovery:
+the pre-parse is repeated on the preprocessed source and the compile runs again on that text, so
+the nine effects marked "OK (since #308)" compile for OpenGL on `mgfxc` 3.8.4.1's own sampler
+units (measured the same day: `ps_s0`, and `ps_s0`/`ps_s1` for `CustomSpriteBatchEffect`).
+The remaining OpenGL gaps are their own: `CustomSpriteBatchEffectComparisonSampler.fx` and
+`ParserTest.fx` use a `COLOR` output semantic in a shape DXC's SPIR-V path rejects ("invalid
+semantic 'COLOR' for ps 6.0"), `Instancing.fx` is VS-driven with a matrix vertex input, `TextureArrayEffect.fx` has no
+MojoShader sampler type, `VertexTextureEffect.fx` uses `tex2Dlod` (`FX0012`), `ParameterTypes.fx`
+defines its techniques through a macro (`SD0010`, the GL macro-model gap, Phase 41 follow-up),
+and `DefinesTest.fx` / `PreprocessorTest.fx` need defines or are deliberately malformed.
 
 ### Bugs these fixtures found on the day they were added (issue #145)
 

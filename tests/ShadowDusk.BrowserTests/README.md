@@ -122,11 +122,21 @@ must equal the manifest hash; render-equivalence then closes by transitivity
 render-proven bytes). Verdict + per-fixture table: `RESULTS-VKD3D-BROWSER.md`.
 
 ```bash
-./tools/restore.sh                        # vkd3d-shader.{js,wasm} (native-vkd3d-wasm-1.17)
+./tools/restore.sh                        # vkd3d-shader.{js,wasm} (the pinned native-vkd3d-wasm-* tag)
 cd tests/ShadowDusk.BrowserTests
 npm install && npx playwright install chromium
 node browser-vkd3d-gate.mjs               # publishes into .publish-vkd3d/; --skip-publish to reuse
 ```
+
+**vkd3d compile options (issue #295).** `DirectX_Vkd3d/Sm3SemanticStructs.fx` is the manifest
+entry whose bytes depend on the options the host hands vkd3d (SM1-3 semantics on struct
+fields, mapped to `SV_Position` / `SV_Target` only by `MAP_SEMANTIC_NAMES`), so it is the
+end-to-end check that the browser host passes the same list as the desktop. The node gate
+(`node-test-vkd3d-wasm.mjs`) checks the same at the shim: it replays every compile with the
+options the desktop really passed, and requires that fixture to differ when replayed with
+none. While the restored module is the build hosted on `native-vkd3d-wasm-2.1` (from before
+the wrapper could take options), both gates report that fixture on DirectX as an EXPECTED
+DIFF, not counted as a pass, keyed on the module's SHA-256.
 
 Skips loudly (exit 0, "NOT RUN, NOT A PASS", `::warning::` in CI) when the wasm
 module is not restored; any compile failure, hash mismatch, missing published
@@ -169,6 +179,6 @@ Notes for CI:
 | `image-compare.mjs` | JS mirror of `ShadowDusk.ImageTests/ImageComparer` (RGBA8 max-delta). |
 | `references/`, `captures/`, `diffs/` | Reference PNGs, browser captures, magenta diffs. |
 | `RESULTS.md` | Generated run results + the KNIFX-v11 verdict (Task 1c). |
-| `node-test-vkd3d-wasm.mjs` + `Vkd3dCorpusProbe/` | Phase 4.1 node byte-identity gate (G1 analogue): WASM vkd3d == desktop vkd3d per stage compile. |
+| `node-test-vkd3d-wasm.mjs` + `Vkd3dCorpusProbe/` | Phase 4.1 node byte-identity gate (G1 analogue): WASM vkd3d == desktop vkd3d per stage compile, replayed with the compile options the desktop passed (issue #295). |
 | `browser-vkd3d-gate.mjs` | Phase 4.1 **G2** gate: real-browser DX/FNA compile, SHA-256 == committed byte-identity manifest. |
 | `RESULTS-VKD3D-BROWSER.md` | Generated G2 verdict + per-fixture hash table. |

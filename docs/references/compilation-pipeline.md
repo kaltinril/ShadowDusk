@@ -278,6 +278,13 @@ vkd3d rejects them outright without the option. Stage 1's `RewriteToSm4` already
 what covers a pixel shader returning `struct { float4 c : COLOR0; }`. It is deliberately NOT
 set on the Stage 3c target, where those are the native semantics.
 
+**Every host passes the same list.** The options are chosen in one place
+(`Vkd3dCompileContract.ResolveCompileOptions`): the desktop backend marshals the list into the
+native call, and the browser backend sends the same list through its JS shim into the vkd3d
+WebAssembly module, whose wrapper forwards it untouched. The wrapper once carried its own (empty)
+list, so a browser compile of a shader with `POSITION0` / `COLOR0` on struct fields differed from
+the desktop's (issue #295); `Sm3SemanticStructs.fx` is the corpus fixture that now catches that.
+
 ### Stage 3c — the FNA fx_2_0 path
 
 **What it is.** A wholly separate path for `PlatformTarget.Fna`

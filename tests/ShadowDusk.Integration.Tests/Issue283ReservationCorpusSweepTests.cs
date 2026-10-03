@@ -21,8 +21,8 @@ namespace ShadowDusk.Integration.Tests;
 public sealed class Issue283ReservationCorpusSweepTests(ITestOutputHelper output)
 {
     /// <summary>
-    /// Fixtures whose reservation set is EXPECTED to change, because they contain the issue's
-    /// shape. The two <c>SamplerReservation*</c> fixtures are the issue's own goldens. The other
+    /// Fixtures (by path relative to the fixture root) whose reservation set is EXPECTED to change,
+    /// because they contain the issue's shape. The two <c>SamplerReservation*</c> fixtures are the issue's own goldens. The other
     /// three carry <c>SamplerState X : register(sN)</c> only in their <c>#if SM6</c> arm, which
     /// OpenGL does not compile, so the raw reading reserved registers the preprocessed one does
     /// not. Their OpenGL <c>.mgfx</c> bytes were measured IDENTICAL before and after the fix
@@ -36,7 +36,39 @@ public sealed class Issue283ReservationCorpusSweepTests(ITestOutputHelper output
         "SamplerReservationMacro.fx",
         "VsTransformColorTexture.fx",
         "VsWaveQuadIntrinsics.fx",
-        "apos-shapes-sm6.fx",
+        "third-party/Apos.Shapes/apos-shapes-sm6.fx",
+
+        // Issue #309 (2026-10-02): EVERY sampler type keyword with an explicit register reserves,
+        // so a LEGACY sampler's register now moves the reservation set too wherever the raw text
+        // and the preprocessed text disagree about it: a register only in a dead branch
+        // (SamplerLegacyRegisterIfBranch: raw [0,1], preprocessed []), one spelled through a macro
+        // (SamplerLegacyRegisterMacro, SamplerLegacyMacroDecl: raw [], preprocessed [2,3]), one in
+        // an #include'd file (SamplerLegacyInclude), and MonoGame's DECLARE_TEXTURE macro, whose
+        // body the raw lexer never sees (the stock effects and the vendored MonoGame test effects:
+        // raw [], preprocessed [0] or [0,1] or [0,1,2]). The compile reads the preprocessed set
+        // only, and the OpenGL corpus sweep measured no byte moving on any fixture that compiled
+        // before (the stock effects still fail with SD0010; the vendored MonoGame effects started
+        // compiling through the #308 recovery, on mgfxc's units).
+        "SamplerLegacyRegisterIfBranch.fx",
+        "SamplerLegacyRegisterMacro.fx",
+        "SamplerLegacyInclude.fx",
+        "SamplerLegacyMacroDecl.fx",
+        "AlphaTestEffect.fx",
+        "BasicEffect.fx",
+        "DualTextureEffect.fx",
+        "EnvironmentMapEffect.fx",
+        "SkinnedEffect.fx",
+        "SpriteEffect.fx",
+        "third-party/MonoGame/Bevels.fx",
+        "third-party/MonoGame/BlackOut.fx",
+        "third-party/MonoGame/ColorFlip.fx",
+        "third-party/MonoGame/CustomSpriteBatchEffect.fx",
+        "third-party/MonoGame/Grayscale.fx",
+        "third-party/MonoGame/HighContrast.fx",
+        "third-party/MonoGame/Invert.fx",
+        "third-party/MonoGame/NoEffect.fx",
+        "third-party/MonoGame/ParameterTypes.fx",
+        "third-party/MonoGame/RainbowH.fx",
     };
 
     /// <summary>
@@ -96,7 +128,7 @@ public sealed class Issue283ReservationCorpusSweepTests(ITestOutputHelper output
             {
                 string line = $"{name}: raw [{string.Join(",", before)}] -> preprocessed [{string.Join(",", after)}]";
                 output.WriteLine(line);
-                if (!ExpectedToMove.Contains(Path.GetFileName(path)))
+                if (!ExpectedToMove.Contains(name))
                     moved.Add(line);
             }
         }

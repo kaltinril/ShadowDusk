@@ -32,6 +32,14 @@
 // source text, the dead register kept slangc's invented register(s0) alive and put the
 // texture back on ps_s1.
 //
+// One more row (issue #302): Invert's sprite multiplied by a SECOND texture read through a
+// combined 'Sampler2D Comb', which the game sets the way a game sets any texture parameter:
+// effect.Parameters["Comb"].SetValue(texture). slangc hoists the combined sampler's texture
+// out under a generated name (Comb_texture_0), and that name used to be the reflected
+// parameter, so effect.Parameters["Comb"] was null in real MonoGame. The row fails on that
+// null (the parameter list is printed), and its picture must match the CPU expectation of
+// both textures (so a texture bound to the wrong unit shows up too).
+//
 // Exit 0 iff every row passes. SHADOWDUSK_REQUIRE_GL=1 turns a no-GL-device skip into a
 // failure (same guard the other GL gates use).
 // =============================================================================
@@ -95,10 +103,20 @@ void AddRow(string name, string source, string sourceFileName, Expectation expec
 
     byte[] mgfx = result.Value.Data;
     var reader = MgfxBlobReader.Parse(mgfx);
-    string table = string.Join(", ", reader.Samplers.Select(s => $"{s.Name}: texSlot {s.TextureSlot}, sampSlot {s.SamplerSlot}"));
-    bool onUnitZero = reader.Samplers.Count == 1 && reader.Samplers[0].TextureSlot == 0 && reader.Samplers[0].SamplerSlot == 0;
+    string table = string.Join(", ", reader.Samplers.Select(s =>
+        $"{s.Name} ({reader.Parameters[s.Parameter].Name}): texSlot {s.TextureSlot}, sampSlot {s.SamplerSlot}"));
+    // The sprite's sampler on unit 0 and nothing else, except the issue #302 row, whose second
+    // texture must be a parameter under the author's name (the game sets it by that name).
+    bool spriteOnUnitZero = reader.Samplers.Any(s =>
+        reader.Parameters[s.Parameter].Name == "SpriteTexture" && s.TextureSlot == 0 && s.SamplerSlot == 0);
+    bool tableShape = expectation.CombinedTexture is null
+        ? reader.Samplers.Count == 1
+        : reader.Samplers.Count == 2 && reader.Samplers.Any(s => reader.Parameters[s.Parameter].Name == expectation.CombinedTexture);
+    bool onUnitZero = spriteOnUnitZero && tableShape;
     Console.WriteLine($"[slang-tex] {name,-12} sampler table [{table}] -> " +
-                      (onUnitZero ? "OK (unit 0)" : "WRONG: SpriteBatch binds unit 0, the shader does not read it"));
+                      (onUnitZero ? "OK (unit 0)" : expectation.CombinedTexture is null
+                          ? "WRONG: SpriteBatch binds unit 0, the shader does not read it"
+                          : $"WRONG: expected SpriteTexture on unit 0 plus a texture parameter named '{expectation.CombinedTexture}'"));
     if (!onUnitZero)
         failures++;
 
@@ -141,6 +159,23 @@ if (rows.Count < 6)
             "InvertInactiveBranchRegister.slang", Expectations.All["Invert"], compareWithInvertGolden: true);
     }
 }
+
+// Issue #302: a combined Sampler2D the game sets through effect.Parameters["Comb"].
+AddRow("InvertComb", """
+    // Issue #302 gate row: the sprite (SpriteBatch, unit 0) multiplied by a second texture the
+    // game sets by name through a combined sampler.
+    Texture2D SpriteTexture;
+    SamplerState SpriteSampler;
+    Sampler2D Comb;
+
+    [shader("fragment")]
+    float4 MainPS(float4 pos : SV_Position, float2 uv : TEXCOORD0) : SV_Target
+    {
+        float4 c = SpriteTexture.Sample(SpriteSampler, uv);
+        float4 k = Comb.Sample(uv);
+        return float4((1.0 - c.rgb) * k.rgb, c.a);
+    }
+    """, "InvertCombinedSampler.slang", Expectations.InvertComb, compareWithInvertGolden: false);
 Console.WriteLine();
 
 Directory.CreateDirectory(outDir);
@@ -160,7 +195,7 @@ failures += game.Failures;
 
 Console.WriteLine();
 Console.WriteLine(failures == 0
-    ? $"[slang-tex] PASS: {rows.Count} real-slangc textured shaders render correctly with SpriteBatch's unit-0 texture (issue #252)."
+    ? $"[slang-tex] PASS: {rows.Count} real-slangc textured shaders render correctly with SpriteBatch's unit-0 texture (issue #252) and the combined sampler set by the author's name (issue #302)."
     : $"[slang-tex] FAIL: {failures} failure(s).");
 return failures == 0 ? 0 : 1;
 
@@ -181,9 +216,14 @@ static string FindRepoRoot()
 internal sealed record ShaderRow(string Name, byte[] Mgfx, Expectation Expectation, bool CompareWithInvertGolden);
 
 /// <summary>A shader's own math on the CPU, plus the uniforms the render sets.</summary>
+/// <param name="Shade">(sprite texel, second texel, uv) to the output colour. The second texel is
+/// the game-set texture's, meaningful only when <paramref name="CombinedTexture"/> is set.</param>
+/// <param name="CombinedTexture">Issue #302: the name of the texture parameter the game sets
+/// its second texture through (<c>effect.Parameters[name].SetValue</c>), or null.</param>
 internal sealed record Expectation(
-    Func<Vector4, Vector2, Vector4> Shade,
-    Action<Effect> SetUniforms);
+    Func<Vector4, Vector4, Vector2, Vector4> Shade,
+    Action<Effect> SetUniforms,
+    string? CombinedTexture = null);
 
 internal static class Expectations
 {
@@ -193,26 +233,26 @@ internal static class Expectations
 
     public static readonly IReadOnlyDictionary<string, Expectation> All = new Dictionary<string, Expectation>(StringComparer.Ordinal)
     {
-        ["Invert"] = new((c, _) => new Vector4(1 - c.X, 1 - c.Y, 1 - c.Z, c.W), _ => { }),
-        ["Sepia"] = new((c, _) => new Vector4(
+        ["Invert"] = new((c, _, _) => new Vector4(1 - c.X, 1 - c.Y, 1 - c.Z, c.W), _ => { }),
+        ["Sepia"] = new((c, _, _) => new Vector4(
                 Sat(c.X * 0.393f + c.Y * 0.769f + c.Z * 0.189f),
                 Sat(c.X * 0.349f + c.Y * 0.686f + c.Z * 0.168f),
                 Sat(c.X * 0.272f + c.Y * 0.534f + c.Z * 0.131f),
                 c.W), _ => { }),
-        ["Vignette"] = new((c, uv) =>
+        ["Vignette"] = new((c, _, uv) =>
         {
             float dx = uv.X - 0.5f, dy = uv.Y - 0.5f;
             float d2 = dx * dx + dy * dy;
             float fade = Sat(1.0f - d2 * 2.5f);
             return new Vector4(c.X * fade, c.Y * fade, c.Z * fade, c.W);
         }, _ => { }),
-        ["TintUniform"] = new((c, _) => c * Tint, e => Param(e, "Tint").SetValue(Tint)),
-        ["Posterize"] = new((c, _) =>
+        ["TintUniform"] = new((c, _, _) => c * Tint, e => Param(e, "Tint").SetValue(Tint)),
+        ["Posterize"] = new((c, _, _) =>
         {
             float Q(float v) => Sat(MathF.Floor(v * Levels) / MathF.Max(Levels - 1f, 1f));
             return new Vector4(Q(c.X), Q(c.Y), Q(c.Z), c.W);
         }, e => Param(e, "Levels").SetValue(Levels)),
-        ["Threshold"] = new((c, _) =>
+        ["Threshold"] = new((c, _, _) =>
         {
             float luma = c.X * 0.299f + c.Y * 0.587f + c.Z * 0.114f;
             float v = luma >= Cutoff ? 1f : 0f;
@@ -220,9 +260,17 @@ internal static class Expectations
         }, e => Param(e, "Cutoff").SetValue(Cutoff)),
     };
 
+    /// <summary>Issue #302: Invert of the sprite, multiplied by the game-set texture read through
+    /// the combined sampler <c>Comb</c>. The game sets that texture through
+    /// <c>effect.Parameters["Comb"]</c>, the name the author wrote.</summary>
+    public static readonly Expectation InvertComb = new(
+        (c, k, _) => new Vector4((1 - c.X) * k.X, (1 - c.Y) * k.Y, (1 - c.Z) * k.Z, c.W),
+        _ => { },
+        CombinedTexture: "Comb");
+
     private static float Sat(float v) => Math.Clamp(v, 0f, 1f);
 
-    private static EffectParameter Param(Effect e, string name) =>
+    public static EffectParameter Param(Effect e, string name) =>
         e.Parameters[name] ?? throw new InvalidOperationException(
             $"effect has no '{name}' parameter (has: {string.Join(", ", e.Parameters.Select(p => p.Name))})");
 }
@@ -277,12 +325,15 @@ internal sealed class SlangTexturedGame : Game
         Color[] texels = SourceTexels();
         using var sprite = new Texture2D(gd, Size, Size, false, SurfaceFormat.Color);
         sprite.SetData(texels);
+        Color[] secondTexels = SecondTexels();
+        using var second = new Texture2D(gd, Size, Size, false, SurfaceFormat.Color);
+        second.SetData(secondTexels);
 
         foreach (ShaderRow row in _rows)
         {
             try
             {
-                Validate(gd, row, sprite, texels);
+                Validate(gd, row, sprite, texels, second, secondTexels);
             }
             catch (Exception ex)
             {
@@ -293,12 +344,16 @@ internal sealed class SlangTexturedGame : Game
         Exit();
     }
 
-    private void Validate(GraphicsDevice gd, ShaderRow row, Texture2D sprite, Color[] texels)
+    private void Validate(GraphicsDevice gd, ShaderRow row, Texture2D sprite, Color[] texels, Texture2D second, Color[] secondTexels)
     {
-        Color[] expected = Expected(row.Expectation, texels);
+        Color[] expected = Expected(row.Expectation, texels, secondTexels);
 
         using var effect = new Effect(gd, row.Mgfx);
         row.Expectation.SetUniforms(effect);
+        // Issue #302: the second texture reaches the shader by the author's parameter name, as a
+        // game would set it. A missing parameter throws, naming the parameters the effect has.
+        if (row.Expectation.CombinedTexture is { } combined)
+            Expectations.Param(effect, combined).SetValue(second);
         Color[] image = RenderSprite(gd, effect, sprite);
         string fileStem = row.Name.Replace('#', '_');
         SavePng(gd, image, $"{fileStem}_slang.png");
@@ -342,7 +397,18 @@ internal sealed class SlangTexturedGame : Game
         return px;
     }
 
-    private static Color[] Expected(Expectation e, Color[] texels)
+    /// <summary>The issue #302 row's second texture: non-uniform too, and unlike the sprite on
+    /// every channel, so reading the sprite twice (or the wrong unit) cannot pass.</summary>
+    private static Color[] SecondTexels()
+    {
+        var px = new Color[Size * Size];
+        for (int y = 0; y < Size; y++)
+            for (int x = 0; x < Size; x++)
+                px[Px(x, y)] = new Color(255 - y * 4, 255 - x * 4, 40 + ((x / 16 + y / 16) % 2) * 180, 255);
+        return px;
+    }
+
+    private static Color[] Expected(Expectation e, Color[] texels, Color[] secondTexels)
     {
         var px = new Color[Size * Size];
         for (int y = 0; y < Size; y++)
@@ -351,8 +417,10 @@ internal sealed class SlangTexturedGame : Game
             {
                 Color t = texels[Px(x, y)];
                 var c = new Vector4(t.R / 255f, t.G / 255f, t.B / 255f, t.A / 255f);
+                Color s = secondTexels[Px(x, y)];
+                var k = new Vector4(s.R / 255f, s.G / 255f, s.B / 255f, s.A / 255f);
                 var uv = new Vector2((x + 0.5f) / Size, (y + 0.5f) / Size);
-                Vector4 o = e.Shade(c, uv);
+                Vector4 o = e.Shade(c, k, uv);
                 px[Px(x, y)] = new Color(
                     (byte)Math.Round(Math.Clamp(o.X, 0f, 1f) * 255f),
                     (byte)Math.Round(Math.Clamp(o.Y, 0f, 1f) * 255f),
