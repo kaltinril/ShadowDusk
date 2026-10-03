@@ -187,9 +187,12 @@ public static class RdefReader
             uint dimension  = ReadU32(rdef, rec + 12);
             uint bindPoint  = ReadU32(rdef, rec + 20);
             // An array of resources spanning several registers from bindPoint (issue #324).
-            // fxc/vkd3d at SM4/SM5 reflect `Texture2D Tex[N]` as N separate `Tex[i]` records
-            // of count 1, so this is 1 for every corpus shader; kept for parity with the DXIL
-            // and SPIR-V reflectors.
+            // fxc and vkd3d at Shader Model 5 (ShadowDusk's DX11 compile model) reflect
+            // `Texture2D Tex[N]` as N separate `Tex[i]` records of count 1, so this is 1 for
+            // every corpus shader; Shader Model 4 output (what mgfxc compiles, measured
+            // 2026-10-02) carries one `Tex` record with count N instead. Read faithfully either
+            // way (the D3DReflect parity contract); DxbcReflectionExtractor folds the SM5
+            // per-element records into the SM4 shape afterwards (issue #339).
             uint bindCount  = ReadU32(rdef, rec + 24);
 
             if (!TryReadString(rdef, nameOffset, out string name))

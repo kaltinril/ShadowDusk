@@ -777,6 +777,19 @@ internal sealed class CompilationPipeline
                     // DirectX 12 the table is mgfxc's (one parameter on the first slot) and ships
                     // unchanged, but elements beyond [0] read as zero in the real engine, so the
                     // consumer is warned.
+                    //
+                    // Issue #340: an ARRAY of samplers is refused by real mgfxc on every profile
+                    // in its own parser, so no reference table exists to match; DirectX 11 and
+                    // DirectX 12 refuse it by name too (SD0224) instead of compiling an effect
+                    // mgfxc never builds. (On DirectX 11 the per-element RDEF records of an
+                    // array have already been folded into one binding by the DXBC extractor,
+                    // issue #339, so a texture array there is mgfxc's one `Tex` parameter.)
+                    if ((directX || options.Target == PlatformTarget.DirectX12)
+                        && ResourceArrayDiagnostics.DirectXSamplerArrayError(reflected, glCompileSource.Text, sourceFileName, options.Target,
+                                                                              options.SamplerArraysFromCombinedSamplers) is { } samplerArrayError)
+                    {
+                        return Fail(samplerArrayError, runWarnings);
+                    }
                     if (options.Target == PlatformTarget.Vulkan
                         && ResourceArrayDiagnostics.VulkanError(reflected, glCompileSource.Text, sourceFileName) is { } arrayError)
                     {

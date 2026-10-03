@@ -2,11 +2,13 @@
 // TextureArray4NoRegister.fx — GitHub issue #324, the other axis of the shape:
 // a 4-element `Texture2D Tex[4]` and its SamplerState with NO explicit register.
 //
-// mgfxc 3.8.5 reflects it exactly as TextureArray2.fx (see that file's header):
-// DirectX_12 one parameter `Tex` bound to slot 0; Vulkan nothing at all. The
-// committed goldens under tests/fixtures/golden/{DirectX_12,Vulkan}/ pin both.
-// ShadowDusk: DirectX_12 matches; Vulkan refuses with SD0221 naming `Tex` and
-// the element count 4.
+// mgfxc reflects it exactly as TextureArray2.fx (see that file's header):
+// DirectX_12 one parameter `Tex` bound to slot 0; Vulkan nothing at all (both
+// 3.8.5); DirectX_11 one parameter `Tex`, one record t0/s0 (3.8.4.1, the pinned v10
+// oracle, and 3.8.5). The committed goldens under tests/fixtures/golden/
+// {DirectX_11,DirectX_12,Vulkan}/ pin all three. ShadowDusk: DirectX_12 and
+// DirectX_11 match (issue #339 for DirectX_11); Vulkan refuses with SD0221 naming
+// `Tex` and the element count 4.
 //-----------------------------------------------------------------------------
 
 #if OPENGL

@@ -11,19 +11,27 @@
 //                        reachable only through GraphicsDevice.Textures[i].
 //   /Profile:Vulkan      NO parameter, NO sampler record, NO descriptor binding:
 //                        the texture can never be set and the effect cannot draw.
-//   /Profile:DirectX_11  one parameter `Tex`, one record (3.8.4.1 and 3.8.5 alike).
+//   /Profile:DirectX_11  one parameter `Tex`, one record t0/s0 (3.8.4.1 and 3.8.5
+//                        alike): mgfxc compiles at the author's ps_4_0, where fxc
+//                        reflects the array as ONE binding `Tex` with BindCount 2.
 //   /Profile:OpenGL      fails ("Sequence contains no matching element").
 //
 // ShadowDusk: DirectX_12 emits mgfxc's table (committed golden
-// tests/fixtures/golden/DirectX_12/TextureArray2.mgfx); Vulkan refuses the shape
-// loudly with SD0221 (the committed tests/fixtures/golden/Vulkan/TextureArray2.mgfx
-// is mgfxc's empty-table output, kept as the evidence); OpenGL fails with SD0217.
+// tests/fixtures/golden/DirectX_12/TextureArray2.mgfx); DirectX_11 emits mgfxc's
+// table too since issue #339 (committed mgfxc 3.8.4.1 golden
+// tests/fixtures/golden/DirectX_11/TextureArray2.mgfx; before, its ps_5_0 RDEF's
+// per-element records became parameters `Tex[0]` and `Tex[1]`); Vulkan refuses the
+// shape loudly with SD0221 (the committed tests/fixtures/golden/Vulkan/
+// TextureArray2.mgfx is mgfxc's empty-table output, kept as the evidence); OpenGL
+// fails with SD0217.
 //
-// Render rows: validation/VsDrivenDx12 -- texarr (mgfxc golden vs ShadowDusk, real
-// MonoGame 3.8.5 WindowsDX12, element 1 bound through GraphicsDevice.Textures[1])
-// and validation/VsDrivenVulkan -- texarr (the SD0221 rejection, plus the golden's
-// empty table). The explicit registers are what let the Vulkan reference compiler
-// emit a loadable container for non-array shapes (VsTransformColorTexture.fx).
+// Render rows: validation/VsDrivenDx -- texarr (DirectX_11 golden vs ShadowDusk on
+// both DXBC backends, real MonoGame WindowsDX), validation/VsDrivenDx12 -- texarr
+// (mgfxc golden vs ShadowDusk, real MonoGame 3.8.5 WindowsDX12, element 1 bound
+// through GraphicsDevice.Textures[1]) and validation/VsDrivenVulkan -- texarr (the
+// SD0221 rejection, plus the golden's empty table). The explicit registers are what
+// let the Vulkan reference compiler emit a loadable container for non-array shapes
+// (VsTransformColorTexture.fx).
 //-----------------------------------------------------------------------------
 
 #if OPENGL
