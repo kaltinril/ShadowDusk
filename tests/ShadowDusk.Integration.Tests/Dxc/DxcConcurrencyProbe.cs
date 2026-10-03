@@ -107,6 +107,12 @@ public static class DxcConcurrencyProbe
     /// DXC compiles on several threads while others start processes. Unfixed on macOS this
     /// deadlocks inside libc (DXC's <c>setlocale</c> against <c>fork()</c>'s atfork locking;
     /// see <c>DxcForkGate</c>), so the parent's watchdog, not this method, reports the failure.
+    /// Two of the four compiler threads compile SPIR-V with debug information (<c>-Zi</c> on the
+    /// OpenGL and Vulkan targets, the source in a real file): that is the issue #312 shape. DXC's
+    /// SPIR-V emitter reads the source file for <c>OpSource</c> by <c>dlopen</c>ing
+    /// <c>libdxcompiler</c> itself, and a <c>fork()</c> that waits for such a compile while
+    /// holding dyld's dlopen lock (libSystem takes it before the client atfork handlers run)
+    /// deadlocks with it.
     /// </summary>
     /// <remarks>
     /// On Linux, .NET's <c>Process.Start</c> uses <c>vfork()</c> (glibc), which skips atfork
@@ -121,14 +127,25 @@ public static class DxcConcurrencyProbe
     {
         DateTime stop = DateTime.UtcNow + duration;
         int failures = 0;
-        int compiles = 0, processStarts = 0, rawForks = 0, stuckChildren = 0;
+        int compiles = 0, debugCompiles = 0, processStarts = 0, rawForks = 0, stuckChildren = 0;
+
+        // A real file, so DXC's OpSource path reads it the way a content build's would.
+        string sourceOnDisk = Path.Combine(Path.GetTempPath(), $"shadowdusk-fork-probe-{Environment.ProcessId}.fx");
+        File.WriteAllText(sourceOnDisk, Hlsl);
 
         IEnumerable<Thread> compilers = Enumerable.Range(0, 4).Select(w => new Thread(() =>
         {
             using var compiler = new DxcShaderCompiler();
+            (PlatformTarget platform, bool debug) = w switch
+            {
+                0 => (PlatformTarget.DirectX, false),
+                1 => (PlatformTarget.OpenGL, false),
+                2 => (PlatformTarget.OpenGL, true),
+                _ => (PlatformTarget.Vulkan, true),
+            };
             while (DateTime.UtcNow < stop)
             {
-                string? error = Describe(Compile(compiler, (w & 1) == 0 ? PlatformTarget.DirectX : PlatformTarget.OpenGL));
+                string? error = Describe(Compile(compiler, platform, debug, debug ? sourceOnDisk : "probe.fx"));
                 if (error is not null)
                 {
                     Console.Error.WriteLine(error);
@@ -136,6 +153,7 @@ public static class DxcConcurrencyProbe
                     return;
                 }
                 Interlocked.Increment(ref compiles);
+                if (debug) Interlocked.Increment(ref debugCompiles);
             }
         }));
 
@@ -172,8 +190,10 @@ public static class DxcConcurrencyProbe
         foreach (Thread t in threads) t.Start();
         foreach (Thread t in threads) t.Join();
 
+        try { File.Delete(sourceOnDisk); } catch (IOException) { }
+
         Console.WriteLine(
-            $"FORKPROBE compiles={compiles} processStarts={processStarts} rawForks={rawForks} stuckChildren={stuckChildren}");
+            $"FORKPROBE compiles={compiles} debugCompiles={debugCompiles} processStarts={processStarts} rawForks={rawForks} stuckChildren={stuckChildren}");
         return failures == 0 ? 0 : 1;
     }
 
@@ -198,14 +218,16 @@ public static class DxcConcurrencyProbe
         return 0;
     }
 
-    private static Result<PlatformBlob, ShaderError> Compile(DxcShaderCompiler compiler, PlatformTarget platform)
+    private static Result<PlatformBlob, ShaderError> Compile(
+        DxcShaderCompiler compiler, PlatformTarget platform, bool debug = false, string sourceFileName = "probe.fx")
         => compiler.Compile(new DxcCompileRequest
         {
             HlslSource = Hlsl,
-            SourceFileName = "probe.fx",
+            SourceFileName = sourceFileName,
             EntryPoint = "PSMain",
             Stage = ShaderStage.Pixel,
             Platform = platform,
+            Options = new DxcCompileOptions { EmbedDebugInfo = debug },
         });
 
     private static string? Describe<T>(Result<T, ShaderError> result)

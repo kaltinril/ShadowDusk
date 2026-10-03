@@ -68,7 +68,11 @@ public sealed class DxcConcurrencyStressTests
     /// test, with the hung child's native stacks and a core captured first
     /// (<see cref="HangDiagnostics"/>). On Linux it is the measurement behind leaving the gate
     /// off there (issue #256): glibc's fork path, exercised for real, against DXC's
-    /// <c>setlocale</c> on four threads.
+    /// <c>setlocale</c> on four threads. Half of the compiles are SPIR-V with debug
+    /// information, the issue #312 shape: DXC's SPIR-V emitter <c>dlopen</c>s its own library
+    /// to read the source for <c>OpSource</c>, and a <c>fork()</c> that waited for such a
+    /// compile under the first fork gate deadlocked with it on dyld's dlopen lock (measured in
+    /// CI on macOS 26 arm64 with lldb stacks: issue #312).
     /// </summary>
     [UnixSignalFact]
     [Trait("Platform", "OpenGL")]
@@ -87,6 +91,7 @@ public sealed class DxcConcurrencyStressTests
             // A probe that raced nothing proves nothing: every operation must actually have run.
             Dictionary<string, int> counts = ParseCounts(output, "FORKPROBE");
             counts["compiles"].ShouldBeGreaterThan(0, output);
+            counts["debugCompiles"].ShouldBeGreaterThan(0, output);
             counts["processStarts"].ShouldBeGreaterThan(0, output);
             if (OperatingSystem.IsLinux())
                 counts["rawForks"].ShouldBeGreaterThan(0, output);
