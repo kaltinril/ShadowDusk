@@ -230,6 +230,29 @@ that loads and renders identically to `mgfxc`'s in the real MonoGame/KNI runtime
 
 ### Fixed
 
+- **The raylib and SkSL converters compile a legacy sampler declared in an `#include` or through a
+  macro (issue #327).** `RaylibConverter.Convert` and `SkslConverter.Convert` pre-parse the raw main
+  file and hand its text to the shared DXC seam, so every shape issue #308 fixed on the OpenGL route
+  (a `sampler` / `sampler2D` in an `#include`d file, a register clause or whole declaration that
+  comes out of a macro such as MonoGame's `DECLARE_TEXTURE`, a `tex2D` inside a macro body or an
+  include) was still refused with DXC's own error ("unknown type name 'sampler2D'", "deprecated
+  tex2D intrinsic"). Both converters now run the same recovery `CompilationPipeline.Run` uses
+  (`LegacySamplerRecovery`, one copy of the outcome handling shared by all three callers): after
+  the DXC compile has failed, and only then, the pre-parse is repeated on the preprocessed source
+  and the converter's own validations, seam, sampler-register reading and mapper run again from it.
+  Measured: every one of the 16 include / macro shapes converts to EXACTLY what its directly
+  written twin converts to (fragment shader, uniforms, samplers, warnings; SkSL text, children,
+  synthesized uniforms), and the whole 164-file fixture corpus converted with the fix off and on
+  is byte-identical for everything that converted before (raylib 79/79; SkSL 33/33 by default and
+  69/69 with the varyings opt-in). Eleven fixtures move from "does not convert" to converting
+  (`SamplerLegacyInclude`, `SamplerLegacyMacroDecl`, the nine vendored MonoGame `Include.fxh`
+  effects; on SkSL, `Bevels` now reaches its real `SD0612` refusal instead of DXC's error). The
+  shapes the recovery cannot model are the same `SD0016` as on the OpenGL route, appended after
+  the compiler's own diagnostics. Rung 4 for raylib: `validation/RaylibRoute` gains the
+  `LegacyInclude` and `LegacyMacroDecl` arms (both masks bound by name on units 2 and 3), 15/15 at
+  maxd 0 in real Raylib-cs vs real MonoGame DesktopGL. Cost: nothing for an effect that converts at
+  once (3.6 vs 3.3 ms in-process, noise); a recovered effect pays its failed first DXC compile plus
+  the preprocessed re-parse (about 6 ms against its direct twin's 3.6 ms).
 - **Browser DirectX compiles handed vkd3d no compile options, so a shader with SM1-3 semantics on
   struct fields compiled differently from the desktop, or not at all (issue #295).** Since 0.20.0 the
   desktop vkd3d backend passes `BACKWARD_COMPATIBILITY`/`MAP_SEMANTIC_NAMES` on the SM4+ target, but
