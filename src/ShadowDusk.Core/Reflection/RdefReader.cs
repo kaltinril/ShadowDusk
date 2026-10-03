@@ -183,9 +183,14 @@ public static class RdefReader
             int rec = (int)bindingOffset + i * BindingRecordSize;
             uint nameOffset = ReadU32(rdef, rec);
             uint inputType  = ReadU32(rdef, rec + 4);
-            // +8 return type, +16 num samples, +24 bind count, +28 flags — unused.
+            // +8 return type, +16 num samples, +28 flags — unused.
             uint dimension  = ReadU32(rdef, rec + 12);
             uint bindPoint  = ReadU32(rdef, rec + 20);
+            // An array of resources spanning several registers from bindPoint (issue #324).
+            // fxc/vkd3d at SM4/SM5 reflect `Texture2D Tex[N]` as N separate `Tex[i]` records
+            // of count 1, so this is 1 for every corpus shader; kept for parity with the DXIL
+            // and SPIR-V reflectors.
+            uint bindCount  = ReadU32(rdef, rec + 24);
 
             if (!TryReadString(rdef, nameOffset, out string name))
                 return $"RDEF resource binding #{i} has an unreadable name";
@@ -198,16 +203,18 @@ public static class RdefReader
                 case InputTypeTexture:
                     textures.Add(new TextureReflection
                     {
-                        Name      = name,
-                        BindSlot  = (int)bindPoint,
-                        Dimension = MapSrvDimension(dimension),
+                        Name        = name,
+                        BindSlot    = (int)bindPoint,
+                        Dimension   = MapSrvDimension(dimension),
+                        ArrayLength = bindCount == 1 ? null : (int)bindCount,
                     });
                     break;
                 case InputTypeSampler:
                     samplers.Add(new SamplerReflection
                     {
-                        Name     = name,
-                        BindSlot = (int)bindPoint,
+                        Name        = name,
+                        BindSlot    = (int)bindPoint,
+                        ArrayLength = bindCount == 1 ? null : (int)bindCount,
                     });
                     break;
                 // Other binding types (tbuffers, UAVs, …) are ignored, as before.

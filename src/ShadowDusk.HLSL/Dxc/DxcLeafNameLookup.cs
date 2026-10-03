@@ -66,7 +66,7 @@ internal static unsafe class DxcLeafNameLookup
     /// The diagnostic raised instead of running a debug SPIR-V compile whose source read would
     /// load a <c>libdxcompiler</c> that is not ShadowDusk's pinned build.
     /// </summary>
-    internal const string ErrorCode = "SD0221";
+    internal const string ErrorCode = "SD0223";
 
     /// <summary>
     /// The leaf name DXC's SPIR-V emitter loads (<c>dxc::kDxCompilerLib</c>, built from

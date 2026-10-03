@@ -220,6 +220,11 @@ $gates.Add(@{
     Action = {
         Invoke-Checked 'dotnet' @('run', '--project', 'validation/VsDrivenDx12', '-c', 'Release')
         Invoke-Checked 'dotnet' @('run', '--project', 'validation/VsDrivenDx12', '-c', 'Release', '--', 'apos')
+        # Issue #324: an ARRAY of textures (Texture2D Tex[2]) vs the real mgfxc 3.8.5 golden: the
+        # parameter table must equal mgfxc's (one Tex parameter bound to slot 0), both arms must
+        # load and draw the same picture, and element [1], reachable only through
+        # GraphicsDevice.Textures[1], must really be read (CPU expectation (cat + green) / 2).
+        Invoke-Checked 'dotnet' @('run', '--project', 'validation/VsDrivenDx12', '-c', 'Release', '--', 'texarr')
     }
 })
 $gates.Add(@{
@@ -428,6 +433,11 @@ if (-not $SkipVulkan) {
             # GraphicsDevice in one process. This one renders the issue-#145 reproducer itself -
             # upstream Apos.Shapes at its current revision - against the mgfxc golden.
             Invoke-Checked 'dotnet' @('run', '--project', 'validation/VsDrivenVulkan', '-c', 'Release', '--', 'apos')
+            # Issue #324, EXPECT-DIAGNOSTIC (no device): an ARRAY of textures must be refused with
+            # SD0221 at its declaration, because real mgfxc 3.8.5's own Vulkan output for it has
+            # no parameter, no sampler record and no descriptor binding (the committed golden is
+            # decoded to pin that). `-- texarr-reference` draws mgfxc's effect itself, as evidence.
+            Invoke-Checked 'dotnet' @('run', '--project', 'validation/VsDrivenVulkan', '-c', 'Release', '--', 'texarr')
         }
     })
     $gates.Add(@{

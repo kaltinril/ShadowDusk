@@ -157,7 +157,7 @@ public sealed class DxcShaderCompiler : IDxcShaderCompiler, IDisposable
             return Result<PlatformBlob, ShaderError>.Fail(loadError);
 
         // A SPIR-V compile with debug information loads libdxcompiler by LEAF name from inside
-        // DXC to read the source for OpSource (issue #332). Refused (SD0221) when the dynamic
+        // DXC to read the source for OpSource (issue #332). Refused (SD0223) when the dynamic
         // linker would hand that load anything but the pinned build; no other request makes it.
         if (DxcLeafNameLookup.CompileReadsSourceThroughLeafNameLoad(arguments)
             && DxcLoader.CheckDebugSpirvLookup() is { } lookupError)

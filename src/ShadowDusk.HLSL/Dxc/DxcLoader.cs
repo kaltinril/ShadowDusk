@@ -92,7 +92,7 @@ namespace ShadowDusk.HLSL.Dxc;
 /// pinned image (by base name; by its <c>@rpath/</c> install name), glibc and older dyld search
 /// their directories. <see cref="DxcLeafNameLookup"/> asks the linker, without loading anything,
 /// right after the pinned load, and <see cref="CheckDebugSpirvLookup"/> refuses the debug SPIR-V
-/// compiles (<c>SD0221</c>) when the answer is not the pinned build: never silently a decoy.</para>
+/// compiles (<c>SD0223</c>) when the answer is not the pinned build: never silently a decoy.</para>
 ///
 /// <para><b>Where the natives are found.</b> Windows and Linux:
 /// <see cref="GetPinnedPairDirectories"/>. macOS: <see cref="GetMacCandidates"/>; the dylib

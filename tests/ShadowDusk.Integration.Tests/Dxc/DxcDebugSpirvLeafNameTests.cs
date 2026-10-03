@@ -20,7 +20,7 @@ namespace ShadowDusk.Integration.Tests.Dxc;
 /// compile (<c>clang::spirv::ReadSourceCode</c> -&gt; <c>DxcDllSupport::Initialize</c>), to
 /// read the source for <c>OpSource</c>. A leaf name is a name search: whatever the dynamic
 /// linker answers is loaded and initialized inside the compile. The product rule this pins:
-/// <b>that answer is the pinned image, or the debug SPIR-V compile is refused (<c>SD0221</c>);
+/// <b>that answer is the pinned image, or the debug SPIR-V compile is refused (<c>SD0223</c>);
 /// a library that is not the pinned build is never loaded.</b> Release compiles never make the
 /// load and must keep compiling whatever sits on the search path.
 ///
@@ -155,7 +155,7 @@ public sealed class DxcDebugSpirvLeafNameTests
                         report.Values["leaf.foundUnloadedFile"].ShouldBe(["True"], $"{tag} glibc did not report the file on LD_LIBRARY_PATH");
                         foreach (string target in new[] { "OpenGL", "Vulkan" })
                         {
-                            report.Values[$"{target}.debug"].ShouldBe(["SD0221"], $"{tag} {target}: {report.Message(target, "debug")}");
+                            report.Values[$"{target}.debug"].ShouldBe(["SD0223"], $"{tag} {target}: {report.Message(target, "debug")}");
                             report.Message(target, "debug").ShouldContain(report.DecoyName, Case.Sensitive);
                             report.Message(target, "debug").ShouldContain("LD_LIBRARY_PATH", Case.Sensitive);
                         }
@@ -243,7 +243,7 @@ public sealed class DxcDebugSpirvLeafNameTests
             DxcLoader.SamePath(resolved, foreign).ShouldBeTrue($"the first-loaded module must be the foreign one: {resolved}");
             foreach (string target in new[] { "OpenGL", "Vulkan" })
             {
-                report.Values[$"{target}.debug"].ShouldBe(["SD0221"], $"{target}: {report.Message(target, "debug")}");
+                report.Values[$"{target}.debug"].ShouldBe(["SD0223"], $"{target}: {report.Message(target, "debug")}");
                 report.Message(target, "debug").ShouldContain(Path.GetFileName(Path.GetDirectoryName(foreign))!, Case.Sensitive);
             }
         }
@@ -252,7 +252,7 @@ public sealed class DxcDebugSpirvLeafNameTests
             // glibc matches the leaf against the preloaded object's SONAME and names: refused iff it does.
             bool matchesForeign = resolved != "-" && !DxcNativeIdentity.Matches(resolved, DxcNativeIdentity.Expected(rid, DxcNativeKind.Compiler));
             foreach (string target in new[] { "OpenGL", "Vulkan" })
-                report.Values[$"{target}.debug"].ShouldBe([matchesForeign ? "SD0221" : "OK"], $"{target}: {report.Message(target, "debug")}");
+                report.Values[$"{target}.debug"].ShouldBe([matchesForeign ? "SD0223" : "OK"], $"{target}: {report.Message(target, "debug")}");
         }
     }
 

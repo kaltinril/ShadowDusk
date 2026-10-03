@@ -132,7 +132,7 @@ public sealed class DxcLeafNameLookupTests
         ShaderError? error = DxcLeafNameLookup.Decide(null, foundUnloadedFile: true, [copy, sdk, other], Pinned, Identity);
 
         error.ShouldNotBeNull();
-        error.Code.ShouldBe("SD0221");
+        error.Code.ShouldBe("SD0223");
         error.Message.ShouldContain("/opt/vulkan/lib/libdxcompiler.so", Case.Sensitive);
         error.Message.ShouldContain("/decoy/libdxcompiler.so", Case.Sensitive);
         error.Message.ShouldNotContain("/copies/", Case.Sensitive);
@@ -155,7 +155,7 @@ public sealed class DxcLeafNameLookupTests
         ShaderError? error = DxcLeafNameLookup.Decide(null, foundUnloadedFile: true, [], Pinned, Identity);
 
         error.ShouldNotBeNull();
-        error.Code.ShouldBe("SD0221");
+        error.Code.ShouldBe("SD0223");
         error.Message.ShouldContain("ld.so.cache", Case.Sensitive);
         error.Message.ShouldContain("ldconfig -p", Case.Sensitive);
     }

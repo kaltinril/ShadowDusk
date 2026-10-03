@@ -380,7 +380,7 @@ internal static class VulkanTextureSamplerBindingRewriter
     /// plants after its macro prelude and around flattened includes. With no markers the
     /// file is empty and the line/column are physical (the caller fills the file in).
     /// </summary>
-    private static (string File, int Line, int Column) Locate(string text, int offset)
+    internal static (string File, int Line, int Column) Locate(string text, int offset)
     {
         string file = "";
         int line = 1;
