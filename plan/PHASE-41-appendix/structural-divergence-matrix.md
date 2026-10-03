@@ -24,7 +24,7 @@
   - Structurally **clean**: **85**
   - **Divergent** (>=1 level): **23**
   - Compile/parse **failures**: **10**
-- Non-golden census cells: **210** (**149** compile, **61** fail with a code)
+- Non-golden census cells: **212** (**149** compile, **63** fail with a code)
 
 ## Golden-backed fixtures — per-level structural verdict
 
@@ -374,6 +374,8 @@ is a CORRECT result, not a defect.
 | raylib/CrtFilter.fx | OpenGL | PASS |  |  |
 | raylib/RetroHandheld.fx | DirectX_11 | PASS |  |  |
 | raylib/RetroHandheld.fx | OpenGL | PASS |  |  |
+| texture-arrays/SamplerArray2.fx | DirectX_11 | FAIL | SD0223 | DirectX 11 target: 'Samplers' is an array of 2 samplers ('SamplerState Samplers[2]'). Real mgfxc (3.8.4.1 and 3.8.5) refuses an array of samplers on every profi... |
+| texture-arrays/SamplerArray2.fx | OpenGL | FAIL | SD0100 | SPIRV-Cross [build_combined_image_samplers]: Attempting to use arrays or structs of separate samplers. This is not possible to statically remap to plain GLSL. |
 | texture-arrays/TextureArray2.fx | DirectX_11 | PASS |  |  |
 | texture-arrays/TextureArray2.fx | OpenGL | FAIL | SD0217 | Cannot determine the OpenGL combined-sampler declaration order: 'Tex' is declared as an array of textures, which MonoGame's OpenGL effect format has no represen... |
 | texture-arrays/TextureArray4NoRegister.fx | DirectX_11 | PASS |  |  |
@@ -465,9 +467,10 @@ is a CORRECT result, not a defect.
 - `FX0012`: 4 cell(s) — third-party/MonoGame/VertexTextureEffect.fx [DirectX_11], third-party/MonoGame/VertexTextureEffect.fx [OpenGL], third-party/Nez/PaletteCycler.fx [DirectX_11], third-party/Nez/PaletteCycler.fx [OpenGL]
 - `SD0001`: 2 cell(s) — MinimalWithInclude.fx [DirectX_11], MinimalWithInclude.fx [OpenGL]
 - `SD0014`: 2 cell(s) — examples/ExProfileStageMismatch.fx [DirectX_11], examples/ExProfileStageMismatch.fx [OpenGL]
+- `SD0100`: 2 cell(s) — texture-arrays/SamplerArray2.fx [OpenGL], third-party/Nez/Reflection.fx [OpenGL]
 - `SD0217`: 2 cell(s) — texture-arrays/TextureArray2.fx [OpenGL], texture-arrays/TextureArray4NoRegister.fx [OpenGL]
+- `SD0223`: 1 cell(s) — texture-arrays/SamplerArray2.fx [DirectX_11]
 - `E5030`: 1 cell(s) — third-party/MonoGame/DefinesTest.fx [DirectX_11]
 - `E5017`: 1 cell(s) — third-party/MonoGame/ParameterTypes.fx [DirectX_11]
 - `E4000`: 1 cell(s) — third-party/MonoGame/PreprocessorTest.fx [DirectX_11]
-- `SD0100`: 1 cell(s) — third-party/Nez/Reflection.fx [OpenGL]
 

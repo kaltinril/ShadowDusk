@@ -86,8 +86,10 @@ internal static class ResourceArrayDiagnostics
                      $"{array.Kind.TrimEnd('s')} per descriptor slot and names it by one effect parameter. " +
                      reference + " ShadowDusk refuses the shape rather than emit that effect. Declare " +
                      $"each element separately (e.g. '{array.Elementwise}') and sample each by name, or keep " +
-                     "the array out of the Vulkan build with '#if !VULKAN'. DirectX 12 compiles it (as mgfxc " +
-                     "does: one parameter, bound to the first slot).");
+                     "the array out of the Vulkan build with '#if !VULKAN'. " +
+                     (array.Texture is not null
+                         ? "DirectX 11 and 12 compile it (as mgfxc does: one parameter, bound to the first slot)."
+                         : "DirectX 11 and 12 refuse it too (SD0223)."));
     }
 
     /// <summary>
