@@ -195,7 +195,8 @@ that loads and renders identically to `mgfxc`'s in the real MonoGame/KNI runtime
   refusing with `SD0611` (issue #368).** A shader that reads `input.Color` (every XnaFiddle
   example, and every `.fx` written for SpriteBatch) converts with the `float4` uniform
   `ShadowDusk_Color` in its place. Set it each draw to the sprite's tint, white when untinted;
-  leaving it unset renders black. It is listed in `SkslConversion.SynthesizedUniforms` with an
+  never leave it unset (SkiaSharp does not zero a runtime effect's uniform buffer, so an
+  unset value is undefined, not black). It is listed in `SkslConversion.SynthesizedUniforms` with an
   `SD0614` warning, like `ShadowDusk_Resolution`. `TreatVaryingsAsUniforms` still governs every
   other interpolant (still refused by name otherwise). Callers that listed `"COLOR0"` in it keep
   working and get the same output, but the uniform is now named `ShadowDusk_Color`, not
