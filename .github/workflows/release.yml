@@ -468,7 +468,7 @@ jobs:
             (echo "::error::dxcompiler.wasm not restored into wwwroot/dxc/ — tools/restore.sh failed to copy the committed .wasm-build copy" && exit 1)
 
       # Phase 4.1: the vkd3d->WASM module (browser DirectX-DXBC + FNA-fx_2_0 backend)
-      # is downloaded by tools/restore.sh from the native-vkd3d-wasm-1.17 release
+      # is downloaded by tools/restore.sh from the native-vkd3d-wasm-2.1-r2 release
       # under SHA-256 pins. A stopped release beats shipping browser DX/FNA broken.
       # BOTH files are verified (a partial restore — js failed, wasm landed — would
       # ship DX/FNA permanently failing SD1902), and verified by RE-HASHING against

@@ -457,11 +457,12 @@ that loads and renders identically to `mgfxc`'s in the real MonoGame/KNI runtime
   call, plus a control that the fixture differs without them), in the cross-host byte-identity
   manifest (so `browser-vkd3d-gate.mjs` compiles it through the real `WasmShaderCompiler`) and
   checked against `mgfxc` goldens on both profiles. A new test pins the options the desktop hands the
-  native call to the contract's list. **The rebuilt module is verified (91/91, 78/78 in Chromium,
-  18/18 depth cases) but not hosted yet**: until it is uploaded to a new release tag and re-pinned in
-  `tools/restore.*` (one upload now covers this and the #271 stack fix below), the browser keeps the
-  old module and this defect, warns once on the console, and the gates report the fixture as an
-  expected difference keyed on the old module's hash. No emitted byte changes on the desktop.
+  native call to the contract's list. **The browser now ships the rebuilt module** (release
+  `native-vkd3d-wasm-2.1-r2`, pinned in `tools/restore.*`; one module carries this fix and the #271
+  stack fix below), and the shim requires its `sdw_vkd3d_compile_options` export: a module without it
+  fails to load (`SD1902`) instead of compiling without options. The gates enforce every entry, with
+  no expected difference: node corpus 93/93, real-browser 80/80 in headless Chromium. No emitted byte
+  changes on the desktop.
 - **The browser vkd3d module printed one `vkd3d:NNNN:fixme:vkd3d:preproc_yyparse #line directive.`
   line to the console per `#line` directive (issue #319).** vkd3d-shader's preprocessor ignores
   `#line` and reports each one as a fixme on stderr, which emscripten routes to the browser console.
@@ -615,9 +616,9 @@ that loads and renders identically to `mgfxc`'s in the real MonoGame/KNI runtime
   in SPIRV-Cross, which still exhausts the JS engine's own stack. A module that traps is now
   discarded and reloaded instead of being reused corrupted, and the compile reports the new code
   `SD1907` (a synchronous `Compile()` before the reload reports `SD1903`; `CompileAsync` reloads by
-  itself). The rebuilt DXC and SPIRV-Cross modules ship in this release; the rebuilt vkd3d module
-  (DirectX/FNA in the browser) is verified but not hosted yet, so the browser DirectX/FNA path keeps
-  the 64 KB module until it is re-pinned. No emitted byte changes on any corpus. New gate
+  itself). All three rebuilt modules ship in this release; the vkd3d one (DirectX/FNA in the browser)
+  is pinned from release `native-vkd3d-wasm-2.1-r2`, and the depth gate runs its vkd3d arm on every
+  depth case (18/18 byte-identical). No emitted byte changes on any corpus. New gate
   `node-test-wasm-depth.mjs` and a trap scenario in `browser-vkd3d-gate.mjs` (`wasm.yml`); details in
   `.wasm-build/WASM-STACK-DEPTH.md`. Also: `tools/restore.*` now refresh the packaged
   `dxcompiler.wasm` by hash instead of size (a relink can change the module and keep its size).

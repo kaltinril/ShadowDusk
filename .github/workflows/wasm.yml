@@ -239,7 +239,7 @@ jobs:
             'src/ShadowDusk.Wasm/wwwroot/vkd3d/vkd3d-shader.js' \
             'src/ShadowDusk.Wasm/wwwroot/vkd3d/vkd3d-shader.wasm' ; do
               if [ ! -f "$f" ]; then
-                echo "::error::restored WASM artifact missing: $f — tools/restore.sh failed to download the pinned native-vkd3d-wasm-1.17 asset."
+                echo "::error::restored WASM artifact missing: $f — tools/restore.sh failed to download the pinned native-vkd3d-wasm-2.1-r2 asset."
                 missing=1
               fi
           done
@@ -308,14 +308,14 @@ jobs:
       # A browser cannot render DXBC/D3D9 bytecode, so the honest G2 analogue for the
       # DX/FNA EXPORT targets is byte-identity: headless Chromium runs the REAL
       # WasmShaderCompiler (.NET-browser runtime, real HTTP fetch of vkd3d-shader.wasm
-      # restored above from native-vkd3d-wasm-1.17) over the FULL DX+FNA byte-identity
+      # restored above from native-vkd3d-wasm-2.1-r2) over the FULL DX+FNA byte-identity
       # corpus, and every artifact's SHA-256 must equal the committed cross-host
       # manifest (tests/fixtures/golden/byte-identity/manifest.json) — the same device
       # Phase 37 uses to transfer the desktop rung-4 render proofs across hosts, with
       # the browser as the fourth host. Skips LOUDLY (exit 0 + ::warning::, never a
       # fabricated pass) only when vkd3d-shader.{js,wasm} is not restored; any compile
       # failure or hash mismatch is red. Pure compile — no GPU/xvfb needed.
-      # --require-module: the hosted pins exist (native-vkd3d-wasm-1.17), so a module
+      # --require-module: the hosted pins exist (native-vkd3d-wasm-2.1-r2), so a module
       # missing in CI = restore infrastructure failure — the gate must go RED, never
       # skip itself green. The loud-skip branch remains for LOCAL runs without the flag.
       # ── Phase 4.1 G1 — vkd3d->WASM seam byte-identity (node, no browser) ──
