@@ -202,6 +202,28 @@ public sealed class SkslConverterTests
         string.Equals(viaFactories.Value.SkslText, viaDefaults.Value.SkslText, StringComparison.Ordinal).ShouldBeTrue();
     }
 
+    [Fact]
+    public void GumGrayscale_SkslMatchesTheCommittedGolden_TheBrowserGateComparesTheSameFile()
+    {
+        // Issue #349: tests/fixtures/golden/sksl/Grayscale.sksl is the desktop SkSL for the Gum
+        // Grayscale with COLOR0 opted in. The browser gate (tests/ShadowDusk.BrowserTests/
+        // browser-sksl-gate.mjs) asserts the in-browser conversion equals this same file, so
+        // browser == golden == desktop. Regenerate with SHADOWDUSK_UPDATE_GOLDEN=1.
+        string goldenPath = Path.Combine(
+            Path.GetDirectoryName(Path.GetDirectoryName(Path.GetDirectoryName(Path.GetDirectoryName(GumGrayscalePath)!)!)!)!,
+            "golden", "sksl", "Grayscale.sksl");
+
+        var result = SkslConverter.Convert(File.ReadAllText(GumGrayscalePath),
+            new SkslConvertOptions { SourceName = "Grayscale.fx", TreatVaryingsAsUniforms = ["COLOR0"] });
+        result.IsSuccess.ShouldBeTrue();
+
+        if (Environment.GetEnvironmentVariable("SHADOWDUSK_UPDATE_GOLDEN") == "1")
+            File.WriteAllText(goldenPath, result.Value.SkslText, new System.Text.UTF8Encoding(false));
+
+        string golden = File.ReadAllText(goldenPath);
+        string.Equals(result.Value.SkslText, golden, StringComparison.Ordinal).ShouldBeTrue();
+    }
+
     internal static string FindFixture(params string[] parts)
     {
         for (DirectoryInfo? dir = new(AppContext.BaseDirectory); dir is not null; dir = dir.Parent)
