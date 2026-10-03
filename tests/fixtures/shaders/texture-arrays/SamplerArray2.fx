@@ -9,7 +9,7 @@
 //   Comma, or CloseParenthesis.
 //   Failed to parse 'SamplerArray2.fx'!
 //
-// ShadowDusk: DirectX_11 and DirectX_12 refuse it with SD0223 at the declaration
+// ShadowDusk: DirectX_11 and DirectX_12 refuse it with SD0224 at the declaration
 // (31,14). Before the fix both compiled it: DirectX 11 to two records, t0/s0 and
 // t1/s1, DirectX 12 to one record for slot 0. Vulkan refuses it with SD0221
 // (issue #324); OpenGL fails in SPIRV-Cross (SD0100: arrays of separate samplers

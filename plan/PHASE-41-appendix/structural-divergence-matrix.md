@@ -374,7 +374,7 @@ is a CORRECT result, not a defect.
 | raylib/CrtFilter.fx | OpenGL | PASS |  |  |
 | raylib/RetroHandheld.fx | DirectX_11 | PASS |  |  |
 | raylib/RetroHandheld.fx | OpenGL | PASS |  |  |
-| texture-arrays/SamplerArray2.fx | DirectX_11 | FAIL | SD0223 | DirectX 11 target: 'Samplers' is an array of 2 samplers ('SamplerState Samplers[2]'). Real mgfxc (3.8.4.1 and 3.8.5) refuses an array of samplers on every profi... |
+| texture-arrays/SamplerArray2.fx | DirectX_11 | FAIL | SD0224 | DirectX 11 target: 'Samplers' is an array of 2 samplers ('SamplerState Samplers[2]'). Real mgfxc (3.8.4.1 and 3.8.5) refuses an array of samplers on every profi... |
 | texture-arrays/SamplerArray2.fx | OpenGL | FAIL | SD0100 | SPIRV-Cross [build_combined_image_samplers]: Attempting to use arrays or structs of separate samplers. This is not possible to statically remap to plain GLSL. |
 | texture-arrays/TextureArray2.fx | DirectX_11 | PASS |  |  |
 | texture-arrays/TextureArray2.fx | OpenGL | FAIL | SD0217 | Cannot determine the OpenGL combined-sampler declaration order: 'Tex' is declared as an array of textures, which MonoGame's OpenGL effect format has no represen... |
@@ -469,7 +469,7 @@ is a CORRECT result, not a defect.
 - `SD0014`: 2 cell(s) — examples/ExProfileStageMismatch.fx [DirectX_11], examples/ExProfileStageMismatch.fx [OpenGL]
 - `SD0100`: 2 cell(s) — texture-arrays/SamplerArray2.fx [OpenGL], third-party/Nez/Reflection.fx [OpenGL]
 - `SD0217`: 2 cell(s) — texture-arrays/TextureArray2.fx [OpenGL], texture-arrays/TextureArray4NoRegister.fx [OpenGL]
-- `SD0223`: 1 cell(s) — texture-arrays/SamplerArray2.fx [DirectX_11]
+- `SD0224`: 1 cell(s) — texture-arrays/SamplerArray2.fx [DirectX_11]
 - `E5030`: 1 cell(s) — third-party/MonoGame/DefinesTest.fx [DirectX_11]
 - `E5017`: 1 cell(s) — third-party/MonoGame/ParameterTypes.fx [DirectX_11]
 - `E4000`: 1 cell(s) — third-party/MonoGame/PreprocessorTest.fx [DirectX_11]

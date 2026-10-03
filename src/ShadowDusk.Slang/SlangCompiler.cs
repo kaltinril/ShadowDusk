@@ -393,7 +393,7 @@ public sealed class SlangCompiler
         // Issue #340: slangc lowers an author's combined-sampler ARRAY (`Sampler2D T[N]`) to a
         // texture array plus a sampler array (`SamplerState T_sampler_0[N]`). The sampler half is
         // one author resource lowered, not the `SamplerState S[N]` mgfxc's parser refuses, so the
-        // DirectX sampler-array refusal (SD0223) must skip it and let the texture half carry the
+        // DirectX sampler-array refusal (SD0224) must skip it and let the texture half carry the
         // array diagnostics (SD0221, SD0222), as the hand-written `Texture2D T[N]; SamplerState S;`
         // reference gets. An author-written `SamplerState S[N]` in Slang source is still refused.
         IReadOnlyCollection<string> combinedHalves = CombinedSamplerArrayHalves(mergedHlsl);
@@ -418,9 +418,9 @@ public sealed class SlangCompiler
     /// the DirectX 12 warning (issue #324), and the DirectX 11/12 sampler-array error (issue #340).</summary>
     private const string ResourceArrayCode = "SD0221";
     private const string ResourceArrayWarningCode = "SD0222";
-    private const string SamplerArrayCode = "SD0223";
+    private const string SamplerArrayCode = "SD0224";
 
-    // The resource name the SD0221/SD0222/SD0223 message opens with: "Vulkan target: 'Tex' is ...".
+    // The resource name the SD0221/SD0222/SD0224 message opens with: "Vulkan target: 'Tex' is ...".
     private static readonly Regex ResourceArrayName = new(@"^(?:Vulkan|DirectX 1[12]) target: '(?<name>[^']+)'", RegexOptions.Compiled);
 
     // slangc's sampler half of a combined sampler, declared as an array:
@@ -450,7 +450,7 @@ public sealed class SlangCompiler
     /// that declaration is slangc's hoisted half, whose <c>#line</c> names slangc's core module
     /// (<c>core</c>, <c>hlsl.meta.slang</c>), not the author's file. Point it at the author's
     /// declaration of the same name in the Slang source instead; every other error passes through.
-    /// The same for <c>SD0222</c> and for <c>SD0223</c> (an author-written <c>SamplerState S[N]</c>
+    /// The same for <c>SD0222</c> and for <c>SD0224</c> (an author-written <c>SamplerState S[N]</c>
     /// on DirectX 11/12, issue #340).
     /// </summary>
     private static ShaderError[] RelocateResourceArrayErrors(ShaderError[] errors, string slangSource, string sourceName)

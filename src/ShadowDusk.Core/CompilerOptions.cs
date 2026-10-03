@@ -140,7 +140,7 @@ public sealed class CompilerOptions
     /// arrays slangc emitted as the sampler half of a combined-sampler ARRAY the author declared
     /// (<c>Sampler2D T[N]</c> becomes <c>Texture2D T_texture_0[N]</c>, renamed to <c>T</c>, plus
     /// <c>SamplerState T_sampler_0[N]</c>). Those are one author resource, lowered, not an author's
-    /// <c>SamplerState S[N]</c>, so the DirectX sampler-array refusal (<c>SD0223</c>) skips them and
+    /// <c>SamplerState S[N]</c>, so the DirectX sampler-array refusal (<c>SD0224</c>) skips them and
     /// the texture half carries the array diagnostics (<c>SD0221</c>, <c>SD0222</c>), giving the same
     /// one-parameter table the hand-written <c>Texture2D T[N]; SamplerState S;</c> gets. Empty for
     /// every <c>.fx</c> compile. Not a consumer setting: an author never needs it for correct output.

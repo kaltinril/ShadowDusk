@@ -201,7 +201,7 @@ static Texture2D Flat(Microsoft.Xna.Framework.Graphics.GraphicsDevice device, Co
 // 3.8.5 refuse the shape on EVERY profile in their own parser ("SamplerArray2.fx(31,22) :
 // Unexpected token '[' found. Expected Semicolon, Comma, or CloseParenthesis."), so there is
 // no reference effect to render against and the gate is the refusal itself: ShadowDusk's
-// DirectX12 compile must FAIL with SD0223 naming `Samplers` at the declaration (31,14). Red
+// DirectX12 compile must FAIL with SD0224 naming `Samplers` at the declaration (31,14). Red
 // before the fix (it compiled, one record for slot 0, with the SD0222 warning).
 //
 // Optional evidence arm: a prebuilt .mgfx on the command line (a pre-fix build's DirectX_12
@@ -231,9 +231,9 @@ if (r.IsSuccess)
 }
 else
 {
-    ShaderError? e = r.Error.FirstOrDefault(x => x.Code == "SD0223");
+    ShaderError? e = r.Error.FirstOrDefault(x => x.Code == "SD0224");
     pass = e is not null && Path.GetFileName(e.File) == SampArrFixture + ".fx" && e.Line == 31 && e.Column == 14 && e.Message.Contains("'Samplers'", StringComparison.Ordinal);
-    Console.WriteLine($"[samparr-dx12] DirectX12: refused with {string.Join(", ", r.Error.Select(x => $"{x.Code} {Path.GetFileName(x.File)}({x.Line},{x.Column})"))} -> {(pass ? "PASS" : "FAIL")} (expected SD0223 at SamplerArray2.fx(31,14) naming 'Samplers')");
+    Console.WriteLine($"[samparr-dx12] DirectX12: refused with {string.Join(", ", r.Error.Select(x => $"{x.Code} {Path.GetFileName(x.File)}({x.Line},{x.Column})"))} -> {(pass ? "PASS" : "FAIL")} (expected SD0224 at SamplerArray2.fx(31,14) naming 'Samplers')");
     if (e is not null)
         Console.WriteLine($"  {e.Message}");
 }
@@ -276,7 +276,7 @@ if (evidenceFile is not null)
     }
 }
 
-Console.WriteLine($"\n[samparr-dx12] {(pass ? "PASS" : "FAIL")}: SD0223 refusal on DirectX 12 {(pass ? "as mgfxc's own parser refuses the shape" : "MISSING")}.");
+Console.WriteLine($"\n[samparr-dx12] {(pass ? "PASS" : "FAIL")}: SD0224 refusal on DirectX 12 {(pass ? "as mgfxc's own parser refuses the shape" : "MISSING")}.");
 return pass ? 0 : 1;
 }
 

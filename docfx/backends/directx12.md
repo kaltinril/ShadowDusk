@@ -31,9 +31,9 @@ An **array of textures** (`Texture2D Tex[N]`) compiles, and the parameter table 
 
 (DirectX 11 reflects a texture array the same way since issue #339, one `Tex` parameter and one record at the array's base slot, measured against `mgfxc` 3.8.4.1 and 3.8.5; there the other elements ARE read through `GraphicsDevice.Textures[i]` in real MonoGame WindowsDX, so no warning is raised.)
 
-## Sampler arrays are refused (`SD0223`)
+## Sampler arrays are refused (`SD0224`)
 
-An **array of samplers** (`SamplerState S[N]`) is refused by `mgfxc` on every profile in its own effect parser (`Unexpected token '[' found. Expected Semicolon, Comma, or CloseParenthesis.`), so no reference output exists for it. ShadowDusk used to compile it on DirectX 11 and 12; it now refuses it with the error **`SD0223`** at the declaration on both (issue #340). Declare each sampler separately and sample through each by name. Vulkan refuses the same shape as `SD0221`.
+An **array of samplers** (`SamplerState S[N]`) is refused by `mgfxc` on every profile in its own effect parser (`Unexpected token '[' found. Expected Semicolon, Comma, or CloseParenthesis.`), so no reference output exists for it. ShadowDusk used to compile it on DirectX 11 and 12; it now refuses it with the error **`SD0224`** at the declaration on both (issue #340). Declare each sampler separately and sample through each by name. Vulkan refuses the same shape as `SD0221`.
 
 ## Additive by policy
 

@@ -546,7 +546,7 @@ elements, with or without a register:
 
 `SamplerArray2.fx` is refused by mgfxc on every profile before any shader compiles
 (`SamplerArray2.fx(31,22) : Unexpected token '[' found. Expected Semicolon, Comma, or
-CloseParenthesis.`); ShadowDusk refuses it with `SD0223` at the declaration on `DirectX_11` and
+CloseParenthesis.`); ShadowDusk refuses it with `SD0224` at the declaration on `DirectX_11` and
 `DirectX_12` (`validation/VsDrivenDx -- samparr`, `VsDrivenDx12 -- samparr`), `SD0221` on
 `Vulkan`, and `SD0100` (SPIRV-Cross) on `OpenGL`.
 

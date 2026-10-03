@@ -10,7 +10,7 @@ namespace ShadowDusk.Compiler.Internal;
 /// <summary>
 /// The diagnostics for an ARRAY of textures or samplers (<c>Texture2D Tex[N]</c>,
 /// <c>SamplerState S[N]</c>): <c>SD0221</c>, an error, on Vulkan; <c>SD0222</c>, a warning for a
-/// texture array, on DirectX 12 (both issue #324); <c>SD0223</c>, an error for a sampler array, on
+/// texture array, on DirectX 12 (both issue #324); <c>SD0224</c>, an error for a sampler array, on
 /// DirectX 11 and DirectX 12 (issue #340). A texture array on DirectX 11 needs no diagnostic: since
 /// issue #339 its table is mgfxc's (one parameter, one record at the base slot), and real MonoGame
 /// WindowsDX reads the other elements through <c>GraphicsDevice.Textures[i]</c>.
@@ -49,7 +49,7 @@ internal static class ResourceArrayDiagnostics
     public const string DirectX12Code = "SD0222";
 
     /// <summary>The registered DirectX 11 / DirectX 12 sampler-array error code (<c>docs/error-codes.md</c>).</summary>
-    public const string DirectXSamplerArrayCode = "SD0223";
+    public const string DirectXSamplerArrayCode = "SD0224";
 
     /// <summary>
     /// Returns the <c>SD0221</c> error for the first reflected texture or sampler array in
@@ -89,7 +89,7 @@ internal static class ResourceArrayDiagnostics
                      "the array out of the Vulkan build with '#if !VULKAN'. " +
                      (array.Texture is not null
                          ? "DirectX 11 and 12 compile it (as mgfxc does: one parameter, bound to the first slot)."
-                         : "DirectX 11 and 12 refuse it too (SD0223)."));
+                         : "DirectX 11 and 12 refuse it too (SD0224)."));
     }
 
     /// <summary>
@@ -123,7 +123,7 @@ internal static class ResourceArrayDiagnostics
     }
 
     /// <summary>
-    /// Returns the <c>SD0223</c> error for the first array of SAMPLERS the shader declares
+    /// Returns the <c>SD0224</c> error for the first array of SAMPLERS the shader declares
     /// (<c>SamplerState S[N]</c>), or <see langword="null"/> when it declares none, for the
     /// DirectX 11 and DirectX 12 targets (issue #340).
     /// </summary>

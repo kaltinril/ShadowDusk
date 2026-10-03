@@ -796,7 +796,7 @@ internal sealed class CompilationPipeline
                     //
                     // Issue #340: an ARRAY of samplers is refused by real mgfxc on every profile
                     // in its own parser, so no reference table exists to match; DirectX 11 and
-                    // DirectX 12 refuse it by name too (SD0223) instead of compiling an effect
+                    // DirectX 12 refuse it by name too (SD0224) instead of compiling an effect
                     // mgfxc never builds. (On DirectX 11 the per-element RDEF records of an
                     // array have already been folded into one binding by the DXBC extractor,
                     // issue #339, so a texture array there is mgfxc's one `Tex` parameter.)

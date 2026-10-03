@@ -204,13 +204,13 @@ $gates.Add(@{
     Action = { Invoke-Checked 'dotnet' @('run', '--project', 'validation/VsDrivenDx', '-c', 'Release', '--', 'apos') }
 })
 $gates.Add(@{
-    Name   = 'DX resource arrays (issues #339/#340: texture array table + render vs mgfxc 3.8.4.1 DirectX_11 golden; sampler array refused with SD0223), real MonoGame WindowsDX'
+    Name   = 'DX resource arrays (issues #339/#340: texture array table + render vs mgfxc 3.8.4.1 DirectX_11 golden; sampler array refused with SD0224), real MonoGame WindowsDX'
     Action = {
         # Issue #339: Texture2D Tex[2] must reflect mgfxc's table (ONE `Tex` parameter, ONE record
         # at the array's base slot) on both DXBC backends, load with Parameters["Tex"] present, and
         # render like the golden; element [1] through GraphicsDevice.Textures[1] is reported.
         Invoke-Checked 'dotnet' @('run', '--project', 'validation/VsDrivenDx', '-c', 'Release', '--', 'texarr')
-        # Issue #340: SamplerState Samplers[2] must FAIL with SD0223 at its declaration on DirectX
+        # Issue #340: SamplerState Samplers[2] must FAIL with SD0224 at its declaration on DirectX
         # 11 and 12, as real mgfxc refuses it on every profile in its own parser.
         Invoke-Checked 'dotnet' @('run', '--project', 'validation/VsDrivenDx', '-c', 'Release', '--', 'samparr')
     }

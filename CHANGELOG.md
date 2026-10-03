@@ -255,7 +255,7 @@ that loads and renders identically to `mgfxc`'s in the real MonoGame/KNI runtime
   parser (`Unexpected token '[' found. Expected Semicolon, Comma, or CloseParenthesis.`), so no
   reference output exists for the shape. ShadowDusk compiled it anyway, with sampler records keyed on the
   texture bindings and no record naming a sampler element; it now refuses it with the new error
-  **`SD0223`**, located at the declaration, on both targets (the one DirectX 12 case DXIL cannot
+  **`SD0224`**, located at the declaration, on both targets (the one DirectX 12 case DXIL cannot
   distinguish, a 1-element array, is found from the declaration text). Measured first, as
   evidence (`validation/VsDrivenDx -- samparr <mgfx>`, `VsDrivenDx12 -- samparr <mgfx>`, RTX
   3080): the pre-fix DirectX 11 and DirectX 12 effects of the new fixture loaded into real
@@ -269,6 +269,28 @@ that loads and renders identically to `mgfxc`'s in the real MonoGame/KNI runtime
   SamplerArraysFromCombinedSamplers`): it is one author resource, and its table is the
   hand-written `Texture2D T[N]; SamplerState S;` one on DirectX 11 (one `T` parameter, now that
   issue #339 collapsed the per-element records) as it already was on DirectX 12.
+- **A debug SPIR-V compile can no longer hand DXC a `libdxcompiler` that is not ShadowDusk's
+  pinned build (issue #332).** Every OpenGL or Vulkan compile with `Debug` set (`-Zi`) makes DXC's
+  SPIR-V emitter load `libdxcompiler` a second time, by LEAF name, from inside the compile
+  (`clang::spirv::ReadSourceCode` -> `DxcDllSupport::Initialize`, to read the source for
+  `OpSource`): a name search, which `DxcLoader` otherwise never allows, and whose answer is the
+  dynamic linker's. Measured: Windows and dyld on macOS 14+ answer with the already-loaded pinned
+  image (by base name; by its `@rpath/libdxcompiler.dylib` install name), glibc never does (the
+  pinned `SONAME` is `libdxcompiler.so.3.7`) and would load a `libdxcompiler.so` from
+  `LD_LIBRARY_PATH` (where the Vulkan SDK's `setup-env.sh` puts one) and run its initializer
+  inside the compile; dyld on macOS 12/13 would do the same from the working directory or
+  `DYLD_FALLBACK_LIBRARY_PATH`. `DxcLoader` now asks the linker right after the pinned load,
+  without loading anything (`dlopen(leaf, RTLD_NOLOAD)` plus glibc's "found but not loaded"
+  report; `GetModuleHandleW` on Windows; a stat of the dyld-940/1042 directories when dyld does not
+  match), and the debug SPIR-V compiles alone are refused with the new `SD0223`, naming the library
+  the linker would hand DXC and the fix, when it is not the pinned build; a byte copy of the pinned
+  build is the same compiler and is accepted, as at load time. Release compiles, DXIL debug compiles,
+  DirectX 11 and FNA never make the load and are untouched. No emitted byte moves: the probe loads
+  nothing and what DXC's own load returns is unchanged (every scenario's output is hashed against the
+  no-decoy compile in `DxcDebugSpirvLeafNameTests`, which runs the linker's own trace,
+  `LD_DEBUG=libs` / `DYLD_PRINT_SEARCHING`, on the ubuntu and macOS lanes). One-time cost per
+  process: 1 to 1.5 ms on Windows, 2 to 22 ms on the macOS lane, 18 to 92 ms on the ubuntu lane
+  (glibc opens each candidate); nothing per compile beyond an argument check.
 - **Texture arrays reflected a wrong parameter table on Vulkan (issue #324).** `Texture2D Tex[N]`
   is a pointer to an array of image types in SPIR-V, and the pure-managed reflector matched only
   a bare image or sampler type, so the texture vanished from the Vulkan effect while its sampler

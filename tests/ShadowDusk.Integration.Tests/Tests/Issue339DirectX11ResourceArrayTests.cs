@@ -22,7 +22,7 @@ namespace ShadowDusk.Integration.Tests.Tests;
 ///   <c>tests/fixtures/golden/DirectX_11/</c> are compared record for record.</item>
 ///   <item><b>Sampler array</b> (#340): refused by mgfxc on EVERY profile in its own parser
 ///   (<c>Unexpected token '[' found. Expected Semicolon, Comma, or CloseParenthesis.</c>), so DirectX 11
-///   and DirectX 12 refuse it too, <c>SD0223</c> at the declaration. Before the fix both compiled it.</item>
+///   and DirectX 12 refuse it too, <c>SD0224</c> at the declaration. Before the fix both compiled it.</item>
 /// </list>
 /// </summary>
 [Trait("Category", "Integration")]
@@ -94,7 +94,7 @@ public sealed class Issue339DirectX11ResourceArrayTests
 
         // No array diagnostic on DirectX 11: the table is mgfxc's and WindowsDX reads the other
         // elements through GraphicsDevice.Textures[i] (validation/VsDrivenDx -- texarr).
-        result.Value.Warnings.Where(w => w.Code is "SD0222" or "SD0223").ShouldBeEmpty();
+        result.Value.Warnings.Where(w => w.Code is "SD0222" or "SD0224").ShouldBeEmpty();
     }
 
     [Fact]
@@ -205,8 +205,9 @@ public sealed class Issue339DirectX11ResourceArrayTests
         var result = await CompileAsync(source, target, "SamplerArray.fx", ct: cts.Token);
 
         result.IsFailure.ShouldBeTrue("mgfxc refuses a sampler array on every profile in its parser; ShadowDusk must not compile what mgfxc never builds");
-        ShaderError error = result.Error.ShouldHaveSingleItem();
-        error.Code.ShouldBe("SD0223");
+        // The one ERROR; a DirectX 12 failure off Windows also carries the SD0214 unsigned-DXIL warnings.
+        ShaderError error = result.Error.Where(e => e.Severity == ShaderErrorSeverity.Error).ShouldHaveSingleItem();
+        error.Code.ShouldBe("SD0224");
         error.Severity.ShouldBe(ShaderErrorSeverity.Error);
         error.Message.ShouldContain(target == PlatformTarget.DirectX12 ? "DirectX 12 target" : "DirectX 11 target", Case.Sensitive);
         error.Message.ShouldContain("'Samplers' is an array of 2 samplers", Case.Sensitive);
@@ -236,8 +237,9 @@ public sealed class Issue339DirectX11ResourceArrayTests
         var result = await CompileAsync(source, target, "TexArr2SampArr.fx", ct: cts.Token);
 
         result.IsFailure.ShouldBeTrue();
-        ShaderError error = result.Error.ShouldHaveSingleItem();
-        error.Code.ShouldBe("SD0223");
+        // The one ERROR; a DirectX 12 failure off Windows also carries the SD0214 unsigned-DXIL warnings.
+        ShaderError error = result.Error.Where(e => e.Severity == ShaderErrorSeverity.Error).ShouldHaveSingleItem();
+        error.Code.ShouldBe("SD0224");
         error.Message.ShouldContain("'TexSampler' is an array of 2 samplers", Case.Sensitive);
         error.Line.ShouldBe(2);
         error.Column.ShouldBe(14);
@@ -263,8 +265,9 @@ public sealed class Issue339DirectX11ResourceArrayTests
         var result = await CompileAsync(source, target, "SamplerArray1.fx", ct: cts.Token);
 
         result.IsFailure.ShouldBeTrue("a 1-element sampler array is still a shape mgfxc's parser refuses");
-        ShaderError error = result.Error.ShouldHaveSingleItem();
-        error.Code.ShouldBe("SD0223");
+        // The one ERROR; a DirectX 12 failure off Windows also carries the SD0214 unsigned-DXIL warnings.
+        ShaderError error = result.Error.Where(e => e.Severity == ShaderErrorSeverity.Error).ShouldHaveSingleItem();
+        error.Code.ShouldBe("SD0224");
         error.Message.ShouldContain("'S' is a 1-element array of samplers", Case.Sensitive);
         error.Line.ShouldBe(2);
         error.Column.ShouldBe(14);
@@ -281,8 +284,9 @@ public sealed class Issue339DirectX11ResourceArrayTests
         var result = await CompileAsync(await File.ReadAllTextAsync(fxPath, cts.Token), target, fxPath, ct: cts.Token);
 
         result.IsFailure.ShouldBeTrue();
-        ShaderError error = result.Error.ShouldHaveSingleItem();
-        error.Code.ShouldBe("SD0223");
+        // The one ERROR; a DirectX 12 failure off Windows also carries the SD0214 unsigned-DXIL warnings.
+        ShaderError error = result.Error.Where(e => e.Severity == ShaderErrorSeverity.Error).ShouldHaveSingleItem();
+        error.Code.ShouldBe("SD0224");
         Path.GetFileName(error.File).ShouldBe("SamplerArray2.fx");
         error.Line.ShouldBe(31);
         error.Column.ShouldBe(14);
@@ -291,7 +295,7 @@ public sealed class Issue339DirectX11ResourceArrayTests
     [Fact]
     public async Task DirectX11_TwoTexturesThroughTwoSeparateSamplers_StillCompiles()
     {
-        // The no-false-positive half: the element-wise shape SD0223 recommends compiles, with two
+        // The no-false-positive half: the element-wise shape SD0224 recommends compiles, with two
         // records, as before (the corpus sweep is the byte-identity proof for every other shape).
         const string source = """
             Texture2D TexA : register(t0);

@@ -66,7 +66,7 @@ public sealed class SlangTextureArrayTests
         // Issue #339/#340 on this route: slangc lowers `Sampler2D Comb[2]` to a texture array plus a
         // sampler array; DirectX 11 must give mgfxc's one-parameter table (as the hand-written
         // `Texture2D Comb[2]; SamplerState CombSampler;` does, measured against mgfxc 3.8.4.1) and
-        // must NOT refuse slangc's hoisted sampler half as an author-written sampler array (SD0223).
+        // must NOT refuse slangc's hoisted sampler half as an author-written sampler array (SD0224).
         var slang = CompileSlang(ArraySlang, PlatformTarget.DirectX);
         slang.IsSuccess.ShouldBeTrue(Errors(slang));
         MgfxBlobReader effect = MgfxBlobReader.Parse(slang.Value.Data);
@@ -95,7 +95,7 @@ public sealed class SlangTextureArrayTests
 
         // DirectX 11 raises no array diagnostic (its table is mgfxc's and WindowsDX reads the
         // other elements through GraphicsDevice.Textures[i]).
-        slang.Value.Warnings.Where(w => w.Code is "SD0222" or "SD0223").ShouldBeEmpty();
+        slang.Value.Warnings.Where(w => w.Code is "SD0222" or "SD0224").ShouldBeEmpty();
     }
 
     [Theory]
@@ -120,8 +120,9 @@ public sealed class SlangTextureArrayTests
         var result = CompileSlang(source, target);
 
         result.IsFailure.ShouldBeTrue("mgfxc refuses a sampler array on every profile; the Slang route must not compile what the .fx route refuses");
-        ShaderError error = result.Error.ShouldHaveSingleItem();
-        error.Code.ShouldBe("SD0223");
+        // The one ERROR; a DirectX 12 failure off Windows also carries the SD0214 unsigned-DXIL warnings.
+        ShaderError error = result.Error.Where(e => e.Severity == ShaderErrorSeverity.Error).ShouldHaveSingleItem();
+        error.Code.ShouldBe("SD0224");
         error.Message.ShouldContain("'Samplers' is an array of 2 samplers", Case.Sensitive);
         error.File.ShouldBe("Arrays.slang");
         error.Line.ShouldBe(3);

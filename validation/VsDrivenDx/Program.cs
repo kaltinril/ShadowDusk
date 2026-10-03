@@ -22,7 +22,7 @@
 // render against the real mgfxc 3.8.4.1 /Profile:DirectX_11 golden. See RunTextureArrayPhase.
 //
 // mode "samparr" (issue #340): a SAMPLER ARRAY (`SamplerState Samplers[2]`, texture-arrays/
-// SamplerArray2.fx) must be REFUSED with SD0223 on DirectX 11 and DirectX 12, as mgfxc refuses it
+// SamplerArray2.fx) must be REFUSED with SD0224 on DirectX 11 and DirectX 12, as mgfxc refuses it
 // in its own parser. An optional .mgfx path loads a prebuilt effect (a pre-fix build's output) into
 // the real engine as evidence. See RunSamplerArrayPhase.
 //
@@ -229,7 +229,7 @@ return pass ? 0 : 1;
 // 3.8.5 refuse the shape on EVERY profile in their own parser before any shader compiles
 // ("SamplerArray2.fx(31,22) : Unexpected token '[' found. Expected Semicolon, Comma, or
 // CloseParenthesis."), so there is no reference effect to render against and the gate is the
-// refusal itself: ShadowDusk's DirectX and DirectX12 compiles must FAIL with SD0223 naming
+// refusal itself: ShadowDusk's DirectX and DirectX12 compiles must FAIL with SD0224 naming
 // `Samplers` at the declaration (line 31, column 14). Red before the fix (both compiled).
 //
 // Optional evidence arm: a prebuilt .mgfx on the command line (a pre-fix build's DirectX_11
@@ -261,10 +261,10 @@ foreach (PlatformTarget target in new[] { PlatformTarget.DirectX, PlatformTarget
         pass = false;
         continue;
     }
-    ShaderError? e = r.Error.FirstOrDefault(x => x.Code == "SD0223");
+    ShaderError? e = r.Error.FirstOrDefault(x => x.Code == "SD0224");
     bool ok = e is not null && Path.GetFileName(e.File) == SampArrFixture + ".fx" && e.Line == 31 && e.Column == 14 && e.Message.Contains("'Samplers'", StringComparison.Ordinal);
     pass &= ok;
-    Console.WriteLine($"[samparr-dx11] {target}: refused with {string.Join(", ", r.Error.Select(x => $"{x.Code} {Path.GetFileName(x.File)}({x.Line},{x.Column})"))} -> {(ok ? "PASS" : "FAIL")} (expected SD0223 at SamplerArray2.fx(31,14) naming 'Samplers')");
+    Console.WriteLine($"[samparr-dx11] {target}: refused with {string.Join(", ", r.Error.Select(x => $"{x.Code} {Path.GetFileName(x.File)}({x.Line},{x.Column})"))} -> {(ok ? "PASS" : "FAIL")} (expected SD0224 at SamplerArray2.fx(31,14) naming 'Samplers')");
     if (e is not null)
         Console.WriteLine($"  {e.Message}");
 }
@@ -306,7 +306,7 @@ if (evidenceFile is not null)
     }
 }
 
-Console.WriteLine($"\n[samparr-dx11] {(pass ? "PASS" : "FAIL")}: SD0223 refusal on DirectX 11 and DirectX 12 {(pass ? "as mgfxc's own parser refuses the shape" : "MISSING")}.");
+Console.WriteLine($"\n[samparr-dx11] {(pass ? "PASS" : "FAIL")}: SD0224 refusal on DirectX 11 and DirectX 12 {(pass ? "as mgfxc's own parser refuses the shape" : "MISSING")}.");
 return pass ? 0 : 1;
 }
 
