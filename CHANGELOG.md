@@ -230,6 +230,28 @@ that loads and renders identically to `mgfxc`'s in the real MonoGame/KNI runtime
 
 ### Fixed
 
+- **The browser dropped vkd3d's non-fatal diagnostics on a successful DirectX or FNA compile, so
+  `CompiledShader.Warnings` was empty where the desktop's was not (issue #335).** vkd3d's message
+  buffer is populated on success too (both hosts compile at `LOG_WARNING`): the desktop parses it,
+  relocates each entry onto the author's line and returns it as `PlatformBlob.Warnings`, but the
+  browser shim read `out_messages` and used it only in its failure branch, returning the bytes
+  alone. Measured on the new fixture `ImplicitTruncationWarning.fx` (a `float4` assigned to a
+  `float3`): the desktop reports `ImplicitTruncationWarning.fx(47,12): warning W5300: Implicit
+  truncation of vector type.` on DirectX and on FNA; the shim returned 148 bytes and nothing else
+  for the same compile, and the browser `Warnings` list was empty. Identical bytes on both hosts, so
+  no byte-identity gate could see it. The shim's `compile()` now returns `{ code, messages }`,
+  verbatim and unfiltered, and `WasmVkd3dShaderCompiler` runs the same shared path the desktop runs:
+  `Vkd3dCompileContract.MapCompileWarnings` (the one place a successful compile's text becomes
+  warnings) plus `Vkd3dSourceLocator.Relocate`. No module rebuild: every pinned wrapper already set
+  `out_messages` on success. Pinned three ways: `CrossHostByteIdentityTests` now records
+  `CompiledShader.Warnings` per fixture and target in `warnings-manifest.json` beside the hashes
+  (asserted on every CI OS); the node gate requires the shim to hand back the exact message text the
+  desktop got from every one of the 93 corpus compiles (two non-empty, with a control that fails
+  when no corpus compile warns); the real-browser gate compares the relocated `Warnings` from the
+  real `WasmShaderCompiler` against the warnings manifest, sync and async. No byte moved on either
+  host (91/93 + the two issue-#295 expected differences before and after; the three manifest
+  additions are the new fixture). Cost: a string copy per compile; in node the 91 corpus compiles
+  took 129 ms through the new shim against 129 ms before.
 - **Browser DirectX compiles handed vkd3d no compile options, so a shader with SM1-3 semantics on
   struct fields compiled differently from the desktop, or not at all (issue #295).** Since 0.20.0 the
   desktop vkd3d backend passes `BACKWARD_COMPATIBILITY`/`MAP_SEMANTIC_NAMES` on the SM4+ target, but
