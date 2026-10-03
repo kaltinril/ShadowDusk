@@ -8,10 +8,24 @@
 // (SM5 DXBC_TPF) and FNA (SM1-3 D3D_BYTECODE) byte-identity corpus.
 //
 // The desktop ground truth is captured fresh each run by Vkd3dCorpusProbe (dotnet),
-// which records every vkd3d compile the REAL pipeline issues (preprocessed source
-// bytes, entry point, profile, target type, the vkd3d compile options the desktop
-// really passed, output blob) through the same dxbcCompilerFactory seam the WASM host
-// uses — so the comparison sits at the exact seam that differs between hosts.
+// which records every vkd3d compile the REAL pipeline issues (the source bytes the
+// desktop really handed vkd3d, entry point, profile, target type, the vkd3d compile
+// options the desktop really passed, output blob) through the same dxbcCompilerFactory
+// seam the WASM host uses — so the comparison sits at the exact seam that differs
+// between hosts.
+//
+// SOURCE PREPARATION (issue #319). Both hosts hand vkd3d Vkd3dCompileContract.PrepareSource
+// of the preprocessed text: every #line directive line blanked, because vkd3d's
+// preprocessor ignores the directive and prints "vkd3d:NNNN:fixme:vkd3d:preproc_yyparse
+// #line directive." to stderr (the browser console) for each one. The browser host used
+// to hand vkd3d the directives. The manifest's 'sourceFile' is the text read back from
+// the desktop's native call, so the replay IS the desktop's text; three controls hold it:
+//   - no replayed source may contain a #line line (the desktop really prepared it), and
+//     the whole prepared corpus pass must print ZERO fixme lines (stderr is intercepted);
+//   - the directive-carrying request text ('requestSourceFile') is replayed too and must
+//     give the SAME bytes (the directives never changed vkd3d's output: this is the
+//     measurement behind "console noise only") while printing exactly one fixme line per
+//     directive, which proves the stderr tripwire above is live.
 //
 // COMPILE OPTIONS (issue #295). The browser module used to compile with NO vkd3d
 // options while the desktop passed BACKWARD_COMPATIBILITY = MAP_SEMANTIC_NAMES for
@@ -63,6 +77,25 @@ const VKD3D_WASM_PRE_295 = '3e8c85104ab9a793220615e2ff22c3dc882d6dd1348cc20e16e7
 const OPTION_DEPENDENT = new Set(['Sm3SemanticStructs.fx']);
 const optionDependent = (entry) => OPTION_DEPENDENT.has(entry.fixture) && entry.options.length > 0;
 const sameBytes = (a, b) => a.length === b.length && a.every((x, i) => x === b[i]);
+const LINE_DIRECTIVE = /^[ \t]*#[ \t]*line\b/gm;
+const countLineDirectives = (bytes) => (new TextDecoder().decode(bytes).match(LINE_DIRECTIVE) || []).length;
+
+// vkd3d's per-directive fixme reaches the process stderr (emscripten's printErr defaults to
+// console.warn, bound at module load, which writes to process.stderr). Intercept the stream
+// itself: count the fixme lines and keep them out of the gate output; everything else passes.
+const LINE_FIXME = /fixme:.*#line directive/;
+let lineFixmes = 0;
+{
+  const write = process.stderr.write.bind(process.stderr);
+  process.stderr.write = (chunk, ...rest) => {
+    const text = typeof chunk === 'string' ? chunk : new TextDecoder().decode(chunk);
+    const kept = text.split('\n').filter((l) => {
+      if (LINE_FIXME.test(l)) { lineFixmes++; return false; }
+      return true;
+    }).join('\n');
+    return kept.length > 0 ? write(kept, ...rest) : true;
+  };
+}
 
 function skip(reason) {
   console.log('');
@@ -182,6 +215,10 @@ for (const entry of manifest) {
     console.error('[vkd3d-wasm gate] FAIL — a manifest entry has no (name, value) compile-option list; the probe is out of date.');
     process.exit(1);
   }
+  if (typeof entry.requestSourceFile !== 'string') {
+    console.error('[vkd3d-wasm gate] FAIL — a manifest entry has no requestSourceFile (the directive-carrying text); the probe is out of date.');
+    process.exit(1);
+  }
 }
 const sensitive = manifest.filter(optionDependent);
 if (sensitive.length === 0) {
@@ -198,6 +235,11 @@ for (const entry of manifest) {
   const knownDefect = pre295 && optionDependent(entry);
   const source = new Uint8Array(readFileSync(path.join(outDir, entry.sourceFile)));
   const expected = new Uint8Array(readFileSync(path.join(outDir, entry.blobFile)));
+  // The desktop prepared this text (issue #319): what it handed vkd3d carries no #line line.
+  if (countLineDirectives(source) !== 0) {
+    failures.push(`${label}: the source the desktop handed vkd3d still contains a #line directive line (Vkd3dCompileContract.PrepareSource did not run, issue #319)`);
+    console.error(`  [FAIL] ${label}: the desktop handed vkd3d a #line directive (issue #319)`);
+  }
   let verdict;
   try {
     const actual = shim.compile(source, entry.entryPoint, entry.profile, entry.sourceName, entry.targetType, entry.options);
@@ -220,6 +262,71 @@ for (const entry of manifest) {
   } else {
     failures.push(`${label}: ${verdict}`);
     console.error(`  [FAIL] ${label}: ${verdict}`);
+  }
+}
+
+// The prepared corpus pass is SILENT: vkd3d printed no per-directive fixme (issue #319).
+if (lineFixmes !== 0) {
+  failures.push(`the prepared corpus pass printed ${lineFixmes} "fixme: ... #line directive" line(s) to stderr; ` +
+    'vkd3d was shown a #line directive, which both hosts must blank (Vkd3dCompileContract.PrepareSource, issue #319)');
+  console.error(`  [FAIL] ${lineFixmes} vkd3d #line fixme line(s) during the prepared corpus pass (issue #319)`);
+} else {
+  pass++;
+  console.log(`  [OK]   #line control: the prepared corpus pass (${manifest.length} compiles) printed 0 vkd3d #line fixme lines`);
+}
+
+// ---------------------------------------------------------------------------
+// 3a. #line control (issue #319): the directive-carrying REQUEST text, what the browser
+//     host used to hand vkd3d. (1) It must compile to the SAME bytes as the prepared text,
+//     the measurement behind "the directives change no output byte": a vkd3d that started
+//     honouring #line would show here. (2) vkd3d must print exactly one fixme line per
+//     directive, which proves the stderr interception the silent pass above relies on is
+//     live, and the corpus must carry directives at all. Also the compile-time cost of the
+//     directives in this host, for the record.
+// ---------------------------------------------------------------------------
+{
+  let rawPass = 0, directives = 0, rawMs = 0, preparedMs = 0;
+  const rawFixmesBefore = lineFixmes;
+  for (const entry of manifest) {
+    if (pre295 && optionDependent(entry)) continue; // the hosted pre-#295 module cannot do these at all
+    const label = `#line control: ${entry.target}/${entry.fixture} ${entry.stage} ${entry.entryPoint} with the directives`;
+    const raw = new Uint8Array(readFileSync(path.join(outDir, entry.requestSourceFile)));
+    const prepared = new Uint8Array(readFileSync(path.join(outDir, entry.sourceFile)));
+    const expected = new Uint8Array(readFileSync(path.join(outDir, entry.blobFile)));
+    const n = countLineDirectives(raw);
+    directives += n;
+    const fixmesBefore = lineFixmes;
+    try {
+      let t = performance.now();
+      const actual = shim.compile(raw, entry.entryPoint, entry.profile, entry.sourceName, entry.targetType, entry.options);
+      rawMs += performance.now() - t;
+      const printed = lineFixmes - fixmesBefore;
+      t = performance.now();
+      shim.compile(prepared, entry.entryPoint, entry.profile, entry.sourceName, entry.targetType, entry.options);
+      preparedMs += performance.now() - t;
+      if (!sameBytes(actual, expected)) {
+        failures.push(`${label}: the #line directives CHANGED vkd3d's output (${actual.length} B vs the desktop's ${expected.length} B); ` +
+          'the shared PrepareSource is no longer console-noise-only');
+        console.error(`  [FAIL] ${label} — the directives changed the bytes`);
+      } else if (printed !== n) {
+        failures.push(`${label}: ${n} #line directive(s) but ${printed} vkd3d fixme line(s) intercepted; the stderr tripwire is not live`);
+        console.error(`  [FAIL] ${label} — ${n} directive(s), ${printed} fixme line(s)`);
+      } else {
+        rawPass++;
+      }
+    } catch (e) {
+      failures.push(`${label}: THREW — ${String(e?.message ?? e).trim().split('\n')[0]}`);
+      console.error(`  [FAIL] ${label} — threw`);
+    }
+  }
+  if (directives === 0) {
+    failures.push('#line control: the corpus request text carries no #line directive at all, so nothing here would notice a host handing them to vkd3d');
+    console.error('  [FAIL] #line control: no #line directive in the corpus');
+  } else {
+    pass++;
+    console.log(`  [OK]   #line control: ${rawPass} compiles with their ${directives} directive(s) gave the desktop's bytes and ` +
+      `${lineFixmes - rawFixmesBefore} fixme line(s), one per directive (intercepted); ` +
+      `with the directives ${rawMs.toFixed(0)} ms, prepared ${preparedMs.toFixed(0)} ms`);
   }
 }
 
@@ -350,8 +457,8 @@ if (failures.length > 0) {
 const matched = manifest.length - expectedDiffs.length;
 console.log(`${matched === manifest.length ? 'ALL ' : ''}${matched}/${manifest.length} CORPUS COMPILES BYTE-IDENTICAL VIA THE FAITHFUL SHIM ` +
   '(+ the option-dependent compiles differ without their options, + the shim refuses a missing ' +
-  'option list, + the shim error path surfaces verbatim diagnostics, + empty source reaches vkd3d ' +
-  'unjudged, + the module-absent load path rejects loudly) — ' +
+  'option list, + the prepared text is silent and the #line directives change no byte, + the shim error path ' +
+  'surfaces verbatim diagnostics, + empty source reaches vkd3d unjudged, + the module-absent load path rejects loudly) — ' +
   (expectedDiffs.length > 0
     ? `WASM vkd3d == desktop vkd3d EXCEPT the ${expectedDiffs.length} compile(s) above that the hosted pre-#295 module cannot do. `
     : 'WASM vkd3d == desktop vkd3d. ') +

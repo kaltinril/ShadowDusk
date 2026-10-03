@@ -115,13 +115,15 @@ internal static class DepthProbe
                     (dx.IsFailure ? string.Join(" | ", dx.Error.Select(e => $"{e.Code}: {e.Message}")) : "no vkd3d compile captured"));
                 return dx.IsFailure && dx.Error.Any(e => e.Code == "SD0211") ? 3 : 1;
             }
-            (D3DCompileRequest request, int[] options, byte[] dxbc) = vk.Captures[^1];
+            (D3DCompileRequest request, byte[] nativeSource, int[] options, byte[] dxbc) = vk.Captures[^1];
             string profile = Vkd3dCompileContract.ResolveProfile(request);
 
             File.WriteAllText(Path.Combine(outDir, $"{id}.dxc.hlsl"), dxc.Hlsl!, utf8);
             File.WriteAllBytes(Path.Combine(outDir, $"{id}.spv"), dxc.Spirv);
             File.WriteAllText(Path.Combine(outDir, $"{id}.glsl"), glsl.Value.Text, utf8);
-            File.WriteAllText(Path.Combine(outDir, $"{id}.vkd3d.hlsl"), request.HlslSource, utf8);
+            // The bytes the desktop handed vkd3d (PrepareSource applied, issue #319), read back
+            // from the native call, so the shim replays exactly the desktop's text.
+            File.WriteAllBytes(Path.Combine(outDir, $"{id}.vkd3d.hlsl"), nativeSource);
             File.WriteAllBytes(Path.Combine(outDir, $"{id}.dxbc"), dxbc);
 
             manifest.Add(new Dictionary<string, object>

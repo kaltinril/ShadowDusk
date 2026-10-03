@@ -8,11 +8,13 @@
 // desktop vkd3d backend (Vkd3dShaderCompiler) wrapped in a recording decorator
 // injected through the Phase 4.1 `dxbcCompilerFactory` seam — the SAME seam the WASM
 // host uses. Every vkd3d compile the pipeline performs is captured EXACTLY as issued:
-// the preprocessed HLSL source (UTF-8, the very bytes the backend hashed), the entry
-// point, the resolved profile/target type (via the shared Vkd3dCompileContract), the
-// vkd3d compile options the desktop REALLY handed vkd3d_shader_compile (read back from
-// the marshalled compile info through Vkd3dShaderCompiler.NativeOptionsObserver, issue
-// #295), and the output bytes the desktop native produced.
+// the source bytes the desktop REALLY handed vkd3d_shader_compile (read back from the
+// marshalled compile info through Vkd3dShaderCompiler.NativeSourceObserver: the
+// preprocessed HLSL after Vkd3dCompileContract.PrepareSource, issue #319) beside the
+// directive-carrying request text the pipeline produced, the entry point, the resolved
+// profile/target type (via the shared Vkd3dCompileContract), the vkd3d compile options
+// the desktop REALLY handed vkd3d_shader_compile (read back the same way through
+// NativeOptionsObserver, issue #295), and the output bytes the desktop native produced.
 //
 // node-test-vkd3d-wasm.mjs then replays each captured request through the product
 // WASM shim (src/ShadowDusk.Wasm/wwwroot/shadowdusk-vkd3d.js) and asserts the output
@@ -160,14 +162,19 @@ async Task<int> CompileCorpusAsync(string[] corpus, PlatformTarget target)
         // Persist the captures this fixture produced (one per vkd3d stage compile).
         for (int i = before; i < recorder.Captures.Count; i++)
         {
-            (D3DCompileRequest request, int[] options, byte[] output) = recorder.Captures[i];
+            (D3DCompileRequest request, byte[] nativeSource, int[] options, byte[] output) = recorder.Captures[i];
             string id = $"{manifest.Count:D3}";
             string profile = Vkd3dCompileContract.ResolveProfile(request);
 
-            // The EXACT source string the backend compiled, as UTF-8 without BOM —
-            // node reads these bytes and passes them to the shim verbatim, so both
-            // backends see identical input bytes.
-            File.WriteAllText(Path.Combine(outDir, $"{id}.hlsl"), request.HlslSource, utf8NoBom);
+            // The EXACT bytes the desktop handed vkd3d_shader_compile (read back from the
+            // native call: request.HlslSource after Vkd3dCompileContract.PrepareSource, so
+            // every #line directive line is blank) — node passes these to the shim verbatim,
+            // so both hosts hand vkd3d identical input bytes at the seam that differs.
+            File.WriteAllBytes(Path.Combine(outDir, $"{id}.hlsl"), nativeSource);
+            // The directive-carrying text the pipeline produced (what the browser host used
+            // to hand vkd3d before issue #319), UTF-8 without BOM: the node gate's control
+            // that the directives change no output byte and cost one fixme line each.
+            File.WriteAllText(Path.Combine(outDir, $"{id}.request.hlsl"), request.HlslSource, utf8NoBom);
             File.WriteAllBytes(Path.Combine(outDir, $"{id}.bin"), output);
 
             manifest.Add(new Dictionary<string, object>
@@ -184,6 +191,8 @@ async Task<int> CompileCorpusAsync(string[] corpus, PlatformTarget target)
                 ["options"]    = options,
                 ["sourceName"] = request.SourceFileName,
                 ["sourceFile"] = $"{id}.hlsl",
+                // The request text before preparation (issue #319 control).
+                ["requestSourceFile"] = $"{id}.request.hlsl",
                 ["blobFile"]   = $"{id}.bin",
                 ["blobBytes"]  = output.Length,
             });
@@ -221,17 +230,18 @@ Console.WriteLine($"Vkd3dCorpusProbe: captured {manifest.Count} vkd3d compiles i
 return 0;
 
 /// <summary>
-/// Records every (request, options, output) triple the pipeline sends through the desktop
-/// vkd3d backend — the ground truth the WASM shim must reproduce byte-for-byte. The options
-/// are the ones the desktop REALLY handed <c>vkd3d_shader_compile</c>, read back from the
-/// marshalled compile info (<see cref="Vkd3dShaderCompiler.NativeOptionsObserver"/>), as
-/// flat (name, value) pairs.
+/// Records every (request, native source, options, output) tuple the pipeline sends through
+/// the desktop vkd3d backend — the ground truth the WASM shim must reproduce byte-for-byte.
+/// The source bytes and the options are the ones the desktop REALLY handed
+/// <c>vkd3d_shader_compile</c>, read back from the marshalled compile info
+/// (<see cref="Vkd3dShaderCompiler.NativeSourceObserver"/>, issue #319;
+/// <see cref="Vkd3dShaderCompiler.NativeOptionsObserver"/>, flat (name, value) pairs).
 /// </summary>
 internal sealed class RecordingVkd3dCompiler : IDxbcShaderCompiler
 {
     private readonly Vkd3dShaderCompiler _inner = new();
 
-    public List<(D3DCompileRequest Request, int[] Options, byte[] Output)> Captures { get; } = [];
+    public List<(D3DCompileRequest Request, byte[] NativeSource, int[] Options, byte[] Output)> Captures { get; } = [];
 
     public async Task<Result<PlatformBlob, ShaderError>> CompileAsync(
         D3DCompileRequest request,
@@ -239,16 +249,19 @@ internal sealed class RecordingVkd3dCompiler : IDxbcShaderCompiler
     {
         // The first native call of a compile is the real one (any later ones are
         // diagnostic-relocation probes of the same request, with the same options).
+        byte[]? source = null;
         int[]? options = null;
+        Vkd3dShaderCompiler.NativeSourceObserver.Value = s => source ??= s;
         Vkd3dShaderCompiler.NativeOptionsObserver.Value = o => options ??= o;
         try
         {
             var result = await _inner.CompileAsync(request, cancellationToken).ConfigureAwait(false);
-            Record(request, options, result);
+            Record(request, source, options, result);
             return result;
         }
         finally
         {
+            Vkd3dShaderCompiler.NativeSourceObserver.Value = null;
             Vkd3dShaderCompiler.NativeOptionsObserver.Value = null;
         }
     }
@@ -257,26 +270,32 @@ internal sealed class RecordingVkd3dCompiler : IDxbcShaderCompiler
         D3DCompileRequest request,
         CancellationToken cancellationToken = default)
     {
+        byte[]? source = null;
         int[]? options = null;
+        Vkd3dShaderCompiler.NativeSourceObserver.Value = s => source ??= s;
         Vkd3dShaderCompiler.NativeOptionsObserver.Value = o => options ??= o;
         try
         {
             var result = _inner.Compile(request, cancellationToken);
-            Record(request, options, result);
+            Record(request, source, options, result);
             return result;
         }
         finally
         {
+            Vkd3dShaderCompiler.NativeSourceObserver.Value = null;
             Vkd3dShaderCompiler.NativeOptionsObserver.Value = null;
         }
     }
 
-    private void Record(D3DCompileRequest request, int[]? options, Result<PlatformBlob, ShaderError> result)
+    private void Record(D3DCompileRequest request, byte[]? source, int[]? options, Result<PlatformBlob, ShaderError> result)
     {
         if (!result.IsSuccess)
             return;
         Captures.Add((
             request,
+            source ?? throw new InvalidOperationException(
+                "the desktop vkd3d backend compiled without reporting the source it handed vkd3d " +
+                "(Vkd3dShaderCompiler.NativeSourceObserver was never called)"),
             options ?? throw new InvalidOperationException(
                 "the desktop vkd3d backend compiled without reporting its compile options " +
                 "(Vkd3dShaderCompiler.NativeOptionsObserver was never called)"),
