@@ -2,6 +2,7 @@
 
 using System.Buffers.Binary;
 using System.Diagnostics;
+using ShadowDusk.Core;
 
 namespace ShadowDusk.HLSL.Dxc;
 
@@ -238,40 +239,11 @@ internal static class DxcNativeIdentity
     /// <summary>
     /// The GNU build id in one ELF note segment (<c>PT_NOTE</c>) as lowercase hex, or
     /// <c>null</c>. Shared by the file reader above and the mapped-image reader
-    /// (<c>DxcLoader.LoadedImages.ElfBuildIdOfImageContaining</c>), which hands it the segment
+    /// (<see cref="ElfImages"/>, where the implementation now lives), which hands it the segment
     /// as the dynamic linker mapped it.
     /// </summary>
-    internal static string? FindGnuBuildId(ReadOnlySpan<byte> notes, int align)
-    {
-        const uint noteGnuBuildId = 3;      // NT_GNU_BUILD_ID
-
-        for (int at = 0; at + 12 <= notes.Length;)
-        {
-            int nameSize = (int)BinaryPrimitives.ReadUInt32LittleEndian(notes[at..]);
-            int descSize = (int)BinaryPrimitives.ReadUInt32LittleEndian(notes[(at + 4)..]);
-            uint type = BinaryPrimitives.ReadUInt32LittleEndian(notes[(at + 8)..]);
-            if (nameSize < 0 || descSize < 0)
-                break;
-
-            int nameAt = at + 12;
-            long descAt = nameAt + AlignUp(nameSize, align);
-            long next = descAt + AlignUp(descSize, align);
-            if (descAt + descSize > notes.Length)
-                break;
-
-            if (type == noteGnuBuildId && nameSize == 4 && descSize > 0
-                && notes.Slice(nameAt, 4).SequenceEqual("GNU\0"u8))
-            {
-                return Convert.ToHexString(notes.Slice((int)descAt, descSize)).ToLowerInvariant();
-            }
-
-            if (next <= at || next > notes.Length)
-                break;
-            at = (int)next;
-        }
-
-        return null;
-    }
+    internal static string? FindGnuBuildId(ReadOnlySpan<byte> notes, int align) =>
+        ElfImages.FindGnuBuildId(notes, align);
 
     /// <summary>
     /// The <c>LC_UUID</c> of every 64-bit slice of a Mach-O file (one for a thin file, one per

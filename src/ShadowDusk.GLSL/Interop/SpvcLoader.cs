@@ -30,8 +30,10 @@ namespace ShadowDusk.GLSL.Interop;
 /// the APK's <c>lib/&lt;abi&gt;/</c>. It is loaded by its SONAME, which the Android linker
 /// resolves only inside the app's own linker namespace (the APK's libraries; no
 /// <c>LD_LIBRARY_PATH</c> reaches an app), and never by path (Android W^X; the APK is not a
-/// directory). Known residual: no build identity is checked there yet (the APK holds no file to
-/// hash, unlike <c>DxcLoader</c>, which reads the mapped image's build id).</para>
+/// directory). The APK holds no file to hash, so the identity is the GNU build id read from the
+/// image the linker MAPPED (<see cref="ElfImages"/>, shared with <c>DxcLoader</c>), which must be
+/// <see cref="AndroidBuildIdByRid"/>'s pin for the ABI: another package bundling its own
+/// <c>libspirv-cross.so</c> for the same ABI is refused.</para>
 /// </summary>
 internal static class SpvcLoader
 {
@@ -59,6 +61,22 @@ internal static class SpvcLoader
         ["linux-arm"] = "b761047bb33a53ca78c8a7dca9b99fab9c1c814603e91e0c0d4ae45e9be74668",
         ["osx-x64"] = "b8a6ce9bc707d15b7bbbee139fb2363cec116bf8aad58e181642a39ef4fed189",
         ["osx-arm64"] = "071c4ef2a38c5fd78ccdda419cb79ec4fded6f85ed3bdeeae5bb09c3401eb093",
+    };
+
+    /// <summary>
+    /// GNU build ids of ShadowDusk's own Android <see cref="AndroidLibFileName"/>, by RID, checked
+    /// against the image the linker mapped from the APK. <c>android-arm64</c> is the one
+    /// ShadowDusk.GLSL packs (SHA-256 pinned in <c>tools/restore.*</c>; <c>SpvcLoaderPinTests</c>
+    /// fails if the restored file's build id differs). <c>android-x64</c> is the copy the x86_64
+    /// emulator lane of <c>validation/AndroidGl</c> bundles: no package ships it, it is pinned only
+    /// so the emulator harness keeps running with the check on (the same rule as DXC's
+    /// <c>AndroidX64CompilerBuildId</c>); a rebuild gets a new build id and an <c>SD0103</c> naming
+    /// both, which is the cue to update this line.
+    /// </summary>
+    internal static readonly IReadOnlyDictionary<string, string> AndroidBuildIdByRid = new Dictionary<string, string>
+    {
+        ["android-arm64"] = "1de174019500207664624d82a66990021dd0f329",
+        ["android-x64"] = "8d426179db1d42462bfc8dd3db6cdd2222efccdd",
     };
 
     private static readonly object RegisterGate = new();
@@ -130,7 +148,8 @@ internal static class SpvcLoader
             ProbeExport: "spvc_context_create",
             FileNames: [GetLibFileName()],
             Sha256ByRid: Sha256ByRid,
-            MismatchHint: $"The usual cause is another package raising Silk.NET.SPIRV.Cross.Native above {PinnedSilkVersion}, " +
+            MismatchHint: $"The usual cause is the application resolving a Silk.NET.SPIRV.Cross.Native other than {PinnedSilkVersion} " +
+                          "(a Silk.NET package or a direct reference; build warning SD0225 names it), " +
                           "which ships a different SPIRV-Cross: pin it in the application " +
                           $"(<PackageReference Include=\"Silk.NET.SPIRV.Cross.Native\" Version=\"{PinnedSilkVersion}\" />).");
 
@@ -144,12 +163,43 @@ internal static class SpvcLoader
     private static PinnedNativeLibrary.LoadResult LoadAndroid()
     {
         if (NativeLibrary.TryLoad(AndroidLibFileName, out IntPtr handle))
-            return new PinnedNativeLibrary.LoadResult(handle, AndroidLibFileName, null);
+        {
+            string rid = PinnedNativeLibrary.CurrentRid();
+            return VerifyAndroidImage(rid, ElfImages.ImageOf(handle, "spvc_context_create")) is { } refused
+                ? new PinnedNativeLibrary.LoadResult(IntPtr.Zero, null, refused)
+                : new PinnedNativeLibrary.LoadResult(handle, AndroidLibFileName, null);
+        }
 
         return Fail(
             $"ShadowDusk's SPIRV-Cross for Android ({AndroidLibFileName}) is not in this app " +
             $"({RuntimeInformation.RuntimeIdentifier}), so no SPIR-V to GLSL transpile (OpenGL) can run. It ships in " +
             "the ShadowDusk.GLSL package for android-arm64 only and must be packaged into the APK's lib/<abi>/ directory.");
+    }
+
+    /// <summary>
+    /// Android: the refusal for the image the linker mapped from the APK, or <c>null</c> when it
+    /// carries the pinned GNU build id for <paramref name="rid"/> (read from memory: the APK holds
+    /// no file to hash). An ABI with no pin is refused, whatever is there came from someone else.
+    /// Cannot ask the linker (<paramref name="image"/> null) means no finding, never a guess.
+    /// Pure, so the decision is unit-testable off Android.
+    /// </summary>
+    internal static ShaderError? VerifyAndroidImage(string rid, ElfImages.ElfImage? image)
+    {
+        AndroidBuildIdByRid.TryGetValue(rid, out string? pinned);
+        if (pinned is not null && (image is null || image.Value.BuildId == pinned))
+            return null;
+
+        string mapped = image is null
+            ? "an image whose identity could not be read"
+            : $"'{image.Value.Path}' (build id {image.Value.BuildId ?? "none"})";
+        return Fail(pinned is null
+            ? $"The SPIRV-Cross loaded from the APK for '{rid}' is {mapped}, and ShadowDusk ships no SPIRV-Cross " +
+              "for that ABI (it ships its own build for android-arm64), so it is not ShadowDusk's build and no " +
+              "SPIR-V to GLSL transpile (OpenGL) can run."
+            : $"The SPIRV-Cross loaded from the APK is {mapped}, not ShadowDusk's pinned build for '{rid}' " +
+              $"(build id {pinned}). Another package in the application ships its own {AndroidLibFileName} for " +
+              "this ABI and the build kept that one in the APK. ShadowDusk will not run a different build, so no " +
+              "SPIR-V to GLSL transpile (OpenGL) can run.").Error;
     }
 
     private static PinnedNativeLibrary.LoadResult Fail(string message) =>

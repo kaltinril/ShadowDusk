@@ -351,6 +351,19 @@ jobs:
           ./tools/verify-vortice-dxc-conflict.sh \
             "$GITHUB_WORKSPACE/localfeed" "${{ steps.version.outputs.smoke }}" "${{ matrix.tfm }}" "$RUNNER_TEMP/sd-vortice-conflict"
 
+      # ── A consumer whose graph moves Silk.NET.SPIRV.Cross.Native off 2.23.0 (issue #350) ──
+      # The SPIRV-Cross counterpart of the step above (a Silk.NET game is the realistic case).
+      # Consumed cold three times: with 2.22.0 forced in the build must WARN SD0225 (never fail)
+      # and OpenGL must be refused at runtime with SD0103 (the natives are not the pinned
+      # SHA-256s) while DirectX 11 and FNA compile; pinning 2.23.0 must clear both; and a consumer
+      # with no reference must see nothing new.
+      - name: Silk.NET.SPIRV.Cross.Native version conflict (build warning SD0225 + runtime SD0103, issue #350)
+        shell: bash
+        run: |
+          chmod +x tools/verify-spirv-cross-conflict.sh
+          ./tools/verify-spirv-cross-conflict.sh \
+            "$GITHUB_WORKSPACE/localfeed" "${{ steps.version.outputs.smoke }}" "${{ matrix.tfm }}" "$RUNNER_TEMP/sd-spirv-cross-conflict"
+
       # ── ShadowDusk.ContentPipeline consumed cold by a MonoGame 3.8.5 Content Builder ──────
       # (Phase 63, issue #203). Exactly what a 3.8.5 user does: the MonoGame.ContentBuilder.CSharp
       # template's project + `dotnet add package ShadowDusk.ContentPipeline`, then a real

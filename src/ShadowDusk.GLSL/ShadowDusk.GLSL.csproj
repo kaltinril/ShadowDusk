@@ -50,5 +50,8 @@
 
   <ItemGroup>
     <None Include="README.md" Pack="true" PackagePath="\" />
+    <!-- Issue #350: the build-time Silk.NET.SPIRV.Cross.Native version check (warning SD0225),
+         buildTransitive so it also runs for ShadowDusk.Compiler / ShadowDusk.ContentPipeline consumers. -->
+    <None Include="buildTransitive\ShadowDusk.GLSL.targets" Pack="true" PackagePath="buildTransitive\ShadowDusk.GLSL.targets" />
   </ItemGroup>
 </Project>

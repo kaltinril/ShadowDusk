@@ -37,6 +37,28 @@ public sealed class SpvcLoaderPinTests
         }
     }
 
+    /// <summary>
+    /// The build-time warning (SD0225, <c>buildTransitive/ShadowDusk.GLSL.targets</c>) and the
+    /// package pin must name the same release the runtime hashes belong to.
+    /// </summary>
+    [Fact]
+    public void TheBuildWarningAndThePackagePin_NameThePinnedSilkVersion()
+    {
+        string root = AppContext.BaseDirectory;
+        while (!File.Exists(Path.Combine(root, "ShadowDusk.slnx")))
+            root = Path.GetDirectoryName(root) ?? throw new InvalidOperationException("repo root not found");
+
+        string targets = File.ReadAllText(Path.Combine(root, "src", "ShadowDusk.GLSL", "buildTransitive", "ShadowDusk.GLSL.targets"));
+        targets.ShouldContain(
+            $"<_ShadowDuskPinnedSilkSpirvCrossVersion>{SpvcLoader.PinnedSilkVersion}</_ShadowDuskPinnedSilkSpirvCrossVersion>",
+            Case.Sensitive);
+
+        string packages = File.ReadAllText(Path.Combine(root, "Directory.Packages.props"));
+        packages.ShouldContain(
+            $"<PackageVersion Include=\"Silk.NET.SPIRV.Cross.Native\" Version=\"{SpvcLoader.PinnedSilkVersion}\" />",
+            Case.Sensitive);
+    }
+
     [Fact]
     public void EveryDeployedSpirvCross_IsPinned()
     {

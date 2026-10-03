@@ -276,9 +276,16 @@ that loads and renders identically to `mgfxc`'s in the real MonoGame/KNI runtime
   last-resort `PluginNativeLibraryResolver` is gone: the loaders find the plugin directory
   themselves. **Behavior change:** an application whose graph raises `Silk.NET.SPIRV.Cross.Native`
   above 2.23.0 now gets `SD0103` for OpenGL (a different SPIRV-Cross) instead of silently different
-  GLSL; pin it to 2.23.0. Proven by `CliNativeSearchPathHijackTest` (all three desktop OSes; on Windows it
-  fails 5/8 against the previous loaders), `SpvcLoaderPinTests`, `Vkd3dLoaderTests` and
-  `PinnedNativeLibraryTests`. Android SPIRV-Cross still loads by SONAME from the APK, unchecked.
+  GLSL; pin it to 2.23.0. The same build now warns **`SD0225`** at build time
+  (`buildTransitive/ShadowDusk.GLSL.targets`, the counterpart of `SD0220`; a warning, never an error,
+  `NoWarn`-able), proven cold by `tools/verify-spirv-cross-conflict.sh` in Pack & Consume on all three
+  OSes. **Android:** SPIRV-Cross still loads by SONAME from the APK, and the image the linker mapped
+  must now carry the pinned GNU build id for its ABI (the mapped-image reader moved from `DxcLoader`
+  to `ShadowDusk.Core.ElfImages`, shared by both); another package's `libspirv-cross.so` in the APK
+  is refused with `SD0103`, measured on an x86_64 emulator by `validation/AndroidGl/run-dxc-identity-checks.ps1`.
+  Proven by `CliNativeSearchPathHijackTest` (all three desktop OSes; on Windows it fails 5/8 against
+  the previous loaders), `SpvcLoaderPinTests`, `SpvcLoaderAndroidIdentityTests`, `Vkd3dLoaderTests`
+  and `PinnedNativeLibraryTests`.
 
 - **The raylib and SkSL converters compile a legacy sampler declared in an `#include` or through a
   macro (issue #327).** `RaylibConverter.Convert` and `SkslConverter.Convert` pre-parse the raw main
