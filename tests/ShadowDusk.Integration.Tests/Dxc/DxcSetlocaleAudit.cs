@@ -140,6 +140,12 @@ internal static class DxcSetlocaleAudit
         // locale-changing setlocale call and the ungated compile path is not safe against fork().
         compiler = Vortice.Dxc.Dxc.CreateDxcCompiler<IDxcCompiler3>();
         DxcForkGate.SettleLocale(compiler);
+        // SettleLocale is a no-op off macOS (the gate is macOS-only), so one plain preprocess
+        // performs DXC's locale change there; on macOS it is a same-name call that changes nothing.
+        using (IDxcResult settle = DxcNativeInterop.CompileRaw(compiler, Hlsl, DxcFlagBuilder.BuildPreprocess([]), includeHandler: null))
+        {
+            if (settle.GetStatus().Failure) throw new InvalidOperationException(settle.GetErrors());
+        }
         Console.WriteLine($"SETTLED {ProbeLibc.CurrentLocale()}");
 
         Steady("compile-native-call", () => result = DxcNativeInterop.CompileRaw(
