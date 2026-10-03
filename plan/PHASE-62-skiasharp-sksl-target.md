@@ -289,17 +289,6 @@ already measured at 46/46 mean 0.00/255 for the ShaderToy route).
 - **B3.** Keep it additive and dependency-free in the shipped libraries: SkiaSharp must be a *test*
   dependency, never a product one (the `NoMonoGameInProductLibrariesTests` precedent).
 
-### Area D — Gum shader parity (issues #368, #369)
-
-Gum authors one `.fx` and expects it to work on KNI and on Skia, and every shader it reuses reads
-`input.Color`. D1 and D2 are the two halves; D1 is done, D2 is open.
-
-- **D1 (#368, done 2026-10-03).** `COLOR0` converts by default to `ShadowDusk_Color` instead of
-  refusing. Other interpolants still refuse by name; `TreatVaryingsAsUniforms` is kept for them,
-  and listing `COLOR0` in it is accepted and changes nothing.
-- **D2 (#369, open).** A render harness proving the same `.fx` renders alike on KNI and through
-  Skia with the uniform set to the tint.
-
 ### Area C — evidence
 
 - **C1.** Render the emitted SkSL in real SkiaSharp and pixel-compare against the same shader's
@@ -307,6 +296,25 @@ Gum authors one `.fx` and expects it to work on KNI and on Skia, and every shade
   this route can have. Tolerance stated and justified, not assumed to be 0.
 - **C2.** A `docs/validation-matrix.md` **§8-style** row — the section for distinct evidence axes —
   never a §1 cell, so no reader mistakes it for an `mgfxc`-equivalence claim.
+
+### Area D — Gum shader parity (phase 1: texture-only shaders; added 2026-10-03)
+
+The consumer's goal, stated by the owner: Gum's authoring tool runs on KNI, and a saved project
+loads in Skia, so **one `.fx` file must give the same image in both**. A Gum render-target
+container draws its content to a texture and then draws that texture with the shader; it is
+per-container, pixel-stage only, no vertex stage. Phase 1 is shaders whose only inputs are textures
+(no uniforms).
+
+- **D1.** `COLOR0` converts by default to a synthesized uniform that Gum's Skia renderer sets to the
+  container's tint (white when untinted). Every XnaFiddle example reads `input.Color`, so without
+  this none of them convert. Owner decision 2026-10-03, recorded in `project_decisions.md`.
+  [issue #368](https://github.com/kaltinril/ShadowDusk/issues/368).
+- **D2.** The cross-renderer harness (C1) over the phase 1 corpus from the XnaFiddle examples:
+  `Fading`, `Grayscale`, `Invert`, `Pixelated`, `TintShader`; stretch `Mask` (two textures).
+  Same `.fx` through real SkiaSharp vs real KNI over the same image, stated tolerance, a positive
+  control that must diverge. [issue #369](https://github.com/kaltinril/ShadowDusk/issues/369).
+- **D3 (later).** Uniform-carrying shaders (`Saturate`, `Scanlines`, `Sepia`, `Dots`), then
+  `Blur`/`Bloom` and multi-texture. Not scheduled.
 
 ## 5. Acceptance
 
@@ -346,7 +354,7 @@ Gum authors one `.fx` and expects it to work on KNI and on Skia, and every shade
       "default answer is the `SD0611` refusal" wording in §2.6 and above, which is kept as history.
 - [ ] **D2 (issue #369):** the Gum shader-parity render harness (same `.fx` on KNI vs through
       Skia with `ShadowDusk_Color` set to the tint). Not started.
-- [ ] **Open:** C1's cross-renderer harness (proven-GL render vs Skia render, image-diffed) as a
+- [ ] **Open (Area D, issues #368 and #369):** C1's cross-renderer harness (proven-GL render vs Skia render, image-diffed) as a
       standing driver, and a real Gum/SkiaGum consumer trial (OQ1's representativeness half).
 
 ## 6. Non-goals
