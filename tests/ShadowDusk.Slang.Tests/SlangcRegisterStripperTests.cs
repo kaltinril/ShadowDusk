@@ -468,6 +468,7 @@ public sealed class SlangcRegisterStripperTests
     [InlineData("sub/m.slang", false)]
     [InlineData("C:/a/m.slang", false)]
     [InlineData("C:\\a\\m.slang", false)]
+    [InlineData("<stdin>", false)]
     public void IsCoreModuleFile_IsSlangcsOwnModules_NotARelativeImport(string file, bool expected)
     {
         SlangcRegisterStripper.IsCoreModuleFile(file).ShouldBe(expected);

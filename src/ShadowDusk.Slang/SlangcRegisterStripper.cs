@@ -373,7 +373,8 @@ internal static class SlangcRegisterStripper
     /// is not the test.
     /// </summary>
     public static bool IsCoreModuleFile(string file) =>
-        file.IndexOfAny(['/', '\\']) < 0
+        file != EntrySourceFile
+        && file.IndexOfAny(['/', '\\']) < 0
         && (!file.Contains('.') || file.EndsWith(".meta.slang", StringComparison.Ordinal));
 
     // 'import "path" ;', '__exported import "path" ;' or '__include "path" ;' in a preprocessed
