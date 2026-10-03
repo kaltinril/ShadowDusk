@@ -28,9 +28,9 @@ using ShadowDusk.Core.Preprocessor;
 using ShadowDusk.Validation.Dx;
 
 string mode = args.Length > 0 ? args[0].Trim().ToLowerInvariant() : "vs";
-if (mode is not ("vs" or "apos" or "texarr"))
+if (mode is not ("vs" or "apos" or "texarr" or "samparr"))
 {
-    Console.Error.WriteLine($"unknown mode '{mode}' — expected 'vs', 'apos' or 'texarr'");
+    Console.Error.WriteLine($"unknown mode '{mode}' — expected 'vs', 'apos', 'texarr' or 'samparr'");
     return 2;
 }
 
@@ -40,6 +40,8 @@ if (mode == "vs")
     return await RunVsPhase();
 if (mode == "texarr")
     return await RunTextureArrayPhase();
+if (mode == "samparr")
+    return await RunSamplerArrayPhase(args.Length > 1 ? args[1] : null);
 
 return await RunAposPhase();
 
@@ -191,6 +193,91 @@ static Texture2D Flat(Microsoft.Xna.Framework.Graphics.GraphicsDevice device, Co
     var t = new Texture2D(device, 1, 1);
     t.SetData(new[] { color });
     return t;
+}
+
+// ---------------------------------------------------------------------------------------
+// mode "samparr" - issue #340: an ARRAY of samplers (`SamplerState Samplers[2]`, one per
+// texture; tests/fixtures/shaders/texture-arrays/SamplerArray2.fx). Real mgfxc 3.8.4.1 and
+// 3.8.5 refuse the shape on EVERY profile in their own parser ("SamplerArray2.fx(31,22) :
+// Unexpected token '[' found. Expected Semicolon, Comma, or CloseParenthesis."), so there is
+// no reference effect to render against and the gate is the refusal itself: ShadowDusk's
+// DirectX12 compile must FAIL with SD0223 naming `Samplers` at the declaration (31,14). Red
+// before the fix (it compiled, one record for slot 0, with the SD0222 warning).
+//
+// Optional evidence arm: a prebuilt .mgfx on the command line (a pre-fix build's DirectX_12
+// output) is loaded into the real WindowsDX12 engine and drawn with TexA = cat, TexB = flat
+// green, so what the refused shape used to do in this engine is on record. Informational.
+// The DirectX 11 twin is validation/VsDrivenDx -- samparr.
+// ---------------------------------------------------------------------------------------
+async Task<int> RunSamplerArrayPhase(string? evidenceFile)
+{
+const string SampArrFixture = "SamplerArray2";
+string fxPath  = Path.Combine(repoRoot, "tests", "fixtures", "shaders", "texture-arrays", SampArrFixture + ".fx");
+string catPath = Path.Combine(repoRoot, "samples", "ShaderViewer", "Content", "cat.jpg");
+string outDir  = Path.Combine(repoRoot, "validation", "output", "samparr-dx12");
+Console.WriteLine($"[samparr-dx12] fixture: {fxPath}");
+
+var r = await new EffectCompiler().CompileAsync(await File.ReadAllTextAsync(fxPath), new CompilerOptions
+{
+    Target = PlatformTarget.DirectX12,
+    IncludeResolver = new FileSystemIncludeResolver(),
+    SourceFileName = fxPath,
+});
+bool pass;
+if (r.IsSuccess)
+{
+    Console.WriteLine($"[samparr-dx12] DirectX12: COMPILED ({r.Value.Data.Length} bytes) -> FAIL: mgfxc refuses this shape, so must ShadowDusk");
+    pass = false;
+}
+else
+{
+    ShaderError? e = r.Error.FirstOrDefault(x => x.Code == "SD0223");
+    pass = e is not null && Path.GetFileName(e.File) == SampArrFixture + ".fx" && e.Line == 31 && e.Column == 14 && e.Message.Contains("'Samplers'", StringComparison.Ordinal);
+    Console.WriteLine($"[samparr-dx12] DirectX12: refused with {string.Join(", ", r.Error.Select(x => $"{x.Code} {Path.GetFileName(x.File)}({x.Line},{x.Column})"))} -> {(pass ? "PASS" : "FAIL")} (expected SD0223 at SamplerArray2.fx(31,14) naming 'Samplers')");
+    if (e is not null)
+        Console.WriteLine($"  {e.Message}");
+}
+
+if (evidenceFile is not null)
+{
+    Console.WriteLine($"\n[samparr-dx12] evidence: loading prebuilt {evidenceFile} into real WindowsDX12 (informational)");
+    byte[]? bytes = File.Exists(evidenceFile) ? await File.ReadAllBytesAsync(evidenceFile) : null;
+    if (bytes is not null)
+    {
+        var reader = ShadowDusk.Integration.Tests.MgfxBlobReader.Parse(bytes);
+        Console.WriteLine($"  params: {string.Join("; ", reader.Parameters.Select(p => $"{p.Name} class={p.Class} type={p.Type}"))} | " +
+                          $"records: {string.Join("; ", reader.Samplers.Select(s => $"sh{s.ShaderIndex} t{s.TextureSlot} s{s.SamplerSlot} name='{s.Name}' ->param {s.Parameter}"))}");
+    }
+    Texture2D? green = null;
+    Color[]? catPixels = null;
+    void SetParams(Effect effect, Texture2D cat)
+    {
+        if (catPixels is null) { catPixels = new Color[cat.Width * cat.Height]; cat.GetData(catPixels); }
+        Console.WriteLine($"  parameters: {string.Join(", ", Enumerable.Range(0, effect.Parameters.Count).Select(i => effect.Parameters[i].Name))}");
+        effect.Parameters["TexA"]?.SetValue(cat);
+        green ??= Flat(effect.GraphicsDevice, new Color(0, 255, 0, 255));
+        effect.Parameters["TexB"]?.SetValue(green);
+    }
+    using var game = new DxEffectImageRenderer(catPath, outDir, new List<ShaderJob> { new("evidence-prebuilt", bytes, bytes is null ? $"not found: {evidenceFile}" : null) }, SetParams);
+    game.Run();
+    foreach (var o in game.Outcomes)
+        Console.WriteLine($"  [{(o is { Loaded: true, Rendered: true } ? "OK  " : "FAIL")}] {o.Name,-16} {o.Error ?? o.PngPath}");
+    var cap = game.Captures.FirstOrDefault();
+    if (cap.Pixels is not null && catPixels is { } cat && cat.Length == cap.Pixels.Length)
+    {
+        int cpuMaxd = 0;
+        for (int i = 0; i < cap.Pixels.Length; i++)
+        {
+            var e = new Color((cat[i].R + 0) / 2, (cat[i].G + 255) / 2, (cat[i].B + 0) / 2, 255);
+            cpuMaxd = Math.Max(cpuMaxd, Math.Max(Math.Max(Math.Abs(e.R - cap.Pixels[i].R), Math.Abs(e.G - cap.Pixels[i].G)),
+                                                 Math.Max(Math.Abs(e.B - cap.Pixels[i].B), Math.Abs(e.A - cap.Pixels[i].A))));
+        }
+        Console.WriteLine($"  evidence vs CPU (cat + green) / 2: maxd={cpuMaxd} (both textures {(cpuMaxd <= 2 ? "sampled" : "NOT both sampled")})");
+    }
+}
+
+Console.WriteLine($"\n[samparr-dx12] {(pass ? "PASS" : "FAIL")}: SD0223 refusal on DirectX 12 {(pass ? "as mgfxc's own parser refuses the shape" : "MISSING")}.");
+return pass ? 0 : 1;
 }
 
 

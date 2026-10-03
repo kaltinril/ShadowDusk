@@ -131,11 +131,12 @@ internal static class ResourceArrayDiagnostics
     /// <c>file(line,col) : Unexpected token '[' found. Expected Semicolon, Comma, or CloseParenthesis.</c>
     /// So no reference output exists for the shape, and MonoGame's effect format has nowhere to
     /// put it: a sampler record carries one sampler slot, keyed to one texture slot, and names no
-    /// element. ShadowDusk used to compile it anyway: on DirectX 11 to one record per element
-    /// (<c>Tex[0]</c>/s0, <c>Tex[1]</c>/s1, parameters named <c>Tex[0]</c> and <c>Tex[1]</c> that
-    /// no author writes), on DirectX 12 to one record for slot 0, leaving every other sampler slot
-    /// without state from the effect. Both are effects mgfxc never builds, so the shape is refused
-    /// by name, located at the declaration, like <c>SD0221</c> does on Vulkan.
+    /// element. ShadowDusk used to compile it anyway, with records keyed on the texture bindings
+    /// (so no sampler element ever had a record of its own). Measured as evidence first
+    /// (<c>validation/VsDrivenDx -- samparr &lt;mgfx&gt;</c>, <c>VsDrivenDx12 -- samparr &lt;mgfx&gt;</c>):
+    /// the pre-fix effects of <c>SamplerArray2.fx</c> loaded into real WindowsDX and WindowsDX12
+    /// and drew with both textures sampled. They are nonetheless effects mgfxc never builds, so the
+    /// shape is refused by name, located at the declaration, like <c>SD0221</c> does on Vulkan.
     ///
     /// <para>Detection is by reflection (<see cref="SamplerReflection.ArrayLength"/>: the collapsed
     /// SM5 records on DirectX 11, DXIL's <c>BindCount</c> on DirectX 12), with the declaration text

@@ -230,6 +230,39 @@ that loads and renders identically to `mgfxc`'s in the real MonoGame/KNI runtime
 
 ### Fixed
 
+- **DirectX 11 reflected a texture array as one parameter per element where `mgfxc` reflects one
+  (issue #339).** `Texture2D Tex[2]` came out as parameters `Tex[0]` and `Tex[1]` with one sampler
+  record each, so `effect.Parameters["Tex"]` was null and, measured in real MonoGame WindowsDX, the
+  `Tex[1]` record nulled texture slot 1 at `Apply` (maxd 128 against `mgfxc`'s build). Root cause,
+  measured with d3dcompiler_47 on 2026-10-02: fxc at Shader Model 4 (the author's `ps_4_0`, which
+  `mgfxc` compiles as written) reflects the array as ONE binding `Tex` with `BindCount` N at the
+  array's base register whichever elements are read, while at Shader Model 5 (ShadowDusk's DirectX
+  11 compile model, and vkd3d-shader's convention) the RDEF stores one record per element, which
+  `D3DReflect` reports as stored. `mgfxc` makes one record per texture binding and one parameter per
+  distinct name, hence its single `Tex`. The DXBC reflection extractor now folds the per-element
+  records back into that view (`ResourceArrayBindings`; `RdefReader` stays a faithful view of the
+  RDEF, its D3DReflect parity contract). Measured against `mgfxc` 3.8.4.1 (the pinned v10 oracle)
+  record for record on both DXBC backends for N = 1, 2 and 4, with and without a register, an array
+  declared after another texture, and an array with only element 1 read: one `Tex` parameter, one
+  record at the base slot. In real MonoGame WindowsDX (`validation/VsDrivenDx -- texarr`, new gate
+  row, RTX 3080) both backends render pixel-identical to `mgfxc`'s build (maxd 0), and element `[1]`
+  bound through `GraphicsDevice.Textures[1]` IS read there (unlike WindowsDX12, see `SD0222`), so
+  DirectX 11 emits no array diagnostic. Committed `mgfxc` 3.8.4.1 DirectX_11 goldens for both
+  texture-array fixtures. The whole fixture corpus compiled byte-identical before and after on all
+  four profiles (668 cells); only the two texture-array fixtures moved on DirectX_11, as intended.
+- **A sampler array compiled on DirectX 11 and 12 where `mgfxc` refuses it (issue #340).**
+  `SamplerState S[N]` is refused by `mgfxc` 3.8.4.1 and 3.8.5 on EVERY profile in its own effect
+  parser (`Unexpected token '[' found. Expected Semicolon, Comma, or CloseParenthesis.`), so no
+  reference output exists for the shape. ShadowDusk compiled it anyway, with sampler records keyed on the
+  texture bindings and no record naming a sampler element; it now refuses it with the new error
+  **`SD0223`**, located at the declaration, on both targets (the one DirectX 12 case DXIL cannot
+  distinguish, a 1-element array, is found from the declaration text). Measured first, as
+  evidence (`validation/VsDrivenDx -- samparr <mgfx>`, `VsDrivenDx12 -- samparr <mgfx>`, RTX
+  3080): the pre-fix DirectX 11 and DirectX 12 effects of the new fixture loaded into real
+  WindowsDX and WindowsDX12 and drew with both textures sampled, so the refusal is for parity with
+  the reference compiler (which builds nothing for the shape), not because the engine rejected it. New
+  expect-diagnostic fixture `texture-arrays/SamplerArray2.fx` (no golden: `mgfxc` builds none).
+  `SD0222` now covers texture arrays only.
 - **Texture arrays reflected a wrong parameter table on Vulkan (issue #324).** `Texture2D Tex[N]`
   is a pointer to an array of image types in SPIR-V, and the pure-managed reflector matched only
   a bare image or sampler type, so the texture vanished from the Vulkan effect while its sampler
