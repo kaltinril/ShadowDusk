@@ -39,6 +39,15 @@ KNIFX = os.path.join(HERE, "output", "kni-knifx")
 BASELINE = os.path.join(HERE, "output", "baseline")
 CANDIDATE = os.path.join(HERE, "output", "candidate")
 DIFF_DIR = os.path.join(HERE, "output", "kni-diff")
+# DX11 render of the same shader (a different compiler path: vkd3d, full-precision sincos).
+DX_REF = os.path.join(HERE, "output-dx", "baseline")
+
+# Shaders whose mgfxc GL golden is itself GPU-sensitive (issue #215). Dots feeds ~hundreds of
+# radians into sin(); mgfxc's GLSL reduces with a truncated 1/2pi, which is fine on NVIDIA and
+# llvmpipe but drifts 19/255 on Intel UHD. For these, a miss against the golden is forgiven
+# ONLY when the golden also misses the DX11 render by more than the tolerance AND KNI matches
+# the DX11 render. Tolerance is unchanged; a real KNI regression still fails (it would miss DX11).
+GOLDEN_GPU_SENSITIVE = {"Dots"}
 
 SHADERS = ["Grayscale", "Invert", "TintShader", "Sepia", "Saturate",
            "Pixelated", "Scanlines", "Fading", "Dots", "Dissolve"]
@@ -101,7 +110,18 @@ def main():
             kp, os.path.join(CANDIDATE, name + ".png"), args.tolerance,
             os.path.join(DIFF_DIR, name + "_vs_candidate.png"))
 
-        if bstat != "MATCH" or cstat != "MATCH":
+        if bstat == "DIFFER" and name in GOLDEN_GPU_SENSITIVE:
+            dx = os.path.join(DX_REF, name + ".png")
+            gstat = compare(os.path.join(BASELINE, name + ".png"), dx, args.tolerance,
+                            os.path.join(DIFF_DIR, name + "_golden_vs_dx.png"))[0]
+            kstat = compare(kp, dx, args.tolerance,
+                            os.path.join(DIFF_DIR, name + "_vs_dx.png"))[0]
+            if gstat == "DIFFER" and kstat == "MATCH":
+                print(f"  note: {name} mgfxc GL golden is off the DX11 render on this GPU "
+                      f"(issue #215) while KNI matches DX11; golden miss not counted.")
+                bstat = "MATCH*"
+
+        if bstat not in ("MATCH", "MATCH*") or cstat != "MATCH":
             failures += 1
 
         bcol = f"{bstat:<10}{(bmaxd if bmaxd is not None else '-'):>6}{(f'{bmean:.3f}' if bmean is not None else '-'):>8}"
