@@ -185,6 +185,12 @@ that loads and renders identically to `mgfxc`'s in the real MonoGame/KNI runtime
 
 ### Changed
 
+- **CI executes `ShadowDusk.Slang`'s osx-x64 slangc (issue #352).** CI's macOS runners are arm64,
+  so the bundled osx-x64 slangc was only checked for presence. `pack-consume.yml`'s macOS lane now
+  extracts it from the packed nupkg, runs it under Rosetta 2, and fails unless its HLSL is
+  byte-identical to the osx-arm64 slangc's (`tools/verify-slang-osx-x64-rosetta.sh`). No package
+  change.
+
 - **SkSL converter: `COLOR0` (SpriteBatch's vertex color) now converts by default instead of
   refusing with `SD0611` (issue #368).** A shader that reads `input.Color` (every XnaFiddle
   example, and every `.fx` written for SpriteBatch) converts with the `float4` uniform

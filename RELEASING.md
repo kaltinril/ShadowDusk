@@ -250,7 +250,9 @@ first (the `/release` skill does this for you).
 > 1 naming each missing entry). **Before dispatching**, confirm the
 > `Pack & Consume Smoke` workflow is green on the release commit (dispatch it if the last run is
 > older): its `tools/verify-slang-packaging.sh` step is the only proof that a cold consumer can
-> install the package and run slangc on Linux, macOS and Windows. Host floors are upstream's:
+> install the package and run slangc on Linux, macOS and Windows, and its macOS
+> `tools/verify-slang-osx-x64-rosetta.sh` step is the only run of the packaged **osx-x64** slangc
+> (under Rosetta 2, output byte-identical to osx-arm64; issue #352). Host floors are upstream's:
 > Linux Ubuntu 22.04+, macOS 26+ (issue #237).
 
 ---

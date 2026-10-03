@@ -153,7 +153,8 @@ history, not just SemVer's letter):
   csprojs.
 - **`Pack & Consume Smoke` must be green on the release commit before dispatch.** It is the
   only cold-consumer proof for every package, and its `tools/verify-slang-packaging.sh` step is
-  the only place `ShadowDusk.Slang`'s slangc runs from an installed package on all three OSes.
+  the only place `ShadowDusk.Slang`'s slangc runs from an installed package on all three OSes
+  (its macOS `verify-slang-osx-x64-rosetta.sh` step is the only run of the osx-x64 slangc).
   It has no push trigger, so dispatch it (`gh workflow run pack-consume.yml --ref main`) if the
   last run predates the release commit.
 - **Commit directly, no `/commit` skill, no co-author / tool-attribution trailer of any
