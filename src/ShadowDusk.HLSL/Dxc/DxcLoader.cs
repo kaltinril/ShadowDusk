@@ -80,9 +80,11 @@ namespace ShadowDusk.HLSL.Dxc;
 /// loaded, and <c>DxilLibIsEnabled</c> never retries after a miss. We ship no <c>libdxil</c>
 /// and cannot pre-empt a library we do not ship, so on macOS <see cref="Register"/> checks,
 /// right after its own load, whether any <c>libdxil</c> image is in the process and fails
-/// DirectX 12 loudly if so. Because that one <c>dlopen</c> happens inside
-/// <see cref="Register"/>, nothing DXC does later loads a library; in particular nothing inside
-/// the fork-gated <c>IDxcCompiler3::Compile</c> does (see <see cref="DxcForkGate"/>).</para>
+/// DirectX 12 loudly if so. That one <c>dlopen</c> happens inside <see cref="Register"/>. The
+/// only other library load DXC makes is its SPIR-V emitter <c>dlopen</c>ing <c>libdxcompiler</c>
+/// itself, by leaf name, from inside every <c>-Zi</c> SPIR-V compile to read the source for
+/// <c>OpSource</c> (<c>clang::spirv::ReadSourceCode</c>; issue #312): it reaches dyld's lock,
+/// which is why <see cref="DxcForkGate"/> never makes a <c>fork()</c> wait for a compile.</para>
 ///
 /// <para><b>Where the natives are found.</b> Windows and Linux:
 /// <see cref="GetPinnedPairDirectories"/>. macOS: <see cref="GetMacCandidates"/>; the dylib
@@ -145,7 +147,7 @@ internal static class DxcLoader
     /// <item>Any other OS: no DXC ships for it, so the result is <see cref="LoadErrorCode"/>.</item>
     /// </list>
     /// Either way the handler goes ahead of Vortice's own. The native load happens HERE, so it
-    /// is always outside <see cref="DxcForkGate"/>, which wraps only the later compile call.
+    /// is always outside <see cref="DxcForkGate"/>, which wraps only the locale-settling preprocess.
     /// A lock (not a lone CAS) so a concurrent second caller BLOCKS until the
     /// winner has finished — with CAS-then-subscribe the loser could
     /// return and P/Invoke before the resolver existed (observed once as an

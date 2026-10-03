@@ -430,6 +430,28 @@ jobs:
           command -v gdb >/dev/null || sudo apt-get install -y --no-install-recommends gdb \
             || echo "::warning::gdb unavailable; a probe hang will leave only a createdump core"
 
+      # Issue #312: the blame-hang dump cannot be relied on for the stall shape seen on macOS.
+      # A handful of tests freeze while every other test keeps starting and finishing, so the
+      # blame inactivity timer is reset for as long as the rest of the suite runs; and when it
+      # does fire, VSTest asks the runtime to dump itself, which the runtime does by fork()ing
+      # createdump INSIDE the hung process. On macOS that fork runs the pthread_atfork handlers,
+      # DxcForkGate's included, so a host hung with a compile stuck under that gate can never
+      # dump itself. This sidecar is a separate shell process: after 5 minutes (a healthy
+      # macOS integration assembly finishes in under 2.5, the Slang one in under 3.5) it takes
+      # native stacks (lldb / gdb), a `sample`, and a createdump of every test host still
+      # running, then a second stack snapshot, into TestResults/hang-dumps/. On a healthy run
+      # it finds nothing and exits 0; it can never fail the step. tools/ci/hang-watchdog.sh.
+      - name: Start the stall watchdog (sidecar, issue #312)
+        if: runner.os != 'Windows'
+        shell: bash
+        run: |
+          mkdir -p TestResults/hang-dumps
+          chmod +x tools/ci/hang-watchdog.sh
+          nohup tools/ci/hang-watchdog.sh "$PWD/TestResults/hang-dumps" 300 45 \
+            > TestResults/hang-dumps/watchdog.log 2>&1 &
+          echo $! > TestResults/hang-dumps/watchdog.pid
+          echo "stall watchdog started, pid $(cat TestResults/hang-dumps/watchdog.pid)"
+
       - name: dotnet test (integration)
         timeout-minutes: 14
         env:
@@ -444,6 +466,48 @@ jobs:
           --logger "trx;LogFilePrefix=integration-${{ matrix.os }}"
           --results-directory TestResults/
           -- RunConfiguration.TestSessionTimeout=600000
+
+      # The sidecar's log goes into the job log either way, so a healthy run shows "nothing to
+      # capture" and a stalled one shows what was captured. A watchdog still sleeping (the tests
+      # finished first) is stopped here. Never fails.
+      - name: Stop the stall watchdog and show what it captured
+        if: always() && runner.os != 'Windows'
+        shell: bash
+        run: |
+          if [ -f TestResults/hang-dumps/watchdog.pid ]; then
+            pid=$(cat TestResults/hang-dumps/watchdog.pid)
+            if kill -0 "$pid" 2>/dev/null; then
+              # Give a capture in progress a moment to finish writing before stopping it.
+              for _ in $(seq 1 90); do
+                grep -q 'watchdog done' TestResults/hang-dumps/watchdog.log 2>/dev/null && break
+                grep -q 'nothing to capture' TestResults/hang-dumps/watchdog.log 2>/dev/null && break
+                if ! grep -q 'capturing pid' TestResults/hang-dumps/watchdog.log 2>/dev/null; then break; fi
+                sleep 1
+              done
+              kill "$pid" 2>/dev/null || true
+              echo "stall watchdog (pid $pid) stopped"
+            fi
+          fi
+          echo "--- watchdog.log"
+          cat TestResults/hang-dumps/watchdog.log 2>/dev/null || echo "(no watchdog log)"
+          echo "--- TestResults/hang-dumps"
+          ls -la TestResults/hang-dumps 2>/dev/null || true
+          rm -f TestResults/hang-dumps/watchdog.pid
+          # A dump is analyzed HERE, where the matching runtime and the symbol server are at
+          # hand, so the artifact carries the managed stacks and sync blocks as text and never
+          # depends on another machine being able to open a macOS core.
+          shopt -s nullglob
+          dumps=(TestResults/hang-dumps/*.dmp)
+          if [ "${#dumps[@]}" -gt 0 ]; then
+            dotnet tool install -g dotnet-dump >/dev/null 2>&1 || dotnet tool update -g dotnet-dump >/dev/null 2>&1 || true
+            export PATH="$PATH:$HOME/.dotnet/tools"
+            for d in "${dumps[@]}"; do
+              echo "--- dotnet-dump analyze $d"
+              dotnet-dump analyze "$d" -c "threads" -c "clrstack -all" -c "syncblk" -c "exit" \
+                > "${d%.dmp}-managed.txt" 2>&1 || echo "dotnet-dump analyze failed for $d (see ${d%.dmp}-managed.txt)"
+              head -c 20000 "${d%.dmp}-managed.txt"
+            done
+          fi
 
       # Guard the line above: if someone reverts to a fixed LogFileName, the run still goes
       # green while 13 of 14 assemblies' results vanish. The solution always has more than
@@ -472,6 +536,8 @@ jobs:
           retention-days: 14
 
       # cancelled() too: if the job timeout ever does fire, the dumps taken so far still upload.
+      # TestResults/hang-dumps is the sidecar's output (stacks, sample, createdump, its log);
+      # TestResults/probe-hangs holds the probe-child evidence and the test host's own stall hint.
       - name: Upload hang dumps
         if: failure() || cancelled()
         uses: actions/upload-artifact@v7
@@ -481,5 +547,6 @@ jobs:
             TestResults/**/*.dmp
             TestResults/**/Sequence_*.xml
             TestResults/probe-hangs/*.txt
+            TestResults/hang-dumps/**
           retention-days: 14
           if-no-files-found: ignore

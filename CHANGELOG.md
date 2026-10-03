@@ -181,6 +181,17 @@ that loads and renders identically to `mgfxc`'s in the real MonoGame/KNI runtime
 
 ### Changed
 
+- **CI dumps a stalled integration test host from outside the process (issue #312).**
+  `tools/ci/hang-watchdog.sh` runs as a sibling shell process on the macOS and Linux integration
+  lanes: after five minutes it captures lldb or gdb stacks of every thread, a `sample`, the Linux
+  wait channels and a `createdump --withheap` of every test host still running, then a second stack
+  snapshot, into the `integration-hang-dumps-<os>` artifact, and analyzes the dump on the runner
+  with `dotnet-dump` (`threads`, `clrstack -all`, `syncblk`). It exists because the blame hang dump
+  cannot see this stall shape (a few frozen tests among a suite that keeps running never trip its
+  inactivity timer) and, when it does fire, dumps through a `fork()` inside the hung process. The
+  test host also writes a once-a-minute hint of its own after three minutes (thread counts and the
+  fork gate's reader/writer state, nothing spawned). It found the issue #312 deadlock on its first
+  stalled run.
 - **Test child processes leave evidence when they stall (issues #316, #312).** Every test that
   spawns a process (the CLI, the `dotnet exec` DXC probes, `codesign`, `slangc`, the fallback
   `dotnet publish`) now goes through one helper, `tests/ShadowDusk.Integration.Tests/ChildProcess.cs`:
@@ -345,6 +356,23 @@ that loads and renders identically to `mgfxc`'s in the real MonoGame/KNI runtime
   New `mgfxc` golden `SamplerReservationKeywords` and a new `validation/SamplerRegisterOrderGl` arm
   ("keyword-reservation"): `ps_s0`/`ps_s1` before, `ps_s2`/`ps_s3` and maxd 0 against the golden
   after.
+- **macOS: a `Process.Start` could deadlock forever against a debug SPIR-V compile (issue #312).**
+  The `DxcForkGate` added earlier in this release (PR #246) made every `fork()` wait, in its
+  `pthread_atfork` prepare handler, for the DXC compiles in flight. libSystem takes dyld's dlopen lock before it runs those
+  handlers, and a `-Zi` compile for the OpenGL or Vulkan target `dlopen`s `libdxcompiler` from
+  inside DXC (its SPIR-V emitter reads the source for `OpSource` through `DxcDllSupport`), so the
+  compile waited for the fork and the fork for the compile. In CI this froze the macOS integration
+  job about one run in two (measured with lldb stacks of the hung host, taken by the new sidecar
+  below; the blame hang dump could not help, because the runtime dumps itself by forking and that
+  fork blocked on the same lock). The gate now covers only DXC's one locale-changing call, a `-P`
+  preprocess `DxcForkGate.SettleLocale` runs before a compile whenever the process locale is not
+  the one DXC leaves behind; ordinary compiles run ungated, which is safe because Apple's
+  `setlocale` allocates under the locale lock only when the locale actually changes, and after
+  that first change every `setlocale` DXC makes is a same-name call. No emitted byte changes (the
+  change is in the locking around the native call, no flag moves; the cross-host byte-identity
+  manifest and goldens pass on all three OSes). `DxcSetlocaleAudit` now also measures that no DXC
+  call changes the locale once it has settled, and the fork probe compiles debug SPIR-V on half
+  its threads, the shape that deadlocked the old gate within seconds.
 - **Browser compiles of nested shaders hung, crashed or miscompiled (issue #271).** The in-browser
   DXC, SPIRV-Cross and vkd3d WebAssembly modules were linked with emscripten's 64 KB default stack
   (the desktop natives get 1 MB on Windows, 8 MB on Linux/macOS), and with emscripten's layout an

@@ -79,12 +79,20 @@ internal static unsafe class DxcNativeInterop
         // Off Windows, take DXC's one-time LLVM signal-handler registration out of the
         // process before any real compile can race it (see DxcSignalIsolation).
         DxcSignalIsolation.EnsureIsolated(compiler);
+        // macOS: make DXC's one-time locale change happen now, under the fork gate, so this
+        // compile's own setlocale calls are same-name calls that cannot deadlock against a
+        // concurrent fork() (see DxcForkGate).
+        DxcForkGate.SettleLocale(compiler);
         return CompileRaw(compiler, source, arguments, includeHandler);
     }
 
     /// <summary>
-    /// The raw vtable call behind <see cref="Compile"/>, without the signal isolation step
-    /// (which itself compiles through here).
+    /// The raw vtable call behind <see cref="Compile"/>, without the signal isolation and
+    /// locale settling steps (which themselves compile through here). <c>forkGated</c> holds
+    /// <see cref="DxcForkGate"/> across the native call and is only for a <c>-P</c> preprocess
+    /// that exists to perform DXC's locale change: a real compile must NOT be gated, because
+    /// the SPIR-V emitter can <c>dlopen</c> from inside it and a fork waiting for it holds
+    /// dyld's lock (issue #312).
     /// </summary>
     /// <remarks>
     /// Runs on a <see cref="NativeCompileStack"/> worker (issue #306): DXC recurses once per
@@ -100,14 +108,16 @@ internal static unsafe class DxcNativeInterop
         IDxcCompiler3 compiler,
         string source,
         IReadOnlyList<string> arguments,
-        IDxcIncludeHandler? includeHandler) =>
-        NativeCompileStack.Run(() => CompileRawOnThisThread(compiler, source, arguments, includeHandler));
+        IDxcIncludeHandler? includeHandler,
+        bool forkGated = false) =>
+        NativeCompileStack.Run(() => CompileRawOnThisThread(compiler, source, arguments, includeHandler, forkGated));
 
     private static IDxcResult CompileRawOnThisThread(
         IDxcCompiler3 compiler,
         string source,
         IReadOnlyList<string> arguments,
-        IDxcIncludeHandler? includeHandler)
+        IDxcIncludeHandler? includeHandler,
+        bool forkGated)
     {
         byte[] sourceBytes = Encoding.UTF8.GetBytes(source);
 
@@ -145,16 +155,16 @@ internal static unsafe class DxcNativeInterop
                 var compile = (delegate* unmanaged[Stdcall]<nint, void*, void*, int, void*, void*, void*, int>)
                     ((nint*)*(nint*)compiler.NativePointer)[CompileVtblSlot];
 
-                // macOS: no fork() may run while DXC is inside setlocale (see DxcForkGate).
-                // The gate covers ONLY this direct native call: every setlocale DXC makes is
-                // inside IDxcCompiler3::Compile (measured), and nothing in here can dlopen/dlsym
-                // (a first-call P/Invoke bind would), which fork() blocks while it waits. That
-                // includes DXC's own validator lookup: at the pinned commit dlopen("libdxil")
-                // runs once, in the library constructor (DllMain -> DxilLibInitialize), while
-                // DxcLoader.Register loads libdxcompiler, and DxilLibIsEnabled() never retries
-                // after a miss, so a validated-DXIL compile opens nothing here.
+                // macOS: the fork gate is held only around the -P preprocess that performs
+                // DXC's one-time locale change (see DxcForkGate). An ordinary compile runs
+                // ungated: its setlocale calls are same-name calls (no allocation under the
+                // locale lock, so no deadlock with fork()), and a SPIR-V compile with debug
+                // information dlopen()s libdxcompiler from inside this call, which a fork
+                // waiting for it would deadlock with (issue #312). DXC's validator lookup is
+                // not a concern either way: at the pinned commit dlopen("libdxil") runs once,
+                // in the library constructor, and DxilLibIsEnabled() never retries after a miss.
                 Result hr;
-                using (DxcForkGate.Enter())
+                using (forkGated ? DxcForkGate.Enter() : default)
                 {
                     hr = compile(
                         compiler.NativePointer,
