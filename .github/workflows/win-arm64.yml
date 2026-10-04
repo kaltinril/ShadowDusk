@@ -1,0 +1,153 @@
+# .github/workflows/win-arm64.yml
+# win-arm64 cross-architecture byte identity (issue #286).
+#
+# Question this answers: does ShadowDusk's faithful pipeline, running as a NATIVE win-arm64
+# process (Vortice.Dxc's win-arm64 DXC, Silk.NET's win-arm64 SPIRV-Cross), produce exactly the
+# bytes win-x64 produces? The win-x64 bytes are the render-proven ones (rung 4), so a
+# byte-for-byte match transfers those proofs to win-arm64, the same way the committed
+# cross-OS manifest transfers them to Linux and macOS.
+#
+#   1. x64-reference (windows-latest): compiles every tests/fixtures/shaders .fx for OpenGL,
+#      Vulkan and DirectX 12, plus the real-slangc corpus for the same three targets, and
+#      uploads what each compile produced (a hash, or the diagnostics of a refusal) as an
+#      artifact. ArchitectureManifest (tests/ShadowDusk.Integration.Tests/Tests) writes it.
+#   2. arm64 (windows-11-arm): builds and runs the same tests natively as arm64 (the tests
+#      assert RuntimeInformation.ProcessArchitecture == Arm64, so an emulated x64 host cannot
+#      pass) and requires every entry to equal win-x64's, for both shipped TFMs. It also runs
+#      the committed cross-OS manifest's OpenGL arm, and asserts that DirectX 11 and FNA (which
+#      need vkd3d-shader, shipped for no win-arm64) fail with the registered SD0211, never a
+#      crash.
+#
+# Nothing is committed per architecture: the comparison is always against the SAME commit's
+# win-x64 output, so a legitimate compiler-output change needs no manifest regeneration here.
+name: win-arm64
+
+on:
+  workflow_dispatch:
+  # Label-gated on PRs (the job `if:` requires the 'run-win-arm64' label). Like the other
+  # label-gated workflows it listens to the default pull_request types only, so adding the
+  # label needs a new push (or close + reopen) to take effect.
+  pull_request:
+    branches: [ main ]
+  schedule:
+    # Weekly standing run (Mondays 06:10 UTC) against HEAD of main, so the arm64 lane cannot
+    # rot unobserved between labelled PRs.
+    - cron: '10 6 * * 1'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  DOTNET_SKIP_FIRST_TIME_EXPERIENCE: '1'
+  DOTNET_NOLOGO: '1'
+  DOTNET_CLI_TELEMETRY_OPTOUT: '1'
+
+jobs:
+  x64-reference:
+    name: win-x64 reference manifest
+    runs-on: windows-latest
+    timeout-minutes: 25
+    if: |
+      github.event_name == 'workflow_dispatch' ||
+      github.event_name == 'schedule' ||
+      contains(github.event.pull_request.labels.*.name, 'run-win-arm64')
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Setup .NET 8 + .NET 10
+        uses: actions/setup-dotnet@v5
+        with:
+          dotnet-version: |
+            8.0.x
+            10.0.x
+
+      - name: Restore native tools
+        shell: pwsh
+        run: ./tools/restore.ps1
+
+      - name: Build the measuring test projects
+        shell: pwsh
+        run: |
+          dotnet build tests/ShadowDusk.Integration.Tests -c Release
+          dotnet build tests/ShadowDusk.Slang.Tests -c Release
+
+      - name: Write the win-x64 manifests
+        shell: pwsh
+        env:
+          SHADOWDUSK_ARCH_MANIFEST_WRITE: ${{ runner.temp }}/arch-manifest
+          SHADOWDUSK_EXPECT_PROCESS_ARCH: X64
+        run: |
+          dotnet test tests/ShadowDusk.Integration.Tests -c Release --no-build -f net10.0 `
+            --filter "FullyQualifiedName~ArchitectureByteIdentityTests" --logger "console;verbosity=detailed"
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          dotnet test tests/ShadowDusk.Slang.Tests -c Release --no-build -f net10.0 `
+            --filter "FullyQualifiedName~SlangArchitectureByteIdentityTests" --logger "console;verbosity=detailed"
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          Get-ChildItem "$env:SHADOWDUSK_ARCH_MANIFEST_WRITE"
+
+      - name: Upload the win-x64 manifests
+        uses: actions/upload-artifact@v4
+        with:
+          name: arch-manifest-win-x64
+          path: ${{ runner.temp }}/arch-manifest
+          if-no-files-found: error
+
+  arm64:
+    name: win-arm64 native (${{ matrix.tfm }})
+    needs: x64-reference
+    runs-on: windows-11-arm
+    timeout-minutes: 40
+    strategy:
+      fail-fast: false
+      matrix:
+        tfm: [ net8.0, net10.0 ]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Setup .NET 8 + .NET 10
+        uses: actions/setup-dotnet@v5
+        with:
+          dotnet-version: |
+            8.0.x
+            10.0.x
+
+      - name: Show the host (expect an Arm64 OS and a win-arm64 SDK)
+        shell: pwsh
+        run: |
+          dotnet --info
+          "PROCESSOR_ARCHITECTURE=$env:PROCESSOR_ARCHITECTURE"
+          [System.Runtime.InteropServices.RuntimeInformation]::OSArchitecture
+          [System.Runtime.InteropServices.RuntimeInformation]::ProcessArchitecture
+
+      - name: Restore native tools
+        shell: pwsh
+        run: ./tools/restore.ps1
+
+      - name: Build the measuring test projects
+        shell: pwsh
+        run: |
+          dotnet build tests/ShadowDusk.Integration.Tests -c Release -f ${{ matrix.tfm }}
+          dotnet build tests/ShadowDusk.Slang.Tests -c Release -f ${{ matrix.tfm }}
+
+      - name: Download the win-x64 manifests
+        uses: actions/download-artifact@v4
+        with:
+          name: arch-manifest-win-x64
+          path: ${{ runner.temp }}/arch-manifest
+
+      - name: Core pipeline on win-arm64 vs win-x64 (OpenGL, Vulkan, DirectX 12; DX11/FNA SD0211)
+        shell: pwsh
+        env:
+          SHADOWDUSK_ARCH_MANIFEST_EXPECT: ${{ runner.temp }}/arch-manifest
+          SHADOWDUSK_EXPECT_PROCESS_ARCH: Arm64
+        run: |
+          dotnet test tests/ShadowDusk.Integration.Tests -c Release --no-build -f ${{ matrix.tfm }} `
+            --filter "FullyQualifiedName~ArchitectureByteIdentityTests|FullyQualifiedName~CrossHostByteIdentityTests.OpenGL_Bytes_MatchCommittedManifest|FullyQualifiedName=ShadowDusk.Integration.Tests.Tests.CrossHostByteIdentityTests.SourceFileName_DoesNotAffect_OutputBytes" `
+            --logger "console;verbosity=detailed"
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
