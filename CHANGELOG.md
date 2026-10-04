@@ -195,7 +195,8 @@ that loads and renders identically to `mgfxc`'s in the real MonoGame/KNI runtime
   refusing with `SD0611` (issue #368).** A shader that reads `input.Color` (every XnaFiddle
   example, and every `.fx` written for SpriteBatch) converts with the `float4` uniform
   `ShadowDusk_Color` in its place. Set it each draw to the sprite's tint, white when untinted;
-  leaving it unset renders black. It is listed in `SkslConversion.SynthesizedUniforms` with an
+  never leave it unset (SkiaSharp does not zero a runtime effect's uniform buffer, so an
+  unset value is undefined, not black). It is listed in `SkslConversion.SynthesizedUniforms` with an
   `SD0614` warning, like `ShadowDusk_Resolution`. `TreatVaryingsAsUniforms` still governs every
   other interpolant (still refused by name otherwise). Callers that listed `"COLOR0"` in it keep
   working and get the same output, but the uniform is now named `ShadowDusk_Color`, not
@@ -277,7 +278,32 @@ that loads and renders identically to `mgfxc`'s in the real MonoGame/KNI runtime
   author's split `Texture2D` + `SamplerState : register(sN)` pair keeps the reservation rule, and
   DirectX, Vulkan and FNA output is unchanged. Rendered in real MonoGame DesktopGL by a new
   `validation/SlangTexturedGl` row (maxd 0 vs the `mgfxc` golden; it rendered white before).
-
+- **A full `dotnet test` no longer rewrites a tracked file (issue #361).**
+  `Phase41StructuralDivergenceMatrixTests` regenerated
+  `plan/PHASE-41-appendix/structural-divergence-matrix.md` on every run, so the tree went dirty
+  whenever a fixture landed without the appendix being regenerated in the same commit (the census
+  count is two cells per non-golden fixture; the content itself is deterministic). It now compares and fails on drift, listing the
+  lines that changed and how to regenerate (`SHADOWDUSK_REGENERATE_PHASE41_APPENDIX=1`, see
+  `project_rules.md`). The report no longer stamps the assembly version, which moved on every
+  release bump without any cell changing, so releases no longer carry a regenerated appendix.
+- **Shell and Python scripts check out with LF on Windows (issue #357).** `.gitattributes` pins
+  `*.sh`, `*.bash` and `*.py` to `eol=lf` (bash rejected `set -euo pipefail\r`, and a CRLF shebang
+  names no interpreter). `VerifySlangNupkgScriptTests` runs the checked-out
+  `tools/verify-slang-nupkg.sh` instead of an LF-converted copy, and `ScriptLineEndingTests` pins
+  the rules and the checkout. A checkout made before the rules keeps CRLF copies until they are
+  deleted and re-checked-out; the test failure says how.
+- **A custom NuGet global-packages folder no longer breaks the foreign-DXC tests or the mgfxc
+  lookups (issue #362).** The one `$(NuGetPackageRoot)` concatenation (fixed in #354) is now the
+  only shape `NuGetPackageRootUsageTests` allows, across every project file. A missing DXC 1.9
+  fixture names the file and the NuGet directory the build copied it from.
+  `tools/compile-fixtures.ps1` and `validation/ReservedWordGl` read `NUGET_PACKAGES` before
+  `~/.nuget/packages`, like the other drivers.
+- **Memo and no-memo DirectX / FNA compiles are compared byte for byte (issue #358).** An internal
+  `CompilerOptions.BypassDxbcMemo` seam (not a consumer setting) skips `MemoizingDxbcCompiler`, and
+  every MonoGame stock effect is compiled both ways on DirectX and FNA with identical container
+  bytes and warnings (or identical errors). The bypass arm reaches vkd3d once per pass (64 calls for
+  `BasicEffect`), so the two arms are not the memo twice; a deliberately broken memo key fails 9 of
+  the 12 cases.
 - **`ShadowDusk.ImageTests` no longer fails with `WGL: Failed to make context current: The handle is
   invalid` and then hangs the test host on Windows (issue #345).** The GL fixture created its hidden
   window on a thread-pool thread, and Windows destroys a window when its creating thread exits: once
