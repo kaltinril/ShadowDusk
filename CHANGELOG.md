@@ -14,6 +14,14 @@ that loads and renders identically to `mgfxc`'s in the real MonoGame/KNI runtime
 
 ### Added
 
+- **Windows on Arm (win-arm64) is measured, and `ShadowDusk.Slang` bundles slangc for it (issue #286).** A new CI lane
+  (`.github/workflows/win-arm64.yml`, PR label `run-win-arm64`, manual dispatch, weekly) compiles every fixture `.fx`
+  for OpenGL, Vulkan and DirectX 12 as a native arm64 process on GitHub's `windows-11-arm` runner and requires win-x64's
+  exact result: all 174 match (441 outputs byte-identical, 81 identical refusals), on net8.0 and net10.0. DirectX 11 and
+  FNA on win-arm64 return the registered `SD0211` (ShadowDusk has no vkd3d-shader build for it), never a crash.
+  `ShadowDusk.Slang` now packs upstream's `slang-2026.14.1-windows-aarch64` slangc (pinned and SHA-256-verified in
+  `tools/restore.*`), and its corpus also matches win-x64 there. The `ShadowDusk.Slang` nupkg grows from about 53 MB to
+  about 65 MB (25.5 MB more unpacked, under `runtimes/win-arm64/native/`).
 - **`SkslConverter` can run in the browser (issue #349).** `SkslConverter.Convert` has an overload taking
   DXC / SPIRV-Cross factories (like `EffectCompiler`), and `WasmShaderCompiler.ConvertToSksl` is the
   synchronous entry point after `InitializeAsync()`. The default desktop path is unchanged.

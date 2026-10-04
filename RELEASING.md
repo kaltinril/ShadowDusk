@@ -13,7 +13,7 @@ to nuget.org, and attaches self-contained CLI binaries for each RID to a GitHub 
 | `ShadowDusk.HLSL` | FX9 pre-parser, DXC integration, vkd3d-shader / `d3dcompiler_47` DXBC backends |
 | `ShadowDusk.GLSL` | SPIR-V → GLSL via SPIRV-Cross + MojoShader-dialect rewriter |
 | `ShadowDusk.ShaderToy` | Standalone pure-managed ShaderToy/GLSL → `.fx` converter (optional; not in the `Compiler` graph) |
-| `ShadowDusk.Slang` | Optional real-slangc Slang front-end (Phase 66). Depends on `ShadowDusk.Compiler`; carries slangc for win-x64, linux-x64, osx-x64, osx-arm64 under `runtimes/<rid>/native/` (~53 MB nupkg), gated by `release.yml`. |
+| `ShadowDusk.Slang` | Optional real-slangc Slang front-end (Phase 66). Depends on `ShadowDusk.Compiler`; carries slangc for win-x64, win-arm64, linux-x64, osx-x64, osx-arm64 under `runtimes/<rid>/native/` (~65 MB nupkg), gated by `release.yml`. |
 | `ShadowDusk.Compiler` | The consumer-facing product library (`EffectCompiler : IShaderCompiler`) |
 | `ShadowDusk.Cli` | The `ShadowDuskCLI` `dotnet tool` |
 | `ShadowDusk.Wasm` | The `net8.0-browser` in-browser compiler |
@@ -241,10 +241,10 @@ first (the `/release` skill does this for you).
 
 > **slangc packing (`ShadowDusk.Slang` — Phase 66, issues #226/#227):** `ShadowDusk.Slang.csproj`
 > packs each **restored** `tools/slang/<rid>/` pair (the slangc executable + its slang-compiler
-> library) for win-x64, linux-x64, osx-x64 and osx-arm64. `tools/restore.{ps1,sh}` download the
+> library) for win-x64, win-arm64, linux-x64, osx-x64 and osx-arm64. `tools/restore.{ps1,sh}` download the
 > official shader-slang v2026.14.1 release zips, verify each zip's SHA-256 before extracting, and
 > verify each extracted file against its own pin. `release.yml`'s `pack-desktop` job hard-gates
-> the restored files and then fails red if the packed nupkg is missing any of the eight natives
+> the restored files and then fails red if the packed nupkg is missing any of the ten natives
 > or `THIRD-PARTY-NOTICES.txt` (exact entry names). The list lives in ONE script,
 > `tools/verify-slang-nupkg.sh`, which `tools/verify-slang-packaging.sh` (pack-consume.yml) runs
 > too; to check a locally packed nupkg, `bash tools/verify-slang-nupkg.sh <path/to/nupkg>` (exits
@@ -253,7 +253,10 @@ first (the `/release` skill does this for you).
 > older): its `tools/verify-slang-packaging.sh` step is the only proof that a cold consumer can
 > install the package and run slangc on Linux, macOS and Windows, and its macOS
 > `tools/verify-slang-osx-x64-rosetta.sh` step is the only run of the packaged **osx-x64** slangc
-> (under Rosetta 2, output byte-identical to osx-arm64; issue #352). Host floors are upstream's:
+> (under Rosetta 2, output byte-identical to osx-arm64; issue #352). The packaged **win-arm64**
+> slangc runs only in the `win-arm64` workflow (`windows-11-arm`, issue #286): dispatch it on the
+> release commit too (or check its weekly run is green on it); it is the only native arm64 run of
+> the core pipeline and of that slangc. Host floors are upstream's:
 > Linux Ubuntu 22.04+, macOS 26+ (issue #237).
 
 ---

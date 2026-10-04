@@ -154,6 +154,9 @@ history, not just SemVer's letter):
   only cold-consumer proof for every package, and its `tools/verify-slang-packaging.sh` step is
   the only place `ShadowDusk.Slang`'s slangc runs from an installed package on all three OSes
   (its macOS `verify-slang-osx-x64-rosetta.sh` step is the only run of the osx-x64 slangc).
+  The `win-arm64` workflow (`gh workflow run win-arm64.yml --ref <release commit>`) must be green on
+  the release commit too: it is the only native win-arm64 run (core pipeline byte identity with
+  win-x64, and the packaged win-arm64 slangc through the cold consumer; issue #286).
   It has no push trigger, so dispatch it (`gh workflow run pack-consume.yml --ref main`) if the
   last run predates the release commit.
 - **Commit directly, no `/commit` skill, no co-author / tool-attribution trailer of any

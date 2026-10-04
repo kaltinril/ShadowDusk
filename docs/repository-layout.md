@@ -96,8 +96,8 @@ ShadowDusk/
 │   ├── vkd3d/                     # vkd3d-shader native (cross-platform DXBC backend)
 │   ├── vkd3d-wasm/                # vkd3d-shader compiled to WASM (browser DXBC + FNA export)
 │   ├── plantuml/                  # PlantUML jar for regenerating docs/*.puml diagrams
-│   ├── slang/<rid>/               # real slangc + its slang-compiler library for win-x64, linux-x64, osx-x64,
-│   │                              #   osx-arm64 (ShadowDusk.Slang packs all four; restored + hash-pinned)
+│   ├── slang/<rid>/               # real slangc + its slang-compiler library for win-x64, win-arm64, linux-x64,
+│   │                              #   osx-x64, osx-arm64 (ShadowDusk.Slang packs all five; restored + hash-pinned)
 │   ├── slang-consumer/            # The scratch ShadowDusk.Slang consumer (Program.cs + csproj) that
 │   │                              #   tools/verify-slang-packaging.sh (run by pack-consume.yml) COPIES out of
 │   │                              #   tree and consumes cold, framework-dependent + self-contained (issue #225).

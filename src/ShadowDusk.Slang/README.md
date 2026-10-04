@@ -15,11 +15,12 @@ var result = await new SlangCompiler().CompileAsync(
 byte[] mgfx = result.Value.Data;
 ```
 
-Nothing to install: `slangc` rides inside this package for **win-x64, linux-x64, osx-x64 and
-osx-arm64** and resolves from your app's own output, whether you `dotnet run` or publish
+Nothing to install: `slangc` rides inside this package for **win-x64, win-arm64, linux-x64, osx-x64
+and osx-arm64** and resolves from your app's own output, whether you `dotnet run` or publish
 self-contained. Two host floors come from the upstream binaries themselves:
 
 - **Linux** needs a GCC 11+ `libstdc++` (Ubuntu 22.04 or later).
+- **Windows on Arm** (win-arm64): OpenGL, Vulkan and DirectX 12 compile, byte-identical to win-x64. DirectX 11 and FNA return `SD0211`, because ShadowDusk has no vkd3d-shader build for win-arm64.
 - **macOS** needs **macOS 26 or later**: the upstream macOS build declares that minimum. ShadowDusk does not build its own slangc for older macOS; open an issue if you need one.
 
 On any other host, `SlangCompiler` returns `SD0620` naming the reason instead of crashing.
