@@ -639,6 +639,44 @@ internal sealed class CompilationPipeline
             };
         }
 
+        // The pinned register can collide with a MODERN `SamplerState S : register(sN)` the same
+        // shader reads; fxc (mgfxc 3.8.4.1 /Profile:DirectX_11) refuses that with X4500 at the
+        // modern declaration, and vkd3d with its own E5015 ("Multiple variables bound to space
+        // 115"). Report it as SD0227, naming both samplers, with vkd3d's text kept raw.
+        ShaderError ExplainDirectXRegisterClash(ShaderError error)
+        {
+            if (!directX || legacySamplerRegisters.Count == 0 || !string.Equals(error.Code, "E5015", StringComparison.Ordinal))
+                return error;
+            foreach (System.Text.RegularExpressions.Match m in System.Text.RegularExpressions.Regex.Matches(
+                         glCompileSource.Text,
+                         @"(?<![A-Za-z0-9_])Sampler(?:Comparison)?State\s+(\w+)\s*:\s*register\s*\(\s*[sS](\d+)\s*\)"))
+            {
+                string modern = m.Groups[1].Value;
+                if (legacySamplerRegisters.ContainsKey(modern)
+                    || !int.TryParse(m.Groups[2].Value, System.Globalization.NumberStyles.None,
+                                     System.Globalization.CultureInfo.InvariantCulture, out int slot))
+                {
+                    continue;
+                }
+                string? legacy = legacySamplerRegisters
+                    .Where(r => r.Value == slot)
+                    .Select(r => r.Key)
+                    .OrderBy(n => n, StringComparer.Ordinal)
+                    .FirstOrDefault();
+                if (legacy is null)
+                    continue;
+                return error with
+                {
+                    Code = "SD0227",
+                    Message = $"legacy sampler '{legacy}' and sampler '{modern}' are both bound to register s{slot} and both " +
+                              "read by the same shader. fxc (and so mgfxc) refuses this on DirectX 11 (X4500: overlapping " +
+                              $"register semantics not yet implemented 's{slot}'); give each sampler its own register.",
+                    RawDiagnostics = error.RawDiagnostics ?? error.FxcFormattedMessage,
+                };
+            }
+            return error;
+        }
+
         foreach (TechniqueInfo technique in fxParsed.Techniques)
         {
             var mgfxPasses = new List<MgfxPassInfo>();
@@ -682,7 +720,7 @@ internal sealed class CompilationPipeline
                     {
                         compileFailure = LegacySamplerRecoveryCandidate(
                             options.Target, recovered, sourceFileName, macros, includeResolver);
-                        return Fail(compileOutput.Blob.Error, runWarnings);
+                        return Fail(ExplainDirectXRegisterClash(compileOutput.Blob.Error), runWarnings);
                     }
 
                     AccumulateWarnings(runWarnings, seenWarnings, compileOutput.Warnings);
@@ -740,7 +778,7 @@ internal sealed class CompilationPipeline
                     {
                         compileFailure = LegacySamplerRecoveryCandidate(
                             options.Target, recovered, sourceFileName, macros, includeResolver);
-                        return Fail(compileOutput.Blob.Error, runWarnings);
+                        return Fail(ExplainDirectXRegisterClash(compileOutput.Blob.Error), runWarnings);
                     }
 
                     AccumulateWarnings(runWarnings, seenWarnings, compileOutput.Warnings);

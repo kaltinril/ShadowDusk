@@ -105,6 +105,38 @@ public sealed class LegacySamplerUnitTests
             customMessage: $"{shape}: update DirectX11TextureOrderDivergence (ours {string.Join(" ", Records(subject))}, mgfxc {string.Join(" ", Records(golden))})");
     }
 
+    /// <summary>
+    /// DirectX 11: the legacy register is now bound, so it can collide with a modern
+    /// <c>SamplerState S : register(sN)</c>. mgfxc 3.8.4.1 refuses the shape with X4500 at the
+    /// modern declaration when both are read, and compiles it when the modern one is not read
+    /// (measured 2026-10-03); vkd3d's own E5015 is reported as SD0227, its text kept raw.
+    /// </summary>
+    [Fact]
+    [Trait("Platform", "DirectX")]
+    public async Task DirectX11_LegacyRegisterBesideAModernSamplerOnTheSameRegister_IsSD0227()
+    {
+        const string decl = "#define PS_SHADERMODEL ps_4_0_level_9_1\nsampler2D A : register(s1);\nTexture2D T;\nSamplerState S : register(s1);\n";
+        const string tech = "\ntechnique Main { pass P0 { PixelShader = compile PS_SHADERMODEL MainPS(); } };\n";
+
+        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(120));
+        var both = await new EffectCompiler().CompileAsync(
+            decl + "float4 MainPS(float2 uv : TEXCOORD0) : COLOR0 { return tex2D(A, uv) * T.Sample(S, uv); }" + tech,
+            new CompilerOptions { Target = PlatformTarget.DirectX, SourceFileName = "clash.fx" }, cts.Token);
+        both.IsFailure.ShouldBeTrue();
+        ShaderError error = both.Error.Where(e => e.Severity == ShaderErrorSeverity.Error).ShouldHaveSingleItem();
+        error.Code.ShouldBe("SD0227");
+        error.Message.ShouldContain("'A'", Case.Sensitive);
+        error.Message.ShouldContain("'S'", Case.Sensitive);
+        error.Message.ShouldContain("s1", Case.Sensitive);
+        error.Line.ShouldBe(4, "fxc reports the modern declaration");
+        error.RawDiagnostics.ShouldNotBeNull().ShouldContain("E5015", Case.Sensitive);
+
+        var unused = await new EffectCompiler().CompileAsync(
+            decl + "float4 MainPS(float2 uv : TEXCOORD0) : COLOR0 { return tex2D(A, uv); }" + tech,
+            new CompilerOptions { Target = PlatformTarget.DirectX, SourceFileName = "clash.fx" }, cts.Token);
+        unused.IsSuccess.ShouldBeTrue("mgfxc compiles it when the modern sampler is not read");
+    }
+
     // ------------------------------------------------------------------------------------------
 
     /// <summary>`texture@unit`, the texture named as ShadowDusk names it (mgfxc's `S+T` reduced to `T`).</summary>
