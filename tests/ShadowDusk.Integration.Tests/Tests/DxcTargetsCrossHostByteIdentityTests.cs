@@ -89,7 +89,9 @@ public sealed class DxcTargetsCrossHostByteIdentityTests
     /// </summary>
     private static readonly Dictionary<string, (string Dxil, string MgfxNormalized)> MacOsDivergences = new(StringComparer.Ordinal)
     {
-        ["DirectX12.Debug/ForwardLighting.fx"] = ("pending", "pending"),
+        ["DirectX12.Debug/ForwardLighting.fx"] = (
+            Dxil: "0045db21d136ae6dfe34aaae454e3908e9e66fb86d4eb921b14e50a4e5a5b2f2",
+            MgfxNormalized: "3e8c03831a06d4901ac3689304cea07de5f8359067e32f05836472d03438652a"),
     };
 
     private static string ShadersRoot => Path.Combine(AppContext.BaseDirectory, "fixtures", "shaders");

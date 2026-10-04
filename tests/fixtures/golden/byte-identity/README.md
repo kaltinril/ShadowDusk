@@ -57,7 +57,16 @@ size, the MGFX record length and the effect key all follow. The canonical form r
 those, and nothing else: the disassembly minus the `; shader hash:` and `; shader debug name:`
 lines, the `!llvm.ident` node and its string, with every other occurrence of that string
 replaced by a fixed token. The two unsigned-DXIL warnings (`SD0214`, and DXC's own *"DXIL.dll
-not found"*) are left out of `warnings`/`errors` for the same reason. Never widen this.
+not found"*, whose wording itself differs between the Linux and macOS DXC builds) are left out
+of `warnings`/`errors` for the same reason. One printer artifact is undone too: DXC's
+disassembler escapes non-ASCII string bytes according to the locale DXC leaves set, so macOS
+prints them raw where Windows and Linux print `\XX`; the canonical text escapes every such byte.
+Never widen this.
+
+**The one known difference** (measured 2026-10-04) is `DirectX12.Debug/ForwardLighting.fx` on
+macOS: its DXIL lists a split global's debug records in another order (instruction-identical).
+It is not loosened away but pinned in the test's `MacOsDivergences` as macOS's exact expected
+`dxil`/`mgfxNormalized`, which must still differ from the manifest's.
 
 Regenerate exactly as `manifest.json` (below). `SHADOWDUSK_BYTE_IDENTITY_DUMP=<dir>` writes every
 fixture's SPIR-V, DXIL container and DXIL disassembly there; the CI integration lane sets it and
@@ -80,8 +89,8 @@ uploads the directory when the job fails, so a mismatch can be diffed against a 
   win/linux; our own dylib on macOS, tag `native-dxc-1.7.2212.40`). These are NOT all one
   commit: the Windows DLL and our macOS dylib are `e043f4a1`, Vortice's linux-x64 `.so` reports
   `8c9d92be7` (the `v1.7.2212` tag, 28 commits earlier). The OpenGL hashes match on all three
-  hosts anyway; this manifest pins no Vulkan or DirectX 12 output, so that gap is unmeasured there
-  (see `project_facts.md`), SPIRV-Cross (Silk.NET.SPIRV.Cross.Native 2.23.0),
+  hosts anyway, and so do the Vulkan and DirectX 12 entries of `dxc-targets-manifest.json`
+  (measured 2026-10-04, see `project_facts.md`), SPIRV-Cross (Silk.NET.SPIRV.Cross.Native 2.23.0),
   vkd3d-shader 2.1 (tag `native-vkd3d-2.1`). Bumping any of these legitimately changes
   the manifest — regenerate and review.
 
