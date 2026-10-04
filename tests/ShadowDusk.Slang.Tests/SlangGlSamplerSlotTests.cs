@@ -669,6 +669,27 @@ public sealed class SlangGlSamplerSlotTests
         string.Concat(Named(slang).OrderBy(s => s.TextureSlot).Select(s => s.Texture + s.TextureSlot)).ShouldBe(expected);
     }
 
+    [Theory]
+    // A declaration in an INACTIVE #if branch is not the declaration order slangc compiled: with
+    // no register written no preprocess pass runs, so the raw text must not place it. mgfxc (per
+    // the PR #384 review) and the .fx route: A 0, B 1 for the first; B 0, A 1 for the second.
+    [InlineData("SamplerState S;\n#if FEATURE_X\nTexture2D B;\nTexture2D A;\n#else\nTexture2D A;\nTexture2D B;\n#endif\n", "A0B1")]
+    [InlineData("SamplerState S;\n#if 0\nfloat A;\n#endif\nTexture2D B;\nTexture2D A;\n", "B0A1")]
+    public void DeclarationsInAnInactiveBranch_DoNotDecideTheUnits(string declarations, string expected)
+    {
+        MgfxBlobReader slang = SlangEffect(
+            declarations + "[shader(\"fragment\")]\nfloat4 MainPS(float4 pos : SV_Position, float2 uv : TEXCOORD0) : SV_Target { return A.Sample(S, uv) + B.Sample(S, uv); }\n",
+            PlatformTarget.OpenGL);
+        var fx = new EffectCompiler().Compile(
+            FxHeader + declarations +
+            "float4 MainPS(float4 pos : SV_Position, float2 uv : TEXCOORD0) : SV_Target { return A.Sample(S, uv) + B.Sample(S, uv); }\ntechnique T0 { pass P0 { PixelShader = compile PS_SHADERMODEL MainPS(); } }\n",
+            new CompilerOptions { Target = PlatformTarget.OpenGL, SourceFileName = "Branch.fx" });
+        fx.IsSuccess.ShouldBeTrue(fx.IsFailure ? string.Join("; ", fx.Error.Select(e => e.FxcFormattedMessage)) : "");
+
+        Named(slang).ShouldBe(Named(MgfxBlobReader.Parse(fx.Value.Data)));
+        string.Concat(Named(slang).OrderBy(s => s.TextureSlot).Select(s => s.Texture + s.TextureSlot)).ShouldBe(expected);
+    }
+
     private const string CombinedAPixelShader = """
         [shader("fragment")]
         float4 MainPS(float4 pos : SV_Position, float2 uv : TEXCOORD0) : SV_Target

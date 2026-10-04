@@ -90,6 +90,27 @@ public sealed class SlangcCombinedSamplerGlSlotsTests
         result.Error.Message.ShouldContain("the combined samplers 'A' and 'B' all declare register(s0)", Case.Sensitive);
     }
 
+    [Theory]
+    // The raw text can only order what every macro setting compiles; anything that can add or
+    // rename a declaration means no raw order at all.
+    [InlineData("#define T2 Texture2D\nT2 A;\n")]
+    [InlineData("#include \"x.slang\"\nTexture2D A;\n")]
+    [InlineData("Texture2D A##B;\n")]
+    [InlineData("Texture2D A;\\\n")]
+    [InlineData("#if X\nTexture2D A;\n")]
+    public void UnconditionalRawText_IsNull_WhenTheRawTextCannotSpeakForSlangc(string source) =>
+        SlangcCombinedSamplerGlSlots.UnconditionalRawText(source, []).ShouldBeNull();
+
+    [Fact]
+    public void UnconditionalRawText_BlanksEveryConditionalBranch()
+    {
+        string text = SlangcCombinedSamplerGlSlots.UnconditionalRawText(
+            "#if 0\nfloat A;\n#else\nTexture2D C;\n#endif\nTexture2D B;\nTexture2D A;\n", []).ShouldNotBeNull();
+
+        var order = SlangcCombinedSamplerGlSlots.DeclarationOrder(text, "Raw.slang", rawSource: true);
+        order.Keys.ShouldBe(["B", "A"]);
+    }
+
     [Fact]
     public void DeclarationOrder_IsTheAuthorsOrder_NotSlangcsFirstUseOrder()
     {

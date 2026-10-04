@@ -284,7 +284,10 @@ that loads and renders identically to `mgfxc`'s in the real MonoGame/KNI runtime
   unit N too. Also fixed: the GL units follow the author's DECLARATION order, as `mgfxc` fills them,
   not slangc's first-use order (`Texture2D T; SamplerState S : register(s0); Sampler2D A;` sampled A
   first gave A unit 1 and T unit 2; `mgfxc` and the `.fx` route give T 1, A 2), when every sampled
-  texture is declared in the entry source.
+  texture is declared in the entry text slangc compiled: its preprocessed text when the register pass
+  read it, else the raw text outside every `#if` block when no `#define`, `#include`, paste, splice
+  or spelled `-D` can change it (a declaration in an inactive branch never places one); otherwise
+  slangc's own order, as before. No extra slangc run.
 - **vkd3d-shader and SPIRV-Cross are loaded only as ShadowDusk's pinned builds, by absolute path
   (issue #350, the counterpart of #270's DXC fix).** `Vkd3dLoader` (DirectX 11, FNA) and
   `SpvcLoader` (OpenGL) used to fall back to a bare-name load and then to the runtime's default

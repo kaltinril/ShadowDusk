@@ -112,6 +112,44 @@ internal static class SlangcCombinedSamplerGlSlots
         return order;
     }
 
+    /// <summary>
+    /// The raw entry source with every conditional block (<c>#if</c>/<c>#ifdef</c>/<c>#ifndef</c>
+    /// through its <c>#endif</c>, all branches) blanked, for <see cref="DeclarationOrder"/>: what is
+    /// left is compiled whatever the macros are, in this order. Null when the raw text cannot speak
+    /// for slangc's declaration order at all: a <c>#define</c> or <c>#include</c> (a macro use or an
+    /// included file can add or rename a declaration), a token paste, a line splice, a <c>-D</c>
+    /// name the source spells, or unbalanced conditionals. A texture declared inside a blanked
+    /// block is simply absent, and an absent texture leaves the allocator in slangc's own order
+    /// (the review's repro: <c>#if FEATURE_X / Texture2D B; Texture2D A; / #else / Texture2D A;
+    /// Texture2D B; / #endif</c> must not be ordered by its inactive branch).
+    /// </summary>
+    public static string? UnconditionalRawText(string slangSource, IReadOnlyList<ShadowDusk.Core.Preprocessor.UserDefine> defines)
+    {
+        if (slangSource.Contains("##", StringComparison.Ordinal)
+            || Regex.IsMatch(slangSource, @"\\\r?\n")
+            || Regex.IsMatch(slangSource, @"^[ \t]*#[ \t]*(?:define|include)\b", RegexOptions.Multiline)
+            || defines.Any(d => Regex.IsMatch(slangSource, $@"(?<!\w){Regex.Escape(d.Name)}(?!\w)")))
+        {
+            return null;
+        }
+
+        string[] lines = SlangSourceMask.Mask(slangSource).Split('\n');
+        int depth = 0;
+        for (int i = 0; i < lines.Length; i++)
+        {
+            Match directive = Regex.Match(lines[i], @"^[ \t]*#[ \t]*(?<word>\w+)");
+            string word = directive.Success ? directive.Groups["word"].Value : "";
+            if (word is "if" or "ifdef" or "ifndef")
+                depth++;
+            bool blank = depth > 0 || directive.Success;
+            if (word == "endif" && --depth < 0)
+                return null;
+            if (blank)
+                lines[i] = new string(' ', lines[i].Length);
+        }
+        return depth == 0 ? string.Join('\n', lines) : null;
+    }
+
     private static int LineOf(string text, int offset)
     {
         int line = 1;

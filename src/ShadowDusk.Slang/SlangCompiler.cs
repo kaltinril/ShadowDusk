@@ -479,11 +479,25 @@ public sealed class SlangCompiler
             // OpenGL fills units in the author's declaration order (mgfxc's rule); slangc emits
             // globals in first-use order. Read from the entry text the register pass read when it
             // ran (slangc's own preprocessed view), else the raw source. No extra slangc run.
+            // slangc's own preprocessed entry text when a pass already read it; else the raw text
+            // outside every conditional block, when nothing else in it can add or rename a
+            // declaration (an inactive #if branch must not place one); else no order (the
+            // allocator keeps slangc's order, as before). Never an extra slangc run.
             string? readEntryText = kept.Value.ReadTexts
                 .Where(t => t.File == sourceName).Select(t => t.Text).FirstOrDefault();
-            downstreamOptions = downstreamOptions.WithGlTextureDeclarationOrder(
-                SlangcCombinedSamplerGlSlots.DeclarationOrder(
-                    readEntryText ?? slangSource, sourceName, rawSource: readEntryText is null));
+            string? unconditionalRaw = readEntryText is null
+                ? SlangcCombinedSamplerGlSlots.UnconditionalRawText(slangSource, options.Defines)
+                : null;
+            if (readEntryText is not null)
+            {
+                downstreamOptions = downstreamOptions.WithGlTextureDeclarationOrder(
+                    SlangcCombinedSamplerGlSlots.DeclarationOrder(readEntryText, sourceName, rawSource: false));
+            }
+            else if (unconditionalRaw is not null)
+            {
+                downstreamOptions = downstreamOptions.WithGlTextureDeclarationOrder(
+                    SlangcCombinedSamplerGlSlots.DeclarationOrder(unconditionalRaw, sourceName, rawSource: true));
+            }
         }
 
         Result<CompiledShader, ShaderError[]> downstream = _downstreamCompiler.Compile(fxText, downstreamOptions, cancellationToken);
