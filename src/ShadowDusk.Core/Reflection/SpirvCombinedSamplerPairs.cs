@@ -116,7 +116,18 @@ public static class SpirvCombinedSamplerPairs
     ///
     /// <para><b>The rule, in one sentence:</b> in texture-declaration order, a pair whose sampler
     /// declared an explicit register takes it, and every other pair takes the lowest register not
-    /// already taken and not reserved by a modern <c>SamplerState : register(sN)</c>.</para>
+    /// already taken and not reserved by a modern <c>SamplerState : register(sN)</c>, every
+    /// MODERN pair before any LEGACY one.</para>
+    ///
+    /// <para><b>Modern before legacy</b> (measured 2026-10-03 against <c>mgfxc</c> 3.8.4.1
+    /// <c>/Profile:OpenGL</c> on 15 mixed shapes): a legacy <c>sampler2D A;</c> declared BEFORE a
+    /// modern <c>Texture2D T; SamplerState S;</c> pair still lands after it (<c>S+T</c> on
+    /// <c>ps_s0</c>, <c>A</c> on <c>ps_s1</c>), whatever the declaration or sampling order; two
+    /// of each, interleaved, give both modern pairs <c>s0</c>/<c>s1</c> and the legacy samplers
+    /// <c>s2</c>/<c>s3</c>; a legacy sampler with an explicit register still takes it first
+    /// (<c>A : register(s0)</c> before the pair gives <c>A</c> on 0 and the pair on 1). The
+    /// caller names the legacy pairs by texture through <paramref name="legacyTextures"/>; with
+    /// none (no legacy sampler, or a caller that has no such notion) the order is unchanged.</para>
     ///
     /// <para>That single rule reproduces every shape measured against the pinned <c>mgfxc</c>,
     /// and it is why the legacy form is <b>not</b> a special case: compiling for OpenGL means
@@ -148,7 +159,8 @@ public static class SpirvCombinedSamplerPairs
         IReadOnlyList<CombinedSamplerPair> pairs,
         IReadOnlyDictionary<string, int>? explicitSlots = null,
         IReadOnlySet<int>? reservedSlots = null,
-        IReadOnlyDictionary<string, int>? declarationOrder = null)
+        IReadOnlyDictionary<string, int>? declarationOrder = null,
+        IReadOnlySet<string>? legacyTextures = null)
     {
         ArgumentNullException.ThrowIfNull(pairs);
 
@@ -165,7 +177,8 @@ public static class SpirvCombinedSamplerPairs
         bool useDeclarationOrder = declarationOrder is { Count: > 0 }
             && pairs.All(p => declarationOrder.ContainsKey(p.TextureName));
         int[] order = Enumerable.Range(0, pairs.Count)
-            .OrderBy(k => useDeclarationOrder ? declarationOrder![pairs[k].TextureName] : 0)
+            .OrderBy(k => legacyTextures?.Contains(pairs[k].TextureName) == true ? 1 : 0)
+            .ThenBy(k => useDeclarationOrder ? declarationOrder![pairs[k].TextureName] : 0)
             .ThenBy(k => pairs[k].TextureDeclarationIndex)
             .ThenBy(k => k)
             .ToArray();

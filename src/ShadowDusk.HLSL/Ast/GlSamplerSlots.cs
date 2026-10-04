@@ -29,4 +29,20 @@ public sealed record GlSamplerSlots(
     /// </summary>
     public IReadOnlyDictionary<string, int> LegacySamplerRegisters { get; init; } =
         new Dictionary<string, int>(StringComparer.Ordinal);
+
+    /// <summary>
+    /// TEXTURE names (as the preprocessed view spells them) that a LEGACY sampler samples through
+    /// (its synthesized texture, or the one its <c>sampler_state</c> block names). fxc allocates the
+    /// OpenGL units of these AFTER every modern (texture, sampler) pair, so the allocator needs to
+    /// tell the two kinds apart.
+    /// </summary>
+    public IReadOnlySet<string> LegacyTextures { get; init; } = new HashSet<string>(StringComparer.Ordinal);
+
+    /// <summary>
+    /// LEGACY sampler name -> the texture it samples through, both as the preprocessed view spells
+    /// them. The DirectX 11 sampler table needs the join: <c>mgfxc</c>'s record for a legacy
+    /// sampler's texture carries that SAMPLER's DXBC binding, not the texture's.
+    /// </summary>
+    public IReadOnlyDictionary<string, string> LegacySamplerTextures { get; init; } =
+        new Dictionary<string, string>(StringComparer.Ordinal);
 }

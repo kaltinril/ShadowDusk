@@ -10,6 +10,15 @@
 //
 // This is the DirectX analog of validation/VsDriven: arm-vs-arm, same scene, only the compiler
 // differs. Run on Windows: `dotnet run --project validation/DxModernFeatures`.
+//
+// ARM "legacy-register" (tests/fixtures/golden/legacy-sampler-units/DxLegacyRegisterRender.fx):
+// a legacy `sampler2D A : register(s1);` must bind its SAMPLER at s1, as fxc does (mgfxc
+// 3.8.4.1 records `t0 s1`). The SM4 rewrite used to drop the clause, so the sampler fell to s0
+// and the state the game set on GraphicsDevice.SamplerStates[1] never reached it. The scene
+// draws a 2-texel (red|green) sprite through SpriteBatch (LinearClamp on s0) with PointWrap on
+// s1 and samples at uv*3: the s1 wrap repeats the stripes, the s0 clamp smears the edge
+// texel. ShadowDusk's vkd3d build is pixel-diffed against the COMMITTED mgfxc golden, and the
+// golden is rendered once more with PointClamp on s1 to prove the scene can tell the two apart.
 
 using System;
 using System.Linq;
@@ -78,7 +87,121 @@ Console.WriteLine($"\n[dx-modern] oracle rendered: {game.OracleRendered}, vkd3d 
 Console.WriteLine($"[dx-modern] vkd3d-vs-fxc max per-channel delta: {(maxd < 0 ? "n/a" : maxd.ToString())}");
 Console.WriteLine($"[dx-modern] scene non-trivial (VTF actually deformed the quad): {game.NonTrivial}");
 Console.WriteLine($"[dx-modern] verdict: {(ok ? "PASS" : "FAIL")}");
-return ok ? 0 : 1;
+
+// ---- Arm "legacy-register" ----------------------------------------------------------------
+string repoRoot = FindRepoRoot();
+string unitsDir = System.IO.Path.Combine(repoRoot, "tests", "fixtures", "golden", "legacy-sampler-units");
+string legacySrc = await System.IO.File.ReadAllTextAsync(System.IO.Path.Combine(unitsDir, "DxLegacyRegisterRender.fx"));
+byte[] legacyGolden = await System.IO.File.ReadAllBytesAsync(System.IO.Path.Combine(unitsDir, "DxLegacyRegisterRender.DirectX_11.mgfx"));
+var legacyResult = await new EffectCompiler().CompileAsync(legacySrc, new CompilerOptions
+{
+    Target = PlatformTarget.DirectX,
+    SourceFileName = "DxLegacyRegisterRender.fx",
+});
+if (legacyResult.IsFailure)
+{
+    Console.WriteLine("[dx-modern] legacy-register: COMPILE FAIL: " +
+                      string.Join(" | ", legacyResult.Error.Select(e => $"{e.Code}: {e.Message}")));
+    return 1;
+}
+using var legacyGame = new LegacyRegisterHarness(legacyResult.Value.Data, legacyGolden);
+legacyGame.Run();
+bool legacyOk = legacyGame.Rendered && legacyGame.MaxDelta == 0 && legacyGame.NonTrivial;
+Console.WriteLine($"\n[dx-modern] legacy-register: candidate vs mgfxc golden max delta: {legacyGame.MaxDelta}");
+Console.WriteLine($"[dx-modern] legacy-register: scene tells s0 from s1 (golden with PointClamp on s1 differs): {legacyGame.NonTrivial}");
+Console.WriteLine($"[dx-modern] legacy-register verdict: {(legacyOk ? "PASS" : "FAIL")}");
+
+return ok && legacyOk ? 0 : 1;
+
+static string FindRepoRoot()
+{
+    var dir = new System.IO.DirectoryInfo(AppContext.BaseDirectory);
+    while (dir is not null && !System.IO.File.Exists(System.IO.Path.Combine(dir.FullName, "ShadowDusk.slnx")))
+        dir = dir.Parent;
+    return dir?.FullName ?? throw new InvalidOperationException("repository root not found");
+}
+
+// ---- Arm "legacy-register": SpriteBatch scene, s0 LinearClamp, s1 PointWrap ----------------
+
+sealed class LegacyRegisterHarness : Game
+{
+    private const int W = 96, H = 32;
+    private readonly GraphicsDeviceManager _gdm;
+    private readonly byte[] _candidate, _golden;
+    private bool _done;
+
+    public bool Rendered { get; private set; }
+    public bool NonTrivial { get; private set; }
+    public int MaxDelta { get; private set; } = -1;
+
+    public LegacyRegisterHarness(byte[] candidate, byte[] golden)
+    {
+        _candidate = candidate; _golden = golden;
+        _gdm = new GraphicsDeviceManager(this)
+        {
+            PreferredBackBufferWidth = W,
+            PreferredBackBufferHeight = H,
+            GraphicsProfile = GraphicsProfile.HiDef,
+        };
+    }
+
+    protected override void Draw(GameTime gameTime)
+    {
+        if (_done) { Exit(); return; }
+        var gd = GraphicsDevice;
+        using var sprite = new Texture2D(gd, 2, 1, false, SurfaceFormat.Color);
+        sprite.SetData(new[] { Color.Red, Color.Lime });
+
+        Color[]? Render(byte[] effectBytes, SamplerState s1)
+        {
+            try
+            {
+                using var effect = new Effect(gd, effectBytes);
+                using var rt = new RenderTarget2D(gd, W, H, false, SurfaceFormat.Color, DepthFormat.None);
+                using var sb = new SpriteBatch(gd);
+                gd.SetRenderTarget(rt);
+                gd.Clear(Color.Black);
+                sb.Begin(SpriteSortMode.Immediate, BlendState.Opaque, SamplerState.LinearClamp, null, null, effect);
+                gd.SamplerStates[1] = s1;
+                sb.Draw(sprite, new Rectangle(0, 0, W, H), Color.White);
+                sb.End();
+                gd.SetRenderTarget(null);
+                var px = new Color[W * H];
+                rt.GetData(px);
+                return px;
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"  legacy-register render threw: {ex.GetType().Name}: {ex.Message}");
+                try { gd.SetRenderTarget(null); } catch { }
+                return null;
+            }
+        }
+
+        static int MaxD(Color[] a, Color[] b)
+        {
+            int m = 0;
+            for (int i = 0; i < a.Length; i++)
+                m = Math.Max(m, Math.Max(Math.Max(Math.Abs(a[i].R - b[i].R), Math.Abs(a[i].G - b[i].G)),
+                                         Math.Max(Math.Abs(a[i].B - b[i].B), Math.Abs(a[i].A - b[i].A))));
+            return m;
+        }
+
+        Color[]? candidate = Render(_candidate, SamplerState.PointWrap);
+        Color[]? golden = Render(_golden, SamplerState.PointWrap);
+        Color[]? goldenClamp = Render(_golden, SamplerState.PointClamp);
+        if (candidate is not null && golden is not null && goldenClamp is not null)
+        {
+            Rendered = true;
+            MaxDelta = MaxD(candidate, golden);
+            NonTrivial = MaxD(golden, goldenClamp) > 16;
+            Console.WriteLine($"  legacy-register row (candidate): {string.Join(" ", Enumerable.Range(0, 6).Select(i => candidate[(H / 2) * W + i * W / 6]).Select(c => $"({c.R},{c.G},{c.B})"))}");
+            Console.WriteLine($"  legacy-register row (mgfxc):     {string.Join(" ", Enumerable.Range(0, 6).Select(i => golden[(H / 2) * W + i * W / 6]).Select(c => $"({c.R},{c.G},{c.B})"))}");
+        }
+        _done = true;
+        Exit();
+    }
+}
 
 // ---- Real MonoGame WindowsDX render harness (offscreen render target + readback) ----------
 

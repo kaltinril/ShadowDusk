@@ -131,6 +131,21 @@
 //       mgfxc's names bind                   -> (255, 255, 255)  white
 //       the names bind nothing (the bug)     -> (  0,   0, 255)  blue
 //
+// ARMS "mixed-legacy-after-modern" and "mixed-two-of-each"
+// (tests/fixtures/golden/legacy-sampler-units/GlMixed*.fx): where a LEGACY sampler lands beside
+// MODERN Texture2D + SamplerState pairs. fxc (so mgfxc) gives every modern pair its unit before
+// any legacy sampler's, whatever the declaration order; ShadowDusk allocated in plain
+// declaration order, so a legacy sampler declared first took unit 0, where SpriteBatch put the
+// sprite, and the modern texture the sprite belonged to read nothing.
+//   mixed-legacy-after-modern: `sampler2D MaskA; Texture2D SpriteTexture; SamplerState SpriteSampler;`
+//     RED sprite, GREEN MaskA (bound by name), (t.r, a.g, 0, 1):
+//       mgfxc's units (pair 0, MaskA 1)       -> (255, 255, 0)  yellow
+//       declaration order (MaskA 0, pair 1)   -> (  0,   0, 0)  black
+//   mixed-two-of-each: MaskA, the sprite pair, MaskB, an Overlay pair, interleaved.
+//     RED sprite, GREEN Overlay, BLUE MaskA, WHITE MaskB, (t.r, o.g, a.b, 1) * b.r:
+//       mgfxc's units (pairs 0/1, masks 2/3)  -> (255, 255, 255) white
+//       declaration order (A0 T1 B2 U3)       -> black
+//
 // EVIDENCE EACH ARM PRODUCES
 //   1. ShadowDusk's own build renders the expected colour (the absolute claim).
 //   2. The mgfxc golden renders it too (the CONTROL — without it, both builds being
@@ -194,6 +209,10 @@ var inputs = fixtures
     .Append((Name: "ParamNamesRender",
              Fx: Path.Combine(namesDir, "ParamNamesRender.fx"),
              Golden: Path.Combine(namesDir, "ParamNamesRender.OpenGL.mgfx")))
+    .Concat(new[] { "GlMixedLegacyAfterModernRender", "GlMixedTwoOfEachRender" }.Select(name =>
+        (Name: name,
+         Fx: Path.Combine(repoRoot, "tests", "fixtures", "golden", "legacy-sampler-units", name + ".fx"),
+         Golden: Path.Combine(repoRoot, "tests", "fixtures", "golden", "legacy-sampler-units", name + ".OpenGL.mgfx"))))
     .ToList();
 
 foreach ((string name, string fxPath, string goldenPath) in inputs)
@@ -261,6 +280,7 @@ using var game = new RegisterOrderGame(
     compiled["SamplerLegacyRegisterIfBranch"], compiled["SamplerLegacyRegisterMacro"],
     compiled["SamplerLegacyInclude"], compiled["SamplerLegacyMacroDecl"], compiled["SamplerReservationKeywords"],
     compiled["ParamNamesRender"],
+    compiled["GlMixedLegacyAfterModernRender"], compiled["GlMixedTwoOfEachRender"],
     outDir, tolerance);
 game.Run();
 
@@ -283,7 +303,7 @@ if (game.Skipped)
 foreach (string line in game.Report)
     Console.WriteLine(line);
 
-Console.WriteLine($"\n[regorder] {(game.Passed ? "PASS" : "FAIL")} — rung-4 OpenGL sampler register-order validation (issues #189, #283, #299, #308, #309, legacy-sampler parameter names).");
+Console.WriteLine($"\n[regorder] {(game.Passed ? "PASS" : "FAIL")} — rung-4 OpenGL sampler register-order validation (issues #189, #283, #299, #308, #309, legacy-sampler parameter names and units).");
 return game.Passed ? 0 : 1;
 
 // -----------------------------------------------------------------------------
@@ -422,6 +442,7 @@ sealed class RegisterOrderGame : Game
     private readonly (byte[] Candidate, byte[] Golden) _ifBranch, _macro, _legacyIfBranch, _legacyMacro;
     private readonly (byte[] Candidate, byte[] Golden) _legacyInclude, _legacyMacroDecl, _keywordReservation;
     private readonly (byte[] Candidate, byte[] Golden) _paramNames;
+    private readonly (byte[] Candidate, byte[] Golden) _mixedLegacyAfterModern, _mixedTwoOfEach;
     private readonly string _outDir;
     private readonly int _tolerance;
     private bool _done;
@@ -439,9 +460,12 @@ sealed class RegisterOrderGame : Game
         (byte[] Candidate, byte[] Golden) legacyInclude, (byte[] Candidate, byte[] Golden) legacyMacroDecl,
         (byte[] Candidate, byte[] Golden) keywordReservation,
         (byte[] Candidate, byte[] Golden) paramNames,
+        (byte[] Candidate, byte[] Golden) mixedLegacyAfterModern, (byte[] Candidate, byte[] Golden) mixedTwoOfEach,
         string outDir, int tolerance)
     {
         _paramNames = paramNames;
+        _mixedLegacyAfterModern = mixedLegacyAfterModern;
+        _mixedTwoOfEach = mixedTwoOfEach;
         _legacyInclude = legacyInclude;
         _legacyMacroDecl = legacyMacroDecl;
         _keywordReservation = keywordReservation;
@@ -538,6 +562,18 @@ sealed class RegisterOrderGame : Game
         catch (Exception ex)
         {
             Report.Add($"[regorder] param-names EXCEPTION: {ex.GetType().Name}: {ex.Message}");
+            ok = false;
+        }
+        try { ok &= ValidateMixedLegacyAfterModern(); }
+        catch (Exception ex)
+        {
+            Report.Add($"[regorder] mixed-legacy-after-modern EXCEPTION: {ex.GetType().Name}: {ex.Message}");
+            ok = false;
+        }
+        try { ok &= ValidateMixedTwoOfEach(); }
+        catch (Exception ex)
+        {
+            Report.Add($"[regorder] mixed-two-of-each EXCEPTION: {ex.GetType().Name}: {ex.Message}");
             ok = false;
         }
         Passed = ok;
@@ -951,6 +987,52 @@ sealed class RegisterOrderGame : Game
                 : Approx(c, Blue) ? "WRONG: neither mgfxc name reaches a texture the shader samples (the synthesized-name bug)"
                                   : "WRONG: unrecognised, check the harness bindings");
         return structural && rendered;
+    }
+
+    /// <summary>
+    /// Arm "mixed-legacy-after-modern": a legacy `sampler2D MaskA;` declared BEFORE the modern
+    /// sprite pair. mgfxc gives the pair unit 0 (SpriteBatch's sprite) and MaskA unit 1: yellow.
+    /// Declaration order put MaskA on unit 0 under the sprite and the pair on an unbound unit 1:
+    /// black.
+    /// </summary>
+    private bool ValidateMixedLegacyAfterModern()
+    {
+        using Texture2D mask = Solid(GraphicsDevice, Green);
+        return ValidateArm(
+            "mixed-legacy-after-modern", _mixedLegacyAfterModern, sprite: Red,
+            bind: e => e.Parameters["MaskA"]?.SetValue(mask),
+            want: Yellow,
+            describe: c =>
+                Approx(c, Yellow)  ? "correct: the modern pair is on SpriteBatch's unit 0 and MaskA on unit 1"
+                : Approx(c, Black) ? "WRONG: declaration order put MaskA on unit 0 (overwritten by the sprite) and the pair on an unbound unit"
+                                   : "WRONG: unrecognised, check the harness bindings");
+    }
+
+    /// <summary>
+    /// Arm "mixed-two-of-each": MaskA, the sprite pair, MaskB and an Overlay pair, interleaved.
+    /// mgfxc: sprite pair 0, Overlay 1, MaskA 2, MaskB 3: white. Declaration order: black.
+    /// </summary>
+    private bool ValidateMixedTwoOfEach()
+    {
+        Color white = new(255, 255, 255, 255);
+        using Texture2D overlay = Solid(GraphicsDevice, Green);
+        using Texture2D maskA = Solid(GraphicsDevice, Blue);
+        using Texture2D maskB = Solid(GraphicsDevice, white);
+        return ValidateArm(
+            "mixed-two-of-each", _mixedTwoOfEach, sprite: Red,
+            bind: e =>
+            {
+                // mgfxc spells a modern pair's parameter `Sampler+Texture`; ShadowDusk the texture.
+                foreach (string n in new[] { "Overlay", "OverlaySampler+Overlay" })
+                    e.Parameters[n]?.SetValue(overlay);
+                e.Parameters["MaskA"]?.SetValue(maskA);
+                e.Parameters["MaskB"]?.SetValue(maskB);
+            },
+            want: white,
+            describe: c =>
+                Approx(c, white)   ? "correct: both modern pairs on units 0/1, the legacy samplers on 2/3"
+                : Approx(c, Black) ? "WRONG: declaration order put MaskA on SpriteBatch's unit 0 and left the sprite pair unbound"
+                                   : "WRONG: unrecognised, check the harness bindings");
     }
 
     private static Texture2D Solid(GraphicsDevice gd, Color c)

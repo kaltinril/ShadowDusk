@@ -76,6 +76,8 @@ ShadowDusk/
 │       └── golden/                     # Reference outputs: mgfxc .mgfx (DirectX_11/, DirectX_12/, OpenGL/, Vulkan/) + fxc fx_2_0 .fxb (FNA/) + byte-identity/
 │                                       #   + legacy-sampler-names/ (legacy sampler shapes, sources beside their mgfxc
 │                                       #   OpenGL/DirectX_11 goldens; the parameter NAME tests, outside the corpus sweeps)
+│                                       #   + legacy-sampler-units/ (legacy beside modern samplers: OpenGL units and
+│                                       #   DirectX 11 sampler slots vs mgfxc; also the GL/DX render-arm fixtures)
 ├── samples/
 │   ├── ShaderFiddle.Web/               # KNI Blazor-WASM in-browser fiddle (sample of reach)
 │   ├── ShaderToyViewer/                # Interactive ShaderToy viewer: runtime convert -> in-memory

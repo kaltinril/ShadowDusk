@@ -269,7 +269,8 @@ public static class RaylibConverter
         // The same allocator the OpenGL target uses, so "the sampler SpriteBatch binds" (unit 0)
         // and "the sampler raylib's draw binds" (texture0) are the same HLSL sampler by construction.
         IReadOnlyList<int> slots = SpirvCombinedSamplerPairs.ResolveSlots(
-            pairs, samplerSlots.Value.Explicit, samplerSlots.Value.Reserved);
+            pairs, samplerSlots.Value.Explicit, samplerSlots.Value.Reserved,
+            legacyTextures: samplerSlots.Value.LegacyTextures);
 
         var bakedStates = parsed.Samplers
             .GroupBy(s => s.Name, StringComparer.Ordinal)

@@ -1906,8 +1906,12 @@ public sealed class FxPreParser
         Dictionary<string, int> registers = CollectLegacySamplerRegisters(tokens);
         var explicitSlots = new Dictionary<string, int>(StringComparer.Ordinal);
         var legacyRegisters = new Dictionary<string, int>(StringComparer.Ordinal);
+        var legacyTextures = new HashSet<string>(StringComparer.Ordinal);
+        var legacySamplerTextures = new Dictionary<string, string>(StringComparer.Ordinal);
         foreach ((string samplerName, string textureName) in parsed.LegacySamplerTextures)
         {
+            legacyTextures.Add(ViewName(textureName));
+            legacySamplerTextures[ViewName(samplerName)] = ViewName(textureName);
             if (registers.TryGetValue(ViewName(samplerName), out int slot))
             {
                 explicitSlots[ViewName(textureName)] = slot;
@@ -1919,6 +1923,8 @@ public sealed class FxPreParser
             new GlSamplerSlots(explicitSlots, CollectReservedSamplerRegisters(tokens))
             {
                 LegacySamplerRegisters = legacyRegisters,
+                LegacyTextures = legacyTextures,
+                LegacySamplerTextures = legacySamplerTextures,
             });
     }
 

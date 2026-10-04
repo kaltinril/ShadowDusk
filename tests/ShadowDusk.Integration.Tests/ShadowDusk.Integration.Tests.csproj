@@ -85,6 +85,9 @@
          (LegacySamplerParameterNameTests). Kept out of fixtures/shaders so they do not join
          the corpus sweeps. -->
     <None Include="..\..\tests\fixtures\golden\legacy-sampler-names\**\*" CopyToOutputDirectory="PreserveNewest" Link="fixtures\golden\legacy-sampler-names\%(RecursiveDir)%(Filename)%(Extension)" />
+    <!-- Legacy/modern sampler UNIT (OpenGL) and SLOT (DirectX 11) fixtures and their mgfxc
+         3.8.4.1 goldens (LegacySamplerUnitTests), likewise outside the corpus sweeps. -->
+    <None Include="..\..\tests\fixtures\golden\legacy-sampler-units\**\*" CopyToOutputDirectory="PreserveNewest" Link="fixtures\golden\legacy-sampler-units\%(RecursiveDir)%(Filename)%(Extension)" />
     <!-- Phase 37 tail (1): the committed cross-host byte-identity manifest
          (CrossHostByteIdentityTests) — win-x64-generated SHA-256s asserted on every OS. -->
     <None Include="..\..\tests\fixtures\golden\byte-identity\**\*" CopyToOutputDirectory="PreserveNewest" Link="fixtures\golden\byte-identity\%(RecursiveDir)%(Filename)%(Extension)" />
