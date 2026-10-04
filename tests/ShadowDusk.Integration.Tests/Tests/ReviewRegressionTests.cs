@@ -15,7 +15,7 @@ namespace ShadowDusk.Integration.Tests.Tests;
 [Trait("Category", "Integration")]
 public sealed class ReviewRegressionTests
 {
-    private static CancellationTokenSource Cts() => new(TimeSpan.FromSeconds(120));
+    private static CancellationTokenSource Cts() => new(TestBudget.Compile);
 
     // ── One SamplerState shared by N textures must emit N sampler records ────────────
 

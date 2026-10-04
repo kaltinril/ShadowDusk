@@ -84,7 +84,7 @@ public sealed class Phase43CbufferModelTests
     [Fact]
     public async Task SharedCbuffer_EmitsPerStageRecords_VsArrayIsBindable()
     {
-        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(120));
+        using var cts = new CancellationTokenSource(TestBudget.Compile);
         MgfxBlobReader subject = await CompileAsync("SharedCbuffer", PlatformTarget.OpenGL, cts.Token);
         MgfxBlobReader golden  = ParseGolden("OpenGL", "SharedCbuffer");
 
@@ -129,7 +129,7 @@ public sealed class Phase43CbufferModelTests
     [Fact]
     public async Task MultiCbuffer_MergesIntoOneRecord_MatchingGoldenLayoutExactly()
     {
-        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(120));
+        using var cts = new CancellationTokenSource(TestBudget.Compile);
         MgfxBlobReader subject = await CompileAsync("MultiCbuffer", PlatformTarget.OpenGL, cts.Token);
         MgfxBlobReader golden  = ParseGolden("OpenGL", "MultiCbuffer");
 
@@ -155,7 +155,7 @@ public sealed class Phase43CbufferModelTests
     [Fact]
     public async Task MultiCbufferVs_MergesIntoOneVsRecord_MatchingGoldenLayoutExactly()
     {
-        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(120));
+        using var cts = new CancellationTokenSource(TestBudget.Compile);
         MgfxBlobReader subject = await CompileAsync("MultiCbufferVs", PlatformTarget.OpenGL, cts.Token);
         MgfxBlobReader golden  = ParseGolden("OpenGL", "MultiCbufferVs");
 
@@ -181,7 +181,7 @@ public sealed class Phase43CbufferModelTests
     public async Task ArrayParameters_CarryElementSubRecords_MatchingGoldenRecursively(
         string stem, PlatformTarget target, string goldenDir)
     {
-        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(120));
+        using var cts = new CancellationTokenSource(TestBudget.Compile);
         MgfxBlobReader subject = await CompileAsync(stem, target, cts.Token);
         MgfxBlobReader golden  = ParseGolden(goldenDir, stem);
 
@@ -201,7 +201,7 @@ public sealed class Phase43CbufferModelTests
     [Fact]
     public async Task ArrayUniform_GlRecord_PacksElementsAtRegisterStride_MatchingGolden()
     {
-        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(120));
+        using var cts = new CancellationTokenSource(TestBudget.Compile);
         MgfxBlobReader subject = await CompileAsync("ArrayUniform", PlatformTarget.OpenGL, cts.Token);
         MgfxBlobReader golden  = ParseGolden("OpenGL", "ArrayUniform");
 
@@ -219,7 +219,7 @@ public sealed class Phase43CbufferModelTests
     [Fact]
     public async Task ArrayUniformVs_GlRecord_Mat4ArrayStrideFour_MatchingGolden()
     {
-        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(120));
+        using var cts = new CancellationTokenSource(TestBudget.Compile);
         MgfxBlobReader subject = await CompileAsync("ArrayUniformVs", PlatformTarget.OpenGL, cts.Token);
         MgfxBlobReader golden  = ParseGolden("OpenGL", "ArrayUniformVs");
 
@@ -271,7 +271,7 @@ public sealed class Phase43CbufferModelTests
     public async Task UnmodeledUniformMember_FailsLoudly_SD0210_NeverInvalidGlslWithExit0(
         string fx, string expectedFragment)
     {
-        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(30));
+        using var cts = new CancellationTokenSource(TestBudget.Compile);
         var result = await TestHelpers.CompileFixtureAsync(fx, "OpenGL", ct: cts.Token);
 
         result.ExitCode.ShouldNotBe(0, customMessage: "an unmodelled uniform member previously shipped invalid GLSL (a reference " +

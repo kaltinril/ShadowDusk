@@ -34,7 +34,7 @@ public sealed class Issue106RegressionCorpusTests
     private const byte ProfileOpenGL    = 0; // MgfxProfile.OpenGL
     private const byte ProfileDirectX11 = 1; // MgfxProfile.DirectX11
 
-    private static readonly TimeSpan CompileTimeout = TimeSpan.FromSeconds(60);
+    private static readonly TimeSpan CompileTimeout = TestBudget.Compile;
 
     /// <summary>The issue-#106 regression fixtures, each in the all-runtime SM3/fx_2_0 subset.</summary>
     public static TheoryData<string> Fixtures() => new()

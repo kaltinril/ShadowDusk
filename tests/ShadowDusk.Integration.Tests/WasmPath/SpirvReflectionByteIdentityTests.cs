@@ -100,7 +100,7 @@ public sealed class SpirvReflectionByteIdentityTests
     [MemberData(nameof(Corpus))]
     public async Task SpirvReflection_ProducesByteIdenticalMgfx_ToDxilReflection(string fixtureStem)
     {
-        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(90));
+        using var cts = new CancellationTokenSource(TestBudget.Compile);
         var ct = cts.Token;
 
         string fxPath = Path.Combine(AppContext.BaseDirectory, "fixtures", "shaders", fixtureStem + ".fx");

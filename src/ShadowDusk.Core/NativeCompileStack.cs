@@ -21,12 +21,12 @@ namespace ShadowDusk.Core;
 /// recursion actually touches them, so an ordinary shader costs what it cost before.
 /// </para>
 /// <para>
-/// <b>What moves and what does not.</b> Only the delegate passed to <see cref="Run{T}"/> runs
+/// <b>What moves and what does not.</b> Only the delegate passed to <see cref="Run{T}(string, Func{T})"/> runs
 /// on the worker. The native compiler wrappers keep it down to the native call itself, so
 /// through the synchronous <c>Compile</c> the pipeline and every consumer callback stay on
 /// the calling thread; <c>EffectCompiler.CompileAsync</c>, whose caller is already on a
 /// thread-pool thread, hands the whole pipeline over in one call and the native calls inside
-/// run inline (a nested <see cref="Run{T}"/> on a worker never hops again). The calling
+/// run inline (a nested <see cref="Run{T}(string, Func{T})"/> on a worker never hops again). The calling
 /// thread blocks until the worker is done, exactly as it blocked inside the P/Invoke before,
 /// so every lock, gate and ordering guarantee the caller holds around the call still holds
 /// (<c>DxcSignalIsolation</c>'s one-time serialized prime, and <c>DxcForkGate</c>, which is
@@ -83,7 +83,7 @@ internal static class NativeCompileStack
         set => _enabled = value;
     }
 
-    /// <summary>True on a worker thread, where a nested <see cref="Run{T}"/> runs inline.</summary>
+    /// <summary>True on a worker thread, where a nested <see cref="Run{T}(string, Func{T})"/> runs inline.</summary>
     internal static bool IsWorkerThread => t_isWorker;
 
     /// <summary>How many worker threads this process has started so far (reuse shows as a low number).</summary>
@@ -108,7 +108,26 @@ internal static class NativeCompileStack
     /// the calling thread until it completes; an exception it throws is rethrown here with its
     /// original stack trace.
     /// </summary>
-    internal static T Run<T>(Func<T> nativeCall)
+    /// <remarks>
+    /// This overload records nothing; it is for handing a whole managed pipeline to a worker
+    /// (<c>EffectCompiler.CompileAsync</c>). A call into a native compiler uses
+    /// <see cref="Run{T}(string, Func{T})"/>, so a cancelled or stalled compile can name it.
+    /// </remarks>
+    internal static T Run<T>(Func<T> nativeCall) => RunCore(nativeCall);
+
+    /// <summary>
+    /// Runs one native compiler call, named <paramref name="callName"/> (for example
+    /// <c>"DXC compile"</c>), on a large-stack worker, and records it in
+    /// <see cref="NativeCallTrace"/> for the whole time it is in flight (issue #373).
+    /// </summary>
+    internal static T Run<T>(string callName, Func<T> nativeCall)
+    {
+        ArgumentNullException.ThrowIfNull(callName);
+        using NativeCallTrace.CallScope call = NativeCallTrace.Enter(callName);
+        return RunCore(nativeCall);
+    }
+
+    private static T RunCore<T>(Func<T> nativeCall)
     {
         ArgumentNullException.ThrowIfNull(nativeCall);
 

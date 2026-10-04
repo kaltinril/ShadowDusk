@@ -73,7 +73,7 @@ public sealed class Issue339DirectX11ResourceArrayTests
     [MemberData(nameof(Shapes))]
     public async Task DirectX11_TextureArray_ReflectsOneParameterAndOneRecord_AsMgfxcDoes(int elements, bool explicitRegisters)
     {
-        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(60));
+        using var cts = new CancellationTokenSource(TestBudget.Compile);
         var result = await CompileAsync(TextureArrayShader(elements, explicitRegisters), PlatformTarget.DirectX, "TextureArray.fx", ct: cts.Token);
 
         result.IsSuccess.ShouldBeTrue(Failure(result));
@@ -111,7 +111,7 @@ public sealed class Issue339DirectX11ResourceArrayTests
             }
             technique T { pass P { PixelShader = compile ps_4_0 MainPS(); } }
             """;
-        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(60));
+        using var cts = new CancellationTokenSource(TestBudget.Compile);
         var result = await CompileAsync(source, PlatformTarget.DirectX, "OnlyElement1.fx", ct: cts.Token);
 
         result.IsSuccess.ShouldBeTrue(Failure(result));
@@ -136,7 +136,7 @@ public sealed class Issue339DirectX11ResourceArrayTests
             }
             technique T { pass P { PixelShader = compile ps_4_0 MainPS(); } }
             """;
-        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(60));
+        using var cts = new CancellationTokenSource(TestBudget.Compile);
         var result = await CompileAsync(source, PlatformTarget.DirectX, "ArrayAtT1.fx", ct: cts.Token);
 
         result.IsSuccess.ShouldBeTrue(Failure(result));
@@ -160,7 +160,7 @@ public sealed class Issue339DirectX11ResourceArrayTests
 
     private static async Task AssertFixtureTableEqualsGolden(string stem, DxbcBackend backend)
     {
-        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(60));
+        using var cts = new CancellationTokenSource(TestBudget.Compile);
         string fxPath = TestHelpers.FixturePath(Path.Combine("texture-arrays", stem + ".fx"));
         var result = await CompileAsync(await File.ReadAllTextAsync(fxPath, cts.Token), PlatformTarget.DirectX, fxPath, backend, cts.Token);
         result.IsSuccess.ShouldBeTrue(Failure(result));
@@ -201,7 +201,7 @@ public sealed class Issue339DirectX11ResourceArrayTests
 
             technique T { pass P { PixelShader = compile ps_4_0 MainPS(); } }
             """;
-        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(60));
+        using var cts = new CancellationTokenSource(TestBudget.Compile);
         var result = await CompileAsync(source, target, "SamplerArray.fx", ct: cts.Token);
 
         result.IsFailure.ShouldBeTrue("mgfxc refuses a sampler array on every profile in its parser; ShadowDusk must not compile what mgfxc never builds");
@@ -233,7 +233,7 @@ public sealed class Issue339DirectX11ResourceArrayTests
             }
             technique T { pass P { PixelShader = compile ps_4_0 MainPS(); } }
             """;
-        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(60));
+        using var cts = new CancellationTokenSource(TestBudget.Compile);
         var result = await CompileAsync(source, target, "TexArr2SampArr.fx", ct: cts.Token);
 
         result.IsFailure.ShouldBeTrue();
@@ -261,7 +261,7 @@ public sealed class Issue339DirectX11ResourceArrayTests
             }
             technique T { pass P { PixelShader = compile ps_4_0 MainPS(); } }
             """;
-        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(60));
+        using var cts = new CancellationTokenSource(TestBudget.Compile);
         var result = await CompileAsync(source, target, "SamplerArray1.fx", ct: cts.Token);
 
         result.IsFailure.ShouldBeTrue("a 1-element sampler array is still a shape mgfxc's parser refuses");
@@ -279,7 +279,7 @@ public sealed class Issue339DirectX11ResourceArrayTests
     {
         // mgfxc 3.8.4.1 and 3.8.5 on every profile: "SamplerArray2.fx(31,22) : Unexpected token '['
         // found..." (the `[`); ShadowDusk points at the name on the same line, column 14.
-        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(60));
+        using var cts = new CancellationTokenSource(TestBudget.Compile);
         string fxPath = TestHelpers.FixturePath(Path.Combine("texture-arrays", "SamplerArray2.fx"));
         var result = await CompileAsync(await File.ReadAllTextAsync(fxPath, cts.Token), target, fxPath, ct: cts.Token);
 
@@ -308,7 +308,7 @@ public sealed class Issue339DirectX11ResourceArrayTests
             }
             technique T { pass P { PixelShader = compile ps_4_0 MainPS(); } }
             """;
-        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(60));
+        using var cts = new CancellationTokenSource(TestBudget.Compile);
         var result = await CompileAsync(source, PlatformTarget.DirectX, "TwoSamplers.fx", ct: cts.Token);
 
         result.IsSuccess.ShouldBeTrue(Failure(result));

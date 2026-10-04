@@ -72,7 +72,7 @@ public sealed class MgfxParameterMatchTests
     [MemberData(nameof(Corpus))]
     public async Task ParameterMetadata_MatchesMgfxcGolden(string fixtureStem)
     {
-        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(120));
+        using var cts = new CancellationTokenSource(TestBudget.Compile);
         var ct = cts.Token;
 
         // --- ShadowDusk side: compile the same .fx source mgfxc compiled ---

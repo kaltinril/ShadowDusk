@@ -46,7 +46,7 @@ public sealed class HidefGeneralityFixtureTests
     [Fact]
     public async Task CubeMap_Compiles_EmitsSamplerCubeAndTextureCube()
     {
-        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(30));
+        using var cts = new CancellationTokenSource(TestBudget.Compile);
         var result = await TestHelpers.CompileFixtureAsync(
             "examples/ExCubeSamplerHidef.fx", "OpenGL", ct: cts.Token);
 
@@ -62,7 +62,7 @@ public sealed class HidefGeneralityFixtureTests
     [Fact]
     public async Task VolumeTexture_Compiles_EmitsSampler3DAndTexture3D()
     {
-        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(30));
+        using var cts = new CancellationTokenSource(TestBudget.Compile);
         var result = await TestHelpers.CompileFixtureAsync(
             "examples/ExVolumeTextureHidef.fx", "OpenGL", ct: cts.Token);
 
@@ -80,7 +80,7 @@ public sealed class HidefGeneralityFixtureTests
     [InlineData("examples/ExSampleGradHidef.fx",  "texture2DGrad(ps_s0,", "textureGrad(ps_s0,")]
     public async Task LodGrad_Compiles_EmitsLegacyNameWithGuardedHeader(string fx, string expectedCall, string genericCall)
     {
-        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(30));
+        using var cts = new CancellationTokenSource(TestBudget.Compile);
         var result = await TestHelpers.CompileFixtureAsync(fx, "OpenGL", ct: cts.Token);
 
         result.ExitCode.ShouldBe(0, customMessage: $"explicit-LOD/gradient sampling is supported on Desktop + HiDef; stderr: {result.Stderr}");
@@ -112,7 +112,7 @@ public sealed class HidefGeneralityFixtureTests
         // ANY emitted GLSL would silently sample the wrong texture at runtime.
         // Previously the rewriter shipped the un-renamed sampler decl and the .mgfx
         // pointed at ps_s0 — silently-black output. Now it must fail LOUDLY.
-        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(30));
+        using var cts = new CancellationTokenSource(TestBudget.Compile);
         var result = await TestHelpers.CompileFixtureAsync(
             "examples/ExVsTextureFetch.fx", "OpenGL", ct: cts.Token);
 
@@ -124,7 +124,7 @@ public sealed class HidefGeneralityFixtureTests
     [Fact]
     public async Task MultiSampler2D_StillCompiles_WithSingleOutputAlias_AndScaledSamplers()
     {
-        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(30));
+        using var cts = new CancellationTokenSource(TestBudget.Compile);
 
         var result = await TestHelpers.CompileFixtureAsync(
             "examples/ExMultiSamplerHidef.fx", "OpenGL", ct: cts.Token);
@@ -158,7 +158,7 @@ public sealed class HidefGeneralityFixtureTests
         // do-while is itself derivative-poison on ANGLE D3D11 (any loop with a
         // conditional break/discard zeroes dFdx/dFdy). The entry wrapper must now be
         // UNWRAPPED into straight-line main with real early returns — no loop at all.
-        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(30));
+        using var cts = new CancellationTokenSource(TestBudget.Compile);
         var result = await TestHelpers.CompileFixtureAsync(
             "examples/Issue107DoWhile.fx", "OpenGL", ct: cts.Token);
 
@@ -184,7 +184,7 @@ public sealed class HidefGeneralityFixtureTests
         // too — otherwise the 9b for-loop fallback recreates exactly the poisoned
         // shape (fwidth inside a loop with a conditional break reads 0.0 on ANGLE
         // D3D11, silently disabling derivative-based AA in Windows browsers).
-        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(30));
+        using var cts = new CancellationTokenSource(TestBudget.Compile);
         var result = await TestHelpers.CompileFixtureAsync(
             "examples/Issue136HelperGradient.fx", "OpenGL", ct: cts.Token);
 
@@ -209,7 +209,7 @@ public sealed class HidefGeneralityFixtureTests
         // The GL-only struct-output rewrite (GlStructOutputColorRewriter) retargets them to
         // SV_Target0/1, and the rewriter emits gl_FragData[0]/[1] for true MRT (matching mgfxc's
         // golden). End-to-end through the real OpenGL pipeline.
-        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(30));
+        using var cts = new CancellationTokenSource(TestBudget.Compile);
         var result = await TestHelpers.CompileFixtureAsync("DeferredSprite.fx", "OpenGL", ct: cts.Token);
 
         result.ExitCode.ShouldBe(0, customMessage: $"the MRT struct-output COLOR semantics must be retargeted for GL; stderr: {result.Stderr}");

@@ -272,7 +272,7 @@ jobs:
     runs-on: ${{ matrix.os }}
     needs: build-and-test
     # Heavier than the unit gate (CLI child-process spawn + native DXC/SPIRV-Cross). The test
-    # step caps each assembly's session at 10 min and itself at 14 (see the step); 20 leaves
+    # step caps each assembly's session at 11 min and itself at 14 (see the step); 20 leaves
     # room for setup, restore, build (about 3 min) and the artifact uploads after a failure.
     timeout-minutes: 20
     if: |
@@ -398,8 +398,10 @@ jobs:
       # --blame-hang-timeout is the hang guard. A test's CancellationToken cannot interrupt a
       # native compile (one uninterruptible P/Invoke), so only this can turn a hung native call
       # into a failure, and it dumps every thread's stack (the host's and its children's) while
-      # doing it. 3m sits above the slowest healthy test (about 100 s at worst on a contended
-      # runner).
+      # doing it. What it has to clear is the longest stretch in which a healthy host records no
+      # test event at all (issue #351, measured from every .trx of 74 CI runs per lane before
+      # -m:2): 39 s on ubuntu, 42 s on macOS, and 176 s on windows-latest, which -m:2 removes
+      # (the numbers after it, and the headroom, are in project_rules.md).
       #
       # THE TWO TIMEOUTS MUST AGREE (issue #312). The blame timer is an INACTIVITY timer: every
       # test that starts or finishes anywhere in the assembly resets it, so it fires 3 minutes
@@ -410,7 +412,10 @@ jobs:
       # stall always lost the race (macOS, run 37063450434: stalled 3 min 48 s, no dump). The
       # rule is
       #     TestSessionTimeout >= slowest healthy assembly run + blame-hang-timeout + dump time
-      #     10 min             >= 4 min budget                 + 3 min              + 1 min
+      #     11 min             >= 6 min budget                 + 3 min              + 1 min + 1 min slack
+      # (the dump is a FULL dump, so dotnet-dump can print managed stacks: 378 MB and 1.2 s for an
+      # Integration test host with DXC loaded, measured locally 2026-10-04; a CI full dump of a
+      # smaller host was written well inside a minute)
       # so any stall in a run that was otherwise on schedule is dumped before the session cap
       # can pre-empt it. CiHangGuardTests enforces that inequality against this file; change
       # both numbers together. xunit.runner.json (longRunningTestSeconds) also names every test
@@ -418,7 +423,7 @@ jobs:
       #
       # timeout-minutes on the step, not just the job: a step timeout FAILS the step, so the
       # `failure()` uploads below still run; a job timeout cancels them. Assemblies run in
-      # parallel, so the step's wall time is about one session (10 min) at worst.
+      # parallel, so the step's wall time is about one session (11 min) at worst.
       # The DXC fork/setlocale probes (DxcConcurrencyStressTests, issue #256) run in a child of
       # the test host. If one hangs, HangDiagnostics attaches gdb and createdump to it before the
       # watchdog kills it; --blame-hang only ever dumps the host. Attaching to a sibling needs
@@ -452,6 +457,18 @@ jobs:
           echo $! > TestResults/hang-dumps/watchdog.pid
           echo "stall watchdog started, pid $(cat TestResults/hang-dumps/watchdog.pid)"
 
+      # AT MOST TWO TEST HOSTS AT ONCE (-m:2, issue #373). `dotnet test` on the solution starts
+      # one test host per assembly and TFM, up to one per core, and each runs four xUnit
+      # collections that compile on further threads and spawn slangc / CLI children. On the
+      # 4-vCPU windows-latest runner that kept the run queue at 20 to 60 for the whole step, and
+      # one host at a time then made no progress at all for 40 to 176 s (measured over 74 CI
+      # runs, 2026-10-02 to 2026-10-03; a 45 s blame dump of one caught it blocked in
+      # Thread.Start, waiting for a new OS thread to begin, with every native compiler idle).
+      # Every 30 and 60 s test budget that expired on Windows (#373, #316) was a test inside such
+      # a stall. Two hosts at a time leaves the step's wall time unchanged (the runner is CPU
+      # bound either way) and, measured on 4 pinned cores, cut the slowest test from 95 s to 34 s
+      # and the longest no-progress gap to 16 s. Do not raise it without re-measuring the gaps
+      # (project_rules.md, "Integration lane load").
       - name: dotnet test (integration)
         timeout-minutes: 14
         env:
@@ -459,13 +476,13 @@ jobs:
           SHADOWDUSK_REQUIRE_DXC: "1"
           SHADOWDUSK_HANG_DUMP_DIR: ${{ github.workspace }}/TestResults/probe-hangs
         run: >
-          dotnet test ShadowDusk.slnx --no-build -c Release
+          dotnet test ShadowDusk.slnx --no-build -c Release -m:2
           --filter "Category=Integration"
           --settings ShadowDusk.runsettings
-          --blame-hang-timeout 3m --blame-hang-dump-type mini
+          --blame-hang-timeout 3m --blame-hang-dump-type full
           --logger "trx;LogFilePrefix=integration-${{ matrix.os }}"
           --results-directory TestResults/
-          -- RunConfiguration.TestSessionTimeout=600000
+          -- RunConfiguration.TestSessionTimeout=660000
 
       # The sidecar's log goes into the job log either way, so a healthy run shows "nothing to
       # capture" and a stalled one shows what was captured. A watchdog still sleeping (the tests
@@ -508,6 +525,27 @@ jobs:
               head -c 20000 "${d%.dmp}-managed.txt"
             done
           fi
+
+      # A blame-hang dump of a Windows test host, turned into managed stacks HERE (issue #373),
+      # where the matching runtime is at hand, so the uploaded hang-dumps artifact carries them
+      # as text. This is how the #373 stall was read: the frozen host's thread was in
+      # Thread.StartCore. Never fails.
+      - name: Analyze blame-hang dumps (Windows)
+        if: always() && runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $dumps = Get-ChildItem TestResults -Recurse -Filter *.dmp -ErrorAction SilentlyContinue
+          if (-not $dumps) { Write-Host "no hang dumps"; exit 0 }
+          New-Item -ItemType Directory -Force -Path TestResults/hang-dumps | Out-Null
+          dotnet tool install -g dotnet-dump 2>&1 | Out-Null
+          $env:PATH += ";$env:USERPROFILE\.dotnet\tools"
+          foreach ($d in $dumps) {
+            $txt = Join-Path 'TestResults/hang-dumps' ($d.BaseName + '-managed.txt')
+            Write-Host "--- $($d.FullName) ($([int]($d.Length / 1MB)) MB)"
+            dotnet-dump analyze $d.FullName -c "threads" -c "threadpool" -c "clrstack -all" -c "syncblk" -c "exit" *> $txt
+            Get-Content $txt -TotalCount 400
+          }
+          exit 0
 
       # Guard the line above: if someone reverts to a fixed LogFileName, the run still goes
       # green while 13 of 14 assemblies' results vanish. The solution always has more than

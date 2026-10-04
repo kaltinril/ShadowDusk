@@ -37,7 +37,7 @@ public sealed class Phase53ErrorVisibilityRegressionTests : IClassFixture<CliBin
 {
     private const byte ProfileOpenGL = 0; // MgfxProfile.OpenGL
 
-    private static readonly TimeSpan CompileTimeout = TimeSpan.FromSeconds(60);
+    private static readonly TimeSpan CompileTimeout = TestBudget.Compile;
 
     // Needed only by the one test that asserts the REAL CLI's stderr contract.
     private readonly CliBinaryFixture _cli;
@@ -311,7 +311,7 @@ public sealed class Phase53ErrorVisibilityRegressionTests : IClassFixture<CliBin
             SourceFileName = "warnings-then-fail.fx",
         };
 
-        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(60));
+        using var cts = new CancellationTokenSource(TestBudget.Compile);
         var result = await compiler.CompileAsync(fx, options, cts.Token);
 
         result.IsFailure.ShouldBeTrue("the Broken technique has a bogus render-state value");
@@ -360,7 +360,7 @@ public sealed class Phase53ErrorVisibilityRegressionTests : IClassFixture<CliBin
             }
             """;
 
-        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(120));
+        using var cts = new CancellationTokenSource(TestBudget.Compile);
         IShaderCompiler compiler = new EffectCompiler();
 
         ShaderValidationReport report = await compiler.ValidateAsync(fx, cancellationToken: cts.Token);
@@ -390,7 +390,7 @@ public sealed class Phase53ErrorVisibilityRegressionTests : IClassFixture<CliBin
         string fx = await File.ReadAllTextAsync(
             TestHelpers.FixturePath("examples/Sd0401SpriteBatchInterpolant.fx"));
 
-        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(120));
+        using var cts = new CancellationTokenSource(TestBudget.Compile);
         IShaderCompiler compiler = new EffectCompiler();
 
         ShaderValidationReport report = await compiler.ValidateAsync(fx, cancellationToken: cts.Token);

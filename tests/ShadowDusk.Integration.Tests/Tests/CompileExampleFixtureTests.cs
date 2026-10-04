@@ -37,7 +37,7 @@ public sealed class CompileExampleFixtureTests
     [MemberData(nameof(ExampleFixtures))]
     public async Task Example_OpenGL_ProducesValidMgfx(string fx)
     {
-        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(30));
+        using var cts = new CancellationTokenSource(TestBudget.Compile);
 
         var result = await TestHelpers.CompileFixtureAsync(fx, "OpenGL", ct: cts.Token);
 

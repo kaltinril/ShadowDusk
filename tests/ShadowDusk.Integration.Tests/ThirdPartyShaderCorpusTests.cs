@@ -58,7 +58,7 @@ public sealed class ThirdPartyShaderCorpusTests
     private const byte ProfileOpenGL    = 0; // MgfxProfile.OpenGL
     private const byte ProfileDirectX11 = 1; // MgfxProfile.DirectX11
 
-    private static readonly TimeSpan CompileTimeout = TimeSpan.FromSeconds(60);
+    private static readonly TimeSpan CompileTimeout = TestBudget.Compile;
 
     private const string Root = "third-party/Nez/";
 

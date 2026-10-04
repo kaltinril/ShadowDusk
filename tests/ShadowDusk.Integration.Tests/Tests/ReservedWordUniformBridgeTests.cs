@@ -36,7 +36,7 @@ namespace ShadowDusk.Integration.Tests.Tests;
 public sealed class ReservedWordUniformBridgeTests
 {
     private const byte ProfileOpenGL = 0; // MgfxProfile.OpenGL
-    private static readonly TimeSpan CompileTimeout = TimeSpan.FromSeconds(60);
+    private static readonly TimeSpan CompileTimeout = TestBudget.Compile;
 
     // A free uniform named after the GLSL reserved word `noise`, USED in the pixel body
     // (so DXC cannot strip it). On OpenGL SPIRV-Cross renames it to `_noise`; the offset
