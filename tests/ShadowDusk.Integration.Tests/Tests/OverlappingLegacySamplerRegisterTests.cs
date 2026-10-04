@@ -60,7 +60,8 @@ public sealed class OverlappingLegacySamplerRegisterTests
         var result = await Compile(source, target);
 
         result.IsFailure.ShouldBeTrue($"{shape} on {target}: mgfxc refuses this shape (X4500), so it must not compile");
-        ShaderError error = result.Error.ShouldHaveSingleItem();
+        // Only the errors: a non-Windows DirectX 12 compile also carries its unsigned-DXIL warnings.
+        ShaderError error = result.Error.Where(e => e.Severity == ShaderErrorSeverity.Error).ShouldHaveSingleItem();
         error.Code.ShouldBe("SD0227");
         error.Message.ShouldContain("'A' and 'B'", Case.Sensitive);
         error.Message.ShouldContain($"register s{register}", Case.Sensitive);
@@ -117,7 +118,7 @@ public sealed class OverlappingLegacySamplerRegisterTests
             "sampler2D A : register(s0);\n#if OPENGL\nsampler2D B : register(s1);\n#else\nsampler2D B : register(s0);\n#endif",
             "return tex2D(A, uv) * tex2D(B, uv);");
         (await Compile(source, PlatformTarget.OpenGL)).IsSuccess.ShouldBeTrue();
-        (await Compile(source, PlatformTarget.DirectX)).Error.ShouldHaveSingleItem().Code.ShouldBe("SD0227");
+        (await Compile(source, PlatformTarget.DirectX)).Error.Where(e => e.Severity == ShaderErrorSeverity.Error).ShouldHaveSingleItem().Code.ShouldBe("SD0227");
     }
 
     private static async Task<Result<CompiledShader, ShaderError[]>> Compile(string source, PlatformTarget target)

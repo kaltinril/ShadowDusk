@@ -108,10 +108,10 @@ internal sealed class MonoGameArm : Game
                     default: throw new InvalidDataException($"{job.Name}: uniform {name} has {v.Length} floats");
                 }
             }
-            foreach (string texture in job.DrawTextures)
-                effect.Parameters[texture]?.SetValue(source);
+            foreach (ExtraTexture texture in job.DrawTextures)
+                Parameter(effect, texture)?.SetValue(source);
             foreach (ExtraTexture texture in job.ExtraTextures)
-                effect.Parameters[texture.HlslTexture]?.SetValue(extra);
+                Parameter(effect, texture)?.SetValue(extra);
 
             using var rt = new RenderTarget2D(gd, size, size, false, SurfaceFormat.Color, DepthFormat.None);
             gd.SetRenderTarget(rt);
@@ -138,6 +138,10 @@ internal sealed class MonoGameArm : Game
         extra.Dispose();
         sb.Dispose();
     }
+
+    /// <summary>The sampler's effect parameter: the texture's name, else the legacy sampler's own (mgfxc's naming).</summary>
+    private static EffectParameter? Parameter(Effect effect, ExtraTexture texture) =>
+        effect.Parameters[texture.HlslTexture] ?? effect.Parameters[texture.HlslSampler];
 
     private static byte[] ToBytes(Color[] px)
     {

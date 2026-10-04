@@ -147,9 +147,10 @@ foreach ((string name, string path) in cases)
 
     jobs.Add(new RenderJob(
         name, mgfxPath, fsPath, uniforms,
-        shader.Samplers.Where(s => s.BoundByDrawCall).Select(s => s.HlslTextureName).ToArray(),
+        shader.Samplers.Where(s => s.BoundByDrawCall)
+            .Select(s => new ExtraTexture(s.HlslTextureName, s.UniformName, s.HlslSamplerName)).ToArray(),
         shader.Samplers.Where(s => !s.BoundByDrawCall)
-            .Select(s => new ExtraTexture(s.HlslTextureName, s.UniformName)).ToArray()));
+            .Select(s => new ExtraTexture(s.HlslTextureName, s.UniformName, s.HlslSamplerName)).ToArray()));
 }
 
 // Positive controls: raylib-arm-only renders compared against the unmutated case's MonoGame image.
