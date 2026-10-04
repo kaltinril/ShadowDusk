@@ -690,6 +690,21 @@ public sealed class SlangGlSamplerSlotTests
         string.Concat(Named(slang).OrderBy(s => s.TextureSlot).Select(s => s.Texture + s.TextureSlot)).ShouldBe(expected);
     }
 
+    [Fact]
+    public void AStructHeaderWrittenPerBranch_DoesNotMakeItsFieldAGlobal()
+    {
+        // PR #384 review: blanking the branches removed the struct's opening line, so its field
+        // 'Texture2D A' read as a global declared before B and took unit 0. main (B sampled first,
+        // and declared first): B 0, A 1.
+        const string declarations =
+            "SamplerState S;\n#if X\nstruct P {\n#else\nstruct P {\n#endif\nTexture2D A; };\nTexture2D B;\nTexture2D A;\n";
+        MgfxBlobReader slang = SlangEffect(
+            declarations + "[shader(\"fragment\")]\nfloat4 MainPS(float4 pos : SV_Position, float2 uv : TEXCOORD0) : SV_Target { return B.Sample(S, uv) + A.Sample(S, uv); }\n",
+            PlatformTarget.OpenGL);
+
+        string.Concat(Named(slang).OrderBy(s => s.TextureSlot).Select(s => s.Texture + s.TextureSlot)).ShouldBe("B0A1");
+    }
+
     private const string CombinedAPixelShader = """
         [shader("fragment")]
         float4 MainPS(float4 pos : SV_Position, float2 uv : TEXCOORD0) : SV_Target

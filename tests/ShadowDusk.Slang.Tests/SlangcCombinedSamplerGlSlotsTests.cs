@@ -98,6 +98,7 @@ public sealed class SlangcCombinedSamplerGlSlotsTests
     [InlineData("Texture2D A##B;\n")]
     [InlineData("Texture2D A;\\\n")]
     [InlineData("#if X\nTexture2D A;\n")]
+    [InlineData("#if X\nstruct P {\n#else\nstruct P {\n#endif\nTexture2D A; };\nTexture2D B;\n")]
     public void UnconditionalRawText_IsNull_WhenTheRawTextCannotSpeakForSlangc(string source) =>
         SlangcCombinedSamplerGlSlots.UnconditionalRawText(source, []).ShouldBeNull();
 
@@ -109,6 +110,13 @@ public sealed class SlangcCombinedSamplerGlSlotsTests
 
         var order = SlangcCombinedSamplerGlSlots.DeclarationOrder(text, "Raw.slang", rawSource: true);
         order.Keys.ShouldBe(["B", "A"]);
+    }
+
+    [Fact]
+    public void DeclarationOrder_IsEmpty_WhenANameIsDeclaredTwice()
+    {
+        SlangcCombinedSamplerGlSlots.DeclarationOrder(
+            "Texture2D A;\nTexture2D B;\nTexture2D A;\n", "Twice.slang", rawSource: true).ShouldBeEmpty();
     }
 
     [Fact]

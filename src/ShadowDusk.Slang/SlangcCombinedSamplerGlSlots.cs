@@ -106,8 +106,12 @@ internal static class SlangcCombinedSamplerGlSlots
         foreach (SlangcGlobalNameCollisions.GlobalDeclaration declaration in
                  SlangcGlobalNameCollisions.Scan(entryText, sourceName, rawSource))
         {
-            if (declaration.Kind == SlangcGlobalNameCollisions.DeclarationKind.Variable)
-                order.TryAdd(declaration.Name, order.Count);
+            if (declaration.Kind != SlangcGlobalNameCollisions.DeclarationKind.Variable)
+                continue;
+            // One name declared twice (two namespaces, or a text the scan mis-scoped) cannot say
+            // which declaration is the texture: no order at all, slangc's own order stands.
+            if (!order.TryAdd(declaration.Name, order.Count))
+                return new Dictionary<string, int>();
         }
         return order;
     }
@@ -135,9 +139,24 @@ internal static class SlangcCombinedSamplerGlSlots
 
         string[] lines = SlangSourceMask.Mask(slangSource).Split('\n');
         int depth = 0;
+        // Braces in the conditional text between two directives: a segment that opens or closes
+        // a scope it does not also close or open (a struct header written per branch, PR #384
+        // review) would leave the text outside the block mis-scoped, so no raw order at all.
+        int segmentBraces = 0;
         for (int i = 0; i < lines.Length; i++)
         {
             Match directive = Regex.Match(lines[i], @"^[ \t]*#[ \t]*(?<word>\w+)");
+            if (directive.Success)
+            {
+                if (depth > 0 && segmentBraces != 0)
+                    return null;
+                segmentBraces = 0;
+            }
+            else if (depth > 0)
+            {
+                segmentBraces += lines[i].Count(c => c == '{') - lines[i].Count(c => c == '}');
+            }
+
             string word = directive.Success ? directive.Groups["word"].Value : "";
             if (word is "if" or "ifdef" or "ifndef")
                 depth++;
