@@ -61,7 +61,7 @@ public sealed class Issue324TextureArrayTests
     [MemberData(nameof(Shapes))]
     public async Task Vulkan_TextureArray_IsRefusedWithSd0221_AtTheDeclaration(int elements, bool explicitRegisters)
     {
-        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(60));
+        using var cts = new CancellationTokenSource(TestBudget.Compile);
         var result = await new EffectCompiler().CompileAsync(TextureArrayShader(elements, explicitRegisters), new CompilerOptions
         {
             Target = PlatformTarget.Vulkan,
@@ -99,7 +99,7 @@ public sealed class Issue324TextureArrayTests
             technique T { pass P { PixelShader = compile ps_6_0 MainPS(); } }
             """;
 
-        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(60));
+        using var cts = new CancellationTokenSource(TestBudget.Compile);
         var result = await new EffectCompiler().CompileAsync(source, new CompilerOptions
         {
             Target = PlatformTarget.Vulkan,
@@ -132,7 +132,7 @@ public sealed class Issue324TextureArrayTests
             technique T { pass P { PixelShader = compile ps_6_0 MainPS(); } }
             """;
 
-        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(60));
+        using var cts = new CancellationTokenSource(TestBudget.Compile);
         var result = await new EffectCompiler().CompileAsync(source, new CompilerOptions
         {
             Target = PlatformTarget.Vulkan,
@@ -149,7 +149,7 @@ public sealed class Issue324TextureArrayTests
         // The GL route rejected the shape before (SD0217, from the combined-sampler pair walk), but
         // said "not declared as a separate texture", which it is. mgfxc fails on it too
         // ("Sequence contains no matching element"). The message now names the array.
-        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(60));
+        using var cts = new CancellationTokenSource(TestBudget.Compile);
         string fxPath = TestHelpers.FixturePath(Path.Combine("texture-arrays", "TextureArray2.fx"));
         var result = await new EffectCompiler().CompileAsync(await File.ReadAllTextAsync(fxPath, cts.Token), new CompilerOptions
         {
@@ -171,7 +171,7 @@ public sealed class Issue324TextureArrayTests
     [MemberData(nameof(Shapes))]
     public async Task DirectX12_TextureArray_ReflectsOneParameterBoundToSlotZero_AsMgfxcDoes(int elements, bool explicitRegisters)
     {
-        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(60));
+        using var cts = new CancellationTokenSource(TestBudget.Compile);
         var result = await new EffectCompiler().CompileAsync(TextureArrayShader(elements, explicitRegisters), new CompilerOptions
         {
             Target = PlatformTarget.DirectX12,
@@ -224,7 +224,7 @@ public sealed class Issue324TextureArrayTests
     [MemberData(nameof(Fixtures))]
     public async Task DirectX12_Fixture_ParameterAndSamplerTablesEqualTheMgfxcGolden(string stem)
     {
-        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(60));
+        using var cts = new CancellationTokenSource(TestBudget.Compile);
         string fxPath = TestHelpers.FixturePath(Path.Combine("texture-arrays", stem + ".fx"));
         var result = await new EffectCompiler().CompileAsync(await File.ReadAllTextAsync(fxPath, cts.Token), new CompilerOptions
         {
@@ -260,7 +260,7 @@ public sealed class Issue324TextureArrayTests
     [MemberData(nameof(Fixtures))]
     public async Task Vulkan_Fixture_MgfxcGoldenHasNoTable_AndShadowDuskRefuses(string stem)
     {
-        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(60));
+        using var cts = new CancellationTokenSource(TestBudget.Compile);
 
         // The evidence the SD0221 rejection rests on: the reference compiler's own output has
         // nothing a consumer could bind.

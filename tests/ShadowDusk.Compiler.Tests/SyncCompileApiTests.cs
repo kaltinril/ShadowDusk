@@ -101,6 +101,29 @@ public sealed class SyncCompileApiTests
         Action act = () => compiler.Compile(
             NoTechniqueSource, new CompilerOptions { Target = PlatformTarget.OpenGL }, cts.Token);
 
-        Should.Throw<OperationCanceledException>(act);
+        OperationCanceledException ex = Should.Throw<OperationCanceledException>(act);
+        ex.CancellationToken.ShouldBe(cts.Token);
+        ex.Message.ShouldContain("The compile was cancelled after ", Case.Sensitive);
+        ex.Message.ShouldContain("before its first native compiler call", Case.Sensitive);
+    }
+
+    /// <summary>
+    /// Issue #373: the async compile used to hand its token to <c>Task.Run</c>, so a compile
+    /// cancelled while it waited for a pool thread ended as a bare <c>TaskCanceledException</c>
+    /// with nothing in it. It now always starts and throws the traced exception.
+    /// </summary>
+    [Fact]
+    public async Task CompileAsync_AlreadyCancelled_ThrowsTheTracedCancellation()
+    {
+        var compiler = new EffectCompiler();
+        using var cts = new CancellationTokenSource();
+        cts.Cancel();
+
+        OperationCanceledException ex = await Should.ThrowAsync<OperationCanceledException>(() => compiler.CompileAsync(
+            NoTechniqueSource, new CompilerOptions { Target = PlatformTarget.OpenGL }, cts.Token));
+
+        ex.CancellationToken.ShouldBe(cts.Token);
+        ex.Message.ShouldContain("The compile was cancelled after ", Case.Sensitive);
+        ex.Message.ShouldContain("native-compile worker(s) busy", Case.Sensitive);
     }
 }

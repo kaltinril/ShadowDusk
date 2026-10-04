@@ -138,7 +138,7 @@ public sealed class Vkd3dShaderCompiler : IDxbcShaderCompiler
         NativeOutcome Invoke(string source)
         {
             NativeOutcome o = NativeCompileStack.Run(
-                () => InvokeNative(source, request, profile, targetType));
+                "vkd3d-shader compile", () => InvokeNative(source, request, profile, targetType));
             onNativeCallReturned?.Invoke();
             return o;
         }

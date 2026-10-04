@@ -108,7 +108,7 @@ public sealed class CompileFixtureTests : IClassFixture<CliBinaryFixture>
     [MemberData(nameof(AllFixturesPlatformsAndModes))]
     public async Task Compile_ProducesValidMgfxHeader(string fx, string profile, byte expectedProfileId, InvocationMode mode)
     {
-        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(60));
+        using var cts = new CancellationTokenSource(TestBudget.Compile);
 
         var result = await GetOrCompileAsync(fx, profile, mode, cts.Token);
 
@@ -138,7 +138,7 @@ public sealed class CompileFixtureTests : IClassFixture<CliBinaryFixture>
     [MemberData(nameof(CliComparablePairs))]
     public async Task CliProcess_And_DirectPipeline_ProduceByteIdenticalMgfx(string fx, string profile)
     {
-        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(120));
+        using var cts = new CancellationTokenSource(TestBudget.Compile);
 
         var pipeline = await GetOrCompileAsync(fx, profile, InvocationMode.DirectPipeline, cts.Token);
         var cli      = await GetOrCompileAsync(fx, profile, InvocationMode.CliProcess, cts.Token);
@@ -159,7 +159,7 @@ public sealed class CompileFixtureTests : IClassFixture<CliBinaryFixture>
     [Trait("Platform", "OpenGL")]
     public async Task Minimal_OpenGL_OneTechniqueOnePassTwoBlobs()
     {
-        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(30));
+        using var cts = new CancellationTokenSource(TestBudget.Compile);
 
         var result = await TestHelpers.CompileFixtureAsync("Minimal.fx", "OpenGL", ct: cts.Token);
         result.ExitCode.ShouldBe(0, customMessage: $"stderr: {result.Stderr}");
@@ -178,7 +178,7 @@ public sealed class CompileFixtureTests : IClassFixture<CliBinaryFixture>
     [Trait("Platform", "OpenGL")]
     public async Task Textured_OpenGL_GlslContainsSampler2D()
     {
-        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(30));
+        using var cts = new CancellationTokenSource(TestBudget.Compile);
 
         var result = await TestHelpers.CompileFixtureAsync("textured.fx", "OpenGL", ct: cts.Token);
         result.ExitCode.ShouldBe(0, customMessage: $"stderr: {result.Stderr}");
@@ -201,7 +201,7 @@ public sealed class CompileFixtureTests : IClassFixture<CliBinaryFixture>
     [Trait("Platform", "OpenGL")]
     public async Task CBuffer_OpenGL_ParameterReflection()
     {
-        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(30));
+        using var cts = new CancellationTokenSource(TestBudget.Compile);
 
         var result = await TestHelpers.CompileFixtureAsync("cbuffer.fx", "OpenGL", ct: cts.Token);
         result.ExitCode.ShouldBe(0, customMessage: $"stderr: {result.Stderr}");
@@ -223,7 +223,7 @@ public sealed class CompileFixtureTests : IClassFixture<CliBinaryFixture>
     [Trait("Platform", "OpenGL")]
     public async Task Multipass_OpenGL_TwoPassesFourBlobs()
     {
-        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(30));
+        using var cts = new CancellationTokenSource(TestBudget.Compile);
 
         var result = await TestHelpers.CompileFixtureAsync("multipass.fx", "OpenGL", ct: cts.Token);
         result.ExitCode.ShouldBe(0, customMessage: $"stderr: {result.Stderr}");
@@ -242,7 +242,7 @@ public sealed class CompileFixtureTests : IClassFixture<CliBinaryFixture>
     [Trait("Platform", "OpenGL")]
     public async Task Multitechnique_OpenGL_ThreeTechniquesInOrder()
     {
-        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(30));
+        using var cts = new CancellationTokenSource(TestBudget.Compile);
 
         var result = await TestHelpers.CompileFixtureAsync("multitechnique.fx", "OpenGL", ct: cts.Token);
         result.ExitCode.ShouldBe(0, customMessage: $"stderr: {result.Stderr}");
@@ -262,7 +262,7 @@ public sealed class CompileFixtureTests : IClassFixture<CliBinaryFixture>
     [Trait("Platform", "OpenGL")]
     public async Task RenderStates_OpenGL_StatesRoundTrip()
     {
-        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(30));
+        using var cts = new CancellationTokenSource(TestBudget.Compile);
 
         var result = await TestHelpers.CompileFixtureAsync("render-states.fx", "OpenGL", ct: cts.Token);
         result.ExitCode.ShouldBe(0, customMessage: $"stderr: {result.Stderr}");
@@ -296,7 +296,7 @@ public sealed class CompileFixtureTests : IClassFixture<CliBinaryFixture>
     [Trait("Platform", "OpenGL")]
     public async Task Annotations_OpenGL_ZeroCount_NoBodies()
     {
-        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(30));
+        using var cts = new CancellationTokenSource(TestBudget.Compile);
 
         var result = await TestHelpers.CompileFixtureAsync("annotations.fx", "OpenGL", ct: cts.Token);
         result.ExitCode.ShouldBe(0, customMessage: $"stderr: {result.Stderr}");
@@ -322,7 +322,7 @@ public sealed class CompileFixtureTests : IClassFixture<CliBinaryFixture>
     [Trait("Platform", "OpenGL")]
     public async Task PlatformMacros_OpenGL_Compiles()
     {
-        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(30));
+        using var cts = new CancellationTokenSource(TestBudget.Compile);
 
         // The GLSL macro is injected for the OpenGL target; the #if GLSL branch must compile.
         var result = await TestHelpers.CompileFixtureAsync("platform-macros.fx", "OpenGL", ct: cts.Token);
@@ -336,7 +336,7 @@ public sealed class CompileFixtureTests : IClassFixture<CliBinaryFixture>
     [Trait("Platform", "DirectX_11")]
     public async Task PlatformMacros_DirectX11_Compiles()
     {
-        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(30));
+        using var cts = new CancellationTokenSource(TestBudget.Compile);
 
         // SM4 macro is injected for DirectX; the #elif SM4 branch must compile.
         var result = await TestHelpers.CompileFixtureAsync("platform-macros.fx", "DirectX_11", ct: cts.Token);
@@ -347,7 +347,7 @@ public sealed class CompileFixtureTests : IClassFixture<CliBinaryFixture>
     [Trait("Platform", "Vulkan")]
     public async Task PlatformMacros_Vulkan_FallsBackToElseBranch()
     {
-        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(30));
+        using var cts = new CancellationTokenSource(TestBudget.Compile);
 
         // Vulkan has neither GLSL nor SM4 defined, so the #else branch is selected.
         var result = await TestHelpers.CompileFixtureAsync("platform-macros.fx", "Vulkan", ct: cts.Token);
@@ -362,7 +362,7 @@ public sealed class CompileFixtureTests : IClassFixture<CliBinaryFixture>
     [Trait("Platform", "OpenGL")]
     public async Task BasicEffectMini_OpenGL_FourDistinctTechniques()
     {
-        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(30));
+        using var cts = new CancellationTokenSource(TestBudget.Compile);
 
         var result = await TestHelpers.CompileFixtureAsync("basiceffect-mini.fx", "OpenGL", ct: cts.Token);
         result.ExitCode.ShouldBe(0, customMessage: $"stderr: {result.Stderr}");

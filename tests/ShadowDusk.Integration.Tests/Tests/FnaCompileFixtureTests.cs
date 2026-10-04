@@ -25,7 +25,7 @@ namespace ShadowDusk.Integration.Tests.Tests;
 [Trait("Platform", "FNA")]
 public sealed class FnaCompileFixtureTests
 {
-    private static readonly TimeSpan CompileTimeout = TimeSpan.FromSeconds(30);
+    private static readonly TimeSpan CompileTimeout = TestBudget.Compile;
 
     // -------------------------------------------------------------------------
     // Helpers (FNA-specific: TestHelpers.CompileFixtureAsync is .mgfx-shaped, so

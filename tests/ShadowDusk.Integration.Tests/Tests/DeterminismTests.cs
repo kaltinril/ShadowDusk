@@ -29,7 +29,7 @@ public sealed class DeterminismTests
     [Fact]
     public async Task Minimal_OpenGL_ByteIdenticalOnSecondCompile()
     {
-        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(60));
+        using var cts = new CancellationTokenSource(TestBudget.Compile);
 
         var first  = await TestHelpers.CompileFixtureAsync("Minimal.fx", "OpenGL", ct: cts.Token);
         var second = await TestHelpers.CompileFixtureAsync("Minimal.fx", "OpenGL", ct: cts.Token);
@@ -43,7 +43,7 @@ public sealed class DeterminismTests
     [Fact]
     public async Task Minimal_DirectX11_ByteIdenticalOnSecondCompile()
     {
-        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(60));
+        using var cts = new CancellationTokenSource(TestBudget.Compile);
 
         var first  = await TestHelpers.CompileFixtureAsync("Minimal.fx", "DirectX_11", ct: cts.Token);
         var second = await TestHelpers.CompileFixtureAsync("Minimal.fx", "DirectX_11", ct: cts.Token);
@@ -57,7 +57,7 @@ public sealed class DeterminismTests
     [Fact]
     public async Task CBuffer_OpenGL_ByteIdenticalOnSecondCompile()
     {
-        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(60));
+        using var cts = new CancellationTokenSource(TestBudget.Compile);
 
         var first  = await TestHelpers.CompileFixtureAsync("cbuffer.fx", "OpenGL", ct: cts.Token);
         var second = await TestHelpers.CompileFixtureAsync("cbuffer.fx", "OpenGL", ct: cts.Token);
@@ -71,7 +71,7 @@ public sealed class DeterminismTests
     [Fact]
     public async Task Multitechnique_OpenGL_ByteIdenticalOnSecondCompile()
     {
-        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(60));
+        using var cts = new CancellationTokenSource(TestBudget.Compile);
 
         var first  = await TestHelpers.CompileFixtureAsync("multitechnique.fx", "OpenGL", ct: cts.Token);
         var second = await TestHelpers.CompileFixtureAsync("multitechnique.fx", "OpenGL", ct: cts.Token);

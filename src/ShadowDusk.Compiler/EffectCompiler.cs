@@ -1,5 +1,6 @@
 #nullable enable
 
+using System.Diagnostics;
 using ShadowDusk.Compiler.Internal;
 using ShadowDusk.Core;
 using ShadowDusk.Core.Reflection;
@@ -97,9 +98,15 @@ public sealed class EffectCompiler : IShaderCompiler
         CompilerOptions options,
         CancellationToken cancellationToken = default)
     {
+        // The token is deliberately NOT given to Task.Run (issue #373): a compile cancelled
+        // while it waits for a pool thread would otherwise end as a bare TaskCanceledException
+        // that says nothing. Inside, the first cancellation check throws the traced
+        // OperationCanceledException instead, which says how long the compile waited to start.
+        long queued = Stopwatch.GetTimestamp();
         return Task.Run(
-            () => NativeCompileStack.Run(() => Compile(hlslSource, options, cancellationToken)),
-            cancellationToken);
+            () => NativeCompileStack.Run(
+                () => CompileTraced(hlslSource, options, Stopwatch.GetElapsedTime(queued), cancellationToken)),
+            CancellationToken.None);
     }
 
     /// <inheritdoc/>
@@ -115,7 +122,42 @@ public sealed class EffectCompiler : IShaderCompiler
     public Result<CompiledShader, ShaderError[]> Compile(
         string hlslSource,
         CompilerOptions options,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default) =>
+        CompileTraced(hlslSource, options, TimeSpan.Zero, cancellationToken);
+
+    /// <summary>
+    /// <see cref="Compile"/>, traced (issue #373): a cancellation leaves as an
+    /// <see cref="OperationCanceledException"/> whose message says how long the compile ran,
+    /// how long it waited to start, which native compiler call took the time, and which native
+    /// calls were in flight in the process when it gave up. A token cannot interrupt a native
+    /// call, so that is the evidence that tells a stalled native call from a starved process.
+    /// </summary>
+    private Result<CompiledShader, ShaderError[]> CompileTraced(
+        string hlslSource,
+        CompilerOptions options,
+        TimeSpan queued,
+        CancellationToken cancellationToken)
+    {
+        NativeCallTrace trace = NativeCallTrace.Begin(queued);
+        try
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            return CompileCore(hlslSource, options, cancellationToken);
+        }
+        catch (OperationCanceledException ex) when (cancellationToken.IsCancellationRequested)
+        {
+            throw new OperationCanceledException(trace.DescribeCancellation(), ex, cancellationToken);
+        }
+        finally
+        {
+            trace.End();
+        }
+    }
+
+    private Result<CompiledShader, ShaderError[]> CompileCore(
+        string hlslSource,
+        CompilerOptions options,
+        CancellationToken cancellationToken)
     {
         var pipeline = new CompilationPipeline(
             _dxcCompilerFactory, _glslTranspilerFactory, _reflectorFactory, _dxbcCompilerFactory);

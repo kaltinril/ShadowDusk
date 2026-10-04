@@ -49,7 +49,7 @@ public sealed class DirectX12EffectCompilerTests
     [Fact]
     public async Task Compile_ParameterizedShader_ProducesRealDirectX12Container()
     {
-        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(60));
+        using var cts = new CancellationTokenSource(TestBudget.Compile);
 
         var result = await new EffectCompiler().CompileAsync(ParameterizedShader, new CompilerOptions
         {
@@ -108,7 +108,7 @@ public sealed class DirectX12EffectCompilerTests
         // provide, and the game dies at its first Draw with an unattributed E_INVALIDARG.
         // The SPIR-V path always skipped builtins; the DXIL path was fixed to match, with
         // nothing pinning it (no validation/ fixture declares SV_VertexID either).
-        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(60));
+        using var cts = new CancellationTokenSource(TestBudget.Compile);
 
         var result = await new EffectCompiler().CompileAsync(SystemValueShader, new CompilerOptions
         {
@@ -156,7 +156,7 @@ public sealed class DirectX12EffectCompilerTests
         // but without it a typo silently mints a phantom TextureCoordinate attribute that
         // MonoGame then demands from the vertex declaration, and the only symptom is a
         // failed draw with no reference back to the shader.
-        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(60));
+        using var cts = new CancellationTokenSource(TestBudget.Compile);
 
         var result = await new EffectCompiler().CompileAsync(TypoSemanticShader, new CompilerOptions
         {
@@ -187,7 +187,7 @@ public sealed class DirectX12EffectCompilerTests
     [Fact]
     public async Task Compile_AllSemanticsRecognized_EmitsNoSd0104()
     {
-        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(60));
+        using var cts = new CancellationTokenSource(TestBudget.Compile);
 
         var result = await new EffectCompiler().CompileAsync(ParameterizedShader, new CompilerOptions
         {
@@ -209,7 +209,7 @@ public sealed class DirectX12EffectCompilerTests
         // must not carry the warning); the Linux/macOS lanes pin that it fires at all —
         // which is the direction that matters, and which the developer's Windows render
         // gate structurally cannot see.
-        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(60));
+        using var cts = new CancellationTokenSource(TestBudget.Compile);
 
         var result = await new EffectCompiler().CompileAsync(ParameterizedShader, new CompilerOptions
         {

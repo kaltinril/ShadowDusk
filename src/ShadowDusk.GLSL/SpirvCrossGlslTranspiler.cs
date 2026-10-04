@@ -57,7 +57,7 @@ public sealed class SpirvCrossGlslTranspiler : ISpirvToGlslTranspiler
         // control flow, and the stack it would otherwise run on is whatever the caller's thread
         // has. The copy is what crosses to the worker (a span cannot).
         uint[] words = spirvWords.ToArray();
-        return NativeCompileStack.Run(() => TranspileOnThisThread(words));
+        return NativeCompileStack.Run("SPIRV-Cross GLSL transpile", () => TranspileOnThisThread(words));
     }
 
     private static Result<GlslSource, ShaderError> TranspileOnThisThread(uint[] words)

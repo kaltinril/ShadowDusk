@@ -69,7 +69,7 @@ public sealed class Phase45PreParserRobustnessCorpusTests
     private const byte ProfileOpenGL    = 0; // MgfxProfile.OpenGL
     private const byte ProfileDirectX11 = 1; // MgfxProfile.DirectX11
 
-    private static readonly TimeSpan CompileTimeout = TimeSpan.FromSeconds(60);
+    private static readonly TimeSpan CompileTimeout = TestBudget.Compile;
 
     /// <summary>Every Phase-45 fixture compiles on the MGFX targets (GL + DX).</summary>
     public static TheoryData<string> MgfxFixtures() => new()

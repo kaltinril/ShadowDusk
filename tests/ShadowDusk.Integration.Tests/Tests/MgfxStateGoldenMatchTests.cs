@@ -111,7 +111,7 @@ public sealed class MgfxStateGoldenMatchTests
     private static async Task<(MgfxBlobReader Subject, MgfxBlobReader Golden)>
         CompileAndLoadGoldenAsync(string stem, string profile)
     {
-        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(120));
+        using var cts = new CancellationTokenSource(TestBudget.Compile);
         var ct = cts.Token;
 
         string fxPath = TestHelpers.FixturePath(stem + ".fx");

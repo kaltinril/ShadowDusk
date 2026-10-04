@@ -33,7 +33,7 @@ public sealed class ResourceArrayReflectionTests
     [InlineData(4)]
     public async Task SpirvReflector_ReportsTheTextureArray_WithItsElementCount(int elements)
     {
-        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(60));
+        using var cts = new CancellationTokenSource(TestBudget.Compile);
         ReadOnlyMemory<byte> spirv = await CompileAsync(Shader(elements, samplerArray: false), PlatformTarget.Vulkan, cts.Token);
 
         var result = new SpirvReflector().Reflect(spirv);
@@ -49,7 +49,7 @@ public sealed class ResourceArrayReflectionTests
     [Fact]
     public async Task SpirvReflector_ReportsTheSamplerArray_WithItsElementCount()
     {
-        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(60));
+        using var cts = new CancellationTokenSource(TestBudget.Compile);
         ReadOnlyMemory<byte> spirv = await CompileAsync(Shader(2, samplerArray: true), PlatformTarget.Vulkan, cts.Token);
 
         var result = new SpirvReflector().Reflect(spirv);
@@ -67,7 +67,7 @@ public sealed class ResourceArrayReflectionTests
     [InlineData(1, null)]
     public async Task DxilReflection_ReportsTheTextureArray_FromBindCount(int elements, int? expectedArrayLength)
     {
-        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(60));
+        using var cts = new CancellationTokenSource(TestBudget.Compile);
         ReadOnlyMemory<byte> dxil = await CompileAsync(Shader(elements, samplerArray: false), PlatformTarget.DirectX12, cts.Token);
 
         var result = new DxilReflectionExtractor().Extract(dxil, cts.Token);
@@ -83,7 +83,7 @@ public sealed class ResourceArrayReflectionTests
     [Fact]
     public async Task DxilReflection_ReportsTheSamplerArray_FromBindCount()
     {
-        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(60));
+        using var cts = new CancellationTokenSource(TestBudget.Compile);
         ReadOnlyMemory<byte> dxil = await CompileAsync(Shader(2, samplerArray: true), PlatformTarget.DirectX12, cts.Token);
 
         var result = new DxilReflectionExtractor().Extract(dxil, cts.Token);

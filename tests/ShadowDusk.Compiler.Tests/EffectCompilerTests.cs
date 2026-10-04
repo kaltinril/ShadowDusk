@@ -4,6 +4,7 @@ using Shouldly;
 using ShadowDusk.Compiler;
 using ShadowDusk.Core;
 using ShadowDusk.Core.Preprocessor;
+using ShadowDusk.Integration.Tests;
 using Xunit;
 
 namespace ShadowDusk.Compiler.Tests;
@@ -70,7 +71,7 @@ public sealed class EffectCompilerTests
     [Trait("Platform", "OpenGL")]
     public async Task Compile_Minimal_OpenGL_ReturnsBytes()
     {
-        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(30));
+        using var cts = new CancellationTokenSource(TestBudget.Compile);
 
         var result = await CompileFileAsync("Minimal.fx", PlatformTarget.OpenGL, cancellationToken: cts.Token);
 
@@ -82,7 +83,7 @@ public sealed class EffectCompilerTests
     [Trait("Platform", "DirectX")]
     public async Task Compile_Minimal_DirectX_ReturnsBytes()
     {
-        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(30));
+        using var cts = new CancellationTokenSource(TestBudget.Compile);
 
         // Library DEFAULT backend (vkd3d, cross-platform and host-independent) — the
         // exact path a consumer hits with no options set, on all three OSes. The
@@ -97,7 +98,7 @@ public sealed class EffectCompilerTests
     [Trait("Platform", "OpenGL")]
     public async Task Compile_Textured_OpenGL_ReturnsBytes()
     {
-        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(30));
+        using var cts = new CancellationTokenSource(TestBudget.Compile);
 
         var result = await CompileFileAsync("textured.fx", PlatformTarget.OpenGL, cancellationToken: cts.Token);
 
@@ -109,7 +110,7 @@ public sealed class EffectCompilerTests
     [Trait("Platform", "OpenGL")]
     public async Task Compile_Cbuffer_OpenGL_HasParameters()
     {
-        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(30));
+        using var cts = new CancellationTokenSource(TestBudget.Compile);
 
         var result = await CompileFileAsync("cbuffer.fx", PlatformTarget.OpenGL, cancellationToken: cts.Token);
 
@@ -121,7 +122,7 @@ public sealed class EffectCompilerTests
     [Trait("Platform", "OpenGL")]
     public async Task Compile_MultiPass_OpenGL_HasTwoPasses()
     {
-        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(30));
+        using var cts = new CancellationTokenSource(TestBudget.Compile);
 
         var result = await CompileFileAsync("multipass.fx", PlatformTarget.OpenGL, cancellationToken: cts.Token);
 
@@ -133,7 +134,7 @@ public sealed class EffectCompilerTests
     [Trait("Platform", "Vulkan")]
     public async Task Compile_Minimal_Vulkan_ReturnsBytes()
     {
-        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(30));
+        using var cts = new CancellationTokenSource(TestBudget.Compile);
 
         var result = await CompileFileAsync("Minimal.fx", PlatformTarget.Vulkan, cancellationToken: cts.Token);
 
@@ -145,7 +146,7 @@ public sealed class EffectCompilerTests
     [Trait("Platform", "Vulkan")]
     public async Task Compile_Cbuffer_Vulkan_ReflectsParameters()
     {
-        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(30));
+        using var cts = new CancellationTokenSource(TestBudget.Compile);
 
         var result = await CompileFileAsync("cbuffer.fx", PlatformTarget.Vulkan, cancellationToken: cts.Token);
 
@@ -162,7 +163,7 @@ public sealed class EffectCompilerTests
     [Trait("Platform", "Vulkan")]
     public async Task Compile_Vulkan_Knifx_FailsLoudly()
     {
-        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(30));
+        using var cts = new CancellationTokenSource(TestBudget.Compile);
 
         var options = new CompilerOptions { Target = PlatformTarget.Vulkan, Container = EffectContainer.Knifx };
         var result = await CompileFileAsync("Minimal.fx", PlatformTarget.Vulkan, options, cts.Token);
@@ -187,7 +188,7 @@ public sealed class EffectCompilerTests
     [Trait("Platform", "OpenGL")]
     public async Task Compile_Deterministic_SameBytesOnRepeat()
     {
-        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(60));
+        using var cts = new CancellationTokenSource(TestBudget.Compile);
 
         string source = await File.ReadAllTextAsync(ShaderPath("Minimal.fx"), cts.Token);
         var options = new CompilerOptions { Target = PlatformTarget.OpenGL };
@@ -210,7 +211,7 @@ public sealed class EffectCompilerTests
     [Trait("Platform", "OpenGL")]
     public async Task Compile_Debug_DoesNotFail()
     {
-        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(30));
+        using var cts = new CancellationTokenSource(TestBudget.Compile);
 
         string source = await File.ReadAllTextAsync(ShaderPath("Minimal.fx"), cts.Token);
         var options = new CompilerOptions
@@ -234,7 +235,7 @@ public sealed class EffectCompilerTests
     [Trait("Platform", "OpenGL")]
     public async Task Compile_InMemoryIncludes_Resolves()
     {
-        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(30));
+        using var cts = new CancellationTokenSource(TestBudget.Compile);
 
         // Helpers.fxh provides a trivial helper function used by the inline source.
         const string helperSource = """
@@ -297,7 +298,7 @@ public sealed class EffectCompilerTests
     [Trait("Platform", "OpenGL")]
     public async Task Compile_SyntaxError_ReturnsErrors()
     {
-        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(30));
+        using var cts = new CancellationTokenSource(TestBudget.Compile);
 
         // Intentionally invalid HLSL — `this_is_not_valid_hlsl` is neither a
         // statement nor a declaration.
@@ -322,7 +323,7 @@ public sealed class EffectCompilerTests
     [Trait("Platform", "OpenGL")]
     public async Task Compile_MissingInclude_ReturnsError()
     {
-        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(30));
+        using var cts = new CancellationTokenSource(TestBudget.Compile);
 
         // The include resolver is not configured, so Missing.fxh cannot be found.
         const string shaderSource = """

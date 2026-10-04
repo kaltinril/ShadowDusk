@@ -52,7 +52,7 @@ public sealed class WaveIntrinsicTargetRejectionTests
     private static async Task<Result<CompiledShader, ShaderError[]>> CompileAsync(
         PlatformTarget target, string vs, string ps, string call)
     {
-        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(120));
+        using var cts = new CancellationTokenSource(TestBudget.Compile);
         return await new EffectCompiler().CompileAsync(Source(vs, ps, call), new CompilerOptions
         {
             Target = target,
@@ -88,7 +88,7 @@ public sealed class WaveIntrinsicTargetRejectionTests
     [WindowsFact]
     public async Task Compile_WaveIntrinsic_DirectX_D3DCompilerBackend_RejectedWithSD0624_AtTheCall()
     {
-        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(120));
+        using var cts = new CancellationTokenSource(TestBudget.Compile);
 
         var result = await new EffectCompiler().CompileAsync(
             Source("vs_4_0", "ps_4_0", "WaveActiveSum(i.UV.x)"), new CompilerOptions
@@ -139,7 +139,7 @@ public sealed class WaveIntrinsicTargetRejectionTests
             float4 PS(float2 uv : TEXCOORD0) : SV_Target0 { float v = WaveActiveSum(uv.x); return float4(v, v, v, 1); }
             technique T { pass P { PixelShader = compile ps_4_0 PS(); } }
             """;
-        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(120));
+        using var cts = new CancellationTokenSource(TestBudget.Compile);
 
         var result = await new EffectCompiler().CompileAsync(source, new CompilerOptions
         {

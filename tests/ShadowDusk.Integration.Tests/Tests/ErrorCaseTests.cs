@@ -33,7 +33,7 @@ public sealed class ErrorCaseTests
     [Fact]
     public async Task SyntaxError_ExitCode1_StderrContainsLineCol()
     {
-        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(30));
+        using var cts = new CancellationTokenSource(TestBudget.Compile);
 
         // Include a technique so FX parsing succeeds and the error reaches DXC.
         const string source =
@@ -56,7 +56,7 @@ public sealed class ErrorCaseTests
     [Fact]
     public async Task UndeclaredIdentifier_ExitCode1_StderrContainsIdentifier()
     {
-        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(30));
+        using var cts = new CancellationTokenSource(TestBudget.Compile);
 
         // Include a technique so FX parsing succeeds and the error reaches DXC.
         const string source =
@@ -75,7 +75,7 @@ public sealed class ErrorCaseTests
     [Fact]
     public async Task MissingInclude_ExitCode1_StderrContainsFileAndLine()
     {
-        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(30));
+        using var cts = new CancellationTokenSource(TestBudget.Compile);
 
         // The #include is on line 1; the file name should appear in the diagnostic.
         const string source =
@@ -99,7 +99,7 @@ public sealed class ErrorCaseTests
     [Fact]
     public async Task UnknownProfile_ExitCode1_StderrContainsProfileString()
     {
-        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(30));
+        using var cts = new CancellationTokenSource(TestBudget.Compile);
 
         var result = await TestHelpers.CompileFixtureAsync(
             "Minimal.fx", "PS5_NotAReal_Target", ct: cts.Token);
@@ -111,7 +111,7 @@ public sealed class ErrorCaseTests
     [Fact]
     public async Task EmptySource_ExitCode1_StderrContainsHumanReadableMessage()
     {
-        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(30));
+        using var cts = new CancellationTokenSource(TestBudget.Compile);
 
         var result = await CompileSourceAsync(string.Empty, "OpenGL", cts.Token);
 
@@ -124,7 +124,7 @@ public sealed class ErrorCaseTests
     [Fact]
     public async Task NoTechniques_ExitCode1_StderrReferencesMissingTechnique()
     {
-        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(30));
+        using var cts = new CancellationTokenSource(TestBudget.Compile);
 
         // Valid HLSL function but deliberately no technique block.
         const string source =

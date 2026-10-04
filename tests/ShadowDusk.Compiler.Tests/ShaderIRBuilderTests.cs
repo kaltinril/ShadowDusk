@@ -4,6 +4,7 @@ using Shouldly;
 using ShadowDusk.Compiler;
 using ShadowDusk.Compiler.Internal;
 using ShadowDusk.Core;
+using ShadowDusk.Integration.Tests;
 using Xunit;
 
 namespace ShadowDusk.Compiler.Tests;
@@ -54,7 +55,7 @@ public sealed class ShaderIRBuilderTests
     [Trait("Platform", "OpenGL")]
     public async Task Build_MultiPass_PreservesPassOrder()
     {
-        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(30));
+        using var cts = new CancellationTokenSource(TestBudget.Compile);
 
         // Inline multipass source: one technique, two named passes.
         // This mirrors the structure of tests/fixtures/shaders/multipass.fx.
