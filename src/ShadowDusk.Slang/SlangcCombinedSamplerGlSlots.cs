@@ -2,13 +2,16 @@
 
 using System.Globalization;
 using System.Text.RegularExpressions;
+using ShadowDusk.Compiler.Slang;
+using ShadowDusk.Core;
 
 namespace ShadowDusk.Slang;
 
 /// <summary>
 /// OpenGL: a combined sampler the author declared with a sampler register
 /// (<c>Sampler2D X : register(sN)</c>) lands on texture unit N, exactly where <c>mgfxc</c>
-/// puts the legacy combined <c>sampler2D X : register(sN)</c>.
+/// puts the legacy combined <c>sampler2D X : register(sN)</c>; and the units are filled in the
+/// author's DECLARATION order, as <c>mgfxc</c> fills them.
 /// </summary>
 /// <remarks>
 /// <para>slangc splits the combined sampler into <c>Texture2D X</c> (named back to the author's
@@ -25,25 +28,37 @@ namespace ShadowDusk.Slang;
 /// unit, <c>SpirvCombinedSamplerPairs.ResolveSlots</c>), so the sampler half's register is moved
 /// out of the HLSL (no reservation) and into <c>CompilerOptions.CombinedSamplerGlSlots</c> (the
 /// pin), keyed by the texture parameter. A split <c>Texture2D</c> + <c>SamplerState</c> pair the
-/// author wrote keeps the split-pair rule: only the halves of a combined sampler are touched.</para>
+/// author wrote keeps the split-pair rule: only the halves of a combined sampler are touched, and
+/// a combined sampler may share its register with such a SamplerState (mgfxc accepts that).</para>
+/// <para>Two combined samplers pinning ONE unit are refused (<see cref="DuplicateUnitCode"/>):
+/// fxc refuses the legacy pair (<c>X4500</c>, overlapping register semantics) and so do the
+/// DirectX targets, and the allocator would otherwise silently move the second.</para>
+/// <para>Declaration order: slangc emits globals in FIRST-USE order (measured, v2026.14.1:
+/// <c>Texture2D T; SamplerState S : register(s0); Sampler2D A;</c> sampled A first comes back with
+/// A declared first), while mgfxc fills units in the author's declaration order (T unit 1, A unit
+/// 2 there). <see cref="DeclarationOrder"/> gives the allocator the author's order.</para>
 /// </remarks>
 internal static class SlangcCombinedSamplerGlSlots
 {
+    /// <summary><c>SD0644</c>: two combined samplers declare the same sampler register on OpenGL.</summary>
+    public const string DuplicateUnitCode = "SD0644";
+
     /// <summary>
     /// Removes the sampler register from the sampler half of each combined sampler in
     /// <paramref name="combinedSamplers"/> (texture names, as the author wrote them) and returns
-    /// the unit each one pins.
+    /// the unit each one pins, or <see cref="DuplicateUnitCode"/> when two pin one unit.
     /// </summary>
-    public static (string Hlsl, IReadOnlyDictionary<string, int> Slots) Pin(
-        string hlsl, IReadOnlyCollection<string> combinedSamplers)
+    public static Result<(string Hlsl, IReadOnlyDictionary<string, int> Slots), ShaderError> Pin(
+        string hlsl, IReadOnlyCollection<string> combinedSamplers, string slangSource, string sourceName)
     {
         var slots = new Dictionary<string, int>(StringComparer.Ordinal);
         foreach (string texture in combinedSamplers)
         {
-            // 'SamplerState X_sampler_0 : register(s2);' (a single sampler, not an array: an
-            // array of combined samplers is refused on OpenGL, issue #356).
+            // 'SamplerState X_sampler_0 : register(s2);' or '... : register(s2, space1);' (a single
+            // sampler, not an array: an array of combined samplers is refused on OpenGL, issue
+            // #356). OpenGL has no register spaces, so the space does not change the unit.
             var half = new Regex(
-                $@"^(?<decl>[ \t]*SamplerState[ \t]+{Regex.Escape(texture)}_sampler_\d+)[ \t]*:[ \t]*register[ \t]*\([ \t]*s(?<slot>\d+)[ \t]*\)[ \t]*;",
+                $@"^(?<decl>[ \t]*SamplerState[ \t]+{Regex.Escape(texture)}_sampler_\d+)[ \t]*:[ \t]*register[ \t]*\([ \t]*s(?<slot>\d+)[ \t]*(?:,[ \t]*space\d+[ \t]*)?\)[ \t]*;",
                 RegexOptions.Multiline | RegexOptions.CultureInvariant);
             Match match = half.Match(hlsl);
             if (!match.Success)
@@ -51,6 +66,66 @@ internal static class SlangcCombinedSamplerGlSlots
             slots[texture] = int.Parse(match.Groups["slot"].Value, CultureInfo.InvariantCulture);
             hlsl = half.Replace(hlsl, m => m.Groups["decl"].Value + ";");
         }
-        return (hlsl, slots);
+
+        foreach (IGrouping<int, string> unit in slots.GroupBy(s => s.Value, s => s.Key))
+        {
+            if (unit.Count() < 2)
+                continue;
+            string masked = SlangSourceMask.Mask(slangSource);
+            var located = unit
+                .Select(name => (Name: name, Declaration: Regex.Match(
+                    masked, $@"\bSampler\w*(?:\s*<[^;{{}}]*?>)?\s+{Regex.Escape(name)}\b", RegexOptions.CultureInvariant)))
+                .OrderBy(d => d.Declaration.Success ? d.Declaration.Index : int.MaxValue)
+                .ThenBy(d => d.Name, StringComparer.Ordinal)
+                .ToList();
+            Match second = located[1].Declaration;
+            return Result<(string, IReadOnlyDictionary<string, int>), ShaderError>.Fail(new ShaderError(
+                File: sourceName,
+                Line: second.Success ? LineOf(masked, second.Index) : 0,
+                Column: second.Success ? ColumnOf(masked, second.Index) : 0,
+                Code: DuplicateUnitCode,
+                Message: $"OpenGL target: the combined samplers {string.Join(" and ", located.Select(d => "'" + d.Name + "'"))} " +
+                         $"all declare register(s{unit.Key}). A combined sampler's sampler register is its texture unit (as for " +
+                         "mgfxc's legacy 'sampler2D X : register(sN)'), and one unit holds one texture: fxc refuses the legacy " +
+                         "pair (X4500, overlapping register semantics) and the DirectX targets refuse it too. Give each combined " +
+                         "sampler its own register, or leave the register off and let the units be assigned."));
+        }
+        return Result<(string, IReadOnlyDictionary<string, int>), ShaderError>.Ok((hlsl, slots));
+    }
+
+    /// <summary>
+    /// The author's declaration order of the global textures and combined samplers in
+    /// <paramref name="entryText"/> (the entry's preprocess-only text when a pass read it, else
+    /// its raw text), by name, for <c>CompilerOptions.GlTextureDeclarationOrder</c>. A name it does
+    /// not declare (one from an imported module, or declared through a macro in a raw text) is
+    /// absent, and then the allocator keeps slangc's order for the whole shader, as before.
+    /// </summary>
+    public static IReadOnlyDictionary<string, int> DeclarationOrder(string entryText, string sourceName, bool rawSource)
+    {
+        var order = new Dictionary<string, int>(StringComparer.Ordinal);
+        foreach (SlangcGlobalNameCollisions.GlobalDeclaration declaration in
+                 SlangcGlobalNameCollisions.Scan(entryText, sourceName, rawSource))
+        {
+            if (declaration.Kind == SlangcGlobalNameCollisions.DeclarationKind.Variable)
+                order.TryAdd(declaration.Name, order.Count);
+        }
+        return order;
+    }
+
+    private static int LineOf(string text, int offset)
+    {
+        int line = 1;
+        for (int i = 0; i < offset; i++)
+        {
+            if (text[i] == '\n')
+                line++;
+        }
+        return line;
+    }
+
+    private static int ColumnOf(string text, int offset)
+    {
+        int lineStart = offset == 0 ? -1 : text.LastIndexOf('\n', offset - 1);
+        return offset - lineStart;
     }
 }

@@ -595,6 +595,80 @@ public sealed class SlangGlSamplerSlotTests
         Named(slang).ShouldBe([("A", (byte)1, (byte)1), ("T", (byte)2, (byte)2)]);
     }
 
+    [Fact]
+    public void TwoCombinedSamplersOnOneRegister_OnOpenGL_AreRefusedLoudly()
+    {
+        // fxc refuses the legacy pair (X4500) and the DirectX targets refuse it too; on OpenGL the
+        // allocator would silently move the second texture to another unit.
+        var result = new SlangCompiler().Compile("""
+            Sampler2D A : register(s0);
+            Sampler2D B : register(s0);
+            [shader("fragment")]
+            float4 MainPS(float4 pos : SV_Position, float2 uv : TEXCOORD0) : SV_Target { return A.Sample(uv) + B.Sample(uv); }
+            """, new CompilerOptions { Target = PlatformTarget.OpenGL, SourceFileName = "Dup.slang" });
+
+        ShaderError error = result.Error.ShouldHaveSingleItem();
+        (error.File, error.Line, error.Code).ShouldBe(("Dup.slang", 2, "SD0644"));
+        error.Message.ShouldContain("'A' and 'B' all declare register(s0)", Case.Sensitive);
+    }
+
+    [Fact]
+    public void CombinedSamplerSharingARegisterWithASplitSamplerState_OnOpenGL_MatchesTheFxRoute()
+    {
+        // mgfxc accepts a legacy sampler and a modern SamplerState on one register; so does this.
+        MgfxBlobReader slang = SlangEffect("""
+            Sampler2D A : register(s0);
+            Texture2D T;
+            SamplerState S : register(s0);
+            [shader("fragment")]
+            float4 MainPS(float4 pos : SV_Position, float2 uv : TEXCOORD0) : SV_Target { return T.Sample(S, uv) + A.Sample(uv); }
+            """, PlatformTarget.OpenGL);
+        var fx = new EffectCompiler().Compile(FxHeader + """
+            sampler2D A : register(s0);
+            Texture2D T;
+            SamplerState S : register(s0);
+            float4 MainPS(float4 pos : SV_Position, float2 uv : TEXCOORD0) : COLOR0 { return T.Sample(S, uv) + tex2D(A, uv); }
+            technique T0 { pass P0 { PixelShader = compile PS_SHADERMODEL MainPS(); } }
+            """, new CompilerOptions { Target = PlatformTarget.OpenGL, SourceFileName = "Share.fx" });
+        fx.IsSuccess.ShouldBeTrue(fx.IsFailure ? string.Join("; ", fx.Error.Select(e => e.FxcFormattedMessage)) : "");
+
+        Named(slang).ShouldBe(FxNamed(MgfxBlobReader.Parse(fx.Value.Data)));
+        Named(slang).ShouldBe([("A", (byte)0, (byte)0), ("T", (byte)1, (byte)1)]);
+    }
+
+    [Fact]
+    public void CombinedSamplerRegisterWithASpace_OnOpenGL_PinsTheUnit()
+    {
+        // OpenGL has no register spaces: 'register(s1, space1)' is unit 1 like 'register(s1)'.
+        Named(SlangEffect("""
+            Sampler2D A : register(s1, space1);
+            [shader("fragment")]
+            float4 MainPS(float4 pos : SV_Position, float2 uv : TEXCOORD0) : SV_Target { return A.Sample(uv); }
+            """, PlatformTarget.OpenGL)).ShouldBe([("A", (byte)1, (byte)1)]);
+    }
+
+    [Theory]
+    // slangc emits globals in FIRST-USE order; mgfxc fills GL units in DECLARATION order. Each
+    // shape samples the later-declared texture first. Measured with mgfxc 3.8.4.1 for the first
+    // (T unit 1, A unit 2); the .fx route's allocator is the oracle for both.
+    [InlineData("Texture2D T;\nSamplerState S : register(s0);\nSampler2D A;", "sampler2D A;", "T1A2")]
+    [InlineData("Texture2D T;\nSamplerState S;\nSampler2D A;", "sampler2D A;", "T0A1")]
+    public void UnitsFollowTheAuthorsDeclarationOrder_NotSlangcsFirstUseOrder(string slangDeclarations, string fxLegacy, string expected)
+    {
+        string split = slangDeclarations[..slangDeclarations.LastIndexOf('\n')];
+        MgfxBlobReader slang = SlangEffect(
+            slangDeclarations + "\n[shader(\"fragment\")]\nfloat4 MainPS(float4 pos : SV_Position, float2 uv : TEXCOORD0) : SV_Target { return A.Sample(uv) + T.Sample(S, uv); }\n",
+            PlatformTarget.OpenGL);
+        var fx = new EffectCompiler().Compile(
+            FxHeader + split + "\n" + fxLegacy +
+            "\nfloat4 MainPS(float4 pos : SV_Position, float2 uv : TEXCOORD0) : COLOR0 { return tex2D(A, uv) + T.Sample(S, uv); }\ntechnique T0 { pass P0 { PixelShader = compile PS_SHADERMODEL MainPS(); } }\n",
+            new CompilerOptions { Target = PlatformTarget.OpenGL, SourceFileName = "Order.fx" });
+        fx.IsSuccess.ShouldBeTrue(fx.IsFailure ? string.Join("; ", fx.Error.Select(e => e.FxcFormattedMessage)) : "");
+
+        Named(slang).ShouldBe(FxNamed(MgfxBlobReader.Parse(fx.Value.Data)));
+        string.Concat(Named(slang).OrderBy(s => s.TextureSlot).Select(s => s.Texture + s.TextureSlot)).ShouldBe(expected);
+    }
+
     private const string CombinedAPixelShader = """
         [shader("fragment")]
         float4 MainPS(float4 pos : SV_Position, float2 uv : TEXCOORD0) : SV_Target

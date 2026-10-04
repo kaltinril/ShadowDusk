@@ -147,7 +147,8 @@ public static class SpirvCombinedSamplerPairs
     public static IReadOnlyList<int> ResolveSlots(
         IReadOnlyList<CombinedSamplerPair> pairs,
         IReadOnlyDictionary<string, int>? explicitSlots = null,
-        IReadOnlySet<int>? reservedSlots = null)
+        IReadOnlySet<int>? reservedSlots = null,
+        IReadOnlyDictionary<string, int>? declarationOrder = null)
     {
         ArgumentNullException.ThrowIfNull(pairs);
 
@@ -157,8 +158,15 @@ public static class SpirvCombinedSamplerPairs
 
         // Allocation runs in TEXTURE DECLARATION order, not in the first-use order the pairs
         // arrive in, because that is the order fxc fills registers in.
+        // A caller whose HLSL is not in the author's declaration order (the real-slangc route:
+        // slangc emits globals in first-use order) passes the author's order by texture name. It
+        // is used only when it names EVERY texture: one it cannot place (declared in an imported
+        // module, or through a macro its text does not expand) leaves the SPIR-V order in charge.
+        bool useDeclarationOrder = declarationOrder is { Count: > 0 }
+            && pairs.All(p => declarationOrder.ContainsKey(p.TextureName));
         int[] order = Enumerable.Range(0, pairs.Count)
-            .OrderBy(k => pairs[k].TextureDeclarationIndex)
+            .OrderBy(k => useDeclarationOrder ? declarationOrder![pairs[k].TextureName] : 0)
+            .ThenBy(k => pairs[k].TextureDeclarationIndex)
             .ThenBy(k => k)
             .ToArray();
 

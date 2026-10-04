@@ -278,6 +278,13 @@ that loads and renders identically to `mgfxc`'s in the real MonoGame/KNI runtime
   author's split `Texture2D` + `SamplerState : register(sN)` pair keeps the reservation rule, and
   DirectX, Vulkan and FNA output is unchanged. Rendered in real MonoGame DesktopGL by a new
   `validation/SlangTexturedGl` row (maxd 0 vs the `mgfxc` golden; it rendered white before).
+  Two combined samplers declaring one register (`Sampler2D A : register(s0); Sampler2D B :
+  register(s0);`) are now refused as the new `SD0644` instead of the second moving silently (fxc
+  refuses the legacy pair, `X4500`, and the DirectX targets refuse it); `register(sN, spaceM)` pins
+  unit N too. Also fixed: the GL units follow the author's DECLARATION order, as `mgfxc` fills them,
+  not slangc's first-use order (`Texture2D T; SamplerState S : register(s0); Sampler2D A;` sampled A
+  first gave A unit 1 and T unit 2; `mgfxc` and the `.fx` route give T 1, A 2), when every sampled
+  texture is declared in the entry source.
 - **vkd3d-shader and SPIRV-Cross are loaded only as ShadowDusk's pinned builds, by absolute path
   (issue #350, the counterpart of #270's DXC fix).** `Vkd3dLoader` (DirectX 11, FNA) and
   `SpvcLoader` (OpenGL) used to fall back to a bare-name load and then to the runtime's default

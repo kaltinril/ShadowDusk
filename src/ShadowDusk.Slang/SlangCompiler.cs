@@ -433,7 +433,13 @@ public sealed class SlangCompiler
         // reserving unit N as the split pair's SamplerState would. See SlangcCombinedSamplerGlSlots.
         IReadOnlyDictionary<string, int> combinedGlSlots = new Dictionary<string, int>();
         if (options.Target == PlatformTarget.OpenGL && named.Value.CombinedSamplers.Count > 0)
-            (mergedHlsl, combinedGlSlots) = SlangcCombinedSamplerGlSlots.Pin(mergedHlsl, named.Value.CombinedSamplers);
+        {
+            Result<(string Hlsl, IReadOnlyDictionary<string, int> Slots), ShaderError> pinned =
+                SlangcCombinedSamplerGlSlots.Pin(mergedHlsl, named.Value.CombinedSamplers, slangSource, sourceName);
+            if (pinned.IsFailure)
+                return Fail(pinned.Error);
+            (mergedHlsl, combinedGlSlots) = pinned.Value;
+        }
 
         // Issue #230: FNA's fx_2_0 needs DX9 effect texture syntax; slangc only emits texture
         // objects, which compiled but crashed real FNA on the first draw. See the respeller.
@@ -468,6 +474,17 @@ public sealed class SlangCompiler
             : options.WithSamplerArraysFromCombinedSamplers(combinedHalves);
         if (combinedGlSlots.Count > 0)
             downstreamOptions = downstreamOptions.WithCombinedSamplerGlSlots(combinedGlSlots);
+        if (options.Target == PlatformTarget.OpenGL)
+        {
+            // OpenGL fills units in the author's declaration order (mgfxc's rule); slangc emits
+            // globals in first-use order. Read from the entry text the register pass read when it
+            // ran (slangc's own preprocessed view), else the raw source. No extra slangc run.
+            string? readEntryText = kept.Value.ReadTexts
+                .Where(t => t.File == sourceName).Select(t => t.Text).FirstOrDefault();
+            downstreamOptions = downstreamOptions.WithGlTextureDeclarationOrder(
+                SlangcCombinedSamplerGlSlots.DeclarationOrder(
+                    readEntryText ?? slangSource, sourceName, rawSource: readEntryText is null));
+        }
 
         Result<CompiledShader, ShaderError[]> downstream = _downstreamCompiler.Compile(fxText, downstreamOptions, cancellationToken);
         if (downstream.IsFailure)
