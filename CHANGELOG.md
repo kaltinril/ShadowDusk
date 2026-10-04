@@ -343,6 +343,48 @@ that loads and renders identically to `mgfxc`'s in the real MonoGame/KNI runtime
   hosts that a solution `dotnet test` runs together are serialized around GL by a named mutex. The
   test project retires idle pool threads after 100 ms, which reproduced the old failure on every run,
   so every ImageTests run now re-proves the fix. Test infrastructure only; no shipped package changes.
+- **`ShadowDusk.Slang` on OpenGL: an array of combined samplers (`Sampler2D Comb[3]`) is `SD0217`,
+  located at the author's declaration and saying what to do, like the `Texture2D Tex[3]` array
+  (issue #356).** It used to surface as SPIRV-Cross's bare `SD0100` ("arrays or structs of separate
+  samplers"), which is kept verbatim at the end of the new message and in `RawDiagnostics`. An
+  author-written `SamplerState S[N]` is unchanged (`SD0100`, as on the `.fx` route), and so is one named
+  like slangc's lowering (`SamplerState My_sampler_0[2]`): the rewrite needs the author's source to
+  declare the combined sampler as an array.
+- **`ShadowDusk.Slang`: a slangc that Windows cannot start no longer opens a modal system dialog.**
+  On an interactive Windows desktop, launching a damaged or wrong-architecture `slangc.exe` raised
+  an "Unsupported 16-Bit Application" message box that blocked the compiling thread until someone
+  clicked OK. The launch now runs with the calling thread's hard-error dialogs off
+  (`SetThreadErrorMode`, restored afterwards, nothing else in the process changes), so it fails at
+  once as `SD0622` with the OS's reason.
+- **`ShadowDusk.Slang` on DirectX: `Sampler2D A : register(s2)` binding texture `t0` and sampler `s2`
+  is confirmed correct and pinned (issue #355).** slangc binds `register(sN)` on a combined sampler
+  to its sampler half only, and real `mgfxc` 3.8.4.1 compiles the hand-written legacy
+  `sampler2D A : register(s2)` to the same bindings (`fxc /dumpbin`: `dcl_resource_texture2d t0`,
+  `dcl_sampler s2`), so `GraphicsDevice.Textures[2]` does not reach that texture under `mgfxc`
+  either. `Sampler2D A : register(t2) : register(s2)` binds both halves to slot 2. No output change.
+
+- **Debug output no longer depends on the files in the working directory or on the host (issue
+  #343).** With `Debug` set, DXC's SPIR-V emitter (OpenGL, Vulkan) fills each `OpSource` by
+  reading the file it names wherever its leaf-name self-load succeeds (Windows, macOS 14+, Linux
+  with a copy of the pinned build on `LD_LIBRARY_PATH`): the main input, DXC's default `hlsl.hlsl`
+  in the working directory, and, found while fixing this, every file a `#line` directive names,
+  which includes a relative or absolute `SourceFileName` and the files it includes. So a
+  `hlsl.hlsl` in the working directory replaced the compiled source in the debug Vulkan module, and
+  any file at the `SourceFileName` path was embedded verbatim (measured on Windows with decoys:
+  both texts in the output); a plain Linux host embedded neither, so the same compile gave
+  different debug bytes per host. Debug SPIR-V compiles now name their input
+  `/dev/null/<shadowdusk-in-memory>/hlsl.hlsl`, which no host can open (not a directory on
+  Linux/macOS, an illegal Win32 name on Windows), so the main `OpSource` is always the in-memory
+  text; and every other `OpSource` drops any text DXC read (`DxcDebugSpirvSource`), which is what
+  it carries when the file does not exist. The browser build runs the same step (its DXC never
+  reads a file; its debug SPIR-V for the new arguments was measured byte-identical to desktop's).
+  Debug Vulkan bytes change once (the main file name, and no disk text); release output, DirectX
+  12 debug output and OpenGL debug output are byte-identical to before (measured over all 174
+  corpus fixtures, four targets, release and debug). A module the step cannot walk is `SD0225`.
+  Guarded by `DxcDebugSourceWorkingDirectoryTests` (every OS: decoys for `hlsl.hlsl` and the
+  `SourceFileName` in the child's working directory, outputs hashed against a clean directory, a
+  pre-fix positive control that must read both decoys, and the debug Vulkan hash pinned to
+  win-x64's so every lane proves cross-host identity) and `DxcDebugSpirvSourceTests`.
 
 - **The raylib and SkSL converters compile a legacy sampler declared in an `#include` or through a
   macro (issue #327).** `RaylibConverter.Convert` and `SkslConverter.Convert` pre-parse the raw main

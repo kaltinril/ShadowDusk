@@ -206,6 +206,12 @@ public sealed class DxcShaderCompiler : IDxcShaderCompiler, IDisposable
                 bytes = objectBlob.AsBytes();
             }
 
+            // Issue #343: a debug SPIR-V module carries no OpSource text read from the host's disk.
+            Result<byte[], ShaderError> normalized = DxcDebugSpirvSource.Normalize(arguments, bytes, request.SourceFileName);
+            if (normalized.IsFailure)
+                return Result<PlatformBlob, ShaderError>.Fail(normalized.Error);
+            bytes = normalized.Value;
+
             // DXC emits SM6 DXIL for both DirectX targets (the DirectX case here is the
             // reflection-only companion compile; vkd3d produces DX11's shipped DXBC) and
             // SPIR-V for the GL/Vulkan targets. These were mislabeled Dxbc/Spirv — no
