@@ -2378,10 +2378,18 @@ public sealed class FxPreParser
     }
 
     /// <summary>
-    /// For each (sampler, texture) candidate whose texture the macro-expanded, include-inlined
-    /// <paramref name="flattened"/> text declares nowhere (no <c>Texture*</c>/<c>texture</c> type
-    /// followed by the name), inserts <c>Texture2D T;</c> on the line of the sampler's rewritten
-    /// <c>SamplerState</c> declaration (so line numbers do not move), once per texture.
+    /// For each candidate texture (<see cref="FxParseResult.UndeclaredStateTextures"/>) that the
+    /// macro-expanded, include-inlined <paramref name="flattened"/> text declares nowhere, adds
+    /// <c>Texture2D T;</c> once, ahead of the first top-level code in the file. "Declares" is a
+    /// declaration scan of the preprocessed view, not a spelling match: any type whose name starts
+    /// with <c>texture</c> (any case: <c>texture</c>, <c>Texture2D</c>, <c>TextureCube</c>,
+    /// <c>Texture2DArray</c>, <c>texture2D</c>), optional template arguments
+    /// (<c>Texture2D&lt;float4&gt;</c>, MonoGame's own <c>Macros.fxh</c> spelling), then a
+    /// comma-separated declarator list with arrays, registers and semantics. The declaration goes
+    /// at the start of the file rather than beside the sampler, because the sampler can be declared
+    /// once per <c>#if</c> branch and the first one in the text may be in the branch that does not
+    /// compile; it is put on the line of the first code outside every conditional, so no line
+    /// number moves.
     /// </summary>
     /// <param name="flattened">The rewritten source with includes inlined and the compile's macros prepended.</param>
     /// <param name="sourceFileName">Display name for diagnostics.</param>
@@ -2398,26 +2406,94 @@ public sealed class FxPreParser
         if (view.IsFailure)
             return view;
 
-        string text = flattened;
-        var done = new HashSet<string>(StringComparer.Ordinal);
-        foreach ((string sampler, string texture) in candidates.OrderBy(c => c.Key, StringComparer.Ordinal))
-        {
-            if (done.Contains(texture))
-                continue;
-            string name = System.Text.RegularExpressions.Regex.Escape(texture);
-            bool declaredInView = System.Text.RegularExpressions.Regex.IsMatch(
-                view.Value, $@"(?<![A-Za-z0-9_])[Tt]exture\w*\s+{name}(?![A-Za-z0-9_])");
-            if (declaredInView)
-                continue;
+        HashSet<string> declared = DeclaredTextureNames(new FxLexer(view.Value, sourceFileName).Tokenize());
+        var missing = candidates.Values
+            .Distinct(StringComparer.Ordinal)
+            .Where(t => !declared.Contains(t))
+            .Order(StringComparer.Ordinal)
+            .ToList();
+        if (missing.Count == 0)
+            return Result<string, ShaderError>.Ok(flattened);
 
-            System.Text.RegularExpressions.Match m = System.Text.RegularExpressions.Regex.Match(
-                text, $@"(?<![A-Za-z0-9_])SamplerState\s+{System.Text.RegularExpressions.Regex.Escape(sampler)}\s*;");
-            if (!m.Success)
+        int at = FirstTopLevelCodeOffset(flattened, sourceFileName);
+        string declarations = string.Concat(missing.Select(t => $"Texture2D {t}; "));
+        return Result<string, ShaderError>.Ok(flattened.Insert(at, declarations));
+    }
+
+    /// <summary>Names declared with a <c>texture*</c> type (any case, optional template arguments).</summary>
+    private static HashSet<string> DeclaredTextureNames(IReadOnlyList<Token> tokens)
+    {
+        var code = tokens.Where(t => t.Kind is not (TokenKind.LineComment or TokenKind.BlockComment or TokenKind.Preprocessor)).ToList();
+        var names = new HashSet<string>(StringComparer.Ordinal);
+        for (int i = 0; i < code.Count; i++)
+        {
+            if (code[i].Kind != TokenKind.Identifier
+                || !code[i].Text.StartsWith("texture", StringComparison.OrdinalIgnoreCase))
+            {
                 continue;
-            text = text.Insert(m.Index, $"Texture2D {texture}; ");
-            done.Add(texture);
+            }
+
+            int j = i + 1;
+            if (j < code.Count && code[j].Kind == TokenKind.LAngle)
+            {
+                int depth = 0;
+                for (; j < code.Count; j++)
+                {
+                    if (code[j].Kind == TokenKind.LAngle) depth++;
+                    else if (code[j].Kind == TokenKind.RAngle && --depth == 0) { j++; break; }
+                    else if (code[j].Kind is TokenKind.Semicolon or TokenKind.LBrace) break;
+                }
+            }
+
+            // Declarator list: a name, then anything (array size, ': register(t2)', a semantic,
+            // annotations) up to ',' (next name) or the end of the statement.
+            bool expectName = true;
+            int parens = 0;
+            for (; j < code.Count; j++)
+            {
+                Token t = code[j];
+                if (t.Kind is TokenKind.Semicolon or TokenKind.LBrace or TokenKind.RBrace) break;
+                if (t.Kind == TokenKind.LParen) { parens++; continue; }
+                if (t.Kind == TokenKind.RParen) { parens--; continue; }
+                if (parens == 0 && t.Kind == TokenKind.Comma) { expectName = true; continue; }
+                if (expectName && t.Kind == TokenKind.Identifier)
+                {
+                    names.Add(t.Text);
+                    expectName = false;
+                    continue;
+                }
+                if (expectName)
+                    break; // not a declaration (e.g. a cast or a function's return type use)
+            }
         }
-        return Result<string, ShaderError>.Ok(text);
+        return names;
+    }
+
+    /// <summary>
+    /// The character offset of the first code token outside every <c>#if</c>/<c>#ifdef</c>/
+    /// <c>#ifndef</c> block, or 0 when there is none.
+    /// </summary>
+    private static int FirstTopLevelCodeOffset(string text, string sourceFile)
+    {
+        IReadOnlyList<Token> tokens = new FxLexer(text, sourceFile).Tokenize();
+        int[] offsets = ComputeCharacterOffsets(text, tokens);
+        int depth = 0;
+        for (int i = 0; i < tokens.Count; i++)
+        {
+            Token t = tokens[i];
+            if (t.Kind is TokenKind.LineComment or TokenKind.BlockComment or TokenKind.EOF)
+                continue;
+            if (t.Kind == TokenKind.Preprocessor)
+            {
+                string d = t.Text.TrimStart('#', ' ', '\t');
+                if (d.StartsWith("if", StringComparison.Ordinal)) depth++;
+                else if (d.StartsWith("endif", StringComparison.Ordinal) && depth > 0) depth--;
+                continue;
+            }
+            if (depth == 0)
+                return offsets[i];
+        }
+        return 0;
     }
 
     /// <summary>The synthesized <c>Texture2D</c> name bound to a bare/untextured sampler.</summary>
