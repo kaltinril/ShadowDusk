@@ -25,7 +25,7 @@ ShadowDusk/
 │   ├── ShadowDusk.ShaderToy/     # Pure-managed ShaderToy/GLSL → .fx front-end (ShaderToyConverter.Convert); ZERO
 │   │                             #   native + ZERO MonoGame dep; additive, upstream of the pipeline. PUBLISHED standalone NuGet (0.9.0).
 │   ├── ShadowDusk.Slang/         # SlangCompiler: REAL slangc-backed Slang front-end (import/generics/interfaces,
-│   │                             #   Phase 66) — bundles real slangc (win/linux x64 + macOS x64/arm64), hands its HLSL emission to
+│   │                             #   Phase 66) — bundles real slangc (win x64/arm64, linux x64, macOS x64/arm64), hands its HLSL emission to
 │   │                             #   the unchanged EffectCompiler pipeline. Opt-in, additive; the HLSL-compatible
 │   │                             #   .slang SUBSET (ShadowDusk.Compiler.Slang.SlangFrontend) stays the free default.
 │                                 # tools/setup-local-testing.ps1 is the one-command contributor setup:
@@ -54,7 +54,7 @@ ShadowDusk/
 │   ├── ShadowDusk.Compiler.Tests/
 │   ├── ShadowDusk.ShaderToy.Tests/     # ShaderToy→.fx converter unit/trap/golden/reject suite (pure managed)
 │   ├── ShadowDusk.Slang.Tests/         # SlangCompiler (real-slangc route) unit + [Category=Integration] suite —
-│   │                                   #   spawns the restored tools/slang/<rid>/ slangc (Phase 66; all four RIDs, issue #227)
+│   │                                   #   spawns the restored tools/slang/<rid>/ slangc (Phase 66; all five RIDs, issues #227/#286)
 │   ├── ShadowDusk.Integration.Tests/   # Compile real .fx files end-to-end (+ CLI .glsl-input integration)
 │   ├── ShadowDusk.ImageTests/          # Offscreen-render image regression
 │   ├── ShadowDusk.BrowserTests/        # Headless KNI WebGL render validation (Playwright)
@@ -102,7 +102,7 @@ ShadowDusk/
 │   │                              #   tools/verify-slang-packaging.sh (run by pack-consume.yml) COPIES out of
 │   │                              #   tree and consumes cold, framework-dependent + self-contained (issue #225).
 │   │                              #   Never built in place. Its pack gate is tools/verify-slang-nupkg.sh <nupkg>,
-│   │                              #   the ONE exact-name list of the eight slangc natives + notice, also run by
+│   │                              #   the ONE exact-name list of the ten slangc natives + notice, also run by
 │   │                              #   release.yml (issue #226) and runnable locally against any packed nupkg.
 │   │                              #   tools/verify-slang-osx-x64-rosetta.sh <nupkg> (pack-consume.yml, macOS)
 │   │                              #   runs the packaged osx-x64 slangc under Rosetta 2 vs osx-arm64 (issue #352).

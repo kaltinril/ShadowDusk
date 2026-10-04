@@ -280,7 +280,7 @@ ShadowDusk/
 │   │                            #   vkd3d-shader + d3dcompiler DXBC backends
 │   ├── ShadowDusk.GLSL/         # SPIR-V → GLSL via SPIRV-Cross + MonoGameGlslRewriter
 │   ├── ShadowDusk.ShaderToy/    # ShaderToy / GLSL → .fx front-end (optional, pure managed)
-│   ├── ShadowDusk.Slang/        # REAL Slang front-end via bundled slangc (optional; win/linux x64, macOS x64/arm64)
+│   ├── ShadowDusk.Slang/        # REAL Slang front-end via bundled slangc (optional; win x64/arm64, linux x64, macOS x64/arm64)
 │   ├── ShadowDusk.Metal/        # SPIR-V → MSL (stub — not yet implemented)
 │   ├── ShadowDusk.Compiler/     # EffectCompiler : IShaderCompiler — the consumer-facing product NuGet
 │   ├── ShadowDusk.Cli/          # dotnet tool entry point (mgfxc)

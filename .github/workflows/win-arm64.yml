@@ -39,7 +39,9 @@ permissions:
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
+  # Only a PR's superseded push is cancelled: a release-time dispatch and the weekly cron, both on
+  # main, must never cancel each other.
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 env:
   DOTNET_SKIP_FIRST_TIME_EXPERIENCE: '1'

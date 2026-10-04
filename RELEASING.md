@@ -253,11 +253,14 @@ first (the `/release` skill does this for you).
 > older): its `tools/verify-slang-packaging.sh` step is the only proof that a cold consumer can
 > install the package and run slangc on Linux, macOS and Windows, and its macOS
 > `tools/verify-slang-osx-x64-rosetta.sh` step is the only run of the packaged **osx-x64** slangc
-> (under Rosetta 2, output byte-identical to osx-arm64; issue #352). The packaged **win-arm64**
-> slangc runs only in the `win-arm64` workflow (`windows-11-arm`, issue #286): dispatch it on the
-> release commit too (or check its weekly run is green on it); it is the only native arm64 run of
-> the core pipeline and of that slangc. Host floors are upstream's:
+> (under Rosetta 2, output byte-identical to osx-arm64; issue #352). Host floors are upstream's:
 > Linux Ubuntu 22.04+, macOS 26+ (issue #237).
+
+> **win-arm64 (issue #286):** the packaged **win-arm64** slangc, and the core pipeline as a native
+> arm64 process, run only in the `win-arm64` workflow (`windows-11-arm`). Before dispatching, run it
+> on the branch or tag that points at the release commit (`gh workflow run win-arm64.yml --ref main`,
+> or `--ref v<version>`; `--ref` takes a branch or tag, not a SHA), check the run's head SHA is the
+> release commit, and wait for green.
 
 ---
 

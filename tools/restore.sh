@@ -556,7 +556,10 @@ restore_slang() {
         2976c3a9a6f4d77b5734d00b5d841d1ff087d9965d9006b9b4d73edd0062cb7d \
         bin/slangc a1c5ecae0d2425b13fe7f616686f2df7cc7028d3f6a85fb717497cf98bee3d0a \
         "lib/libslang-compiler.0.${SLANG_VERSION}.dylib" 4fadae0d56d4538dc2a0099086de3d2a5350e12da4591679ee8cbb571c5db7de
-    restore_slang_rid win-arm64 windows-aarch64         5067047bb35ae5675b06a3467d0b302d9816727450a803cb3770660bef684f37         bin/slangc.exe fa689dd4c308621bfb82559a863554babd5921863cc4ff9473056b500524f433         bin/slang-compiler.dll 066d048df8f9c73eb1cfd77e64dd285e1b1e9766eda6c170a29350bfb76fdb9a
+    restore_slang_rid win-arm64 windows-aarch64 \
+        5067047bb35ae5675b06a3467d0b302d9816727450a803cb3770660bef684f37 \
+        bin/slangc.exe fa689dd4c308621bfb82559a863554babd5921863cc4ff9473056b500524f433 \
+        bin/slang-compiler.dll 066d048df8f9c73eb1cfd77e64dd285e1b1e9766eda6c170a29350bfb76fdb9a
 }
 
 restore_slang
