@@ -185,6 +185,33 @@ that loads and renders identically to `mgfxc`'s in the real MonoGame/KNI runtime
 
 ### Changed
 
+- **BREAKING (output names): a legacy sampler with no texture of its own now gets `mgfxc`'s
+  parameter name, `X`, instead of `X_SDTexture`.** For `sampler2D X;`, `sampler X;`,
+  `sampler2D X : register(sN);`, SpriteBatch's `sampler s0;`, or a `sampler_state` block that names
+  no texture, `mgfxc` names the effect parameter `X` (Texture2D) on OpenGL and DirectX 11, and
+  ShadowDusk named it `X_SDTexture`, the texture its SM4 rewrite synthesizes. So
+  `effect.Parameters["X"]` was `null` on DirectX, and on OpenGL and Vulkan it found a standalone
+  sampler parameter that no sampler record points at, so `SetValue(texture)` drew nothing (real
+  MonoGame DesktopGL: blue instead of white, maxd 255). The parameter is now `X` on OpenGL,
+  DirectX 11, DirectX 12, Vulkan and KNI, and the duplicate sampler parameter of that name is gone;
+  shader bytecode is unchanged (the 26 byte-identity entries that moved differ only in the table).
+  FNA never synthesized the texture. `mgfxc` 3.8.5 gives no reference for DirectX 12 (empty table)
+  or Vulkan (rejects the legacy types), so those targets follow the name `mgfxc` uses everywhere it
+  compiles the shape.
+  **Migration:** code calling `effect.Parameters["X_SDTexture"]` now gets `null` on every target,
+  KNI included, and must use `effect.Parameters["X"]` (which also works with `mgfxc`'s output).
+  The raylib and SkSL converters are NOT changed and still expose `X_SDTexture` as the uniform /
+  child-shader name.
+- **BREAKING (refusal): two legacy samplers on one register are refused (`SD0227`), as `mgfxc`
+  refuses them.** `sampler2D A : register(s0); sampler2D B : register(s0);` with both read compiled
+  and gave B the next unit on every target, while fxc (so `mgfxc` 3.8.4.1 on OpenGL and
+  DirectX_11) stops with `X4500: overlapping register semantics`. OpenGL, DirectX 11, DirectX 12
+  and Vulkan now fail with `SD0227` at the second declaration, naming both samplers. Decided on the
+  preprocessed source and only for samplers the compiled shader reads, like fxc: a second
+  declaration nothing reads, a clash in an inactive `#if` branch, and a sampler sharing its number
+  with a `Texture2D : register(tN)` or a constant `register(cN)` all still compile. FNA was already
+  refused by vkd3d. **Migration:** an effect that compiled before with this shape now fails, as it
+  does under `mgfxc`; give each sampler its own register.
 - **CI executes `ShadowDusk.Slang`'s osx-x64 slangc (issue #352).** CI's macOS runners are arm64,
   so the bundled osx-x64 slangc was only checked for presence. `pack-consume.yml`'s macOS lane now
   extracts it from the packed nupkg, runs it under Rosetta 2, and fails unless its HLSL is
@@ -267,31 +294,15 @@ that loads and renders identically to `mgfxc`'s in the real MonoGame/KNI runtime
 
 ### Fixed
 
-- **A legacy sampler with no texture of its own now gets `mgfxc`'s parameter name.** For
-  `sampler2D A;`, `sampler A;`, `sampler2D A : register(sN);` or a `sampler_state` block that names
-  no texture, `mgfxc` names the effect parameter `A` (Texture2D) on OpenGL and DirectX 11, and
-  ShadowDusk named it `A_SDTexture`, the texture its SM4 rewrite synthesizes. Game code calling
-  `effect.Parameters["A"]` got `null` on DirectX, and on OpenGL and Vulkan a standalone sampler
-  parameter that no sampler record points at, so `SetValue(texture)` drew nothing (measured in real
-  MonoGame DesktopGL: blue instead of white, maxd 255). The parameter is now named `A` on OpenGL,
-  DirectX 11, DirectX 12, Vulkan and KNI, and the duplicate sampler parameter of that name is gone;
-  shader bytecode is unchanged (the 26 byte-identity entries that moved differ only in the table).
-  SpriteBatch's `sampler s0;` idiom is the commonest case. FNA never synthesized the texture.
-  `mgfxc` 3.8.5 gives no reference for DirectX 12 (empty table) or Vulkan (rejects the legacy
-  types), so those targets follow the name `mgfxc` uses everywhere it compiles the shape.
 - **`sampler2D A = sampler_state { Texture = <Tex>; };` compiles when nothing declares `Tex`.**
   `mgfxc` reads the name off the state block and emits a `Tex` parameter; ShadowDusk handed DXC an
-  undeclared identifier. The rewrite now declares `Texture2D Tex;` when the name appears nowhere in
-  the source but in `Texture = ...` state entries (a declaration anywhere, a use, or any mention in
-  a preprocessor directive leaves the rewrite as it was).
-- **Two legacy samplers on one register are refused (`SD0227`), as `mgfxc` refuses them.**
-  `sampler2D A : register(s0); sampler2D B : register(s0);` with both read compiled and gave B the
-  next unit on every target, while fxc (so `mgfxc` 3.8.4.1 on OpenGL and DirectX_11) stops with
-  `X4500: overlapping register semantics`. OpenGL, DirectX 11, DirectX 12 and Vulkan now fail with
-  `SD0227` at the second declaration, naming both samplers. Decided on the preprocessed source and
-  only for samplers the compiled shader reads, like fxc: a second declaration nothing reads, a
-  clash in an inactive `#if` branch, and a sampler sharing its number with a `Texture2D :
-  register(tN)` or a constant `register(cN)` all still compile. FNA was already refused by vkd3d.
+  undeclared identifier. The compiler now declares `Texture2D Tex;` only when the PREPROCESSED source
+  (includes inlined, macros expanded) declares no `Tex`, so a texture declared in an `#include`d
+  header or by a macro keeps compiling with its own declaration.
+- **The consumer's include resolver is called once per `#include` per compile.** A compile
+  flattens the source more than once (the compile itself, the preprocessed sampler views, the
+  legacy-sampler recovery); every pass now reuses the resolver's first answer, so a resolver that
+  counts, logs, or throws on a repeat call sees one call.
 - **`ShadowDusk.Slang` on OpenGL: a combined sampler's register is its texture unit, as `mgfxc` gives
   the legacy `sampler2D X : register(sN)` (refs issue #252).** `Sampler2D SpriteTexture : register(s0)`
   landed on unit 1, so SpriteBatch's unit-0 texture never reached the shader (it rendered white),

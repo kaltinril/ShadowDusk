@@ -291,10 +291,11 @@ public sealed class FxPreParser
     // the SAMPLER's name, as mgfxc's does (see FxParseResult.SynthesizedSamplerTextures).
     private readonly Dictionary<string, string> _synthesizedSamplerTextures = new(StringComparer.Ordinal);
 
-    // Textures a sampler_state block references but the source never declares, already
-    // given a 'Texture2D' declaration by the rewrite (so a second sampler on the same
-    // texture does not declare it twice).
-    private readonly HashSet<string> _declaredReferencedTextures = new(StringComparer.Ordinal);
+    // SAMPLER name -> the texture its sampler_state block names, for every legacy sampler whose
+    // texture the MAIN file's code never declares or mentions (see IsOnlyNamedByTextureStates).
+    // Only candidates: an #include'd file or a macro can still declare it, which only the
+    // preprocessed source shows, so the compiler decides (FxParseResult.UndeclaredStateTextures).
+    private readonly Dictionary<string, string> _undeclaredStateTextures = new(StringComparer.Ordinal);
 
     /// <summary>
     /// SAMPLER name -> the explicit <c>register(sN)</c> index on its legacy declaration, captured
@@ -659,17 +660,15 @@ public sealed class FxPreParser
                             _samplerTextureBindings[info.Name] = texture;
                             if (info.TextureReference is null)
                                 _synthesizedSamplerTextures[info.Name] = texture;
-                            // A referenced texture the source never declares
+                            // A referenced texture the main file never declares
                             // ('sampler2D A = sampler_state { Texture = <T>; };' and no 'T'):
                             // mgfxc reads the name off the state block and emits a 'T'
-                            // parameter, so declare it here, once, rather than hand DXC an
-                            // undeclared identifier.
-                            bool declareReference = info.TextureReference is not null
-                                && !_declaredReferencedTextures.Contains(info.TextureReference)
-                                && IsOnlyNamedByTextureStates(info.TextureReference);
-                            if (declareReference)
-                                _declaredReferencedTextures.Add(info.TextureReference!);
-                            string newDecl = info.TextureReference is null || declareReference
+                            // parameter. Recorded as a candidate only; the compiler declares it
+                            // when the PREPROCESSED source (includes inlined, macros expanded)
+                            // does not, because a header or a macro can declare it.
+                            if (info.TextureReference is not null && IsOnlyNamedByTextureStates(info.TextureReference))
+                                _undeclaredStateTextures[info.Name] = info.TextureReference;
+                            string newDecl = info.TextureReference is null
                                 ? $"Texture2D {texture}; SamplerState {info.Name};"
                                 : $"SamplerState {info.Name};";
 
@@ -1043,6 +1042,7 @@ public sealed class FxPreParser
             ExplicitGlSamplerSlots = explicitGlSlots,
             LegacySamplerTextures = new Dictionary<string, string>(_samplerTextureBindings, StringComparer.Ordinal),
             SynthesizedSamplerTextures = new Dictionary<string, string>(_synthesizedSamplerTextures, StringComparer.Ordinal),
+            UndeclaredStateTextures = new Dictionary<string, string>(_undeclaredStateTextures, StringComparer.Ordinal),
             ReservedGlSamplerSlots = CollectReservedSamplerRegisters(),
         });
     }
@@ -2369,6 +2369,49 @@ public sealed class FxPreParser
             }
         }
         return mentions > 0 && mentions == stateValues;
+    }
+
+    /// <summary>
+    /// For each (sampler, texture) candidate whose texture the macro-expanded, include-inlined
+    /// <paramref name="flattened"/> text declares nowhere (no <c>Texture*</c>/<c>texture</c> type
+    /// followed by the name), inserts <c>Texture2D T;</c> on the line of the sampler's rewritten
+    /// <c>SamplerState</c> declaration (so line numbers do not move), once per texture.
+    /// </summary>
+    /// <param name="flattened">The rewritten source with includes inlined and the compile's macros prepended.</param>
+    /// <param name="sourceFileName">Display name for diagnostics.</param>
+    /// <param name="parsed">The pre-parse that produced the rewrite (its <see cref="FxParseResult.UndeclaredStateTextures"/>).</param>
+    /// <returns>The text to compile, or <c>SD0009</c> when the preprocessed view cannot be built.</returns>
+    public static Result<string, ShaderError> DeclareUndeclaredStateTextures(
+        string flattened, string sourceFileName, FxParseResult parsed)
+    {
+        ArgumentNullException.ThrowIfNull(parsed);
+        IReadOnlyDictionary<string, string> candidates = parsed.UndeclaredStateTextures;
+        if (candidates.Count == 0)
+            return Result<string, ShaderError>.Ok(flattened);
+        Result<string, ShaderError> view = Preprocessing.FxMacroPreprocessor.Process(flattened, sourceFileName);
+        if (view.IsFailure)
+            return view;
+
+        string text = flattened;
+        var done = new HashSet<string>(StringComparer.Ordinal);
+        foreach ((string sampler, string texture) in candidates.OrderBy(c => c.Key, StringComparer.Ordinal))
+        {
+            if (done.Contains(texture))
+                continue;
+            string name = System.Text.RegularExpressions.Regex.Escape(texture);
+            bool declaredInView = System.Text.RegularExpressions.Regex.IsMatch(
+                view.Value, $@"(?<![A-Za-z0-9_])[Tt]exture\w*\s+{name}(?![A-Za-z0-9_])");
+            if (declaredInView)
+                continue;
+
+            System.Text.RegularExpressions.Match m = System.Text.RegularExpressions.Regex.Match(
+                text, $@"(?<![A-Za-z0-9_])SamplerState\s+{System.Text.RegularExpressions.Regex.Escape(sampler)}\s*;");
+            if (!m.Success)
+                continue;
+            text = text.Insert(m.Index, $"Texture2D {texture}; ");
+            done.Add(texture);
+        }
+        return Result<string, ShaderError>.Ok(text);
     }
 
     /// <summary>The synthesized <c>Texture2D</c> name bound to a bare/untextured sampler.</summary>
