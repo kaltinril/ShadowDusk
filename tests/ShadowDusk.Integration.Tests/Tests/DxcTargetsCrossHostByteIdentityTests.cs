@@ -74,6 +74,24 @@ public sealed class DxcTargetsCrossHostByteIdentityTests
 
     private static readonly TimeSpan CorpusBudget = TimeSpan.FromMinutes(10);
 
+    /// <summary>
+    /// The one measured cross-host difference in DXC's own output (2026-10-04), pinned exactly
+    /// so it can neither grow nor silently go away. Our macOS DXC (<c>e043f4a1</c>, the same
+    /// commit as Windows) emits the debug records of a split global vector's elements
+    /// (<c>DIGlobalVariable _ambientColor.1</c>, <c>.2</c>, ...) in a different ORDER than the
+    /// Windows and Linux builds, for <c>ForwardLighting.fx</c>'s pixel shader under
+    /// <c>Debug</c>. Debug metadata only: disassembled with one DXC, every instruction and every
+    /// other line is identical, and the release arm matches on every host. The order comes from
+    /// <c>HLModule::CreateElementGlobalVariableDebugInfo</c> appending each element in the order
+    /// DXC's HLSL scalar-replacement pass processes them; on the same source and commit that
+    /// order differs by host build, so it is a host-build fact, not one of the 28 commits the
+    /// Linux build lacks. Values are this host's canonical digests (see the class remarks).
+    /// </summary>
+    private static readonly Dictionary<string, (string Dxil, string MgfxNormalized)> MacOsDivergences = new(StringComparer.Ordinal)
+    {
+        ["DirectX12.Debug/ForwardLighting.fx"] = ("pending", "pending"),
+    };
+
     private static string ShadersRoot => Path.Combine(AppContext.BaseDirectory, "fixtures", "shaders");
 
     [DxcFact]
@@ -120,6 +138,9 @@ public sealed class DxcTargetsCrossHostByteIdentityTests
             "!2 = distinct !DICompileUnit(language: DW_LANG_C_plus_plus, producer: \"dxc(private) 1.7.0.3759 (8c9d92be7)\")\n";
 
         DxilCanonicalText(linux).ShouldBe(DxilCanonicalText(windows));
+        // The same metadata bytes, printed escaped (Windows, Linux) and raw (macOS's UTF-8 isprint).
+        DxilCanonicalText("!5 = !{!\"a \\E2\\80\\94 b\"}").ShouldBe(DxilCanonicalText("!5 = !{!\"a â\u0080\u0094 b\"}"));
+        DxilCanonicalText("!5 = !{!\"a \\E2\\80\\94 b\"}").ShouldBe(DxilCanonicalText("!5 = !{!\"a â\\80\\94 b\"}"));
         DxilCanonicalText(windows).ShouldContain("ret void", Case.Sensitive);
         DxilCanonicalText(windows).ShouldContain("!1 = !{i32 1, i32 0}", Case.Sensitive);
         DxilCanonicalText(windows.Replace("ret void", "ret void ; changed", StringComparison.Ordinal))
@@ -173,6 +194,15 @@ public sealed class DxcTargetsCrossHostByteIdentityTests
             }
 
             var fields = new List<string>();
+            if (OperatingSystem.IsMacOS() && MacOsDivergences.TryGetValue(key, out (string Dxil, string MgfxNormalized) mac))
+            {
+                // A known, measured divergence: this host's own exact values replace the
+                // manifest's for these two fields, and must still differ from it.
+                if (mac.Dxil == x.Dxil || mac.MgfxNormalized == x.MgfxNormalized)
+                    fields.Add("the known macOS divergence no longer differs from the manifest; remove it from MacOsDivergences");
+                x = new Entry { Errors = x.Errors, Mgfx = x.Mgfx, Spirv = x.Spirv, Warnings = x.Warnings, Dxil = mac.Dxil, MgfxNormalized = mac.MgfxNormalized };
+            }
+
             if (!SameList(e.Errors, x.Errors))
                 fields.Add($"errors manifest=[{Join(x.Errors)}] this-host=[{Join(e.Errors)}]");
             if (rawDxilComparable && e.Mgfx != x.Mgfx)
@@ -327,10 +357,28 @@ public sealed class DxcTargetsCrossHostByteIdentityTests
     /// at (the compiler's version string), and every other occurrence of that exact string (the
     /// debug information's <c>producer:</c>), which is replaced by a fixed token. The container
     /// signature is not in the disassembly at all.
+    /// <para>One more normalization, of the PRINTER rather than of the DXIL: LLVM's
+    /// <c>PrintEscapedString</c> escapes a string byte as <c>\XX</c> unless <c>isprint()</c> says
+    /// it is printable, and <c>isprint</c> follows the C locale, which DXC itself switches to
+    /// UTF-8 and never restores (see <c>project_facts.md</c>, the <c>setlocale</c> shims). On macOS
+    /// that makes bytes 0x80-0xFF print raw (measured: the em dash in the embedded debug source
+    /// printed as a raw <c>0xE2</c> then <c>\80\94</c>), while Windows and Linux print
+    /// <c>\E2\80\94</c>. The disassembly is decoded byte for byte (Latin-1) and every byte at or
+    /// above 0x80 is written back as its <c>\XX</c> escape, so both spellings of the same metadata
+    /// bytes canonicalize alike.</para>
     /// </summary>
     internal static string DxilCanonicalText(string disassembly)
     {
-        string[] lines = disassembly.Replace("\r\n", "\n", StringComparison.Ordinal).Split('\n');
+        var escaped = new StringBuilder(disassembly.Length);
+        foreach (char ch in disassembly)
+        {
+            if (ch >= '\u0080' && ch <= 'ÿ')
+                escaped.Append('\\').Append(((int)ch).ToString("X2", System.Globalization.CultureInfo.InvariantCulture));
+            else
+                escaped.Append(ch);
+        }
+
+        string[] lines = escaped.ToString().Replace("\r\n", "\n", StringComparison.Ordinal).Split('\n');
         Match ident = lines.Select(l => Regex.Match(l, @"^!llvm\.ident = !\{(![0-9]+)\}$")).FirstOrDefault(m => m.Success) ?? Match.Empty;
         string? identNode = ident.Success ? ident.Groups[1].Value + " = " : null;
         string? identity = identNode is null
@@ -363,7 +411,8 @@ public sealed class DxcTargetsCrossHostByteIdentityTests
             using IDxcResult result = compiler.Disassemble<IDxcResult>(in buffer);
             result.GetStatus().Success.ShouldBeTrue("DXC must disassemble its own DXIL");
             using IDxcBlob text = result.GetOutput(DxcOutKind.Disassembly);
-            return Encoding.UTF8.GetString(text.AsBytes()).TrimEnd('\0');
+            // Latin-1: one char per byte, so DxilCanonicalText sees the bytes the printer wrote.
+            return Encoding.Latin1.GetString(text.AsBytes()).TrimEnd('\0');
         }
         finally
         {
