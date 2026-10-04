@@ -23,7 +23,7 @@ and loads the resulting bytes into `new Effect(GraphicsDevice, mgfx)`. The outco
 
 The faithful OpenGL pipeline needs DXC (`libdxcompiler.so`) and SPIRV-Cross
 (`libspirv-cross.so`) for each ABI. `tools/restore.ps1` / `tools/restore.sh` download all four
-(SHA-256 pinned; DXC from release tag `native-dxc-1.7.2212.40`, SPIRV-Cross from `native-spirv-cross-android-d8e3e2b1`) into `tools/dxc/<rid>/` and
+(SHA-256 pinned; DXC from release tag `native-dxc-android-1.7.2212.40-16k`, SPIRV-Cross from `native-spirv-cross-android-d8e3e2b1`) into `tools/dxc/<rid>/` and
 `tools/spirv-cross/<rid>/`; the csproj bundles them via `<AndroidNativeLibrary>`:
 
 | ABI | Used by | Shipped in a package? |

@@ -142,7 +142,7 @@ restore_dxc_file() {
     local dest="$dxc_dir/$dest_rel"
 
     if [ "$sha" = "PENDING-FIRST-HOSTED-BUILD" ]; then
-        echo "restore.sh: NOTICE — DXC native ($dest_rel) pin is a placeholder (no hosted build yet); skipping. macOS DXC remains unavailable until Phase 37 A's hosted artifacts land."
+        echo "restore.sh: NOTICE — DXC native ($dest_rel) pin is a placeholder (no hosted build yet); skipping. That DXC stays unavailable until its hosted build is pinned."
         return 0   # non-fatal by design while the pins are placeholders
     fi
 
@@ -198,9 +198,9 @@ restore_dxc_macos
 # vkd3d is NOT needed (DirectX/FNA are desktop-only). DxcLoader/SpvcLoader resolve them by
 # bare SONAME from the APK's lib/arm64-v8a/ (Android W^X-safe).
 #
-# Pins enforced since 2026-06-28 (Phase 50 hosting): the android-arm64 DXC + SPIRV-Cross
-# .so are hosted on the native-dxc-1.7.2212.40 tag (the DXC is the same e043f4a1 / 1.7.2212.40
-# family) and SHA-256-verified below. restore_android provisions them so ShadowDusk.HLSL packs
+# Pins: the Android DXC + SPIRV-Cross .so are hosted on their own release tags
+# (native-dxc-android-1.7.2212.40-16k and native-spirv-cross-android-d8e3e2b1, below) and
+# SHA-256-verified below. restore_android provisions them so ShadowDusk.HLSL packs
 # runtimes/android-arm64/native/libdxcompiler.so and ShadowDusk.GLSL packs the spirv-cross .so —
 # an on-device Android compile is then self-contained. Same pin-discipline as the macOS dylibs:
 # hash mismatch -> re-download; offline -> non-fatal warning. Re-running dxc-android-build.yml /

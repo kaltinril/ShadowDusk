@@ -20,7 +20,7 @@ sample-only and is NOT used here.
 | DLL FileVersion | **1.7.2212.40** |
 | DLL ProductVersion | **1.7.2212.40 (e043f4a12)** |
 | Upstream release | DXC **v1.7.2212** ("DX Compiler release for December 2022") |
-| **Pinned commit** | **`e043f4a1286f4e1026222ab1bc94e25de8d0e959`** — "Merge pull request #5067 from pow2clk/cp-release-1.7.2212", dated 2023-03-01. This is the `release-1.7.2212` branch HEAD-ish, i.e. the exact commit Vortice's build reports — NOT the `v1.7.2212` tag commit (`8c9d92be…`), which is earlier. The FileVersion build commit is authoritative for byte-identity. |
+| **Pinned commit** | **`e043f4a1286f4e1026222ab1bc94e25de8d0e959`** — "Merge pull request #5067 from pow2clk/cp-release-1.7.2212", dated 2023-03-01. This is the `release-1.7.2212` branch HEAD-ish, i.e. the exact commit Vortice's **Windows** `dxcompiler.dll` reports — NOT the `v1.7.2212` tag commit (`8c9d92be…`), which is earlier. **Correction (measured 2026-10-04):** Vortice.Dxc 3.3.4's **linux-x64** `libdxcompiler.so` reports `dxc(private) 1.7.0.3759 (8c9d92be7)`, i.e. it IS that earlier tag commit, 28 commits behind `e043f4a1`. So "Vortice 3.3.4 = e043f4a1" holds for Windows only; the OpenGL corpus still matches byte for byte on Linux, and Vulkan / DirectX 12 output on Linux is unmeasured (see `project_facts.md`). |
 
 **Mapping method:** read `dxcompiler.dll`'s `VersionInfo` (`ProductVersion = "1.7.2212.40 (e043f4a12)"`) → the 8-hex suffix is the build commit → confirmed against the GitHub API that `e043f4a1286f4e1026222ab1bc94e25de8d0e959` exists on the `release-1.7.2212` line.
 

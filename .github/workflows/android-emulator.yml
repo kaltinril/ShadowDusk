@@ -21,7 +21,7 @@
 # The script exits non-zero on any wrong or missing verdict, so a mismatch fails the job.
 #
 # The x86_64 natives the emulator needs are restored by tools/restore.sh (SHA-256 pinned): DXC
-# from the native-dxc-1.7.2212.40 release, SPIRV-Cross from native-spirv-cross-android-d8e3e2b1; their GNU build ids are the android-x64 pins
+# from the native-dxc-android-1.7.2212.40-16k release, SPIRV-Cross from native-spirv-cross-android-d8e3e2b1; their GNU build ids are the android-x64 pins
 # in DxcNativeIdentity / SpvcLoader, so scenario 1 also proves the hosted files ARE the pinned
 # builds.
 #

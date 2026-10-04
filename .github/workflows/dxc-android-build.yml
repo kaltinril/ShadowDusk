@@ -2,8 +2,9 @@
 # Builds ShadowDusk's Android DXC (libdxcompiler.so for android-arm64 and android-x64) with the
 # ONE recipe, tools/build-dxc-android.sh, which pins everything that decides the bytes:
 #
-#   DXC        e043f4a1 (1.7.2212.40, the commit Vortice.Dxc 3.3.4 reports; the macOS and WASM
-#              builds use it too) + its three gitlinked submodules, each checked.
+#   DXC        e043f4a1 (1.7.2212.40, the commit Vortice.Dxc 3.3.4's Windows dxcompiler.dll reports;
+#              the macOS and WASM builds use it too; Vortice's linux-x64 .so is an earlier commit,
+#              see project_facts.md) + its three gitlinked submodules, each checked.
 #   NDK        r27c (27.2.12479018), installed here with CMake 3.31.6 + Ninja by sdkmanager.
 #   API level  24.
 #   CMake      Release, PredefinedParams.cmake, SPIR-V codegen ON, tests/docs OFF,
@@ -40,7 +41,7 @@ jobs:
   build:
     name: Build ${{ matrix.rid }} (${{ matrix.copy }})
     runs-on: ubuntu-latest
-    # An LLVM-fork build on a 4-core runner; measured about an hour per ABI.
+    # An LLVM-fork build on a 4-core runner; measured 12 to 17 minutes per ABI.
     timeout-minutes: 300
     strategy:
       fail-fast: false

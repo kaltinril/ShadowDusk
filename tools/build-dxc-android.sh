@@ -7,8 +7,9 @@
 #     abi: arm64-v8a and/or x86_64 (default both)
 #
 # Everything that decides the output bytes is pinned here:
-#   * DXC_COMMIT e043f4a1 (DXC 1.7.2212.40, what Vortice.Dxc 3.3.4 reports; the same commit the
-#     macOS and WASM builds use) and its three gitlinked submodules, each checked.
+#   * DXC_COMMIT e043f4a1 (DXC 1.7.2212.40, what Vortice.Dxc 3.3.4's Windows dxcompiler.dll
+#     reports; the same commit the macOS and WASM builds use; Vortice's linux-x64 .so is the earlier
+#     v1.7.2212 tag, see project_facts.md) and its three gitlinked submodules, each checked.
 #   * The two CMAKE_CROSSCOMPILING patches the WASM recipe (.wasm-build/build-dxc-wasm.ps1)
 #     applies, so the cross build uses the host tablegen built in stage 0 instead of spawning a
 #     NATIVE sub-build. They change CMake only, never compiled code. The patched files are marked
