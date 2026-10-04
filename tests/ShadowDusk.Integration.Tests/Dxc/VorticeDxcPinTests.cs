@@ -63,7 +63,7 @@ public sealed class VorticeDxcPinTests
             return;
 
         NativeLibrary.TryLoad(mapped, out IntPtr handle).ShouldBeTrue();
-        DxcLoader.LoadedImages.ElfImage? image = DxcLoader.LoadedImages.ElfImageOf(handle, "DxcCreateInstance");
+        ShadowDusk.Core.ElfImages.ElfImage? image = DxcLoader.LoadedImages.ElfImageOf(handle, "DxcCreateInstance");
         image.ShouldNotBeNull("dl_iterate_phdr did not find the image holding DxcCreateInstance");
         image.Value.Path.ShouldBe(mapped);
         image.Value.BuildId.ShouldBe(pinned, "the build id read from memory is not the one read from the file");
@@ -73,7 +73,7 @@ public sealed class VorticeDxcPinTests
         string spirvCross = Path.Combine(ForeignDxc.NativeDirectory(rid), "libspirv-cross.so");
         NativeLibrary.TryLoad(spirvCross, out IntPtr other).ShouldBeTrue();
         NativeLibrary.TryGetExport(other, "spvc_context_create", out IntPtr address).ShouldBeTrue();
-        DxcLoader.LoadedImages.ElfImage? otherImage = DxcLoader.LoadedImages.ElfImageContaining(address);
+        ShadowDusk.Core.ElfImages.ElfImage? otherImage = DxcLoader.LoadedImages.ElfImageContaining(address);
         otherImage.ShouldNotBeNull();
         otherImage.Value.Path.ShouldEndWith("libspirv-cross.so", Case.Sensitive);
         otherImage.Value.BuildId.ShouldNotBe(pinned);

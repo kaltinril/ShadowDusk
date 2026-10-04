@@ -111,7 +111,10 @@ public sealed class Vkd3dShaderCompiler : IDxbcShaderCompiler
     internal static Result<PlatformBlob, ShaderError> CompileCore(
         D3DCompileRequest request, CancellationToken cancellationToken, Action? onNativeCallReturned)
     {
-        Vkd3dLoader.Register();
+        // The pinned vkd3d-shader, loaded by absolute path and identity-checked, or SD0211
+        // (issue #350): never a library the OS search path happened to offer.
+        if (Vkd3dLoader.Register() is { } loadError)
+            return Result<PlatformBlob, ShaderError>.Fail(loadError with { File = request.SourceFileName });
 
         // Request→ABI mapping is the SHARED Vkd3dCompileContract (Phase 4.1): the same
         // profile defaults and SM ≤ 3 → D3D_BYTECODE routing the WASM backend uses, so
@@ -155,9 +158,8 @@ public sealed class Vkd3dShaderCompiler : IDxbcShaderCompiler
                 Line:    0,
                 Column:  0,
                 Code:    "SD0211",
-                Message: "Cross-platform DXBC backend (vkd3d-shader) native library not found. " +
-                         "Restore it via tools/restore.ps1 (places tools/vkd3d/libvkd3d-shader-1.dll). " +
-                         "Underlying error: " + ex.Message));
+                // Vkd3dLoader's resolver throws this with its full SD0211 diagnostic.
+                Message: ex.Message));
         }
         catch (Exception ex) when (ex is EntryPointNotFoundException or BadImageFormatException)
         {

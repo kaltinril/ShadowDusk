@@ -44,7 +44,6 @@
     <Compile Include="..\ShadowDusk.MgcbPlugin\ShadowDuskEffectProcessor.cs"   Link="ShadowDuskEffectProcessor.cs" />
     <Compile Include="..\ShadowDusk.MgcbPlugin\MgcbPlatformMap.cs"             Link="MgcbPlatformMap.cs" />
     <Compile Include="..\ShadowDusk.MgcbPlugin\RecordingIncludeResolver.cs"    Link="RecordingIncludeResolver.cs" />
-    <Compile Include="..\ShadowDusk.MgcbPlugin\PluginNativeLibraryResolver.cs" Link="PluginNativeLibraryResolver.cs" />
     <!-- The CLI's diagnostic formatter, source-linked for the same reason the plugin links it:
          one formatter, every delivery shape prints a shader error in the same text. -->
     <Compile Include="..\ShadowDusk.Cli\MgcbErrorFormatter.cs"                 Link="Cli\MgcbErrorFormatter.cs" />
