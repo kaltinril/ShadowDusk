@@ -70,6 +70,9 @@
          source-linked copy collide with the imported type: CS0436, which
          Directory.Build.props turns into a build error via TreatWarningsAsErrors. -->
     <Compile Include="..\..\src\ShadowDusk.Cli\MgcbErrorFormatter.cs" Link="Cli\MgcbErrorFormatter.cs" />
+    <!-- Issue #304 follow-up: the SAME probe the Android harness runs on the device, so the desktop
+         and the device hash the OpenGL corpus's SPIR-V, GLSL and .mgfx identically. -->
+    <Compile Include="..\..\validation\AndroidGl\OpenGlCorpusProbe.cs" Link="Tests\OpenGlCorpusProbe.cs" />
   </ItemGroup>
 
   <ItemGroup>

@@ -334,8 +334,10 @@ for real devices; x86_64 for the emulator).
   `x86_64` emulator natives are hosted on the same tag and SHA-256 pinned since issue #304
   (2026-10-03), and `.github/workflows/android-emulator.yml` runs the on-device compile + `Effect`
   load and the DXC / SPIRV-Cross identity checks on an API-34 x86_64 emulator in CI. The local
-  build recipe `build-dxc-android.ps1` is the durable artifact (the Android SPIRV-Cross source
-  revision was never recorded; see `project_facts.md`).
+  build recipe `build-dxc-android.ps1` is the durable artifact. The Android SPIRV-Cross is now
+  built in CI (`spirv-cross-android-build.yml`, `tools/build-spirv-cross-android.sh`) at the
+  SPIRV-Cross commit the desktop natives contain (`d8e3e2b1`), byte-reproducibly, and the
+  emulator lane checks the OpenGL corpus on the device stage by stage against the desktop.
 - **Emulator gotchas hit & solved** (recorded so they don't bite again): the emulator's primary
   ABI is **x86_64** (so x86_64 natives are needed to demo there); Debug **FastDeployment** keeps
   assemblies outside the APK (use `-p:EmbedAssembliesIntoApk=true` for a self-contained

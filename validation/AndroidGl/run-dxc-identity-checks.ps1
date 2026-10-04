@@ -20,7 +20,16 @@
       5. spvc-missing  no x86_64 libspirv-cross.so in the APK       -> SD0103, "is not in this app"
 
     Scenario 1 is also the Phase 50 on-device compile + MonoGame Effect load, on the MonoGame
-    Android version validation/AndroidGl pins.
+    Android version validation/AndroidGl pins, and it starts the app in corpus mode: every OpenGL
+    entry of tests/fixtures/golden/byte-identity/manifest.json is compiled ON the device and its
+    SPIR-V (DXC), GLSL (SPIRV-Cross) and .mgfx are compared with the committed desktop manifests
+    (CorpusCheck.cs; the desktop half is OpenGlIntermediatesByteIdentityTests). The verdict needs
+    "CORPUS RESULT: PASS"; every mismatching fixture and stage is printed.
+
+      1b. corpus-control  the same natives, but the APK carries a manifest with ONE GLSL hash
+                          changed                                  -> CORPUS RESULT: FAIL 49/50,
+                                                                      1 GLSL mismatch
+                   (the positive control: a corpus check that could not fail would pass anyway)
 
     Exits non-zero if any verdict differs. Not run by `dotnet test`; CI runs it on an API-34
     x86_64 emulator in the label-gated `Android emulator (DXC/SPIRV-Cross identity)` job of
@@ -84,33 +93,61 @@ New-ForeignCopy $pinned $dxcPin $foreign 'DxcNativeIdentity.AndroidX64CompilerBu
 $foreignSpvc = Join-Path $work 'foreign-spvc' 'libspirv-cross.so'
 New-ForeignCopy $pinnedSpvc $spvcPin $foreignSpvc 'SpvcLoader.AndroidBuildIdByRid[android-x64]'
 
+# The positive control's manifest: the committed one with the first GLSL hash's last digit changed.
+$controlManifest = Join-Path $work 'control' 'intermediates-manifest.json'
+New-Item -ItemType Directory -Force (Split-Path $controlManifest) | Out-Null
+$manifestText = Get-Content -Raw (Join-Path $repo 'tests' 'fixtures' 'golden' 'byte-identity' 'intermediates-manifest.json')
+$glslMatch = [regex]::Match($manifestText, '"glsl": "([0-9a-f]{64})"')
+if (-not $glslMatch.Success) { throw 'No GLSL hash in intermediates-manifest.json.' }
+$original = $glslMatch.Groups[1].Value
+$changed = $original.Substring(0, 63) + $(if ($original[63] -eq '0') { '1' } else { '0' })
+[IO.File]::WriteAllText($controlManifest, $manifestText.Remove($glslMatch.Groups[1].Index, 64).Insert($glslMatch.Groups[1].Index, $changed))
+
 function Remove-Apks {
     # The APK packaging step is incremental on its inputs and does not notice a native library
     # that was REMOVED (the 'missing' scenario kept the old one, measured), so every scenario
     # repackages from scratch.
     Get-ChildItem (Join-Path $PSScriptRoot 'bin'), (Join-Path $PSScriptRoot 'obj') -Recurse -Filter '*.apk' -ErrorAction SilentlyContinue |
         Remove-Item -Force
+    # The staged assets too: the asset copy skips a source that is OLDER than the staged file, so
+    # the positive control's manifest (written at start-up) was silently not bundled (measured).
+    Get-ChildItem (Join-Path $PSScriptRoot 'obj') -Recurse -Directory -Filter 'assets' -ErrorAction SilentlyContinue |
+        Remove-Item -Recurse -Force
 }
 
-function Invoke-Scenario([string]$Name, [string]$Dxc, [string[]]$Expect, [string]$Spvc = '') {
+function Invoke-Scenario([string]$Name, [string]$Dxc, [string[]]$Expect, [string]$Spvc = '', [switch]$Corpus,
+                         [string]$CorpusExpect = 'CORPUS RESULT: PASS', [string]$Manifest = '') {
     Write-Host "== $Name"
     Remove-Apks
-    & dotnet build $project -c Debug "-p:AndroidGlDxcX64=$Dxc" "-p:AndroidGlSpvcX64=$Spvc" -t:Install --nologo -v quiet -clp:ErrorsOnly | Out-Host
+    & dotnet build $project -c Debug "-p:AndroidGlDxcX64=$Dxc" "-p:AndroidGlSpvcX64=$Spvc" "-p:AndroidGlIntermediatesManifest=$Manifest" -t:Install --nologo -v quiet -clp:ErrorsOnly | Out-Host
     if ($LASTEXITCODE -ne 0) { throw "${Name}: build/install failed ($LASTEXITCODE)" }
 
     & adb shell am force-stop $package | Out-Null
     & adb logcat -c | Out-Null
-    & adb shell monkey -p $package -c android.intent.category.LAUNCHER 1 2>&1 | Out-Null
+    if ($Corpus) {
+        & adb shell am start -n "$package/com.shadowdusk.androidgl.MainActivity" --es mode corpus 2>&1 | Out-Null
+    }
+    else {
+        & adb shell monkey -p $package -c android.intent.category.LAUNCHER 1 2>&1 | Out-Null
+    }
 
     $deadline = (Get-Date).AddSeconds($TimeoutSeconds)
     $verdict = $null
-    while ((Get-Date) -lt $deadline -and -not $verdict) {
+    $corpusVerdict = $null
+    while ((Get-Date) -lt $deadline -and (-not $verdict -or ($Corpus -and -not $corpusVerdict))) {
         Start-Sleep -Seconds 3
-        $verdict = & adb logcat -d -s SHADOWDUSK:* |
-            Where-Object { $_ -match 'ON-DEVICE COMPILE OK|COMPILE REJECTED|NATIVE MISSING' } |
+        $log = @(& adb logcat -d -s SHADOWDUSK:*)
+        $verdict = $log | Where-Object { $_ -match 'ON-DEVICE COMPILE OK|COMPILE REJECTED|NATIVE MISSING' } |
             Select-Object -First 1
+        $corpusVerdict = $log | Where-Object { $_ -match 'CORPUS RESULT:' } | Select-Object -First 1
     }
     & adb shell am force-stop $package | Out-Null
+    if ($Corpus) {
+        & adb logcat -d -s SHADOWDUSK:* | Where-Object { $_ -match 'CORPUS (MISMATCH|COMPILE FAILED)' } | Out-Host
+        if (-not $corpusVerdict) { Write-Host "  FAIL  no CORPUS RESULT in logcat within $TimeoutSeconds s"; $verdict = $null }
+        elseif ($corpusVerdict -notmatch $CorpusExpect) { Write-Host "  $corpusVerdict"; Write-Host "  FAIL  expected /$CorpusExpect/"; return $false }
+        else { Write-Host "  $corpusVerdict" }
+    }
     if (-not $verdict) {
         Write-Host "  FAIL  no verdict in logcat within $TimeoutSeconds s; the app's log follows"
         & adb logcat -d -s SHADOWDUSK:* AndroidRuntime:* monodroid:* DOTNET:* | Select-Object -Last 80 | Out-Host
@@ -128,7 +165,11 @@ function Invoke-Scenario([string]$Name, [string]$Dxc, [string[]]$Expect, [string
 
 try {
     $results = @(
-        (Invoke-Scenario 'pinned' '' @('ON-DEVICE COMPILE OK')),
+        (Invoke-Scenario 'pinned' '' @('ON-DEVICE COMPILE OK') -Corpus),
+        # Positive control: the same natives against a manifest with ONE GLSL hash changed must
+        # be reported, or a corpus check that cannot fail would pass every run.
+        (Invoke-Scenario 'corpus-control' '' @('ON-DEVICE COMPILE OK') -Corpus -Manifest $controlManifest `
+            -CorpusExpect 'CORPUS RESULT: FAIL 49/50 .*glsl mismatches 1, mgfx mismatches 0'),
         (Invoke-Scenario 'foreign' $foreign @('COMPILE REJECTED: SD0219', "not ShadowDusk's pinned build for 'android-x64'")),
         (Invoke-Scenario 'missing' 'none' @('COMPILE REJECTED: SD0219', 'is not in this app')),
         (Invoke-Scenario 'spvc-foreign' '' @('COMPILE REJECTED: SD0103', "not ShadowDusk's pinned build for 'android-x64'") $foreignSpvc),

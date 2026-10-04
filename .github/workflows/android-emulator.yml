@@ -14,6 +14,10 @@
 #   4. spvc-foreign  a SPIRV-Cross with one build-id byte flipped    -> SD0103 (issue #350)
 #   5. spvc-missing  no SPIRV-Cross in the APK                       -> SD0103
 #
+# Scenario 1 also compiles the OpenGL fixture corpus ON the device (CorpusCheck.cs) and requires
+# its SPIR-V (DXC), GLSL (SPIRV-Cross) and .mgfx to be byte-identical to the committed desktop
+# manifests; a positive control (one manifest hash changed) must be reported as a mismatch.
+#
 # The script exits non-zero on any wrong or missing verdict, so a mismatch fails the job.
 #
 # The x86_64 natives the emulator needs are restored by tools/restore.sh from the
@@ -39,6 +43,8 @@ on:
       - 'src/ShadowDusk.GLSL/**'
       - 'src/ShadowDusk.Compiler/**'
       - 'validation/AndroidGl/**'
+      - 'tests/fixtures/shaders/**'
+      - 'tests/fixtures/golden/byte-identity/**'
       - 'tools/restore.sh'
       - 'Directory.Build.props'
       - 'Directory.Build.targets'
