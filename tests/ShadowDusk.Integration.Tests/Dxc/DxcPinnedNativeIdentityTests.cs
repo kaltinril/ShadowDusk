@@ -47,6 +47,20 @@ public sealed class DxcPinnedNativeIdentityTests
         AssertPinned(Path.Combine(AppContext.BaseDirectory, rid, "libdxcompiler.dylib"), rid, DxcNativeKind.Compiler);
     }
 
+    /// <summary>
+    /// The Android DXC builds read as their pins too: android-arm64 is the one ShadowDusk.HLSL
+    /// packs, android-x64 the one the emulator lane bundles (issue #304). Android reads the build
+    /// id from the mapped image, never from this file, so only this test ties the pin to the
+    /// hosted asset before the emulator lane runs.
+    /// </summary>
+    [RestoredAndroidDxcTheory]
+    [InlineData("android-arm64")]
+    [InlineData("android-x64")]
+    public void AndroidNative_CarriesThePinnedBuildId(string rid)
+    {
+        AssertPinned(RestoredAndroidDxcTheoryAttribute.PathFor(rid), rid, DxcNativeKind.Compiler);
+    }
+
     [WindowsSdkDxilFact]
     public void WindowsSdkPair_IsNotThePinnedBuild()
     {
@@ -74,7 +88,7 @@ public sealed class DxcPinnedNativeIdentityTests
 
     private static void AssertPinned(string path, string rid, DxcNativeKind kind)
     {
-        File.Exists(path).ShouldBeTrue($"{path} is not beside the test assembly");
+        File.Exists(path).ShouldBeTrue($"{path} is not restored");
 
         string? expected = DxcNativeIdentity.Expected(rid, kind);
         expected.ShouldNotBeNull($"no pinned identity for {rid} {kind}");
@@ -105,5 +119,37 @@ public sealed class RestoredMacDxcTheoryAttribute : TheoryAttribute
         {
             Skip = DxcTestGate.SkipReason;
         }
+    }
+}
+
+/// <summary>
+/// A theory over the restored Android DXC natives (<c>tools/dxc/android-*/libdxcompiler.so</c>,
+/// restored by <c>tools/restore.*</c>; nothing copies them beside the test assembly). Skipped,
+/// never passed, where they have not been restored, unless <c>SHADOWDUSK_REQUIRE_DXC</c> is set
+/// (CI): then it runs and fails.
+/// </summary>
+public sealed class RestoredAndroidDxcTheoryAttribute : TheoryAttribute
+{
+    public RestoredAndroidDxcTheoryAttribute()
+    {
+        bool restored = new[] { "android-arm64", "android-x64" }.All(rid => File.Exists(PathFor(rid)));
+
+        if (ShadowDusk.Tests.Shared.NativeRequirement.ShouldSkip(
+                restored,
+                Environment.GetEnvironmentVariable(ShadowDusk.Tests.Shared.NativeRequirement.DxcEnvVar)))
+        {
+            Skip = "The Android DXC natives are not restored (run tools/restore.*).";
+        }
+    }
+
+    public static string PathFor(string rid)
+    {
+        for (DirectoryInfo? dir = new(AppContext.BaseDirectory); dir is not null; dir = dir.Parent)
+        {
+            if (File.Exists(Path.Combine(dir.FullName, "ShadowDusk.slnx")))
+                return Path.Combine(dir.FullName, "tools", "dxc", rid, "libdxcompiler.so");
+        }
+
+        throw new InvalidOperationException("Could not locate the repo root (ShadowDusk.slnx).");
     }
 }

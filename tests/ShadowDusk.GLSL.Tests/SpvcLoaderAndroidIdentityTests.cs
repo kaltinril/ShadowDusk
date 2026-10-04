@@ -64,6 +64,34 @@ public sealed class SpvcLoaderAndroidIdentityTests
         ReadBuildId(File.ReadAllBytes(path)).ShouldBe(SpvcLoader.AndroidBuildIdByRid[Arm64], path);
     }
 
+    /// <summary>
+    /// The android-x64 pin is the build id of the x86_64 file <c>tools/restore.*</c> restores from
+    /// the release (issue #304): the emulator lane bundles exactly that file, so a pin that drifts
+    /// from it would refuse the lane's every compile with <c>SD0103</c>. Skipped (reported as
+    /// skipped, never passed) where it was not restored, unless <c>SHADOWDUSK_REQUIRE_DXC</c> is set
+    /// (CI's integration job, which also hard-gates the file's presence): then it runs and fails.
+    /// </summary>
+    [RestoredX64SpvcFact]
+    [Trait("Category", "Integration")]
+    public void TheX64Pin_IsTheBuildIdOfTheRestoredEmulatorFile()
+    {
+        string path = RestoredX64SpvcFactAttribute.Path;
+        File.Exists(path).ShouldBeTrue($"{path} is not restored (run tools/restore.*)");
+
+        ReadBuildId(File.ReadAllBytes(path)).ShouldBe(SpvcLoader.AndroidBuildIdByRid["android-x64"], path);
+    }
+
+    internal static string RepoRoot()
+    {
+        for (DirectoryInfo? dir = new(AppContext.BaseDirectory); dir is not null; dir = dir.Parent)
+        {
+            if (File.Exists(Path.Combine(dir.FullName, "ShadowDusk.slnx")))
+                return dir.FullName;
+        }
+
+        throw new InvalidOperationException("Could not locate the repo root (ShadowDusk.slnx).");
+    }
+
     /// <summary>The GNU build id from an ELF64 little-endian file's PT_NOTE segments.</summary>
     private static string? ReadBuildId(byte[] elf)
     {
@@ -85,4 +113,23 @@ public sealed class SpvcLoaderAndroidIdentityTests
 
         return null;
     }
+}
+
+/// <summary>
+/// A fact over the restored android-x64 SPIRV-Cross (<c>tools/spirv-cross/android-x64</c>). Skipped
+/// where it is not restored, unless <c>SHADOWDUSK_REQUIRE_DXC</c> is set (CI): then it runs and fails.
+/// </summary>
+public sealed class RestoredX64SpvcFactAttribute : FactAttribute
+{
+    public RestoredX64SpvcFactAttribute()
+    {
+        string? required = Environment.GetEnvironmentVariable("SHADOWDUSK_REQUIRE_DXC");
+        bool isRequired = !string.IsNullOrWhiteSpace(required) && required.Trim() != "0" &&
+            !string.Equals(required.Trim(), "false", StringComparison.OrdinalIgnoreCase);
+        if (!File.Exists(Path) && !isRequired)
+            Skip = "The android-x64 SPIRV-Cross is not restored (run tools/restore.*).";
+    }
+
+    public static string Path => System.IO.Path.Combine(
+        SpvcLoaderAndroidIdentityTests.RepoRoot(), "tools", "spirv-cross", "android-x64", "libspirv-cross.so");
 }
