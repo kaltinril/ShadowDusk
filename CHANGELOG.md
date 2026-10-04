@@ -199,7 +199,8 @@ that loads and renders identically to `mgfxc`'s in the real MonoGame/KNI runtime
   a time made no progress for 40 to 176 s (measured from every `.trx` of 74 CI runs); a blame dump
   of one caught it blocked starting a new thread, with no native compiler busy. Every 30 and 60 s
   test budget that expired there was a test inside such a stall. `dotnet test -m:2` keeps the
-  step's wall time and removes the stalls; the per-test compile budgets became one measured
+  step's wall time and removes the stalls (over 4 CI runs per lane the longest no-progress gap was
+  22 s on Windows, 28 s on ubuntu, 26 s on macOS); the per-test compile budgets became one measured
   `TestBudget.Compile` (3 minutes, the blame-hang timeout), and a Windows blame-hang dump is now
   turned into managed stacks in the job.
 - **A child process that fails without writing anything is explained (issue #321).** The test
