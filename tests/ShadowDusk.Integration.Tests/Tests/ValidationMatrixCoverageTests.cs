@@ -103,7 +103,7 @@ public sealed class ValidationMatrixCoverageTests
     public async Task MatrixCell_CompilesOrRejectsAsDocumented(
         string shaderName, string source, PlatformTarget target, Outcome expected, string? expectedCode)
     {
-        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(60));
+        using var cts = new CancellationTokenSource(TestBudget.Compile);
         var result = await new EffectCompiler().CompileAsync(source, new CompilerOptions
         {
             Target = target,

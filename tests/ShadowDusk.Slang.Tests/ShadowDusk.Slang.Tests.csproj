@@ -28,6 +28,7 @@
          drain, process-tree kill and captured output on timeout). BCL-only, like the links
          above. HangDiagnostics comes with it: ChildProcess calls it for a pre-kill dump. -->
     <Compile Include="..\ShadowDusk.Integration.Tests\ChildProcess.cs" Link="ChildProcess.cs" />
+    <Compile Include="..\ShadowDusk.Integration.Tests\TestBudget.cs" Link="TestBudget.cs" />
     <Compile Include="..\ShadowDusk.Integration.Tests\HangDiagnostics.cs" Link="HangDiagnostics.cs" />
     <!-- Issue #312: the in-process stall hint (thread counts, DxcForkGate state), written once
          a minute after the host has been up for three minutes. BCL-only; reads the gate by

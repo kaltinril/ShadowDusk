@@ -110,7 +110,9 @@ internal static unsafe class DxcNativeInterop
         IReadOnlyList<string> arguments,
         IDxcIncludeHandler? includeHandler,
         bool forkGated = false) =>
-        NativeCompileStack.Run(() => CompileRawOnThisThread(compiler, source, arguments, includeHandler, forkGated));
+        NativeCompileStack.Run(
+            arguments.Contains("-P", StringComparer.Ordinal) ? "DXC preprocess" : "DXC compile",
+            () => CompileRawOnThisThread(compiler, source, arguments, includeHandler, forkGated));
 
     private static IDxcResult CompileRawOnThisThread(
         IDxcCompiler3 compiler,

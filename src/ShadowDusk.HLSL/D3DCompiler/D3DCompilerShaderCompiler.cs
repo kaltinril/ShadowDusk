@@ -126,7 +126,7 @@ public sealed class D3DCompilerShaderCompiler : IDxbcShaderCompiler
         // #includes and applied platform macros before reaching this backend.
         // On a large-stack worker like the other native compilers (issue #306).
         (SharpGen.Runtime.Result status, Blob? code, Blob? errorBlob) = NativeCompileStack.Run(
-            () => InvokeNative(request, profile, flags));
+            "d3dcompiler_47 D3DCompile", () => InvokeNative(request, profile, flags));
 
         try
         {

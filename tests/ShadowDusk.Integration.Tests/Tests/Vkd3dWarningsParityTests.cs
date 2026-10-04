@@ -29,7 +29,7 @@ namespace ShadowDusk.Integration.Tests.Tests;
 [Trait("Platform", "DirectX")]
 public sealed class Vkd3dWarningsParityTests
 {
-    private static readonly TimeSpan CompileTimeout = TimeSpan.FromSeconds(60);
+    private static readonly TimeSpan CompileTimeout = TestBudget.Compile;
 
     /// <summary>What both hosts must report for the fixture: `float3 rgb = color;` on line 47.</summary>
     private const string ExpectedWarning =

@@ -358,7 +358,7 @@ public sealed class CliDxcNativeLayoutTests : IClassFixture<CliBinaryFixture>
             if (File.Exists(output)) File.Delete(output);
 
             ChildProcessResult run = await CliProcess.RunAsync(
-                _executable, [source, output, $"/Profile:{profile}"], TimeSpan.FromSeconds(120));
+                _executable, [source, output, $"/Profile:{profile}"], TestBudget.Compile);
 
             return new CliRun(
                 run.ExitCode,

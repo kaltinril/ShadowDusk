@@ -73,7 +73,7 @@ public sealed class VulkanCorpusStructuralTests
         string source = await File.ReadAllTextAsync(
             Path.Combine(AppContext.BaseDirectory, "fixtures", "shaders", relativePath));
 
-        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(120));
+        using var cts = new CancellationTokenSource(TestBudget.Compile);
 
         // A throw here IS the failure: an unsupported construct must surface as a ShaderError,
         // not an exception (and never as a native crash — see the FX0013 guard added for

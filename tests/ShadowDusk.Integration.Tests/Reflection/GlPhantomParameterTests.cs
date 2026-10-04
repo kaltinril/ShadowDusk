@@ -51,7 +51,7 @@ public sealed class GlPhantomParameterTests
     [Fact]
     public async Task GradientToy_OpenGL_ReflectionHasNoPhantomParameters()
     {
-        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(60));
+        using var cts = new CancellationTokenSource(TestBudget.Compile);
         var ct = cts.Token;
 
         string fxPath = TestHelpers.FixturePath("shadertoy/GradientToy.fx");
@@ -111,7 +111,7 @@ public sealed class GlPhantomParameterTests
         string fixture, string phantomName, int expectedCbSize, string expectedOffsets,
         string expectedDeclaration, string expectedPrologueMarker)
     {
-        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(60));
+        using var cts = new CancellationTokenSource(TestBudget.Compile);
         var ct = cts.Token;
 
         string fxPath = TestHelpers.FixturePath(fixture);

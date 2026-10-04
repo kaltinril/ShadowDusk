@@ -57,7 +57,7 @@ public sealed class SpirvVsDxilReflectionTests
     [MemberData(nameof(Corpus))]
     public async Task SpirvReflection_MatchesDxilOracle(string fixtureStem)
     {
-        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(60));
+        using var cts = new CancellationTokenSource(TestBudget.Compile);
         var ct = cts.Token;
 
         // --- Read + FX9 pre-parse + preprocess (OpenGL macros, as the GL path does) ---
@@ -197,7 +197,7 @@ public sealed class SpirvVsDxilReflectionTests
     [Fact]
     public async Task SpirvReflection_StructMembers_MatchDxilOracle()
     {
-        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(60));
+        using var cts = new CancellationTokenSource(TestBudget.Compile);
         var ct = cts.Token;
 
         ReadOnlyMemory<byte> dxil = await CompileAsync(
