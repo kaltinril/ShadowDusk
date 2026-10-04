@@ -3,7 +3,7 @@
 # verify-vortice-dxc-conflict.sh. A cold consumer of the packed ShadowDusk.Compiler whose graph
 # resolves a Silk.NET.SPIRV.Cross.Native other than the 2.23.0 ShadowDusk pins (a Silk.NET game is
 # the realistic case) must get:
-#   1. at BUILD time: warning SD0225 (buildTransitive/ShadowDusk.GLSL.targets), and the build must
+#   1. at BUILD time: warning SD0226 (buildTransitive/ShadowDusk.GLSL.targets), and the build must
 #      still succeed (a warning, never an error);
 #   2. at RUN time: SD0103 for OpenGL (SpvcLoader refuses the different SPIRV-Cross by SHA-256),
 #      never a raw exception or a compile with a different SPIRV-Cross, while DirectX 11 and FNA
@@ -94,7 +94,7 @@ scenario() {
     if ! (cd "$APP" && dotnet build -c Release --no-incremental -o "$out" \
             -p:SdVersion="$VERSION" -p:SilkVersion="$silk" --nologo > "$APP/build-$name.log" 2>&1); then
         cat "$APP/build-$name.log"
-        echo "::error::$name: the consumer build FAILED (SD0225 must be a warning, never an error)"
+        echo "::error::$name: the consumer build FAILED (SD0226 must be a warning, never an error)"
         fail=1
         return 1
     fi
@@ -107,8 +107,8 @@ value() { tr -d '\r' < "$1" | sed -n "s/^$2=//p" | head -n1; }
 
 # ---- 1. the conflict: another Silk.NET.SPIRV.Cross.Native in the consumer's graph -----------
 if scenario conflict "$CONFLICT"; then
-    check "conflict: build warns SD0225" grep -q "warning SD0225" "$APP/build-conflict.log"
-    check "conflict: SD0225 names the resolved $CONFLICT and the pin $PINNED" \
+    check "conflict: build warns SD0226" grep -q "warning SD0226" "$APP/build-conflict.log"
+    check "conflict: SD0226 names the resolved $CONFLICT and the pin $PINNED" \
         grep -q "resolves Silk.NET.SPIRV.Cross.Native $CONFLICT, but ShadowDusk.GLSL runs only with Silk.NET.SPIRV.Cross.Native $PINNED" "$APP/build-conflict.log"
     check "conflict: OpenGL (SPIRV-Cross) is refused with SD0103" test "$(value "$APP/run-conflict.log" OpenGL)" = SD0103
     check "conflict: the SD0103 says it is not the pinned build and names the fix" \
@@ -119,7 +119,7 @@ fi
 
 # ---- 2. the fix the messages name: pin Silk.NET.SPIRV.Cross.Native 2.23.0 -------------------
 if scenario pinned "$PINNED"; then
-    check "pinned: no SD0225" bash -c "! grep -q 'SD0225' '$APP/build-pinned.log'"
+    check "pinned: no SD0226" bash -c "! grep -q 'SD0226' '$APP/build-pinned.log'"
     check "pinned: OpenGL compiles" test "$(value "$APP/run-pinned.log" OpenGL)" = OK
     check "pinned: DirectX 11 compiles" test "$(value "$APP/run-pinned.log" DirectX)" = OK
     check "pinned: FNA compiles" test "$(value "$APP/run-pinned.log" Fna)" = OK
@@ -127,7 +127,7 @@ fi
 
 # ---- 3. no Silk.NET.SPIRV.Cross.Native reference at all: the ordinary consumer sees nothing new
 if scenario plain ""; then
-    check "plain: no SD0225" bash -c "! grep -q 'SD0225' '$APP/build-plain.log'"
+    check "plain: no SD0226" bash -c "! grep -q 'SD0226' '$APP/build-plain.log'"
     check "plain: OpenGL compiles" test "$(value "$APP/run-plain.log" OpenGL)" = OK
 fi
 

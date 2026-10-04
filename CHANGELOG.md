@@ -283,7 +283,7 @@ that loads and renders identically to `mgfxc`'s in the real MonoGame/KNI runtime
   last-resort `PluginNativeLibraryResolver` is gone: the loaders find the plugin directory
   themselves. **Behavior change:** an application whose graph resolves a `Silk.NET.SPIRV.Cross.Native`
   other than 2.23.0 now gets `SD0103` for OpenGL (a different SPIRV-Cross) instead of silently different
-  GLSL; pin it to 2.23.0. The same build now warns **`SD0225`** at build time
+  GLSL; pin it to 2.23.0. The same build now warns **`SD0226`** at build time
   (`buildTransitive/ShadowDusk.GLSL.targets`, the counterpart of `SD0220`; a warning, never an error,
   `NoWarn`-able), proven cold by `tools/verify-spirv-cross-conflict.sh` in Pack & Consume on all three
   OSes. **Android:** SPIRV-Cross still loads by SONAME from the APK, and the image the linker mapped

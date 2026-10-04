@@ -353,11 +353,11 @@ jobs:
 
       # ── A consumer whose graph moves Silk.NET.SPIRV.Cross.Native off 2.23.0 (issue #350) ──
       # The SPIRV-Cross counterpart of the step above (a Silk.NET game is the realistic case).
-      # Consumed cold three times: with 2.22.0 forced in the build must WARN SD0225 (never fail)
+      # Consumed cold three times: with 2.22.0 forced in the build must WARN SD0226 (never fail)
       # and OpenGL must be refused at runtime with SD0103 (the natives are not the pinned
       # SHA-256s) while DirectX 11 and FNA compile; pinning 2.23.0 must clear both; and a consumer
       # with no reference must see nothing new.
-      - name: Silk.NET.SPIRV.Cross.Native version conflict (build warning SD0225 + runtime SD0103, issue #350)
+      - name: Silk.NET.SPIRV.Cross.Native version conflict (build warning SD0226 + runtime SD0103, issue #350)
         shell: bash
         run: |
           chmod +x tools/verify-spirv-cross-conflict.sh

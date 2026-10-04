@@ -149,7 +149,7 @@ internal static class SpvcLoader
             FileNames: [GetLibFileName()],
             Sha256ByRid: Sha256ByRid,
             MismatchHint: $"The usual cause is the application resolving a Silk.NET.SPIRV.Cross.Native other than {PinnedSilkVersion} " +
-                          "(a Silk.NET package or a direct reference; build warning SD0225 names it), " +
+                          "(a Silk.NET package or a direct reference; build warning SD0226 names it), " +
                           "which ships a different SPIRV-Cross: pin it in the application " +
                           $"(<PackageReference Include=\"Silk.NET.SPIRV.Cross.Native\" Version=\"{PinnedSilkVersion}\" />).");
 

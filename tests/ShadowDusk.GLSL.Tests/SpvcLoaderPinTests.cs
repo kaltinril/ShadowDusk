@@ -38,7 +38,7 @@ public sealed class SpvcLoaderPinTests
     }
 
     /// <summary>
-    /// The build-time warning (SD0225, <c>buildTransitive/ShadowDusk.GLSL.targets</c>) and the
+    /// The build-time warning (SD0226, <c>buildTransitive/ShadowDusk.GLSL.targets</c>) and the
     /// package pin must name the same release the runtime hashes belong to.
     /// </summary>
     [Fact]
