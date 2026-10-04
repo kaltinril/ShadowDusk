@@ -74,6 +74,8 @@ ShadowDusk/
 │       │                               #   shaders/ on purpose: the GL/Vulkan/Phase-41 corpus sweeps enumerate
 │       │                               #   shaders/** and these are location fixtures, not corpus members.
 │       └── golden/                     # Reference outputs: mgfxc .mgfx (DirectX_11/, DirectX_12/, OpenGL/, Vulkan/) + fxc fx_2_0 .fxb (FNA/) + byte-identity/
+│                                       #   + legacy-sampler-names/ (legacy sampler shapes, sources beside their mgfxc
+│                                       #   OpenGL/DirectX_11 goldens; the parameter NAME tests, outside the corpus sweeps)
 ├── samples/
 │   ├── ShaderFiddle.Web/               # KNI Blazor-WASM in-browser fiddle (sample of reach)
 │   ├── ShaderToyViewer/                # Interactive ShaderToy viewer: runtime convert -> in-memory
@@ -129,7 +131,8 @@ ShadowDusk/
 │                                  #   GL (VsDriven, StateFidelity, CbufferModel, ReservedWordGl, SamplerPairsGl,
 │                                  #     SamplerRegisterOrderGl (issue #189: the only GL driver that leaves unit 0
 │                                  #       to SpriteBatch instead of binding via effect.Parameters, which is what
-│                                  #       makes sampler SLOT allocation observable),
+│                                  #       makes sampler SLOT allocation observable; arm "param-names" binds a
+│                                  #       legacy sampler only by mgfxc's parameter name),
 │                                  #     DeferredSpriteMrtGl (the only driver that binds 2 render targets),
 │                                  #     ShaderToyRouteGl (the `.glsl` frontend route),
 │                                  #     RaylibRoute (Phase 59: the raylib converter in REAL Raylib-cs vs the

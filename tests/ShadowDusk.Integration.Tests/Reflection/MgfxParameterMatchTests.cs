@@ -27,23 +27,20 @@ namespace ShadowDusk.Integration.Tests.Reflection;
 /// orders the block differently than ShadowDusk's reflection does. Byte-equality with
 /// mgfxc is a non-goal (CLAUDE.md); parameter-metadata equality is the bar.</para>
 ///
-/// <para><b>Pinned, render-proven divergences</b> (Phase 27; the phase doc's risk note
+/// <para><b>The one pinned, render-proven divergence</b> (Phase 27; the phase doc's risk note
 /// requires pinning exactly which fields are exact). Value-class parameters
-/// (Scalar/Vector/Matrix — the <c>SetValue</c> fidelity surface) match mgfxc EXACTLY.
-/// Object-class (texture/sampler) parameters carry two deliberate differences, both
-/// proven equivalent in the real MonoGame runtime (Phases 17/28):</para>
-/// <list type="number">
-///   <item>ShadowDusk additionally exposes each sampler as an Object parameter
-///         (<c>ParameterListBuilder</c>, Phase 5 §7.4.3); mgfxc's GL path does not.
-///         Additive only — name-based lookup of every mgfxc parameter still works.</item>
-///   <item>For legacy <c>sampler s0;</c> sources, mgfxc names the texture parameter
-///         after the sampler (<c>s0</c>, type Texture2D), while ShadowDusk synthesizes
-///         <c>s0_SDTexture</c> (type Texture2D) and exposes <c>s0</c> as the sampler
-///         parameter wired to it via the shader's sampler table — so
-///         <c>Parameters["s0"].SetValue(texture)</c> binds identically on both.</item>
-/// </list>
-/// <para>Any divergence OUTSIDE these two shapes (a missing parameter, any value-class
-/// metadata delta, an unexpected extra value-class parameter) fails the test.</para>
+/// (Scalar/Vector/Matrix, the <c>SetValue</c> fidelity surface) match mgfxc EXACTLY, and so
+/// does every mgfxc texture parameter: same name, class and type. ShadowDusk additionally
+/// exposes each sampler as an Object parameter (<c>ParameterListBuilder</c>, Phase 5 §7.4.3);
+/// mgfxc's GL path does not. Additive only: name-based lookup of every mgfxc parameter still
+/// works.</para>
+/// <para>A legacy texture-less sampler (<c>sampler s0;</c>) used to be a second pinned
+/// divergence: ShadowDusk named its texture parameter <c>s0_SDTexture</c>, so
+/// <c>Parameters["s0"]</c> found only the standalone sampler parameter, which no sampler
+/// record points at, and setting a texture through it drew nothing. ShadowDusk now names it
+/// <c>s0</c> (Texture2D) exactly as mgfxc does, and that allowance is gone.</para>
+/// <para>Any divergence OUTSIDE the additive sampler parameters (a missing parameter, any
+/// metadata delta, an unexpected extra value-class or texture parameter) fails the test.</para>
 /// </summary>
 [Trait("Category", "Integration")]
 [Trait("Category", "Fidelity")] // also runs on the PR unit lane (folds the fidelity gate into the required build-and-test job)
@@ -104,11 +101,10 @@ public sealed class MgfxParameterMatchTests
         Dump("MGFXC GOLDEN", golden);
 
         // --- Comparison (Phase 5 §9.3.2: name, class, type, rows, columns, elements;
-        //     keyed by name — order is not part of the contract). Exact everywhere,
-        //     modulo ONLY the two pinned object-class divergences in the class doc. ---
+        //     keyed by name, order is not part of the contract). Exact everywhere,
+        //     modulo ONLY the additive sampler parameters in the class doc. ---
         const byte ClassObject = 3; // EffectParameterClass.Object
         const byte TypeSampler = 5; // EffectParameterType.Texture (the sampler param type)
-        const string SynthesizedTextureSuffix = "_SDTexture";
 
         var subjectByName = subject.Parameters.ToDictionary(p => p.Name, StringComparer.Ordinal);
 
@@ -117,46 +113,33 @@ public sealed class MgfxParameterMatchTests
             subjectByName.ContainsKey(gold.Name).ShouldBeTrue(customMessage: $"every mgfxc parameter must be reachable by name ('{gold.Name}')");
             MgfxParameterRecord sub = subjectByName[gold.Name];
 
-            if (gold.Class != ClassObject)
-            {
-                // Value-class parameter (SetValue surface): EXACT match, no exceptions.
-                sub.Class.ShouldBe(gold.Class, customMessage: $"parameter '{gold.Name}' Class");
-                sub.Type.ShouldBe(gold.Type, customMessage: $"parameter '{gold.Name}' Type");
-                sub.Rows.ShouldBe(gold.Rows, customMessage: $"parameter '{gold.Name}' Rows");
-                sub.Columns.ShouldBe(gold.Columns, customMessage: $"parameter '{gold.Name}' Columns");
-                sub.ElementCount.ShouldBe(gold.ElementCount, customMessage: $"parameter '{gold.Name}' Elements");
-                sub.MemberCount.ShouldBe(gold.MemberCount, customMessage: $"parameter '{gold.Name}' Members");
-                continue;
-            }
-
-            // Object-class parameter (texture).
-            sub.Class.ShouldBe(ClassObject, customMessage: $"parameter '{gold.Name}' must stay object-class");
-            if (sub.Type == gold.Type)
-                continue; // identical texture parameter — done.
-
-            // Pinned divergence 2: mgfxc's texture param name is ShadowDusk's sampler
-            // param; the texture itself is the synthesized companion parameter.
-            sub.Type.ShouldBe(TypeSampler, customMessage: $"'{gold.Name}': the only allowed type divergence is mgfxc-texture vs " +
-                         "ShadowDusk-sampler (legacy `sampler s0;` shape)");
-            string companion = gold.Name + SynthesizedTextureSuffix;
-            subjectByName.ContainsKey(companion).ShouldBeTrue(customMessage: $"the sampler '{gold.Name}' must be backed by the synthesized texture " +
-                         $"parameter '{companion}'");
-            subjectByName[companion].Class.ShouldBe(ClassObject, customMessage: $"'{companion}' Class");
-            subjectByName[companion].Type.ShouldBe(gold.Type, customMessage: $"'{companion}' Type");
+            sub.Class.ShouldBe(gold.Class, customMessage: $"parameter '{gold.Name}' Class");
+            sub.Type.ShouldBe(gold.Type, customMessage: $"parameter '{gold.Name}' Type");
+            sub.Rows.ShouldBe(gold.Rows, customMessage: $"parameter '{gold.Name}' Rows");
+            sub.Columns.ShouldBe(gold.Columns, customMessage: $"parameter '{gold.Name}' Columns");
+            sub.ElementCount.ShouldBe(gold.ElementCount, customMessage: $"parameter '{gold.Name}' Elements");
+            sub.MemberCount.ShouldBe(gold.MemberCount, customMessage: $"parameter '{gold.Name}' Members");
         }
 
-        // Extras: pinned divergence 1 — ShadowDusk may additionally expose object-class
-        // sampler params and synthesized texture companions, NOTHING else. An unexpected
-        // extra value-class parameter would change cbuffer layout/SetValue behavior.
+        // Every sampler record points at the parameter mgfxc's record points at, by NAME
+        // (what Parameters["x"].SetValue(texture) reaches): the texture-less legacy sampler's
+        // parameter used to be a synthesized companion here.
+        string RecordTargets(MgfxBlobReader r) => string.Join(" ", r.Samplers
+            .Select(x => $"{(r.Shaders[x.ShaderIndex].IsVertex ? "vs" : "ps")}:{r.Parameters[x.Parameter].Name}")
+            .OrderBy(x => x, StringComparer.Ordinal));
+        RecordTargets(subject).ShouldBe(RecordTargets(golden), customMessage: "sampler records must bind the parameters mgfxc's bind");
+
+        // Extras: ShadowDusk may additionally expose object-class SAMPLER params, NOTHING
+        // else. An unexpected extra value-class parameter would change cbuffer
+        // layout/SetValue behavior; an extra texture parameter would be a name mgfxc
+        // never emits.
         var goldenNames = golden.Parameters.Select(p => p.Name).ToHashSet(StringComparer.Ordinal);
         foreach (MgfxParameterRecord extra in subject.Parameters.Where(p => !goldenNames.Contains(p.Name)))
         {
-            extra.Class.ShouldBe(ClassObject, customMessage: $"extra parameter '{extra.Name}' must be object-class (sampler/texture) — " +
+            extra.Class.ShouldBe(ClassObject, customMessage: $"extra parameter '{extra.Name}' must be object-class (sampler) - " +
                          "extra value-class parameters are never allowed");
-            bool isSampler   = extra.Type == TypeSampler;
-            bool isSynthTex  = extra.Name.EndsWith(SynthesizedTextureSuffix, StringComparison.Ordinal);
-            (isSampler || isSynthTex).ShouldBeTrue($"extra parameter '{extra.Name}' (type={extra.Type}) must be either a " +
-                         "sampler parameter or a synthesized *_SDTexture companion");
+            extra.Type.ShouldBe(TypeSampler, customMessage: $"extra parameter '{extra.Name}' must be a sampler parameter; " +
+                         "an extra texture parameter is a name mgfxc never emits");
         }
     }
 

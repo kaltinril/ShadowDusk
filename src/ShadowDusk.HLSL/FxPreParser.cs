@@ -285,6 +285,18 @@ public sealed class FxPreParser
     // in this map by the time its tex2D call is reached.
     private readonly Dictionary<string, string> _samplerTextureBindings = new(StringComparer.Ordinal);
 
+    // The subset of _samplerTextureBindings whose texture this parser INVENTED
+    // (SynthTextureName) because the source bound none: sampler name -> synthesized name.
+    // Kept apart from the bindings because the effect parameter for such a pair must carry
+    // the SAMPLER's name, as mgfxc's does (see FxParseResult.SynthesizedSamplerTextures).
+    private readonly Dictionary<string, string> _synthesizedSamplerTextures = new(StringComparer.Ordinal);
+
+    // SAMPLER name -> the texture its sampler_state block names, for every legacy sampler whose
+    // texture the MAIN file's code never declares or mentions (see IsOnlyNamedByTextureStates).
+    // Only candidates: an #include'd file or a macro can still declare it, which only the
+    // preprocessed source shows, so the compiler decides (FxParseResult.UndeclaredStateTextures).
+    private readonly Dictionary<string, string> _undeclaredStateTextures = new(StringComparer.Ordinal);
+
     /// <summary>
     /// SAMPLER name -> the explicit <c>register(sN)</c> index on its legacy declaration, captured
     /// before the SM4 rewrite drops the clause (issue #189). Resolved to TEXTURE names against
@@ -646,9 +658,19 @@ public sealed class FxPreParser
                             // (declared separately as 'Texture2D T;'); otherwise synthesize.
                             string texture = info.TextureReference ?? SynthTextureName(info.Name);
                             _samplerTextureBindings[info.Name] = texture;
-                            string newDecl = info.TextureReference is not null
-                                ? $"SamplerState {info.Name};"
-                                : $"Texture2D {texture}; SamplerState {info.Name};";
+                            if (info.TextureReference is null)
+                                _synthesizedSamplerTextures[info.Name] = texture;
+                            // A referenced texture the main file never declares
+                            // ('sampler2D A = sampler_state { Texture = <T>; };' and no 'T'):
+                            // mgfxc reads the name off the state block and emits a 'T'
+                            // parameter. Recorded as a candidate only; the compiler declares it
+                            // when the PREPROCESSED source (includes inlined, macros expanded)
+                            // does not, because a header or a macro can declare it.
+                            if (info.TextureReference is not null && IsOnlyNamedByTextureStates(info.TextureReference))
+                                _undeclaredStateTextures[info.Name] = info.TextureReference;
+                            string newDecl = info.TextureReference is null
+                                ? $"Texture2D {texture}; SamplerState {info.Name};"
+                                : $"SamplerState {info.Name};";
 
                             replacedRanges.Add((blockStart, declEnd,
                                 BuildDeclReplacement(blockStart, declEnd, newDecl)));
@@ -701,6 +723,7 @@ public sealed class FxPreParser
                         // A bare sampler binds no texture in source — synthesize one.
                         string synth = SynthTextureName(name);
                         _samplerTextureBindings[name] = synth;
+                        _synthesizedSamplerTextures[name] = synth;
                         string newDecl = $"Texture2D {synth}; SamplerState {name};";
 
                         replacedRanges.Add((blockStart, declEnd,
@@ -1018,6 +1041,8 @@ public sealed class FxPreParser
             ParameterAnnotations = paramAnnotations,
             ExplicitGlSamplerSlots = explicitGlSlots,
             LegacySamplerTextures = new Dictionary<string, string>(_samplerTextureBindings, StringComparer.Ordinal),
+            SynthesizedSamplerTextures = new Dictionary<string, string>(_synthesizedSamplerTextures, StringComparer.Ordinal),
+            UndeclaredStateTextures = new Dictionary<string, string>(_undeclaredStateTextures, StringComparer.Ordinal),
             ReservedGlSamplerSlots = CollectReservedSamplerRegisters(),
         });
     }
@@ -1880,14 +1905,21 @@ public sealed class FxPreParser
         // pinned, and the allocator falls back to declaration order for it.
         Dictionary<string, int> registers = CollectLegacySamplerRegisters(tokens);
         var explicitSlots = new Dictionary<string, int>(StringComparer.Ordinal);
+        var legacyRegisters = new Dictionary<string, int>(StringComparer.Ordinal);
         foreach ((string samplerName, string textureName) in parsed.LegacySamplerTextures)
         {
             if (registers.TryGetValue(ViewName(samplerName), out int slot))
+            {
                 explicitSlots[ViewName(textureName)] = slot;
+                legacyRegisters[ViewName(samplerName)] = slot;
+            }
         }
 
         return Result<GlSamplerSlots, ShaderError>.Ok(
-            new GlSamplerSlots(explicitSlots, CollectReservedSamplerRegisters(tokens)));
+            new GlSamplerSlots(explicitSlots, CollectReservedSamplerRegisters(tokens))
+            {
+                LegacySamplerRegisters = legacyRegisters,
+            });
     }
 
     // -------------------------------------------------------------------------
@@ -2290,6 +2322,172 @@ public sealed class FxPreParser
 
         int o3 = NextCodeOffset(o2 + 1);
         return Peek(o3).Kind == TokenKind.Equals;
+    }
+
+    /// <summary>
+    /// Whether <paramref name="textureName"/> appears in the source ONLY as the value of a
+    /// sampler_state <c>Texture = &lt;T&gt;</c> (or <c>(T)</c>, or bare <c>T</c>) entry. Then nothing
+    /// declares it, and without a declaration the rewritten <c>T.Sample(…)</c> cannot compile
+    /// (while <c>mgfxc</c>, which reads the name off the state block itself, emits a <c>T</c>
+    /// parameter). Every other code mention (a declaration anywhere in the file, a use) and any
+    /// mention inside a preprocessor directive (a macro could produce or rename it) keeps the
+    /// rewrite exactly as it was. Comments do not count.
+    /// </summary>
+    private bool IsOnlyNamedByTextureStates(string textureName)
+    {
+        var word = new System.Text.RegularExpressions.Regex(
+            $@"(?<![A-Za-z0-9_]){System.Text.RegularExpressions.Regex.Escape(textureName)}(?![A-Za-z0-9_])");
+
+        int PreviousCode(int index)
+        {
+            int k = index - 1;
+            while (k >= 0 && _tokens[k].Kind is TokenKind.LineComment or TokenKind.BlockComment)
+                k--;
+            return k;
+        }
+
+        int mentions = 0, stateValues = 0;
+        for (int i = 0; i < _tokens.Count; i++)
+        {
+            Token tok = _tokens[i];
+            if (tok.Kind == TokenKind.Preprocessor && word.IsMatch(tok.Text))
+                return false;
+            if (tok.Kind != TokenKind.Identifier || !string.Equals(tok.Text, textureName, StringComparison.Ordinal))
+                continue;
+
+            mentions++;
+            int k = PreviousCode(i);
+            if (k >= 0 && _tokens[k].Kind is TokenKind.LAngle or TokenKind.LParen)
+                k = PreviousCode(k);
+            if (k < 0 || _tokens[k].Kind != TokenKind.Equals)
+                continue;
+            k = PreviousCode(k);
+            if (k >= 0 && _tokens[k].Kind == TokenKind.Identifier
+                && string.Equals(_tokens[k].Text, "Texture", StringComparison.OrdinalIgnoreCase))
+            {
+                stateValues++;
+            }
+        }
+        return mentions > 0 && mentions == stateValues;
+    }
+
+    /// <summary>
+    /// For each candidate texture (<see cref="FxParseResult.UndeclaredStateTextures"/>) that the
+    /// macro-expanded, include-inlined <paramref name="flattened"/> text declares nowhere, adds
+    /// <c>Texture2D T;</c> once, ahead of the first top-level code in the file. "Declares" is a
+    /// declaration scan of the preprocessed view, not a spelling match: any type whose name starts
+    /// with <c>texture</c> (any case: <c>texture</c>, <c>Texture2D</c>, <c>TextureCube</c>,
+    /// <c>Texture2DArray</c>, <c>texture2D</c>), optional template arguments
+    /// (<c>Texture2D&lt;float4&gt;</c>, MonoGame's own <c>Macros.fxh</c> spelling), then a
+    /// comma-separated declarator list with arrays, registers and semantics. The declaration goes
+    /// at the start of the file rather than beside the sampler, because the sampler can be declared
+    /// once per <c>#if</c> branch and the first one in the text may be in the branch that does not
+    /// compile; it is put on the line of the first code outside every conditional, so no line
+    /// number moves.
+    /// </summary>
+    /// <param name="flattened">The rewritten source with includes inlined and the compile's macros prepended.</param>
+    /// <param name="sourceFileName">Display name for diagnostics.</param>
+    /// <param name="parsed">The pre-parse that produced the rewrite (its <see cref="FxParseResult.UndeclaredStateTextures"/>).</param>
+    /// <returns>The text to compile, or <c>SD0009</c> when the preprocessed view cannot be built.</returns>
+    public static Result<string, ShaderError> DeclareUndeclaredStateTextures(
+        string flattened, string sourceFileName, FxParseResult parsed)
+    {
+        ArgumentNullException.ThrowIfNull(parsed);
+        IReadOnlyDictionary<string, string> candidates = parsed.UndeclaredStateTextures;
+        if (candidates.Count == 0)
+            return Result<string, ShaderError>.Ok(flattened);
+        Result<string, ShaderError> view = Preprocessing.FxMacroPreprocessor.Process(flattened, sourceFileName);
+        if (view.IsFailure)
+            return view;
+
+        HashSet<string> declared = DeclaredTextureNames(new FxLexer(view.Value, sourceFileName).Tokenize());
+        var missing = candidates.Values
+            .Distinct(StringComparer.Ordinal)
+            .Where(t => !declared.Contains(t))
+            .Order(StringComparer.Ordinal)
+            .ToList();
+        if (missing.Count == 0)
+            return Result<string, ShaderError>.Ok(flattened);
+
+        int at = FirstTopLevelCodeOffset(flattened, sourceFileName);
+        string declarations = string.Concat(missing.Select(t => $"Texture2D {t}; "));
+        return Result<string, ShaderError>.Ok(flattened.Insert(at, declarations));
+    }
+
+    /// <summary>Names declared with a <c>texture*</c> type (any case, optional template arguments).</summary>
+    private static HashSet<string> DeclaredTextureNames(IReadOnlyList<Token> tokens)
+    {
+        var code = tokens.Where(t => t.Kind is not (TokenKind.LineComment or TokenKind.BlockComment or TokenKind.Preprocessor)).ToList();
+        var names = new HashSet<string>(StringComparer.Ordinal);
+        for (int i = 0; i < code.Count; i++)
+        {
+            if (code[i].Kind != TokenKind.Identifier
+                || !code[i].Text.StartsWith("texture", StringComparison.OrdinalIgnoreCase))
+            {
+                continue;
+            }
+
+            int j = i + 1;
+            if (j < code.Count && code[j].Kind == TokenKind.LAngle)
+            {
+                int depth = 0;
+                for (; j < code.Count; j++)
+                {
+                    if (code[j].Kind == TokenKind.LAngle) depth++;
+                    else if (code[j].Kind == TokenKind.RAngle && --depth == 0) { j++; break; }
+                    else if (code[j].Kind is TokenKind.Semicolon or TokenKind.LBrace) break;
+                }
+            }
+
+            // Declarator list: a name, then anything (array size, ': register(t2)', a semantic,
+            // annotations) up to ',' (next name) or the end of the statement.
+            bool expectName = true;
+            int parens = 0;
+            for (; j < code.Count; j++)
+            {
+                Token t = code[j];
+                if (t.Kind is TokenKind.Semicolon or TokenKind.LBrace or TokenKind.RBrace) break;
+                if (t.Kind == TokenKind.LParen) { parens++; continue; }
+                if (t.Kind == TokenKind.RParen) { parens--; continue; }
+                if (parens == 0 && t.Kind == TokenKind.Comma) { expectName = true; continue; }
+                if (expectName && t.Kind == TokenKind.Identifier)
+                {
+                    names.Add(t.Text);
+                    expectName = false;
+                    continue;
+                }
+                if (expectName)
+                    break; // not a declaration (e.g. a cast or a function's return type use)
+            }
+        }
+        return names;
+    }
+
+    /// <summary>
+    /// The character offset of the first code token outside every <c>#if</c>/<c>#ifdef</c>/
+    /// <c>#ifndef</c> block, or 0 when there is none.
+    /// </summary>
+    private static int FirstTopLevelCodeOffset(string text, string sourceFile)
+    {
+        IReadOnlyList<Token> tokens = new FxLexer(text, sourceFile).Tokenize();
+        int[] offsets = ComputeCharacterOffsets(text, tokens);
+        int depth = 0;
+        for (int i = 0; i < tokens.Count; i++)
+        {
+            Token t = tokens[i];
+            if (t.Kind is TokenKind.LineComment or TokenKind.BlockComment or TokenKind.EOF)
+                continue;
+            if (t.Kind == TokenKind.Preprocessor)
+            {
+                string d = t.Text.TrimStart('#', ' ', '\t');
+                if (d.StartsWith("if", StringComparison.Ordinal)) depth++;
+                else if (d.StartsWith("endif", StringComparison.Ordinal) && depth > 0) depth--;
+                continue;
+            }
+            if (depth == 0)
+                return offsets[i];
+        }
+        return 0;
     }
 
     /// <summary>The synthesized <c>Texture2D</c> name bound to a bare/untextured sampler.</summary>

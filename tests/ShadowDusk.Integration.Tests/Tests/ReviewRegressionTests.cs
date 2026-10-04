@@ -763,8 +763,9 @@ public sealed class ReviewRegressionTests
         glsl.ShouldNotContain("ps_s0", Case.Sensitive);
         glsl.ShouldNotContain("ps_s1", Case.Sensitive);
 
-        reader.Parameters[records[0].Parameter].Name.ShouldBe("MaskA_SDTexture");
-        reader.Parameters[records[1].Parameter].Name.ShouldBe("MaskB_SDTexture");
+        // mgfxc names a texture-less legacy sampler's parameter after the sampler itself.
+        reader.Parameters[records[0].Parameter].Name.ShouldBe("MaskA");
+        reader.Parameters[records[1].Parameter].Name.ShouldBe("MaskB");
     }
 
     /// <summary>

@@ -198,7 +198,10 @@ internal sealed class CompilationPipeline
             macros = macros with { UserDefines = options.Defines };
         }
 
-        IIncludeResolver includeResolver = options.IncludeResolver ?? new FileSystemIncludeResolver();
+        // Memoized for this compile: the source is flattened more than once (the compile, the
+        // preprocessed sampler views, the legacy-sampler recovery), and the consumer's resolver
+        // must see one call per include, not one per pass.
+        IIncludeResolver includeResolver = MemoizingIncludeResolver.Wrap(options.IncludeResolver ?? new FileSystemIncludeResolver());
         var preprocessor = new Preprocessor();
 
         PreprocessedSource preprocessed;
@@ -223,6 +226,20 @@ internal sealed class CompilationPipeline
                 return Fail(preprocessResult.Error);
 
             preprocessed = preprocessResult.Value;
+        }
+
+        // A sampler_state texture the main file never declares (`Texture = <T>` and no `T`): mgfxc
+        // reads the name off the block and emits a `T` parameter. Declare it beside the rewritten
+        // sampler, but only when the PREPROCESSED source declares no `T` either: a header or a
+        // macro (`DECL_TEX(Mask)` giving `Texture2D MaskTex;`) can, and a second declaration is a
+        // redefinition error.
+        if (fxParsed.UndeclaredStateTextures.Count > 0)
+        {
+            Result<string, ShaderError> declared =
+                FxPreParser.DeclareUndeclaredStateTextures(preprocessed.Text, sourceFileName, fxParsed);
+            if (declared.IsFailure)
+                return Fail(declared.Error);
+            preprocessed = preprocessed with { Text = declared.Value };
         }
 
         IReadOnlyList<ShaderError> preprocessWarnings = preprocessed.Warnings;
@@ -549,6 +566,7 @@ internal sealed class CompilationPipeline
         IReadOnlyDictionary<string, int> explicitGlSamplerSlots = fxParsed.ExplicitGlSamplerSlots;
         IReadOnlySet<int> reservedGlSamplerSlots = fxParsed.ReservedGlSamplerSlots;
         ShaderError? reservationError = null;
+        IReadOnlyDictionary<string, int> legacySamplerRegisters = new Dictionary<string, int>(StringComparer.Ordinal);
         if (options.Target == PlatformTarget.OpenGL)
         {
             // A recovery pass (issue #308) has the flattened raw source in hand already, and its
@@ -561,6 +579,7 @@ internal sealed class CompilationPipeline
             {
                 explicitGlSamplerSlots = reservation.Value.Explicit;
                 reservedGlSamplerSlots = reservation.Value.Reserved;
+                legacySamplerRegisters = reservation.Value.LegacySamplerRegisters;
             }
             else
             {
@@ -576,6 +595,23 @@ internal sealed class CompilationPipeline
                     merged.TryAdd(texture, slot);
                 explicitGlSamplerSlots = merged;
             }
+        }
+        else if (fxParsed.Samplers.Select(s => s.Name)
+                     .Concat(fxParsed.SynthesizedSamplerTextures.Keys)
+                     .Distinct(StringComparer.Ordinal)
+                     .Skip(1).Any())
+        {
+            // The other targets need the same preprocessed view for one thing only: two legacy
+            // samplers on one explicit register (SD0227, below). It is read only when two legacy
+            // samplers exist at all. A view that cannot be built skips the check rather than
+            // failing a compile that never needed the view before; OpenGL, where the view
+            // decides the units, keeps failing loudly (SD0009).
+            Result<GlSamplerSlots, ShaderError> view = recovered is not null
+                ? FxPreParser.CollectGlSamplerSlots(recovered.FlattenedRawSource, sourceFileName, fxParsed)
+                : GlSamplerReservation.Collect(
+                    hlslSource, sourceFileName, macros, includeResolver, options.AdditionalIncludePaths, fxParsed);
+            if (view.IsSuccess)
+                legacySamplerRegisters = view.Value.LegacySamplerRegisters;
         }
 
         foreach (TechniqueInfo technique in fxParsed.Techniques)
@@ -871,6 +907,33 @@ internal sealed class CompilationPipeline
         if (reservationError is not null)
             return Fail(reservationError, runWarnings);
 
+        // fxc (so mgfxc, and FNA's reference) refuses two legacy samplers that one entry point
+        // reads through one explicit register: `sampler2D A : register(s0); sampler2D B :
+        // register(s0);` is X4500 "overlapping register semantics not yet implemented 's0'" on
+        // OpenGL and DirectX_11 (measured, mgfxc 3.8.4.1). The SM4 rewrite drops the clause, so
+        // without this the compile succeeded and quietly gave B the next unit. Only samplers the
+        // compiled stage actually reflects count, as in fxc: a second declaration nothing reads
+        // compiles in mgfxc too.
+        if (OverlappingLegacySamplerRegister(shaderSamplers, legacySamplerRegisters, hlslSource, sourceFileName)
+            is { } overlapError)
+        {
+            return Fail(overlapError, runWarnings);
+        }
+
+        // A legacy sampler that binds no texture (`sampler2D A;`) is ONE object to mgfxc, and
+        // the effect parameter it emits for it is named `A` on every profile. The SM4 rewrite
+        // had to split it into `Texture2D A_SDTexture; SamplerState A;`, so reflection names
+        // the texture after the synthesized declaration. Give it the sampler's name back, and
+        // drop the standalone sampler parameter of that same name, which on OpenGL and Vulkan
+        // would otherwise sit beside it bound to nothing (setting it did not reach the
+        // texture). Done before ANY index into the table is taken, so the cbuffer and sampler
+        // records below all see the final list; texture lookups go through
+        // TextureParameterName. Rendering is unchanged: the records point at the same texture.
+        Dictionary<string, string> textureParameterNames =
+            ApplySynthesizedSamplerParameterNames(allParameters, fxParsed.SynthesizedSamplerTextures);
+        string TextureParameterName(string textureName) =>
+            textureParameterNames.TryGetValue(textureName, out string? parameterName) ? parameterName : textureName;
+
         // GL (Phase 43 F4/F5): one cbuffer record PER SHADER, built from the uniform
         // register layout the GLSL rewriter returned for that shader, deduplicated
         // across shaders mgfxc-style (ConstantBufferData.SameAs). A cbuffer bound by
@@ -1146,7 +1209,7 @@ internal sealed class CompilationPipeline
                             // separate divergence tracked in Phase 51, not changed here because
                             // it needs its own DX12 render re-proof.
                             Name:        directX ? string.Empty : $"ps_s{slot}",
-                            Parameter:   IndexOfParam(allParameters, tex.Name),
+                            Parameter:   IndexOfParam(allParameters, TextureParameterName(tex.Name)),
                             State:       matchedSamp is null
                                              ? null
                                              : samplerStateByName.GetValueOrDefault(matchedSamp.Name)));
@@ -1225,7 +1288,7 @@ internal sealed class CompilationPipeline
                             TextureSlot: (byte)glSamplerSlots[k],
                             SamplerSlot: (byte)glSamplerSlots[k],
                             Name:        $"ps_s{glSamplerSlots[k]}",
-                            Parameter:   IndexOfParam(allParameters, pair.TextureName),
+                            Parameter:   IndexOfParam(allParameters, TextureParameterName(pair.TextureName)),
                             // Keyed on the .fx sampler identifier, which survives the SM4
                             // rewrite verbatim, so the baked sampler_state follows the SAMPLER
                             // half of the pair — two pairs sharing one texture but different
@@ -1285,7 +1348,7 @@ internal sealed class CompilationPipeline
                         // No Math.Max(0, …) clamp — see the DirectX branch (bug-hunt N11).
                         int paramIndex = matchedTex is null
                             ? 0
-                            : IndexOfParam(allParameters, matchedTex.Name);
+                            : IndexOfParam(allParameters, TextureParameterName(matchedTex.Name));
                         samplers.Add(new MgfxSamplerInfo(
                             Type:        SamplerTypeByte(matchedTex?.Dimension),
                             TextureSlot: (byte)slot,
@@ -2618,6 +2681,133 @@ internal sealed class CompilationPipeline
         TextureDimension.Texture1D   => 3,
         _                            => 0, // Texture2D / Unknown / null
     };
+
+    /// <summary>
+    /// Renames each texture the SM4 rewrite synthesized for a texture-less legacy sampler
+    /// (<c>A_SDTexture</c>) to the sampler's own name (<c>A</c>), mgfxc's name for that
+    /// parameter on every profile, and removes the standalone sampler parameter of that name
+    /// (OpenGL/Vulkan emit one per reflected sampler; it would duplicate the name and bind
+    /// nothing). Only a texture that actually reached the table is renamed, and only then is
+    /// its sampler's parameter removed. Returns reflected texture name -> parameter name for
+    /// the renamed textures, which the sampler records join through.
+    /// </summary>
+    private static Dictionary<string, string> ApplySynthesizedSamplerParameterNames(
+        List<ParameterReflection> parameters,
+        IReadOnlyDictionary<string, string> synthesizedSamplerTextures)
+    {
+        var renamed = new Dictionary<string, string>(StringComparer.Ordinal);
+        if (synthesizedSamplerTextures.Count == 0)
+            return renamed;
+
+        var samplerOfTexture = new Dictionary<string, string>(StringComparer.Ordinal);
+        foreach ((string samplerName, string textureName) in synthesizedSamplerTextures)
+            samplerOfTexture[textureName] = samplerName;
+
+        foreach (ParameterReflection p in parameters)
+        {
+            if (p.Class == EffectParameterClass.Object
+                && samplerOfTexture.TryGetValue(p.Name, out string? samplerName))
+            {
+                renamed[p.Name] = samplerName;
+            }
+        }
+        if (renamed.Count == 0)
+            return renamed;
+
+        var renamedSamplers = new HashSet<string>(renamed.Values, StringComparer.Ordinal);
+        var samplerAnnotations = new Dictionary<string, IReadOnlyList<AnnotationReflection>?>(StringComparer.Ordinal);
+        foreach (ParameterReflection p in parameters)
+        {
+            // The parameter of the SAMPLER half: the only global left with the sampler's
+            // name after the rewrite is the SamplerState itself, and it is always Object-class.
+            if (p.Class == EffectParameterClass.Object && renamedSamplers.Contains(p.Name))
+                samplerAnnotations[p.Name] = p.Annotations;
+        }
+        parameters.RemoveAll(p => p.Class == EffectParameterClass.Object && renamedSamplers.Contains(p.Name));
+
+        for (int i = 0; i < parameters.Count; i++)
+        {
+            if (parameters[i].Class == EffectParameterClass.Object
+                && renamed.TryGetValue(parameters[i].Name, out string? parameterName))
+            {
+                // An annotation written on the legacy sampler (`sampler2D A < ... >;`) is keyed
+                // by the sampler's name, which this parameter now carries.
+                IReadOnlyList<AnnotationReflection>? annotations = parameters[i].Annotations
+                    ?? samplerAnnotations.GetValueOrDefault(parameterName);
+                parameters[i] = parameters[i] with { Name = parameterName, Annotations = annotations };
+            }
+        }
+
+        return renamed;
+    }
+
+    /// <summary>
+    /// <c>SD0227</c>: two legacy samplers read by ONE compiled stage share an explicit
+    /// <c>register(sN)</c>, which fxc refuses (<c>X4500</c>). Located at the second declaration in
+    /// the source when it can be found there.
+    /// </summary>
+    private static ShaderError? OverlappingLegacySamplerRegister(
+        IReadOnlyDictionary<int, IReadOnlyList<SamplerReflection>> shaderSamplers,
+        IReadOnlyDictionary<string, int> legacySamplerRegisters,
+        string source,
+        string sourceFileName)
+    {
+        if (legacySamplerRegisters.Count < 2)
+            return null;
+
+        foreach (int shader in shaderSamplers.Keys.Order())
+        {
+            IGrouping<int, string>? clash = shaderSamplers[shader]
+                .Select(s => s.Name)
+                .Distinct(StringComparer.Ordinal)
+                .Where(legacySamplerRegisters.ContainsKey)
+                .GroupBy(name => legacySamplerRegisters[name])
+                .Where(g => g.Count() > 1)
+                .OrderBy(g => g.Key)
+                .FirstOrDefault();
+            if (clash is null)
+                continue;
+
+            // Declaration order, so the message names them as the author wrote them.
+            var names = clash
+                .Select(n => (Name: n, Location: FindSamplerDeclaration(source, n)))
+                .OrderBy(x => x.Location.Offset < 0 ? int.MaxValue : x.Location.Offset)
+                .ThenBy(x => x.Name, StringComparer.Ordinal)
+                .ToList();
+            (int line, int column, _) = names[1].Location;
+            return new ShaderError(
+                File: sourceFileName,
+                Line: line,
+                Column: column,
+                Code: "SD0227",
+                Message: $"legacy samplers {string.Join(" and ", names.Select(x => $"'{x.Name}'"))} are both bound to " +
+                         $"register s{clash.Key} and both read by the same shader. fxc (and so mgfxc) refuses this " +
+                         $"(X4500: overlapping register semantics not yet implemented 's{clash.Key}'); give each " +
+                         "sampler its own register.");
+        }
+        return null;
+    }
+
+    /// <summary>The 1-based line/column (and offset) of <c>sampler... name</c> in <paramref name="source"/>, or (0, 0, -1).</summary>
+    private static (int Line, int Column, int Offset) FindSamplerDeclaration(string source, string samplerName)
+    {
+        System.Text.RegularExpressions.Match m = System.Text.RegularExpressions.Regex.Match(
+            source,
+            $@"(?<![A-Za-z0-9_])[Ss][Aa][Mm][Pp][Ll][Ee][Rr]\w*\s+({System.Text.RegularExpressions.Regex.Escape(samplerName)})(?![A-Za-z0-9_])");
+        if (!m.Success)
+            return (0, 0, -1);
+        int offset = m.Groups[1].Index;
+        int line = 1, lineStart = 0;
+        for (int i = 0; i < offset; i++)
+        {
+            if (source[i] == '\n')
+            {
+                line++;
+                lineStart = i + 1;
+            }
+        }
+        return (line, offset - lineStart + 1, offset);
+    }
 
     private static int IndexOfParam(IReadOnlyList<ParameterReflection> parameters, string name)
     {

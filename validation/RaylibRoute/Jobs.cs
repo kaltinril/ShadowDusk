@@ -13,7 +13,10 @@ namespace ShadowDusk.Validation.RaylibRoute;
 /// <param name="MgfxPath">ShadowDusk's OpenGL <c>.mgfx</c> for the MonoGame arm, or null to skip that arm.</param>
 /// <param name="FragmentPath">The raylib fragment shader for the raylib arm, or null to skip that arm.</param>
 /// <param name="Uniforms">Uniform name to value (1-4 floats), set by name on both arms.</param>
-/// <param name="DrawTextures">HLSL texture parameters on unit 0: the texture the draw call binds (MonoGame arm sets the parameter too).</param>
+/// <param name="DrawTextures">
+/// The unit-0 samplers (the texture the draw call binds; the MonoGame arm sets the parameter too),
+/// as their MonoGame parameter candidates. See <see cref="ExtraTexture"/>.
+/// </param>
 /// <param name="ExtraTextures">
 /// Every other sampler as (HLSL texture parameter, raylib uniform). Both arms bind these to a
 /// SEPARATE copy of the source: MonoGame 3.8's GL backend stores sampler state on the texture
@@ -24,11 +27,17 @@ internal sealed record RenderJob(
     string? MgfxPath,
     string? FragmentPath,
     Dictionary<string, float[]> Uniforms,
-    string[] DrawTextures,
+    ExtraTexture[] DrawTextures,
     ExtraTexture[] ExtraTextures);
 
-/// <summary>A sampler beyond unit 0: its MonoGame parameter name and its raylib uniform name.</summary>
-internal sealed record ExtraTexture(string HlslTexture, string RaylibUniform);
+/// <summary>
+/// A sampler: the names its MonoGame effect parameter can have, and its raylib uniform name.
+/// The parameter is the HLSL texture's (<see cref="HlslTexture"/>), except for a legacy sampler
+/// that binds no texture of its own (<c>sampler2D A;</c>), whose texture the SM4 rewrite
+/// synthesizes and whose parameter carries the SAMPLER's name (<see cref="HlslSampler"/>), as
+/// <c>mgfxc</c> names it. The MonoGame arm binds the first that exists.
+/// </summary>
+internal sealed record ExtraTexture(string HlslTexture, string RaylibUniform, string HlslSampler);
 
 /// <summary>The work list plus the scene both arms draw.</summary>
 internal sealed record JobFile(int Size, byte[] Tint, List<RenderJob> Jobs);

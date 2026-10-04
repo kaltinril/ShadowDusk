@@ -19,4 +19,14 @@ namespace ShadowDusk.HLSL.Ast;
 /// </param>
 public sealed record GlSamplerSlots(
     IReadOnlyDictionary<string, int> Explicit,
-    IReadOnlySet<int> Reserved);
+    IReadOnlySet<int> Reserved)
+{
+    /// <summary>
+    /// SAMPLER name (as the preprocessed view spells it) -> the explicit <c>register(sN)</c> on its
+    /// LEGACY declaration, for every legacy sampler a legacy intrinsic (<c>tex2D</c> ...) reads.
+    /// Keyed on the sampler rather than the texture so two samplers sharing one texture stay
+    /// apart: it is what the overlapping-register check (<c>SD0227</c>, fxc's <c>X4500</c>) reads.
+    /// </summary>
+    public IReadOnlyDictionary<string, int> LegacySamplerRegisters { get; init; } =
+        new Dictionary<string, int>(StringComparer.Ordinal);
+}

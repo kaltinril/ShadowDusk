@@ -31,12 +31,13 @@ namespace ShadowDusk.Integration.Tests.Reflection;
 /// outside the sweep.</para>
 ///
 /// <para><b>The one normalization, and why it is not a loophole.</b> <c>mgfxc</c> spells a GL
-/// texture parameter with MojoShader's combined form (<c>TextureSampler+DiffuseMap</c>) while
-/// ShadowDusk keeps the plain texture name, and <c>FxPreParser</c>'s synthesized texture carries
-/// an <c>_SDTexture</c> suffix. Both are deliberate, recorded divergences (see
-/// <c>project_decisions.md</c>) that MonoGame cannot observe, because it resolves a sampler's
-/// texture through the record's parameter INDEX and never its name. Stripping them is what lets
-/// this assert the thing under test — the SLOTS — rather than re-litigating naming.</para>
+/// texture parameter of a MODERN (texture, sampler) pair with MojoShader's combined form
+/// (<c>TextureSampler+DiffuseMap</c>) while ShadowDusk keeps the plain texture name. MonoGame
+/// cannot observe that in binding, because it resolves a sampler's texture through the record's
+/// parameter INDEX and never its name. Stripping the prefix is what lets this assert the thing
+/// under test (the SLOTS) rather than re-litigating naming. A texture-less legacy sampler's
+/// parameter is NOT normalized: it carries the sampler's own name, exactly as mgfxc's
+/// does.</para>
 /// </summary>
 public sealed class GlSamplerSlotCorpusTests
 {
@@ -136,19 +137,14 @@ public sealed class GlSamplerSlotCorpusTests
 
     /// <summary>
     /// Reduces both compilers' spellings of a GL texture parameter to the texture's own name.
-    /// mgfxc uses MojoShader's <c>&lt;sampler&gt;+&lt;texture&gt;</c>; ShadowDusk keeps the plain
-    /// name and suffixes a synthesized one with <c>_SDTexture</c>. Both are recorded, deliberate
-    /// divergences that MonoGame cannot observe (it binds by parameter INDEX, never by name).
+    /// mgfxc uses MojoShader's <c>&lt;sampler&gt;+&lt;texture&gt;</c> for a modern pair;
+    /// ShadowDusk keeps the plain name. MonoGame cannot observe that (it binds by parameter
+    /// INDEX, never by name).
     /// </summary>
     private static string NormalizeTextureName(string name)
     {
         int plus = name.IndexOf('+');
-        if (plus >= 0)
-            name = name[(plus + 1)..];
-        const string synthesized = "_SDTexture";
-        return name.EndsWith(synthesized, StringComparison.Ordinal)
-            ? name[..^synthesized.Length]
-            : name;
+        return plus >= 0 ? name[(plus + 1)..] : name;
     }
 
     private static string FindSource(string stem)
