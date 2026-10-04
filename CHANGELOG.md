@@ -185,6 +185,28 @@ that loads and renders identically to `mgfxc`'s in the real MonoGame/KNI runtime
 
 ### Changed
 
+- **A cancelled compile says where its time went (issue #373).** `EffectCompiler.Compile` and
+  `CompileAsync` now throw an `OperationCanceledException` whose message gives the elapsed time, how
+  long an async compile waited for a thread before it started, how many native compiler calls
+  (DXC, SPIRV-Cross, vkd3d-shader, d3dcompiler_47) completed, which was the longest and which the
+  last, every native call still in flight in the process and for how long, and the worker and
+  thread-pool load. A token cannot interrupt a native call, so this is what tells a stalled native
+  call from a starved process. `CompileAsync` no longer hands its token to `Task.Run`, so a compile
+  cancelled while queued ends with that message instead of a bare `TaskCanceledException` (still an
+  `OperationCanceledException`). Output is unchanged.
+- **CI's integration lane runs at most two test hosts at once (issues #373, #316, #351).** On the
+  4-vCPU `windows-latest` runner, all hosts at once kept the run queue at 20 to 60, and one host at
+  a time made no progress for 40 to 176 s (measured from every `.trx` of 74 CI runs); a blame dump
+  of one caught it blocked starting a new thread, with no native compiler busy. Every 30 and 60 s
+  test budget that expired there was a test inside such a stall. `dotnet test -m:2` keeps the
+  step's wall time and removes the stalls; the per-test compile budgets became one measured
+  `TestBudget.Compile` (3 minutes, the blame-hang timeout), and a Windows blame-hang dump is now
+  turned into managed stacks in the job.
+- **A child process that fails without writing anything is explained (issue #321).** The test
+  helper's output for such an exit names the exit code in hex and what it means (for `-1`: the
+  process was terminated from outside, `TerminateProcess(-1)` / `Process.Kill`, or called
+  `exit(-1)` itself, since the .NET host and runtime print a message for every failure they
+  report), how long it ran, its CPU time and its command line, instead of "(no stdout, no stderr)".
 - **CI executes `ShadowDusk.Slang`'s osx-x64 slangc (issue #352).** CI's macOS runners are arm64,
   so the bundled osx-x64 slangc was only checked for presence. `pack-consume.yml`'s macOS lane now
   extracts it from the packed nupkg, runs it under Rosetta 2, and fails unless its HLSL is

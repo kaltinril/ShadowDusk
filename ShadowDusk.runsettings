@@ -7,7 +7,7 @@
   cause was environmental (a per-construction Release publish in CliBinaryFixture, since
   removed - see plan/DONE/PHASE-21-test-suite-performance.md).
 
-  Per-test CancellationTokenSource timeouts (30 s / 60 s / 120 s) already make an
+  Per-test CancellationTokenSource timeouts (TestBudget.Compile, 3 min, issue #373) make an
   individual stalled test fail fast. This is the COMPLEMENTARY suite-level cap: if the
   whole session ever hangs (a regression no per-test timeout catches, e.g. fixture setup
   or process-spawn contention), VSTest aborts the run and FAILS it in bounded time
