@@ -321,63 +321,166 @@ public sealed class SlangGlSamplerSlotTests
             .ShouldBe([("A", (byte)0, (byte)0), ("B", (byte)1, (byte)1), ("C", (byte)2, (byte)2)]);
     }
 
-    [Fact]
-    public void TextureArray_OnOpenGL_IsRefusedWithSd0217_LikeTheFxRoute()
+    // The .fx reference for both array shapes below: an array of textures sampled through one
+    // SamplerState, which the .fx route refuses on OpenGL with SD0217 (as real mgfxc refuses it).
+    private const string FxTextureArrayReference = """
+        Texture2D Tex[3];
+        SamplerState S;
+        float4 MainPS(float4 pos : SV_Position, float2 uv : TEXCOORD0) : SV_Target
+        {
+            return Tex[0].Sample(S, uv) + Tex[1].Sample(S, uv) + Tex[2].Sample(S, uv);
+        }
+        technique T { pass P0 { PixelShader = compile PS_SHADERMODEL MainPS(); } }
+        """;
+
+    public static TheoryData<string, string> GlArrayShapes() => new()
     {
         // MonoGame's GL effect format has one texture per named sampler uniform, so an array
-        // of textures has no slots to land on. The Slang route must say so exactly as the .fx
-        // route does (and never invent consecutive units).
-        const string decls = "Texture2D Tex[3];\nSamplerState S;\n";
-        const string slangBody = """
+        // of textures has no slots to land on.
+        {
+            """
+            Texture2D Tex[3];
+            SamplerState S;
             [shader("fragment")]
             float4 MainPS(float4 pos : SV_Position, float2 uv : TEXCOORD0) : SV_Target
             {
                 return Tex[0].Sample(S, uv) + Tex[1].Sample(S, uv) + Tex[2].Sample(S, uv);
             }
-            """;
-
-        var slang = new SlangCompiler().Compile(
-            decls + slangBody,
-            new CompilerOptions { Target = PlatformTarget.OpenGL, SourceFileName = "Arr.slang" });
-        var fx = new EffectCompiler().Compile(
-            FxHeader + decls + """
-                float4 MainPS(float4 pos : SV_Position, float2 uv : TEXCOORD0) : SV_Target
-                {
-                    return Tex[0].Sample(S, uv) + Tex[1].Sample(S, uv) + Tex[2].Sample(S, uv);
-                }
-                technique T { pass P0 { PixelShader = compile PS_SHADERMODEL MainPS(); } }
-                """,
-            new CompilerOptions { Target = PlatformTarget.OpenGL, SourceFileName = "Arr.fx" });
-
-        fx.IsFailure.ShouldBeTrue("the .fx route's own verdict is the reference");
-        slang.IsFailure.ShouldBeTrue("a texture array has no GL sampler slots");
-        slang.Error.ShouldHaveSingleItem().Code.ShouldBe("SD0217");
-        slang.Error[0].Code.ShouldBe(fx.Error[0].Code);
-        slang.Error[0].Message.ShouldContain("'Tex' is declared as an array of textures", Case.Sensitive);
-    }
-
-    [Fact]
-    public void CombinedSamplerArray_OnOpenGL_IsRefusedLoudly()
-    {
-        // slangc lowers 'Sampler2D Comb[3]' to texture and sampler ARRAYS; SPIRV-Cross cannot
-        // remap arrays of separate samplers to plain GLSL and says so (SD0100). Pinned as the
-        // current behaviour: loud and registered, never consecutive units, never a silent pass.
-        const string source = """
+            """,
+            "'Tex' is declared as an array of textures"
+        },
+        // Issue #356: slangc lowers 'Sampler2D Comb[3]' to a texture array plus a SAMPLER array,
+        // which SPIRV-Cross cannot remap (it used to surface as its bare SD0100). Same verdict,
+        // same code, as the texture-array shape.
+        {
+            """
             Sampler2D Comb[3];
             [shader("fragment")]
             float4 MainPS(float4 pos : SV_Position, float2 uv : TEXCOORD0) : SV_Target
             {
                 return Comb[0].Sample(uv) + Comb[1].Sample(uv) + Comb[2].Sample(uv);
             }
+            """,
+            "'Comb' is declared as an array of combined samplers ('Sampler2D Comb[...]')"
+        },
+    };
+
+    [Theory]
+    [MemberData(nameof(GlArrayShapes))]
+    public void TextureOrCombinedSamplerArray_OnOpenGL_IsRefusedWithSd0217_LikeTheFxRoute(string source, string named)
+    {
+        // The Slang route must refuse both shapes exactly as the .fx route refuses the texture
+        // array, naming the author's declaration, and never invent consecutive units.
+        var slang = new SlangCompiler().Compile(
+            source, new CompilerOptions { Target = PlatformTarget.OpenGL, SourceFileName = "Arr.slang" });
+        var fx = new EffectCompiler().Compile(
+            FxHeader + FxTextureArrayReference,
+            new CompilerOptions { Target = PlatformTarget.OpenGL, SourceFileName = "Arr.fx" });
+
+        fx.IsFailure.ShouldBeTrue("the .fx route's own verdict is the reference");
+        slang.IsFailure.ShouldBeTrue("an array of textures has no GL sampler slots");
+        ShaderError error = slang.Error.ShouldHaveSingleItem();
+        error.Code.ShouldBe("SD0217");
+        error.Code.ShouldBe(fx.Error[0].Code);
+        error.Message.ShouldContain(named, Case.Sensitive);
+    }
+
+    [Fact]
+    public void CombinedSamplerArray_OnOpenGL_IsLocatedAtTheAuthorsDeclaration_AndKeepsSpirvCrossVerbatim()
+    {
+        // Issue #356: the SD0217 points at the author's line (not slangc's lowering, which has
+        // none), tells the author what to do, and keeps SPIRV-Cross's own report word for word.
+        const string source = """
+            float4 Tint;
+            Sampler2D Comb[3];
+            [shader("fragment")]
+            float4 MainPS(float4 pos : SV_Position, float2 uv : TEXCOORD0) : SV_Target
+            {
+                return Tint * (Comb[0].Sample(uv) + Comb[2].Sample(uv));
+            }
             """;
 
         var result = new SlangCompiler().Compile(
             source, new CompilerOptions { Target = PlatformTarget.OpenGL, SourceFileName = "Comb.slang" });
 
-        result.IsFailure.ShouldBeTrue();
+        ShaderError error = result.Error.ShouldHaveSingleItem();
+        (error.File, error.Line, error.Column, error.Code).ShouldBe(("Comb.slang", 2, 1, "SD0217"));
+        error.Message.ShouldContain("Declare each element as its own Sampler2D and sample each by name.", Case.Sensitive);
+        const string spirvCross =
+            "SPIRV-Cross [build_combined_image_samplers]: Attempting to use arrays or structs of separate samplers.";
+        error.Message.ShouldContain(spirvCross, Case.Sensitive);
+        error.RawDiagnostics.ShouldNotBeNull().ShouldStartWith(spirvCross, Case.Sensitive);
+    }
+
+    [Fact]
+    public void CombinedCubeSamplerArray_OnOpenGL_IsSd0217_InItsOwnTypesWords()
+    {
+        const string source = """
+            SamplerCube Sky[2];
+            [shader("fragment")]
+            float4 MainPS(float4 pos : SV_Position, float3 dir : TEXCOORD0) : SV_Target
+            {
+                return Sky[0].Sample(dir) + Sky[1].Sample(dir);
+            }
+            """;
+
+        var result = new SlangCompiler().Compile(
+            source, new CompilerOptions { Target = PlatformTarget.OpenGL, SourceFileName = "Sky.slang" });
+
+        ShaderError error = result.Error.ShouldHaveSingleItem();
+        (error.Line, error.Code).ShouldBe((1, "SD0217"));
+        error.Message.ShouldContain("'Sky' is declared as an array of combined samplers ('SamplerCube Sky[...]')", Case.Sensitive);
+        error.Message.ShouldContain("'TextureCube Sky[N]'", Case.Sensitive);
+        error.Message.ShouldContain("its own SamplerCube", Case.Sensitive);
+    }
+
+    [Fact]
+    public void AuthorSamplerArrayNamedLikeSlangcsLowering_OnOpenGL_StaysSpirvCrossesOwnSd0100()
+    {
+        // The control for issue #356's rewrite: 'My_sampler_0[2]' is shaped like slangc's lowering
+        // of a combined 'Sampler2D My[2]', but the author wrote it as a SamplerState array and no
+        // 'Sampler2D My[...]' exists. It must stay SPIRV-Cross's SD0100, never claim a Sampler2D.
+        const string source = """
+            Texture2D Tex;
+            SamplerState My_sampler_0[2];
+            [shader("fragment")]
+            float4 MainPS(float4 pos : SV_Position, float2 uv : TEXCOORD0) : SV_Target
+            {
+                return Tex.Sample(My_sampler_0[1], uv);
+            }
+            """;
+
+        var result = new SlangCompiler().Compile(
+            source, new CompilerOptions { Target = PlatformTarget.OpenGL, SourceFileName = "My.slang" });
+
         ShaderError error = result.Error.ShouldHaveSingleItem();
         error.Code.ShouldBe("SD0100");
-        error.Message.ShouldContain("arrays or structs of separate samplers", Case.Sensitive);
+        error.Message.ShouldStartWith("SPIRV-Cross [build_combined_image_samplers]:", Case.Sensitive);
+        error.Message.ShouldNotContain("Sampler2D", Case.Sensitive);
+    }
+
+    [Fact]
+    public void AuthorWrittenSamplerArray_OnOpenGL_StaysSpirvCrossesOwnSd0100()
+    {
+        // The control: an author-written 'SamplerState S[2]' is not a combined sampler slangc
+        // lowered, and the .fx route reports the same shape as SPIRV-Cross's SD0100. Issue #356
+        // must not relabel it.
+        const string source = """
+            Texture2D T;
+            SamplerState S[2];
+            [shader("fragment")]
+            float4 MainPS(float4 pos : SV_Position, float2 uv : TEXCOORD0) : SV_Target
+            {
+                return T.Sample(S[1], uv);
+            }
+            """;
+
+        var result = new SlangCompiler().Compile(
+            source, new CompilerOptions { Target = PlatformTarget.OpenGL, SourceFileName = "S.slang" });
+
+        ShaderError error = result.Error.ShouldHaveSingleItem();
+        error.Code.ShouldBe("SD0100");
+        error.Message.ShouldStartWith("SPIRV-Cross [build_combined_image_samplers]:", Case.Sensitive);
     }
 
     private const string CombinedPixelShader = """
@@ -407,6 +510,85 @@ public sealed class SlangGlSamplerSlotTests
 
         Slots(slang).ShouldBe([((byte)expectedSlot, (byte)expectedSlot)]);
         Slots(slang).ShouldBe(Slots(fx));
+    }
+
+    private const string CombinedAPixelShader = """
+        [shader("fragment")]
+        float4 MainPS(float4 pos : SV_Position, float2 uv : TEXCOORD0) : SV_Target
+        {
+            return A.Sample(uv);
+        }
+        """;
+
+    // The pixel shader's DXBC bindings, read from its own reflection chunk.
+    private static (string Textures, string Samplers) DxbcBindings(MgfxBlobReader effect)
+    {
+        MgfxShaderRecord ps = effect.Shaders.Single(s => !s.IsVertex);
+        var reflected = ShadowDusk.Core.Reflection.RdefReader.Read(ps.Bytecode);
+        reflected.IsSuccess.ShouldBeTrue(reflected.IsFailure ? reflected.Error.Message : "");
+        return (
+            string.Join(",", reflected.Value.Textures.Select(t => $"{t.Name}@t{t.BindSlot}")),
+            string.Join(",", reflected.Value.Samplers.Select(s => $"@s{s.BindSlot}")));
+    }
+
+    [Fact]
+    public void SamplerRegisterOnACombinedSampler_OnDirectX11_BindsTheSamplerHalf_TextureStaysOnT0_LikeMgfxcsLegacySampler()
+    {
+        // Issue #355. 'Sampler2D A : register(s2)' on DirectX 11 compiles to texture t0 + sampler
+        // s2, and that is the reference behaviour, not a lost register:
+        //  * slangc binds a register(sN) on a combined sampler to its SAMPLER half only and numbers
+        //    the texture half itself (its emission: 'Texture2D A;' + 'SamplerState A_sampler_0 :
+        //    register(s2);'), and ShadowDusk keeps exactly the author's s2 (issue #252);
+        //  * the hand-written combined equivalent, the legacy 'sampler2D A : register(s2);' sampled
+        //    with tex2D, compiles under real mgfxc 3.8.4.1 /Profile:DirectX_11 to the same bindings.
+        //    Measured 2026-10-03 with 'fxc /dumpbin' on mgfxc's own shader: 'dcl_sampler s2' +
+        //    'dcl_resource_texture2d t0' + 'sample ..., t0, s2', and a sampler record with texture
+        //    slot 0. So under mgfxc too, GraphicsDevice.Textures[2] does NOT reach that texture on
+        //    DirectX 11; the effect parameter (or Textures[0]) does, and SamplerStates[2] is the
+        //    sampler state the shader reads, on both compilers.
+        // The record's sampler slot (0 here, 2 in mgfxc's) is read by MonoGame only to apply a baked
+        // sampler_state (EffectPass.SetShaderSamplers: 'if (sampler.state != null)'), which Slang
+        // source cannot declare, so it changes nothing at runtime. 'register(t2) : register(s2)'
+        // is the spelling that binds both halves to slot 2 (next test).
+        MgfxBlobReader effect = SlangEffect("Sampler2D A : register(s2);\n" + CombinedAPixelShader, PlatformTarget.DirectX);
+
+        Named(effect).Select(s => (s.Texture, s.TextureSlot)).ShouldBe([("A", (byte)0)]);
+        DxbcBindings(effect).ShouldBe(("A@t0", "@s2"));
+    }
+
+    [Fact]
+    public void TextureAndSamplerRegisterOnACombinedSampler_OnDirectX11_BindBothHalvesToSlot2()
+    {
+        // Issue #355, the spelling for a game that binds GraphicsDevice.Textures[2]: both halves
+        // carry the author's register, the record names texture slot 2, and the bytecode reads t2/s2.
+        MgfxBlobReader effect = SlangEffect(
+            "Sampler2D A : register(t2) : register(s2);\n" + CombinedAPixelShader, PlatformTarget.DirectX);
+
+        Named(effect).ShouldBe([("A", (byte)2, (byte)2)]);
+        DxbcBindings(effect).ShouldBe(("A@t2", "@s2"));
+    }
+
+    [Theory]
+    [InlineData(PlatformTarget.DirectX12)]
+    [InlineData(PlatformTarget.Vulkan)]
+    public void SamplerRegisterOnACombinedSampler_OnTheOtherDirectXAndVulkanTargets_MatchesTheHandWrittenPair(PlatformTarget target)
+    {
+        // Issue #355 on the remaining record-keyed targets: the combined sampler gets the table the
+        // hand-written split pair 'Texture2D A; SamplerState S : register(s2);' gets through the
+        // .fx route (texture slot 0), never a slot the author did not write.
+        var slang = SlangSamplers("Sampler2D A : register(s2);\n" + CombinedAPixelShader, target);
+        var fx = FxSamplers(FxHeader + """
+            Texture2D A;
+            SamplerState S : register(s2);
+            float4 MainPS(float4 pos : SV_Position, float2 uv : TEXCOORD0) : SV_Target
+            {
+                return A.Sample(S, uv);
+            }
+            technique T { pass P0 { PixelShader = compile PS_SHADERMODEL MainPS(); } }
+            """, target);
+
+        Slots(slang).ShouldBe(Slots(fx));
+        slang.ShouldHaveSingleItem().TextureSlot.ShouldBe((byte)0);
     }
 
     // Each sampler record keyed by the name of the texture parameter it binds.
