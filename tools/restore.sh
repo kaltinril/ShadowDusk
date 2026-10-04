@@ -447,14 +447,14 @@ restore_vkd3d_wasm() {
 restore_vkd3d_wasm
 
 # ---------------------------------------------------------------------------
-# Slang compiler (real slangc, all four desktop RIDs — Phase 66 A2, issue #227)
+# Slang compiler (real slangc, all five desktop RIDs — Phase 66 A2, issues #227/#286)
 # ---------------------------------------------------------------------------
 # ShadowDusk.Slang (a separate, opt-in package — plan/PHASE-66) ships REAL slangc so a
 # consumer who adds it gets genuine Slang input, compiled via slangc -target hlsl and
 # handed to the existing, unchanged, faithful DXC pipeline. A consumer who does NOT add
 # ShadowDusk.Slang pays zero size/dependency cost. Every host restores every RID (like
 # restore_vkd3d_shader / restore_dxc_macos above), so any machine is pack-ready: the
-# ShadowDusk.Slang nupkg must carry all four, and release.yml / pack-consume.yml gate on it.
+# ShadowDusk.Slang nupkg must carry all five, and release.yml / pack-consume.yml gate on it.
 #
 # Pin: the official shader-slang v2026.14.1 release for every RID (the SAME version
 # validation/SlangCorpus/Program.cs downloads as a test-time oracle, and the version
@@ -476,10 +476,11 @@ restore_vkd3d_wasm
 # and the -dist variants too), so they run on macOS 26+ only; SlangToolPath reports older
 # macOS as unsupported (SD0620) instead of letting dyld kill the process.
 #
-# linux-arm64 and win-arm64 are NOT restored although upstream publishes them: the core
-# pipeline is incomplete on both (linux-arm64 has no DXC or vkd3d native; win-arm64 has DXC
-# but no vkd3d, and is unproven) (project_decisions.md, issue #227). Add them when the core
-# pipeline does.
+# win-arm64 (issue #286): the core pipeline's OpenGL, Vulkan and DirectX 12 output was measured
+# byte-identical to win-x64 on a native windows-11-arm runner (.github/workflows/win-arm64.yml),
+# so slangc rides for it too; DirectX 11 and FNA there are SD0211 (no vkd3d-shader build).
+# linux-arm64 is NOT restored although upstream publishes it: the core pipeline has no DXC or
+# vkd3d native there (project_decisions.md, issue #227). Add it when the core pipeline does.
 SLANG_VERSION="2026.14.1"
 SLANG_RELEASE_URL="https://github.com/shader-slang/slang/releases/download/v${SLANG_VERSION}"
 
@@ -555,6 +556,7 @@ restore_slang() {
         2976c3a9a6f4d77b5734d00b5d841d1ff087d9965d9006b9b4d73edd0062cb7d \
         bin/slangc a1c5ecae0d2425b13fe7f616686f2df7cc7028d3f6a85fb717497cf98bee3d0a \
         "lib/libslang-compiler.0.${SLANG_VERSION}.dylib" 4fadae0d56d4538dc2a0099086de3d2a5350e12da4591679ee8cbb571c5db7de
+    restore_slang_rid win-arm64 windows-aarch64         5067047bb35ae5675b06a3467d0b302d9816727450a803cb3770660bef684f37         bin/slangc.exe fa689dd4c308621bfb82559a863554babd5921863cc4ff9473056b500524f433         bin/slang-compiler.dll 066d048df8f9c73eb1cfd77e64dd285e1b1e9766eda6c170a29350bfb76fdb9a
 }
 
 restore_slang

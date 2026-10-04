@@ -91,7 +91,7 @@ jobs:
           Get-ChildItem "$env:SHADOWDUSK_ARCH_MANIFEST_WRITE"
 
       - name: Upload the win-x64 manifests
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: arch-manifest-win-x64
           path: ${{ runner.temp }}/arch-manifest
@@ -136,7 +136,7 @@ jobs:
           dotnet build tests/ShadowDusk.Slang.Tests -c Release -f ${{ matrix.tfm }}
 
       - name: Download the win-x64 manifests
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           name: arch-manifest-win-x64
           path: ${{ runner.temp }}/arch-manifest
@@ -151,3 +151,28 @@ jobs:
             --filter "FullyQualifiedName~ArchitectureByteIdentityTests|FullyQualifiedName~CrossHostByteIdentityTests.OpenGL_Bytes_MatchCommittedManifest|FullyQualifiedName=ShadowDusk.Integration.Tests.Tests.CrossHostByteIdentityTests.SourceFileName_DoesNotAffect_OutputBytes" `
             --logger "console;verbosity=detailed"
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+      # ShadowDusk.Slang bundles slangc for win-arm64 (issue #286): the real-slangc route,
+      # running the restored win-arm64 slangc from tools/slang/win-arm64/, must produce win-x64's
+      # exact slangc emission and compiled bytes for OpenGL, Vulkan and DirectX 12.
+      - name: Slang route on win-arm64 vs win-x64 (real slangc, OpenGL, Vulkan, DirectX 12)
+        shell: pwsh
+        env:
+          SHADOWDUSK_ARCH_MANIFEST_EXPECT: ${{ runner.temp }}/arch-manifest
+          SHADOWDUSK_EXPECT_PROCESS_ARCH: Arm64
+        run: |
+          dotnet test tests/ShadowDusk.Slang.Tests -c Release --no-build -f ${{ matrix.tfm }} `
+            --filter "FullyQualifiedName~SlangArchitectureByteIdentityTests|FullyQualifiedName~SlangToolPathTests" `
+            --logger "console;verbosity=detailed"
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+      # The cold consumer, as pack-consume.yml runs it on the other OSes: pack Core/HLSL/GLSL/
+      # Compiler/Slang into a private feed, gate the Slang nupkg for every slangc native by exact
+      # name, then `dotnet run` a scratch app outside the repo (framework-dependent) and a
+      # self-contained win-arm64 publish of it. On win-arm64 the consumer compiles OpenGL,
+      # DirectX 12 and Vulkan and asserts DirectX 11 is SD0211.
+      - name: Pack + consume ShadowDusk.Slang cold on win-arm64
+        shell: bash
+        run: |
+          ./tools/verify-slang-packaging.sh "" "${{ matrix.tfm }}" "$RUNNER_TEMP/sd-slang"
+          ls -l "$RUNNER_TEMP"/sd-slang/slang-feed/ShadowDusk.Slang.*.nupkg

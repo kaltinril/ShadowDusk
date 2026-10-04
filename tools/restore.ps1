@@ -469,14 +469,14 @@ function Restore-Vkd3dWasm {
 Restore-Vkd3dWasm
 
 # ---------------------------------------------------------------------------
-# Slang compiler (real slangc, all four desktop RIDs — Phase 66 A2, issue #227)
+# Slang compiler (real slangc, all five desktop RIDs — Phase 66 A2, issues #227/#286)
 # ---------------------------------------------------------------------------
 # ShadowDusk.Slang (a separate, opt-in package — plan/PHASE-66) ships REAL slangc so a
 # consumer who adds it gets genuine Slang input (import/generics/interfaces), compiled via
 # slangc -target hlsl and handed to the existing, unchanged, faithful DXC pipeline. A
 # consumer who does NOT add ShadowDusk.Slang pays zero size/dependency cost. Every host
 # restores every RID (pack-ready, like Restore-Vkd3dShader): the ShadowDusk.Slang nupkg must
-# carry all four, and release.yml / pack-consume.yml gate on it.
+# carry all five, and release.yml / pack-consume.yml gate on it.
 #
 # Pin: the official shader-slang v2026.14.1 release for every RID. Keep in sync with
 # restore.sh (same zips, same file pins), validation/SlangCorpus/Program.cs's test-time
@@ -561,10 +561,11 @@ function Restore-SlangRid([string]$Rid, [string]$ZipSuffix, [string]$ZipSha,
     Write-Host "restore.ps1: slangc ($Rid) downloaded, zip + file hashes OK"
 }
 
-# linux-arm64 and win-arm64 are NOT restored although upstream publishes them: the core
-# pipeline is incomplete on both (linux-arm64 has no DXC or vkd3d native; win-arm64 has DXC
-# but no vkd3d, and is unproven) (project_decisions.md, issue #227). Add them when the core
-# pipeline does.
+# win-arm64 (issue #286): the core pipeline's OpenGL, Vulkan and DirectX 12 output was measured
+# byte-identical to win-x64 on a native windows-11-arm runner (.github/workflows/win-arm64.yml),
+# so slangc rides for it too; DirectX 11 and FNA there are SD0211 (no vkd3d-shader build).
+# linux-arm64 is NOT restored although upstream publishes it: the core pipeline has no DXC or
+# vkd3d native there (project_decisions.md, issue #227). Add it when the core pipeline does.
 function Restore-Slang {
     Restore-SlangRid 'win-x64' 'windows-x86_64' `
         '5ed0a59d650a0af0aca45d5db4e083b3d8fb5cea05748747dd95dfbe9c580658' `
@@ -582,6 +583,10 @@ function Restore-Slang {
         '2976c3a9a6f4d77b5734d00b5d841d1ff087d9965d9006b9b4d73edd0062cb7d' `
         'bin/slangc' 'a1c5ecae0d2425b13fe7f616686f2df7cc7028d3f6a85fb717497cf98bee3d0a' `
         "lib/libslang-compiler.0.$SlangVersion.dylib" '4fadae0d56d4538dc2a0099086de3d2a5350e12da4591679ee8cbb571c5db7de'
+    Restore-SlangRid 'win-arm64' 'windows-aarch64' `
+        '5067047bb35ae5675b06a3467d0b302d9816727450a803cb3770660bef684f37' `
+        'bin/slangc.exe' 'fa689dd4c308621bfb82559a863554babd5921863cc4ff9473056b500524f433' `
+        'bin/slang-compiler.dll' '066d048df8f9c73eb1cfd77e64dd285e1b1e9766eda6c170a29350bfb76fdb9a'
 }
 
 Restore-Slang

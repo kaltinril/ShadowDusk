@@ -314,14 +314,14 @@ jobs:
           path: tools/dxc
           key: dxc-1.7.2212.40-${{ runner.os }}
 
-      # slangc for all four RIDs (ShadowDusk.Slang, issue #227): ~170 MB of release zips to
+      # slangc for all five RIDs (ShadowDusk.Slang, issues #227, #286): ~170 MB of release zips to
       # download otherwise. The restore scripts hash-verify every file, so a stale or corrupt
       # cache entry self-heals.
       - name: Cache slangc natives
         uses: actions/cache@v5
         with:
           path: tools/slang
-          key: slang-2026.14.1-${{ runner.os }}
+          key: slang-2026.14.1-5rid-${{ runner.os }}
 
       - name: Restore native tools (Linux / macOS)
         if: runner.os != 'Windows'

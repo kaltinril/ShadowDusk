@@ -105,7 +105,7 @@ jobs:
         uses: actions/cache@v5
         with:
           path: tools/slang
-          key: slang-2026.14.1-${{ runner.os }}
+          key: slang-2026.14.1-5rid-${{ runner.os }}
 
       # Download failures only warn inside the script (offline tolerance) — the PACK
       # GATE below is the loud assertion: a package without natives must fail this job
@@ -409,7 +409,7 @@ jobs:
 
       # ── ShadowDusk.Slang consumed cold (issue #225) ──────────────────────────────────────
       # Packs Core/HLSL/GLSL/Compiler/Slang into its own feed, gates the Slang nupkg for all
-      # eight slangc natives by EXACT entry name, then runs tools/slang-consumer from a scratch
+      # ten slangc natives by EXACT entry name, then runs tools/slang-consumer from a scratch
       # directory outside the repo in both shapes a consumer builds: a framework-dependent
       # `dotnet run` (natives under bin/.../runtimes/<rid>/native/) and a RID-specific
       # self-contained publish (natives flattened next to the app). The consumer asserts slangc

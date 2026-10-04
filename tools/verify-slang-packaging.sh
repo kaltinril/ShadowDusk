@@ -33,7 +33,11 @@ APP="$SCRATCH/sd-scratch-slang-consumer"
 case "$(uname -s)" in
     Linux*)  RID=linux-x64 ;;
     Darwin*) if [ "$(uname -m)" = "arm64" ]; then RID=osx-arm64; else RID=osx-x64; fi ;;
-    MINGW*|MSYS*|CYGWIN*) RID=win-x64 ;;
+    # The bash itself may be an emulated x64 build on Windows on Arm, so ask the .NET SDK
+    # (the process that will host the consumer) for its RID instead of uname -m (issue #286).
+    MINGW*|MSYS*|CYGWIN*)
+        RID=$(dotnet --info | tr -d '\r' | sed -n 's/^ *RID: *//p' | head -n1)
+        case "$RID" in win-x64|win-arm64) ;; *) echo "verify-slang-packaging: unexpected Windows SDK RID '$RID'" >&2; exit 1 ;; esac ;;
     *) echo "verify-slang-packaging: unsupported host $(uname -s)" >&2; exit 1 ;;
 esac
 
@@ -90,7 +94,7 @@ echo "== shape 1: framework-dependent dotnet run"
 echo "== shape 2: self-contained publish -r $RID"
 (cd "$APP" && dotnet publish -c Release -r "$RID" --self-contained -o "$APP/publish-$RID" --nologo -v quiet)
 exe="$APP/publish-$RID/ScratchSlangConsumer"
-[ "$RID" = win-x64 ] && exe="$exe.exe"
+case "$RID" in win-*) exe="$exe.exe" ;; esac
 (cd "$APP/publish-$RID" && "$exe")
 
 echo "verify-slang-packaging: PASSED ($RID, $TFM, both consumer shapes)"

@@ -32,7 +32,7 @@ public sealed class SlangNativeCacheTests : IDisposable
             Directory.Delete(_root, recursive: true);
     }
 
-    public static TheoryData<string> Rids() => ["win-x64", "linux-x64", "osx-x64", "osx-arm64"];
+    public static TheoryData<string> Rids() => ["win-x64", "win-arm64", "linux-x64", "osx-x64", "osx-arm64"];
 
     private (string PackagedDir, string SlangcPath) MakePackagedNative(
         string rid = "win-x64", byte[]? exeBytes = null, byte[]? libBytes = null)

@@ -17,7 +17,7 @@ namespace ShadowDusk.Slang.Tests;
 ///
 /// <para>Requires <c>tools/restore.ps1</c> / <c>restore.sh</c> to have restored
 /// <c>tools/slang/&lt;rid&gt;/</c> first (see <c>SlangToolPath</c>). Runs for real on every
-/// bundled RID (win-x64, linux-x64, osx-x64, osx-arm64; issue #227) and FAILS, never skips,
+/// bundled RID (win-x64, win-arm64, linux-x64, osx-x64, osx-arm64; issues #227, #286) and FAILS, never skips,
 /// on a host without a usable slangc: a skip here would read as coverage that never ran.</para>
 /// </summary>
 [Trait("Category", "Integration")]

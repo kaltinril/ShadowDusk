@@ -34,13 +34,20 @@ if (!Path.GetFullPath(slangc).StartsWith(appDir, StringComparison.Ordinal))
 if (!OperatingSystem.IsWindows())
     Console.WriteLine($"slangc mode    : {File.GetUnixFileMode(slangc)}");
 
-var cases = new (string File, PlatformTarget Target)[]
+// win-arm64 (issue #286) has no vkd3d-shader build, so its DirectX column is DirectX 12 (DXC)
+// plus Vulkan, and DirectX 11 is asserted to be the registered SD0211 below, never a crash.
+bool winArm64 = OperatingSystem.IsWindows()
+    && System.Runtime.InteropServices.RuntimeInformation.ProcessArchitecture == System.Runtime.InteropServices.Architecture.Arm64;
+PlatformTarget dx = winArm64 ? PlatformTarget.DirectX12 : PlatformTarget.DirectX;
+var cases = new List<(string File, PlatformTarget Target)>
 {
     ("GenericsProbe.slang", PlatformTarget.OpenGL),   // generic over an interface: real Slang only
-    ("GenericsProbe.slang", PlatformTarget.DirectX),
+    ("GenericsProbe.slang", dx),
     ("WaveVertex.slang",    PlatformTarget.OpenGL),   // VS+PS: two slangc runs + merge
-    ("WaveVertex.slang",    PlatformTarget.DirectX),
+    ("WaveVertex.slang",    dx),
 };
+if (winArm64)
+    cases.Add(("WaveVertex.slang", PlatformTarget.Vulkan));
 
 var compiler = new SlangCompiler();
 foreach (var (file, target) in cases)
@@ -69,10 +76,26 @@ foreach (var (file, target) in cases)
     Console.WriteLine($"OK    {label}: {data.Length} bytes, MGFX magic verified");
 }
 
+if (winArm64)
+{
+    var dx11 = await compiler.CompileAsync(
+        await File.ReadAllTextAsync(Path.Combine(appDir, "WaveVertex.slang")),
+        new CompilerOptions { Target = PlatformTarget.DirectX, SourceFileName = "WaveVertex.slang" });
+    if (dx11.IsSuccess || !dx11.Error.Any(e => e.Code == "SD0211"))
+    {
+        Console.Error.WriteLine("FAIL  WaveVertex.slang -> DirectX on win-arm64: expected the registered SD0211 (no vkd3d-shader build)");
+        failed++;
+    }
+    else
+    {
+        Console.WriteLine("OK    WaveVertex.slang -> DirectX on win-arm64: SD0211, as registered");
+    }
+}
+
 if (failed > 0)
 {
     Console.Error.WriteLine($"{failed} check(s) FAILED");
     return 1;
 }
-Console.WriteLine($"All {cases.Length} Slang consumer compiles succeeded; ShadowDusk.Slang is consumable on this host");
+Console.WriteLine($"All {cases.Count} Slang consumer compiles succeeded; ShadowDusk.Slang is consumable on this host");
 return 0;

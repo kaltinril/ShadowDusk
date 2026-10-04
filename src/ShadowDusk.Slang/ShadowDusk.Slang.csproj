@@ -10,7 +10,7 @@
          A consumer who does not add ShadowDusk.Slang pays zero size/dependency cost; it is
          not referenced by ShadowDusk.Compiler/HLSL/GLSL and they are not referenced by it.
          Unlike ShaderToy, this package DOES carry a native (real slangc for win-x64,
-         linux-x64, osx-x64, osx-arm64), packed the same way ShadowDusk.HLSL packs vkd3d/DXC.
+         win-arm64, linux-x64, osx-x64, osx-arm64), packed the same way ShadowDusk.HLSL packs vkd3d/DXC.
          A3: now references ShadowDusk.Compiler (not just Core) — SlangCompiler hands
          slangc's HLSL emission to the existing EffectCompiler pipeline, and reuses
          ShadowDusk.Compiler.Slang's internal SlangEntryScanner for [shader(...)] entry
@@ -23,7 +23,7 @@
     <PackageId>ShadowDusk.Slang</PackageId>
     <PackageLicenseExpression>MIT</PackageLicenseExpression>
     <PackageReadmeFile>README.md</PackageReadmeFile>
-    <Description>ShadowDusk full Slang front-end: bundles the real slangc compiler for win-x64, linux-x64, osx-x64 and osx-arm64 (Apache-2.0, see THIRD-PARTY-NOTICES.txt) so a consumer gets genuine Slang input (import, generics, interfaces) compiled via slangc -target hlsl and handed to ShadowDusk's existing, unchanged, faithful DXC pipeline. Linux needs a GCC 11+ libstdc++ (Ubuntu 22.04 or later); macOS needs macOS 26 or later (the upstream build's own floor). Optional and additive: ShadowDusk.Compiler's own .slang support (an HLSL-compatible subset, no extra package) is untouched.</Description>
+    <Description>ShadowDusk full Slang front-end: bundles the real slangc compiler for win-x64, win-arm64, linux-x64, osx-x64 and osx-arm64 (Apache-2.0, see THIRD-PARTY-NOTICES.txt) so a consumer gets genuine Slang input (import, generics, interfaces) compiled via slangc -target hlsl and handed to ShadowDusk's existing, unchanged, faithful DXC pipeline. Linux needs a GCC 11+ libstdc++ (Ubuntu 22.04 or later); macOS needs macOS 26 or later (the upstream build's own floor). On win-arm64 the DirectX 11 and FNA targets are unavailable (no vkd3d-shader build; SD0211). Optional and additive: ShadowDusk.Compiler's own .slang support (an HLSL-compatible subset, no extra package) is untouched.</Description>
     <PackageTags>monogame kni fna slang shader compiler hlsl</PackageTags>
     <!-- Phase 26: emit the XML doc file for DocFX. CS1591 suppressed during the
          doc-comment transition so the TreatWarningsAsErrors build stays green. -->
@@ -58,13 +58,13 @@
     <None Include="README.md" Pack="true" PackagePath="\" />
   </ItemGroup>
 
-  <!-- Real slangc for all four desktop RIDs (Phase 66 A1+A2 on win-x64, issue #227 for
-       linux-x64/osx-x64/osx-arm64). RESTORED artifacts (tools/restore.ps1 / restore.sh),
+  <!-- Real slangc for all five desktop RIDs (Phase 66 A1+A2 on win-x64, issue #227 for
+       linux-x64/osx-x64/osx-arm64, issue #286 for win-arm64). RESTORED artifacts (tools/restore.ps1 / restore.sh),
        NOT checked into the repo, so every entry is Exists()-conditioned like
        ShadowDusk.HLSL's vkd3d/DXC entries: a clean build with no restored native stays
        green, and SlangToolPath.Resolve() returns null (SD0621) at run time if it's absent,
        never a silent fallback to a different compiler. The release gate (release.yml) and
-       pack-consume.yml fail red when a packed nupkg is missing any of the eight files.
+       pack-consume.yml fail red when a packed nupkg is missing any of the ten files.
 
        Measured minimal set per RID: the slangc executable + the slang-compiler library
        ONLY (slang-llvm, gfx, glslang, slang-rt, the stdlib sources are all droppable for
@@ -119,5 +119,13 @@
     <None Include="$(SlangToolsDir)osx-arm64\libslang-compiler.0.$(SlangNativeVersion).dylib"
           Condition="Exists('$(SlangToolsDir)osx-arm64\libslang-compiler.0.$(SlangNativeVersion).dylib')"
           Pack="true" PackagePath="runtimes/osx-arm64/native/" />
+    <!-- win-arm64 (issue #286): the core pipeline's OpenGL, Vulkan and DirectX 12 bytes were
+         measured identical to win-x64 on a native windows-11-arm runner (win-arm64.yml). -->
+    <None Include="$(SlangToolsDir)win-arm64\slangc.exe"
+          Condition="Exists('$(SlangToolsDir)win-arm64\slangc.exe')"
+          Pack="true" PackagePath="runtimes/win-arm64/native/" />
+    <None Include="$(SlangToolsDir)win-arm64\slang-compiler.dll"
+          Condition="Exists('$(SlangToolsDir)win-arm64\slang-compiler.dll')"
+          Pack="true" PackagePath="runtimes/win-arm64/native/" />
   </ItemGroup>
 </Project>

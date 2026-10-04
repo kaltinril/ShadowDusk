@@ -4,7 +4,7 @@
 # runnable locally against any packed nupkg (bash on Windows: Git Bash).
 #
 # Fails red (exit 1) if the package is missing the slangc executable or its slang-compiler
-# library for any of the four RIDs ShadowDusk.Slang.csproj vendors, or THIRD-PARTY-NOTICES.txt.
+# library for any of the five RIDs ShadowDusk.Slang.csproj vendors, or THIRD-PARTY-NOTICES.txt.
 # The csproj's pack entries are Exists()-conditioned, so a pack without restored natives
 # SILENTLY produces a package whose every compile fails SD0621 on that RID; project_decisions.md
 # says a missing native fails the release, it does not warn.
@@ -34,6 +34,8 @@ missing=0
 for entry in \
     'runtimes/win-x64/native/slangc.exe' \
     'runtimes/win-x64/native/slang-compiler.dll' \
+    'runtimes/win-arm64/native/slangc.exe' \
+    'runtimes/win-arm64/native/slang-compiler.dll' \
     'runtimes/linux-x64/native/slangc' \
     'runtimes/linux-x64/native/libslang-compiler.so.0.2026.14.1' \
     'runtimes/osx-x64/native/slangc' \
@@ -51,4 +53,4 @@ for entry in \
     fi
 done
 [ "$missing" -eq 0 ] || exit 1
-echo "slang nupkg gate: all 8 slangc natives + THIRD-PARTY-NOTICES.txt present ($(wc -c < "$pkg") bytes)"
+echo "slang nupkg gate: all 10 slangc natives + THIRD-PARTY-NOTICES.txt present ($(wc -c < "$pkg") bytes)"
