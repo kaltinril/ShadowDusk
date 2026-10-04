@@ -323,7 +323,7 @@ that loads and renders identically to `mgfxc`'s in the real MonoGame/KNI runtime
   `mgfxc` reads the name off the state block and emits a `Tex` parameter; ShadowDusk handed DXC an
   undeclared identifier. The compiler now declares `Texture2D Tex;` only when the PREPROCESSED source
   (includes inlined, macros expanded) declares no `Tex`, so a texture declared in an `#include`d
-  header or by a macro keeps compiling with its own declaration.
+  header or by a macro keeps compiling with its own declaration. Any texture type counts as a declaration, template arguments included (`Texture2D<float4>`, as in MonoGame's `Macros.fxh`), and the added declaration sits ahead of all conditional code, so a sampler declared once per `#if` branch compiles on both sides.
 - **The consumer's include resolver is called once per `#include` per compile.** A compile
   flattens the source more than once (the compile itself, the preprocessed sampler views, the
   legacy-sampler recovery); every pass now reuses the resolver's first answer, so a resolver that

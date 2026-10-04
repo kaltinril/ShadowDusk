@@ -46,6 +46,15 @@ public sealed class StateBlockTextureDeclarationTests
             ("legacy texture declared after the sampler", "sampler2D A = sampler_state { Texture = <Tex>; };\ntexture Tex;", "Tex"),
             ("Texture2D declared after the sampler", "sampler2D A = sampler_state { Texture = <Tex>; };\nTexture2D Tex;", "Tex"),
             ("texture declared nowhere", "sampler2D A = sampler_state { Texture = <Tex>; };", "Tex"),
+            // MonoGame's own Macros.fxh spelling, and a scalar template argument.
+            ("Texture2D<float4> in an #include'd header", "#include \"f4.fxh\"\nsampler2D A = sampler_state { Texture = <Tex>; };", "Tex"),
+            ("Texture2D<float> in an #include'd header", "#include \"f1.fxh\"\nsampler2D A = sampler_state { Texture = <Tex>; };", "Tex"),
+            // The sampler declared once per #if branch, each naming the undeclared texture: the
+            // declaration must not land in the branch the target does not compile (both orders).
+            ("one sampler per #if branch, OpenGL branch first",
+             "#if OPENGL\nsampler2D A = sampler_state { Texture = <Tex>; MinFilter = Point; };\n#else\nsampler2D A = sampler_state { Texture = <Tex>; };\n#endif", "Tex"),
+            ("one sampler per #if branch, OpenGL branch second",
+             "#if !OPENGL\nsampler2D A = sampler_state { Texture = <Tex>; MinFilter = Point; };\n#else\nsampler2D A = sampler_state { Texture = <Tex>; };\n#endif", "Tex"),
         };
         foreach (var shape in shapes)
         foreach (PlatformTarget target in new[] { PlatformTarget.OpenGL, PlatformTarget.DirectX, PlatformTarget.DirectX12, PlatformTarget.Vulkan })
@@ -72,7 +81,42 @@ public sealed class StateBlockTextureDeclarationTests
     {
         ["tex.fxh"] = "Texture2D Tex;\n",
         ["texreg.fxh"] = "Texture2D Tex : register(t2);\n",
+        ["f4.fxh"] = "Texture2D<float4> Tex;\n",
+        ["f1.fxh"] = "Texture2D<float> Tex;\n",
+        ["cube.fxh"] = "TextureCube Tex;\n",
+        ["lower.fxh"] = "texture2D Tex;\n",
+        ["arr.fxh"] = "Texture2DArray Tex;\n",
     };
+
+    /// <summary>
+    /// Header-declared texture types that the compile still cannot use with <c>tex2D</c>, for
+    /// reasons that predate the undeclared-texture support and are unchanged by it (main fails
+    /// identically, measured 2026-10-03; mgfxc 3.8.4.1 compiles all three): a <c>TextureCube</c>
+    /// or <c>Texture2DArray</c> sampled through <c>.Sample(A, float2)</c> is a type error, and a
+    /// lowercase <c>texture2D</c> in an <c>#include</c>d file reaches DXC unrewritten (DirectX 11
+    /// compiles it). What these pin: the texture IS seen as declared, so no second declaration
+    /// (no "redefinition") is ever added.
+    /// </summary>
+    public static IEnumerable<object[]> DeclaredButUnsampleableCases()
+    {
+        foreach (string header in new[] { "cube.fxh", "lower.fxh", "arr.fxh" })
+        foreach (PlatformTarget target in new[] { PlatformTarget.OpenGL, PlatformTarget.DirectX, PlatformTarget.DirectX12, PlatformTarget.Vulkan })
+            yield return new object[] { header, target };
+    }
+
+    [Theory]
+    [MemberData(nameof(DeclaredButUnsampleableCases))]
+    public async Task HeaderDeclaredTextureOfAnyType_IsNeverDeclaredASecondTime(string header, PlatformTarget target)
+    {
+        var result = await Compile(Header + $"#include \"{header}\"\nsampler2D A = sampler_state {{ Texture = <Tex>; }};" + Body,
+                                   target, new InMemoryIncludeResolver(Headers));
+        if (result.IsFailure)
+        {
+            string messages = string.Join(" | ", result.Error.Select(e => e.FxcFormattedMessage));
+            messages.ShouldNotContain("redefinition", Case.Insensitive);
+            messages.ShouldNotContain("already declared", Case.Insensitive);
+        }
+    }
 
     // ------------------------------------------------------------------------------------------
     // The consumer's include resolver: the compile flattens the source more than once (the
