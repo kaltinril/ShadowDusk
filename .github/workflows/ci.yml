@@ -599,6 +599,15 @@ jobs:
           path: TestResults/*.trx
           retention-days: 14
 
+      - name: Upload DXC cross-host identity dumps
+        if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: dxc-identity-dumps-${{ matrix.os }}
+          path: TestResults/dxc-identity/**
+          retention-days: 14
+          if-no-files-found: ignore
+
       # cancelled() too: if the job timeout ever does fire, the dumps taken so far still upload.
       # TestResults/hang-dumps is the sidecar's output (stacks, sample, createdump, its log);
       # TestResults/probe-hangs holds the probe-child evidence and the test host's own stall hint.
