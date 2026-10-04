@@ -16,4 +16,12 @@
 *.fxb  binary
 *.wasm binary
 *.sksl text eol=lf
+
+# Scripts bash (or a shebang) runs: LF in the working tree on every OS, or bash on a Windows
+# checkout rejects 'set -euo pipefail' (issue #357). *.py: the validation compare/decode
+# scripts carry '#!/usr/bin/env python3', which a CRLF line breaks the same way. Every tracked
+# file of these types was already index-LF, so adding the rules renormalized nothing.
+# ScriptLineEndingTests pins the checkout.
 *.sh   text eol=lf
+*.bash text eol=lf
+*.py   text eol=lf

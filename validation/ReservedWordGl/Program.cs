@@ -201,12 +201,14 @@ static string? LocateMgfxc(out string note)
         return null;
     }
 
-    string userProfile = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
-    string dll = Path.Combine(userProfile, ".nuget", "packages", "dotnet-mgcb", version,
-                              "tools", "net8.0", "any", "mgfxc.dll");
+    // NUGET_PACKAGES first, like the other drivers (issue #362): a custom global-packages
+    // folder is where `dotnet tool restore` put the tool.
+    string packages = Environment.GetEnvironmentVariable("NUGET_PACKAGES")
+        ?? Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".nuget", "packages");
+    string dll = Path.Combine(packages, "dotnet-mgcb", version, "tools", "net8.0", "any", "mgfxc.dll");
     if (!File.Exists(dll))
     {
-        note = $"pinned mgfxc {version} not restored (run `dotnet tool restore`)";
+        note = $"pinned mgfxc {version} not restored at {dll} (run `dotnet tool restore`)";
         return null;
     }
 

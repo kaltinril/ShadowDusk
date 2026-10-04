@@ -185,11 +185,18 @@ that loads and renders identically to `mgfxc`'s in the real MonoGame/KNI runtime
 
 ### Changed
 
+- **CI executes `ShadowDusk.Slang`'s osx-x64 slangc (issue #352).** CI's macOS runners are arm64,
+  so the bundled osx-x64 slangc was only checked for presence. `pack-consume.yml`'s macOS lane now
+  extracts it from the packed nupkg, runs it under Rosetta 2, and fails unless its HLSL is
+  byte-identical to the osx-arm64 slangc's (`tools/verify-slang-osx-x64-rosetta.sh`). No package
+  change.
+
 - **SkSL converter: `COLOR0` (SpriteBatch's vertex color) now converts by default instead of
   refusing with `SD0611` (issue #368).** A shader that reads `input.Color` (every XnaFiddle
   example, and every `.fx` written for SpriteBatch) converts with the `float4` uniform
   `ShadowDusk_Color` in its place. Set it each draw to the sprite's tint, white when untinted;
-  leaving it unset renders black. It is listed in `SkslConversion.SynthesizedUniforms` with an
+  never leave it unset (SkiaSharp does not zero a runtime effect's uniform buffer, so an
+  unset value is undefined, not black). It is listed in `SkslConversion.SynthesizedUniforms` with an
   `SD0614` warning, like `ShadowDusk_Resolution`. `TreatVaryingsAsUniforms` still governs every
   other interpolant (still refused by name otherwise). Callers that listed `"COLOR0"` in it keep
   working and get the same output, but the uniform is now named `ShadowDusk_Color`, not
@@ -259,6 +266,44 @@ that loads and renders identically to `mgfxc`'s in the real MonoGame/KNI runtime
   missing any entry or was not produced at all.
 
 ### Fixed
+
+- **A full `dotnet test` no longer rewrites a tracked file (issue #361).**
+  `Phase41StructuralDivergenceMatrixTests` regenerated
+  `plan/PHASE-41-appendix/structural-divergence-matrix.md` on every run, so the tree went dirty
+  whenever a fixture landed without the appendix being regenerated in the same commit (the census
+  count is two cells per non-golden fixture; the content itself is deterministic). It now compares and fails on drift, listing the
+  lines that changed and how to regenerate (`SHADOWDUSK_REGENERATE_PHASE41_APPENDIX=1`, see
+  `project_rules.md`). The report no longer stamps the assembly version, which moved on every
+  release bump without any cell changing, so releases no longer carry a regenerated appendix.
+- **Shell and Python scripts check out with LF on Windows (issue #357).** `.gitattributes` pins
+  `*.sh`, `*.bash` and `*.py` to `eol=lf` (bash rejected `set -euo pipefail\r`, and a CRLF shebang
+  names no interpreter). `VerifySlangNupkgScriptTests` runs the checked-out
+  `tools/verify-slang-nupkg.sh` instead of an LF-converted copy, and `ScriptLineEndingTests` pins
+  the rules and the checkout. A checkout made before the rules keeps CRLF copies until they are
+  deleted and re-checked-out; the test failure says how.
+- **A custom NuGet global-packages folder no longer breaks the foreign-DXC tests or the mgfxc
+  lookups (issue #362).** The one `$(NuGetPackageRoot)` concatenation (fixed in #354) is now the
+  only shape `NuGetPackageRootUsageTests` allows, across every project file. A missing DXC 1.9
+  fixture names the file and the NuGet directory the build copied it from.
+  `tools/compile-fixtures.ps1` and `validation/ReservedWordGl` read `NUGET_PACKAGES` before
+  `~/.nuget/packages`, like the other drivers.
+- **Memo and no-memo DirectX / FNA compiles are compared byte for byte (issue #358).** An internal
+  `CompilerOptions.BypassDxbcMemo` seam (not a consumer setting) skips `MemoizingDxbcCompiler`, and
+  every MonoGame stock effect is compiled both ways on DirectX and FNA with identical container
+  bytes and warnings (or identical errors). The bypass arm reaches vkd3d once per pass (64 calls for
+  `BasicEffect`), so the two arms are not the memo twice; a deliberately broken memo key fails 9 of
+  the 12 cases.
+- **`ShadowDusk.ImageTests` no longer fails with `WGL: Failed to make context current: The handle is
+  invalid` and then hangs the test host on Windows (issue #345).** The GL fixture created its hidden
+  window on a thread-pool thread, and Windows destroys a window when its creating thread exits: once
+  the pool retired that thread (20 s idle, reached only under a loaded full-solution run) the context
+  was gone. The window now lives on a thread the fixture owns. The failure also hung the host, because
+  the fixture threw out of make-current while holding its lock; a make-current failure now fails that
+  test and every later GL test at once, a claim of the context waits at most 2 minutes, and a GL call
+  that never returns ends the host after 3 minutes instead of hanging the run. The net8.0 and net10.0
+  hosts that a solution `dotnet test` runs together are serialized around GL by a named mutex. The
+  test project retires idle pool threads after 100 ms, which reproduced the old failure on every run,
+  so every ImageTests run now re-proves the fix. Test infrastructure only; no shipped package changes.
 
 - **The raylib and SkSL converters compile a legacy sampler declared in an `#include` or through a
   macro (issue #327).** `RaylibConverter.Convert` and `SkslConverter.Convert` pre-parse the raw main
@@ -457,11 +502,12 @@ that loads and renders identically to `mgfxc`'s in the real MonoGame/KNI runtime
   call, plus a control that the fixture differs without them), in the cross-host byte-identity
   manifest (so `browser-vkd3d-gate.mjs` compiles it through the real `WasmShaderCompiler`) and
   checked against `mgfxc` goldens on both profiles. A new test pins the options the desktop hands the
-  native call to the contract's list. **The rebuilt module is verified (91/91, 78/78 in Chromium,
-  18/18 depth cases) but not hosted yet**: until it is uploaded to a new release tag and re-pinned in
-  `tools/restore.*` (one upload now covers this and the #271 stack fix below), the browser keeps the
-  old module and this defect, warns once on the console, and the gates report the fixture as an
-  expected difference keyed on the old module's hash. No emitted byte changes on the desktop.
+  native call to the contract's list. **The browser now ships the rebuilt module** (release
+  `native-vkd3d-wasm-2.1-r2`, pinned in `tools/restore.*`; one module carries this fix and the #271
+  stack fix below), and the shim requires its `sdw_vkd3d_compile_options` export: a module without it
+  fails to load (`SD1902`) instead of compiling without options. The gates enforce every entry, with
+  no expected difference: node corpus 93/93, real-browser 80/80 in headless Chromium. No emitted byte
+  changes on the desktop.
 - **The browser vkd3d module printed one `vkd3d:NNNN:fixme:vkd3d:preproc_yyparse #line directive.`
   line to the console per `#line` directive (issue #319).** vkd3d-shader's preprocessor ignores
   `#line` and reports each one as a fixme on stderr, which emscripten routes to the browser console.
@@ -615,9 +661,9 @@ that loads and renders identically to `mgfxc`'s in the real MonoGame/KNI runtime
   in SPIRV-Cross, which still exhausts the JS engine's own stack. A module that traps is now
   discarded and reloaded instead of being reused corrupted, and the compile reports the new code
   `SD1907` (a synchronous `Compile()` before the reload reports `SD1903`; `CompileAsync` reloads by
-  itself). The rebuilt DXC and SPIRV-Cross modules ship in this release; the rebuilt vkd3d module
-  (DirectX/FNA in the browser) is verified but not hosted yet, so the browser DirectX/FNA path keeps
-  the 64 KB module until it is re-pinned. No emitted byte changes on any corpus. New gate
+  itself). All three rebuilt modules ship in this release; the vkd3d one (DirectX/FNA in the browser)
+  is pinned from release `native-vkd3d-wasm-2.1-r2`, and the depth gate runs its vkd3d arm on every
+  depth case (18/18 byte-identical). No emitted byte changes on any corpus. New gate
   `node-test-wasm-depth.mjs` and a trap scenario in `browser-vkd3d-gate.mjs` (`wasm.yml`); details in
   `.wasm-build/WASM-STACK-DEPTH.md`. Also: `tools/restore.*` now refresh the packaged
   `dxcompiler.wasm` by hash instead of size (a relink can change the module and keep its size).

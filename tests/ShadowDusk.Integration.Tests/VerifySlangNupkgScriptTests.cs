@@ -38,8 +38,9 @@ public sealed class VerifySlangNupkgScriptTests : IDisposable
         throw new InvalidOperationException("Could not locate the repo root (ShadowDusk.slnx).");
     }
 
-    private static string ScriptText() =>
-        File.ReadAllText(Path.Combine(RepoRoot(), "tools", "verify-slang-nupkg.sh"));
+    private static string ScriptPath() => Path.Combine(RepoRoot(), "tools", "verify-slang-nupkg.sh");
+
+    private static string ScriptText() => File.ReadAllText(ScriptPath());
 
     /// <summary>The entry names the script requires, in script order (the quoted lines of its for-list).</summary>
     private static List<string> ScriptEntries()
@@ -73,10 +74,11 @@ public sealed class VerifySlangNupkgScriptTests : IDisposable
     {
         string bash = FindBash() ?? throw new InvalidOperationException("bash is not available");
 
-        // The script is copied with LF endings: a Windows checkout may hold it as CRLF, which
-        // bash rejects ('set -euo pipefail\r'). CI runs it from an LF checkout.
-        string script = Path.Combine(_work, "verify.sh");
-        File.WriteAllText(script, ScriptText().Replace("\r\n", "\n"));
+        // The checked-out script runs as is: .gitattributes pins *.sh to LF (issue #357), so a
+        // Windows checkout no longer holds it as CRLF, which bash rejects ('set -euo pipefail\r').
+        // Forward slashes: Git Bash takes 'C:/...' but reads '\' as an escape.
+        string script = ScriptPath().Replace('\\', '/');
+        ScriptText().ShouldNotContain("\r", Case.Sensitive, ScriptLineEndingTests.RefreshHint);
 
         string package = Path.Combine(_work, "ShadowDusk.Slang.0.0.0.nupkg");
         if (File.Exists(package))
@@ -91,7 +93,7 @@ public sealed class VerifySlangNupkgScriptTests : IDisposable
         }
 
         var start = new ProcessStartInfo(bash) { WorkingDirectory = _work };
-        start.ArgumentList.Add(Path.GetFileName(script));
+        start.ArgumentList.Add(script);
         start.ArgumentList.Add(Path.GetFileName(package));
         return await ChildProcess.RunAsync(start, TestBudget.Compile, "verify-slang-nupkg.sh");
     }

@@ -148,6 +148,15 @@ public sealed class CompilerOptions
     internal IReadOnlyCollection<string> SamplerArraysFromCombinedSamplers { get; init; } = [];
 
     /// <summary>
+    /// Internal test seam (issue #358): when <see langword="true"/>, the DirectX and FNA targets
+    /// call their D3D-bytecode backend directly instead of through the per-run memo
+    /// (<c>MemoizingDxbcCompiler</c>, issue #255), so a test can compile the same effect with and
+    /// without the memo and compare the bytes. <see langword="false"/> (the memo) for every real
+    /// compile. Not a consumer setting: the memo cannot change output, it only skips repeat calls.
+    /// </summary>
+    internal bool BypassDxbcMemo { get; init; }
+
+    /// <summary>
     /// Returns a copy with <see cref="Target"/> replaced by <paramref name="graphicsTarget"/>,
     /// preserving every other setting. The pipeline uses this to apply a
     /// <see cref="CapabilityProfile.GraphicsTarget"/> (a profile fully specifies its output
@@ -183,5 +192,6 @@ public sealed class CompilerOptions
         // CompileAsync would produce. A round-trip test pins this.
         Defines                = Defines,
         SamplerArraysFromCombinedSamplers = samplerArraysFromCombinedSamplers,
+        BypassDxbcMemo         = BypassDxbcMemo,
     };
 }

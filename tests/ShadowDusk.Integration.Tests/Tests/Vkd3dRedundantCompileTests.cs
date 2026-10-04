@@ -80,13 +80,13 @@ public sealed class Vkd3dRedundantCompileTests
     };
 
     private static async Task<(CountingVkd3d Backend, Result<CompiledShader, ShaderError[]> Result)> CompileAsync(
-        string fx, PlatformTarget target)
+        string fx, PlatformTarget target, bool bypassMemo = false)
     {
         string path = TestHelpers.FixturePath(fx);
         var counting = new CountingVkd3d();
         var result = await new EffectCompiler(dxbcCompilerFactory: () => counting).CompileAsync(
             await File.ReadAllTextAsync(path),
-            new CompilerOptions { Target = target, SourceFileName = path });
+            new CompilerOptions { Target = target, SourceFileName = path, BypassDxbcMemo = bypassMemo });
         return (counting, result);
     }
 
@@ -134,10 +134,9 @@ public sealed class Vkd3dRedundantCompileTests
     /// <summary>
     /// The memo's premise (issue #255): vkd3d is deterministic, so replaying a request would
     /// have produced the bytes the first call did. Re-run every distinct request fresh, and the
-    /// whole compile twice; all must be byte-identical. The pipeline always wraps the backend
-    /// in the memo, so an un-memoized pipeline run is not reachable from a test without a
-    /// production seam; this checks the property that makes the memo output-neutral, and the
-    /// goldens / cross-host manifest pin the bytes themselves.
+    /// whole compile twice; all must be byte-identical. This checks the property that makes the
+    /// memo output-neutral; <see cref="MemoizedAndUnmemoizedCompiles_AreByteIdentical"/> compares
+    /// the two pipeline runs themselves.
     /// </summary>
     [FnaTheory]
     [MemberData(nameof(StockEffects))]
@@ -163,6 +162,53 @@ public sealed class Vkd3dRedundantCompileTests
         if (firstResult.IsSuccess)
             secondResult.Value.Data.ShouldBe(firstResult.Value.Data);
         second.Calls.Select(c => c.Bytes).ShouldBe(first.Calls.Select(c => c.Bytes));
+    }
+
+    /// <summary>
+    /// Issue #358: the same effect compiled through the memo (the shipping path) and with it
+    /// bypassed (the internal <c>CompilerOptions.BypassDxbcMemo</c> seam) must give the same
+    /// container bytes, or the same errors where the compile fails. The call counts prove the
+    /// bypass really reached vkd3d once per pass, so the two arms are not the memo twice.
+    /// </summary>
+    [FnaTheory]
+    [MemberData(nameof(StockEffects))]
+    public async Task MemoizedAndUnmemoizedCompiles_AreByteIdentical(string fx, PlatformTarget target)
+    {
+        var (memo, memoResult) = await CompileAsync(fx, target);
+        var (direct, directResult) = await CompileAsync(fx, target, bypassMemo: true);
+
+        direct.Calls.Count.ShouldBeGreaterThanOrEqualTo(memo.Calls.Count);
+        memo.Calls.Count.ShouldBe(memo.Calls.Select(c => RequestKey(c.Request)).Distinct().Count(),
+            "the memo arm must reach vkd3d once per distinct request");
+        // Every request the memo arm made, the bypass arm made too (plus the repeats).
+        direct.Calls.Select(c => RequestKey(c.Request)).Distinct()
+            .ShouldBe(memo.Calls.Select(c => RequestKey(c.Request)), ignoreOrder: false);
+
+        directResult.IsSuccess.ShouldBe(memoResult.IsSuccess,
+            memoResult.IsFailure ? memoResult.Error[0].Message : directResult.IsFailure ? directResult.Error[0].Message : null);
+        if (memoResult.IsSuccess)
+        {
+            directResult.Value.Data.ShouldBe(memoResult.Value.Data, $"{fx} on {target}: memo and no-memo bytes differ");
+            directResult.Value.Warnings.Select(w => (w.Code, w.Message, w.File, w.Line, w.Column))
+                .ShouldBe(memoResult.Value.Warnings.Select(w => (w.Code, w.Message, w.File, w.Line, w.Column)));
+        }
+        else
+        {
+            directResult.Error.Select(e => (e.Code, e.Message, e.File, e.Line, e.Column))
+                .ShouldBe(memoResult.Error.Select(e => (e.Code, e.Message, e.File, e.Line, e.Column)));
+        }
+    }
+
+    [FnaFact]
+    public async Task BasicEffect_WithTheMemoBypassed_ReachesVkd3dOncePerPassShader()
+    {
+        // The pre-#255 count: 32 techniques x (VS + PS) = 64 calls for 30 distinct shaders.
+        // Proves the seam really removes the memo rather than the arms both being memoized.
+        var (direct, result) = await CompileAsync("BasicEffect.fx", PlatformTarget.DirectX, bypassMemo: true);
+
+        result.IsSuccess.ShouldBeTrue(result.IsFailure ? result.Error[0].Message : null);
+        direct.Calls.Count.ShouldBe(64);
+        direct.Calls.Select(c => RequestKey(c.Request)).Distinct().Count().ShouldBe(30);
     }
 
     private static string RequestKey(D3DCompileRequest r) =>

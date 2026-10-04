@@ -34,9 +34,9 @@ void sdw_vkd3d_free_messages(char* p);
 place, the managed `Vkd3dCompileContract.ResolveCompileOptions`, which the desktop
 backend marshals into `vkd3d_shader_compile_info` and the browser backend sends through
 the shim; the wrapper forwards it and decides nothing (today: `BACKWARD_COMPATIBILITY` =
-`MAP_SEMANTIC_NAMES` for target type 5, none for 4). A module built before issue #295
-exports `sdw_vkd3d_compile` instead, the same call without the two option parameters,
-always compiling with none.
+`MAP_SEMANTIC_NAMES` for target type 5, none for 4). The export is required: a module
+built before issue #295 (which exported only the option-less `sdw_vkd3d_compile`) is
+refused at load and surfaces as `SD1902`.
 
 Source bytes are UTF-8 and **not** null-terminated (pointer + length);
 entry/profile/source-name are C strings (`source_name` may be NULL). The shim
@@ -47,21 +47,14 @@ additionally needs `_malloc`, `_free`, and the `HEAPU8` view on the module insta
 
 Both files are restored by `tools/restore.ps1` / `tools/restore.sh`
 (`Restore-Vkd3dWasm` / `restore_vkd3d_wasm`) from the **fixed GitHub Release tag
-`native-vkd3d-wasm-2.1`**, SHA-256-verified against the pins in those scripts.
-
-> **Status (issues #271 and #295):** the hosted `native-vkd3d-wasm-2.1` module has two
-> known defects. It was linked with emscripten's 64 KB default stack and traps on nested
-> shaders the desktop compiles (75 `else if`s, 200 nested `if`s, a 1600-deep call chain;
-> #271). And its wrapper passes vkd3d no compile options, so a DirectX shader with SM1-3
-> semantics on struct fields compiles differently from the desktop or is refused with
-> `E5013` (#295); with that module the shim falls back to the old `sdw_vkd3d_compile`
-> entry point and warns once on the console. `vkd3d-wasm-build.yml` now links an 8 MB
-> stack placed first and builds the option-forwarding wrapper; that rebuild is verified
-> (91/91 corpus compiles, 78/78 artifacts in Chromium, 6/6 depth cases byte-identical)
-> but must still be uploaded to a NEW tag and re-pinned in both restore scripts
-> (`docs/validation-matrix.md` §7 has the run, the hashes and every place to touch). A
-> locally built module can be used meanwhile: outside CI the restore copies
-> `.wasm-build/vkd3d-wasm-out/vkd3d-shader.{js,wasm}` when present.
+`native-vkd3d-wasm-2.1-r2`**, SHA-256-verified against the pins in those scripts
+(`vkd3d-shader.wasm` `cb3f875a…`, `vkd3d-shader.js` `cc7e540c…`; built by
+`vkd3d-wasm-build.yml` run 37068643482). This build links an 8 MB stack placed first, so
+a deep shader compiles like the desktop or traps cleanly (issue #271), and exports the
+option-forwarding `sdw_vkd3d_compile_options` (issue #295). The earlier
+`native-vkd3d-wasm-2.1` release (64 KB stack, no compile options) is left in place for
+history and is no longer pinned. Outside CI the restore copies a locally built
+`.wasm-build/vkd3d-wasm-out/vkd3d-shader.{js,wasm}` instead when present.
 
 ## Gates
 
@@ -71,7 +64,7 @@ Both files are restored by `tools/restore.ps1` / `tools/restore.sh`
   byte-identical to the desktop vkd3d backend (captured by `Vkd3dCorpusProbe`, together
   with the compile options the desktop really passed, which the gate replays). Skips
   with a loud notice while the module is not restored — it never fabricates a pass.
-  `Sm3SemanticStructs.fx` is the corpus case that depends on the options; while the
-  restored module is the hosted pre-#295 build it is reported as an expected difference.
-- A real-browser render proof (the Phase 23 G2 analogue) follows once the artifact
-  is hosted.
+  `Sm3SemanticStructs.fx` is the corpus case that depends on the options.
+- **Browser byte-identity** (`browser-vkd3d-gate.mjs`) runs the same corpus through the
+  real .NET-browser runtime in headless Chromium, and **depth** (`node-test-wasm-depth.mjs`)
+  compares deep shaders against the desktop, its vkd3d arm included.

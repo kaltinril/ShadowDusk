@@ -84,7 +84,7 @@ public sealed class SkslComputedUvSamplingTests
         // The expectation must itself be a real signal: pixelated, not flat.
         expected.Distinct().Count().ShouldBeGreaterThan(100, "test bug: the expected image is nearly flat");
 
-        // Unset (zero): every eval reads (0,0). Half the size: samples the wrong texels. A wrong
+        // Zero (what an unset uniform means; written explicitly, see Render): every eval reads (0,0). Half the size: samples the wrong texels. A wrong
         // axis (swapped W/H) on the non-square image.
         MaxChannelDiff(Render(width, height, resolution: null), expected).ShouldBeGreaterThan(Tolerance,
             "an unset ShadowDusk_Resolution still matches: the assertion cannot fail");
@@ -300,8 +300,10 @@ public sealed class SkslComputedUvSamplingTests
         effect.ShouldNotBeNull(errors);
 
         var uniforms = new SKRuntimeEffectUniforms(effect);
-        if (resolution is { } r)
-            uniforms[SkslGlslMapper.ResolutionUniform] = new[] { (float)r.W, r.H };
+        // null is zero, written explicitly: SKRuntimeEffectUniforms does not zero its buffer, so an
+        // unwritten uniform can read a previous render's value.
+        (int W, int H) r = resolution ?? (0, 0);
+        uniforms[SkslGlslMapper.ResolutionUniform] = new[] { (float)r.W, r.H };
         if (conversion.SynthesizedUniforms.Contains(SkslGlslMapper.ColorUniform))
             uniforms[SkslGlslMapper.ColorUniform] = new[] { 1f, 1f, 1f, 1f };
 
