@@ -148,6 +148,18 @@ public sealed class CompilerOptions
     internal IReadOnlyCollection<string> SamplerArraysFromCombinedSamplers { get; init; } = [];
 
     /// <summary>
+    /// Internal seam for the real-slangc route on OpenGL: the texture unit each combined sampler
+    /// the author declared with a sampler register (<c>Sampler2D X : register(sN)</c>) pins, keyed
+    /// by the texture parameter's name. slangc lowers it to <c>Texture2D X</c> plus a separate
+    /// <c>SamplerState</c>, whose <c>register(sN)</c> the GL allocator would otherwise read as a
+    /// modern reservation (mgfxc's split-pair rule, which moved the texture OFF unit N); a combined
+    /// sampler is the legacy combined object, so it takes unit N exactly like mgfxc's
+    /// <c>sampler2D X : register(sN)</c>. Empty for every <c>.fx</c> compile, where the legacy
+    /// sampler's own register is read by the pre-parser. Not a consumer setting.
+    /// </summary>
+    internal IReadOnlyDictionary<string, int> CombinedSamplerGlSlots { get; init; } = new Dictionary<string, int>();
+
+    /// <summary>
     /// Internal test seam (issue #358): when <see langword="true"/>, the DirectX and FNA targets
     /// call their D3D-bytecode backend directly instead of through the per-run memo
     /// (<c>MemoizingDxbcCompiler</c>, issue #255), so a test can compile the same effect with and
@@ -163,16 +175,26 @@ public sealed class CompilerOptions
     /// backend, so a set <see cref="Profile"/> determines the backend).
     /// </summary>
     public CompilerOptions WithGraphicsTarget(PlatformTarget graphicsTarget) =>
-        Copy(graphicsTarget, SamplerArraysFromCombinedSamplers);
+        Copy(graphicsTarget, SamplerArraysFromCombinedSamplers, CombinedSamplerGlSlots);
 
     /// <summary>
     /// Returns a copy with <see cref="SamplerArraysFromCombinedSamplers"/> replaced, preserving every
     /// other setting (the real-slangc route's seam; see that property).
     /// </summary>
     internal CompilerOptions WithSamplerArraysFromCombinedSamplers(IReadOnlyCollection<string> names) =>
-        Copy(Target, names);
+        Copy(Target, names, CombinedSamplerGlSlots);
 
-    private CompilerOptions Copy(PlatformTarget target, IReadOnlyCollection<string> samplerArraysFromCombinedSamplers) => new()
+    /// <summary>
+    /// Returns a copy with <see cref="CombinedSamplerGlSlots"/> replaced, preserving every other
+    /// setting (the real-slangc route's seam; see that property).
+    /// </summary>
+    internal CompilerOptions WithCombinedSamplerGlSlots(IReadOnlyDictionary<string, int> slots) =>
+        Copy(Target, SamplerArraysFromCombinedSamplers, slots);
+
+    private CompilerOptions Copy(
+        PlatformTarget target,
+        IReadOnlyCollection<string> samplerArraysFromCombinedSamplers,
+        IReadOnlyDictionary<string, int> combinedSamplerGlSlots) => new()
     {
         Target                 = target,
         Profile                = Profile,
@@ -192,6 +214,7 @@ public sealed class CompilerOptions
         // CompileAsync would produce. A round-trip test pins this.
         Defines                = Defines,
         SamplerArraysFromCombinedSamplers = samplerArraysFromCombinedSamplers,
+        CombinedSamplerGlSlots = combinedSamplerGlSlots,
         BypassDxbcMemo         = BypassDxbcMemo,
     };
 }

@@ -421,12 +421,19 @@ public sealed class SlangCompiler
         // author wrote (effect.Parameters["Comb"], not "Comb_texture_0"); one hoisted out of
         // anything else has no author-written name and is rejected. Before the FNA respelling,
         // so the DX9 texture it declares carries the author's name too.
-        Result<string, ShaderError> named = NameHoistedTextures(
+        Result<(string Hlsl, IReadOnlyCollection<string> CombinedSamplers), ShaderError> named = NameHoistedTextures(
             mergedHlsl, kept.Value.Texts, entries, slangSource, sourceName, options.Defines, platformMacros,
             runnableSlangc, toolDirectory, cancellationToken);
         if (named.IsFailure)
             return Fail(named.Error);
-        mergedHlsl = named.Value;
+        mergedHlsl = named.Value.Hlsl;
+
+        // OpenGL: a combined sampler with a sampler register is the legacy combined object, so
+        // it pins its texture unit the way mgfxc's 'sampler2D X : register(sN)' does, instead of
+        // reserving unit N as the split pair's SamplerState would. See SlangcCombinedSamplerGlSlots.
+        IReadOnlyDictionary<string, int> combinedGlSlots = new Dictionary<string, int>();
+        if (options.Target == PlatformTarget.OpenGL && named.Value.CombinedSamplers.Count > 0)
+            (mergedHlsl, combinedGlSlots) = SlangcCombinedSamplerGlSlots.Pin(mergedHlsl, named.Value.CombinedSamplers);
 
         // Issue #230: FNA's fx_2_0 needs DX9 effect texture syntax; slangc only emits texture
         // objects, which compiled but crashed real FNA on the first draw. See the respeller.
@@ -459,10 +466,17 @@ public sealed class SlangCompiler
         CompilerOptions downstreamOptions = combinedHalves.Count == 0
             ? options
             : options.WithSamplerArraysFromCombinedSamplers(combinedHalves);
+        if (combinedGlSlots.Count > 0)
+            downstreamOptions = downstreamOptions.WithCombinedSamplerGlSlots(combinedGlSlots);
 
         Result<CompiledShader, ShaderError[]> downstream = _downstreamCompiler.Compile(fxText, downstreamOptions, cancellationToken);
         if (downstream.IsFailure)
-            return Result<CompiledShader, ShaderError[]>.Fail(RelocateResourceArrayErrors(downstream.Error, slangSource, sourceName));
+        {
+            ShaderError[] errors = RelocateResourceArrayErrors(downstream.Error, slangSource, sourceName);
+            if (options.Target == PlatformTarget.OpenGL && combinedHalves.Count > 0)
+                errors = ExplainCombinedSamplerArraysOnOpenGl(errors, combinedHalves, slangSource, sourceName);
+            return Result<CompiledShader, ShaderError[]>.Fail(errors);
+        }
         if (downstream.Value.Warnings.Any(w => w.Code == ResourceArrayWarningCode))
         {
             return Result<CompiledShader, ShaderError[]>.Ok(downstream.Value with
@@ -497,10 +511,100 @@ public sealed class SlangCompiler
     internal static IReadOnlyCollection<string> CombinedSamplerArrayHalves(string mergedHlsl)
     {
         string masked = ShadowDusk.Compiler.Internal.ResourceArrayDiagnostics.MaskCommentsAndStrings(mergedHlsl);
-        var names = new HashSet<string>(StringComparer.Ordinal);
+        // Declaration order, each name once: the first one is the one an error names first.
+        var names = new List<string>();
         foreach (Match m in CombinedSamplerArrayHalf.Matches(masked))
-            names.Add(m.Groups["name"].Value);
+        {
+            if (!names.Contains(m.Groups["name"].Value, StringComparer.Ordinal))
+                names.Add(m.Groups["name"].Value);
+        }
         return names;
+    }
+
+    /// <summary><c>SD0217</c>: the OpenGL code for a texture/sampler shape the GL sampler table
+    /// cannot represent (an array of textures, on the <c>.fx</c> route and this one alike).</summary>
+    private const string GlCombinedSamplerShapeCode = "SD0217";
+
+    /// <summary>The <c>SD0100</c> SPIRV-Cross raises for an array of separate samplers, by the
+    /// stage tag <c>SpirvCrossGlslTranspiler</c> itself prefixes (never by SPIRV-Cross's wording).</summary>
+    private const string SpirvCrossCombineStagePrefix = "SPIRV-Cross [build_combined_image_samplers]:";
+
+    // slangc's sampler half 'Comb_sampler_0' of the author's 'Comb'.
+    private static readonly Regex CombinedSamplerHalfAuthorName = new(
+        @"^(?<name>.+)_sampler_\d+$", RegexOptions.Compiled | RegexOptions.CultureInvariant);
+
+    /// <summary>
+    /// Issue #356: on OpenGL, slangc's lowering of a combined-sampler ARRAY (<c>Sampler2D
+    /// Comb[3]</c>, a texture array plus <c>SamplerState Comb_sampler_0[3]</c>) reaches
+    /// SPIRV-Cross as an array of separate samplers, which it cannot remap to plain GLSL
+    /// (<c>SD0100</c>). That is loud but says nothing the author can act on; the hand-written
+    /// equivalent (<c>Texture2D Comb[3]</c> through one <c>SamplerState</c>) gets the actionable
+    /// <c>SD0217</c>. This turns SPIRV-Cross's failure into that <c>SD0217</c>, at the author's
+    /// declaration, keeping SPIRV-Cross's own message verbatim at the end of the message and in
+    /// <see cref="ShaderError.RawDiagnostics"/>. Only an <c>SD0100</c> from the combine stage, and
+    /// only when slangc emitted such an array (slangc emits no unused global, measured, so the
+    /// array is one the shader samples) AND the author's source declares that combined sampler
+    /// as an array; every other error passes through untouched (an author's own
+    /// <c>SamplerState My_sampler_0[2]</c> is shaped like the lowering and stays <c>SD0100</c>).
+    /// </summary>
+    private static ShaderError[] ExplainCombinedSamplerArraysOnOpenGl(
+        ShaderError[] errors, IReadOnlyCollection<string> combinedHalves, string slangSource, string sourceName)
+    {
+        // Only a combined sampler the author's source declares as an array ('Sampler2D Comb[3]',
+        // 'SamplerCube Sky[2]'): an author's own 'SamplerState My_sampler_0[2]' is shaped like
+        // slangc's lowering but is not one, and keeps SPIRV-Cross's SD0100, as on the .fx route.
+        // Declared through a macro or in an imported module: not visible here, SD0100 stays.
+        string masked = SlangSourceMask.Mask(slangSource);
+        var declared = new List<(string Name, Match Declaration)>();
+        foreach (string half in combinedHalves)
+        {
+            Match author = CombinedSamplerHalfAuthorName.Match(half);
+            if (!author.Success)
+                continue;
+            string candidate = author.Groups["name"].Value;
+            Match declaration = Regex.Match(
+                masked,
+                @"\b(?<type>Sampler(?!State\b|ComparisonState\b)\w*)(?:\s*<[^;{}]*?>)?\s+" + Regex.Escape(candidate) + @"\s*\[",
+                RegexOptions.CultureInvariant);
+            if (declaration.Success)
+                declared.Add((candidate, declaration));
+        }
+        if (declared.Count == 0)
+            return errors;
+
+        var explained = new ShaderError[errors.Length];
+        for (int i = 0; i < errors.Length; i++)
+        {
+            ShaderError e = errors[i];
+            if (e.Code != "SD0100" || !e.Message.StartsWith(SpirvCrossCombineStagePrefix, StringComparison.Ordinal))
+            {
+                explained[i] = e;
+                continue;
+            }
+
+            (string name, Match decl) = declared[0];
+            string type = decl.Groups["type"].Value;
+            string declaredText = slangSource.Substring(decl.Index, decl.Length).TrimEnd('[', ' ', '\t') + "[...]";
+            string others = declared.Count > 1
+                ? " (also: " + string.Join(", ", declared.Skip(1).Select(d => "'" + d.Name + "'")) + ")"
+                : "";
+            explained[i] = e with
+            {
+                File = sourceName,
+                Line = LineOf(masked, decl.Index),
+                Column = ColumnOf(masked, decl.Index),
+                Code = GlCombinedSamplerShapeCode,
+                Message = $"OpenGL target: '{name}' is declared as an array of combined samplers ('{declaredText}'){others}, " +
+                          "which MonoGame's OpenGL effect format has no representation for (one texture per named " +
+                          "sampler uniform). slangc lowers it to an array of textures plus an array of samplers, and " +
+                          "SPIRV-Cross cannot remap an array of separate samplers to plain GLSL. The hand-written " +
+                          $"equivalent ('Texture{type["Sampler".Length..]} {name}[N]' sampled through one SamplerState) is refused with this same " +
+                          "code, and real mgfxc /Profile:OpenGL fails on it too (\"Sequence contains no matching element\"). " +
+                          $"Declare each element as its own {type} and sample each by name. " + e.Message,
+                RawDiagnostics = e.RawDiagnostics ?? e.Message,
+            };
+        }
+        return explained;
     }
 
     /// <summary>
@@ -852,7 +956,7 @@ public sealed class SlangCompiler
     /// source also spells, or a combined sampler declared through a macro. Pinned by
     /// <c>SlangRegisterPassCostTests</c>.
     /// </remarks>
-    private Result<string, ShaderError> NameHoistedTextures(
+    private Result<(string Hlsl, IReadOnlyCollection<string> CombinedSamplers), ShaderError> NameHoistedTextures(
         string mergedHlsl,
         SlangcHoistedResourceNames.PreprocessedTexts? texts,
         IReadOnlyList<SlangEntryPoint> entries,
@@ -873,13 +977,13 @@ public sealed class SlangCompiler
                 includeEntry: true, [], platformMacros, defines, slangSource, sourceName, runnableSlangc,
                 toolDirectory, cancellationToken, reads, out (int ExitCode, string Text, string Stderr) entry);
             if (startError is not null)
-                return Result<string, ShaderError>.Fail(startError);
+                return Result<(string, IReadOnlyCollection<string>), ShaderError>.Fail(startError);
             ShaderError? unusable = CheckEntryPreprocessOutput(
                 entry, entries, sourceName, "which finds the names the author wrote",
                 "cannot tell which resource names are the author's and will not guess (guessing would silently " +
                 "rename an effect parameter)");
             if (unusable is not null)
-                return Result<string, ShaderError>.Fail(unusable);
+                return Result<(string, IReadOnlyCollection<string>), ShaderError>.Fail(unusable);
 
             decision = SlangcHoistedResourceNames.Decide(
                 mergedHlsl, slangSource, sourceName, defines,
@@ -887,8 +991,11 @@ public sealed class SlangCompiler
         }
 
         return decision.Error is not null
-            ? Result<string, ShaderError>.Fail(decision.Error)
-            : Result<string, ShaderError>.Ok(SlangcHoistedResourceNames.Apply(mergedHlsl, decision.Renames));
+            ? Result<(string, IReadOnlyCollection<string>), ShaderError>.Fail(decision.Error)
+            // Every rename is a combined sampler's texture half taking the author's global name
+            // (any other hoist is an error above), so the rename targets ARE the combined samplers.
+            : Result<(string, IReadOnlyCollection<string>), ShaderError>.Ok(
+                (SlangcHoistedResourceNames.Apply(mergedHlsl, decision.Renames), decision.Renames.Values.ToList()));
     }
 
     /// <summary>
@@ -1314,7 +1421,9 @@ public sealed class SlangCompiler
         process.OutputDataReceived += (_, e) => { if (e.Data is not null) stdout.Append(e.Data).Append('\n'); };
         process.ErrorDataReceived  += (_, e) => { if (e.Data is not null) stderr.Append(e.Data).Append('\n'); };
 
-        process.Start();
+        // A slangc Windows cannot load (damaged, wrong architecture) must fail as SD0622, never
+        // as a modal system dialog that blocks this thread until someone clicks it.
+        WindowsHardErrorSuppression.Run(process.Start);
         process.BeginOutputReadLine();
         process.BeginErrorReadLine();
 

@@ -267,6 +267,17 @@ that loads and renders identically to `mgfxc`'s in the real MonoGame/KNI runtime
 
 ### Fixed
 
+- **`ShadowDusk.Slang` on OpenGL: a combined sampler's register is its texture unit, as `mgfxc` gives
+  the legacy `sampler2D X : register(sN)` (refs issue #252).** `Sampler2D SpriteTexture : register(s0)`
+  landed on unit 1, so SpriteBatch's unit-0 texture never reached the shader (it rendered white),
+  while DirectX 11 sampled `t0`: slangc splits the combined sampler into a texture and a
+  `SamplerState : register(s0)`, which the GL allocator read as a modern reservation. The sampler
+  register of a combined sampler now pins its texture's unit instead. Measured with `mgfxc` 3.8.4.1
+  `/Profile:OpenGL` and matched exactly: `s0`/`s1`/`s2` give units 0/1/2, `A : s1` + `B : s0` give
+  1/0, `A : s2` + an unregistered `B` give 2/0, an unregistered `A` + `B : s0` give 1/0. An
+  author's split `Texture2D` + `SamplerState : register(sN)` pair keeps the reservation rule, and
+  DirectX, Vulkan and FNA output is unchanged. Rendered in real MonoGame DesktopGL by a new
+  `validation/SlangTexturedGl` row (maxd 0 vs the `mgfxc` golden; it rendered white before).
 - **A full `dotnet test` no longer rewrites a tracked file (issue #361).**
   `Phase41StructuralDivergenceMatrixTests` regenerated
   `plan/PHASE-41-appendix/structural-divergence-matrix.md` on every run, so the tree went dirty
@@ -304,6 +315,25 @@ that loads and renders identically to `mgfxc`'s in the real MonoGame/KNI runtime
   hosts that a solution `dotnet test` runs together are serialized around GL by a named mutex. The
   test project retires idle pool threads after 100 ms, which reproduced the old failure on every run,
   so every ImageTests run now re-proves the fix. Test infrastructure only; no shipped package changes.
+- **`ShadowDusk.Slang` on OpenGL: an array of combined samplers (`Sampler2D Comb[3]`) is `SD0217`,
+  located at the author's declaration and saying what to do, like the `Texture2D Tex[3]` array
+  (issue #356).** It used to surface as SPIRV-Cross's bare `SD0100` ("arrays or structs of separate
+  samplers"), which is kept verbatim at the end of the new message and in `RawDiagnostics`. An
+  author-written `SamplerState S[N]` is unchanged (`SD0100`, as on the `.fx` route), and so is one named
+  like slangc's lowering (`SamplerState My_sampler_0[2]`): the rewrite needs the author's source to
+  declare the combined sampler as an array.
+- **`ShadowDusk.Slang`: a slangc that Windows cannot start no longer opens a modal system dialog.**
+  On an interactive Windows desktop, launching a damaged or wrong-architecture `slangc.exe` raised
+  an "Unsupported 16-Bit Application" message box that blocked the compiling thread until someone
+  clicked OK. The launch now runs with the calling thread's hard-error dialogs off
+  (`SetThreadErrorMode`, restored afterwards, nothing else in the process changes), so it fails at
+  once as `SD0622` with the OS's reason.
+- **`ShadowDusk.Slang` on DirectX: `Sampler2D A : register(s2)` binding texture `t0` and sampler `s2`
+  is confirmed correct and pinned (issue #355).** slangc binds `register(sN)` on a combined sampler
+  to its sampler half only, and real `mgfxc` 3.8.4.1 compiles the hand-written legacy
+  `sampler2D A : register(s2)` to the same bindings (`fxc /dumpbin`: `dcl_resource_texture2d t0`,
+  `dcl_sampler s2`), so `GraphicsDevice.Textures[2]` does not reach that texture under `mgfxc`
+  either. `Sampler2D A : register(t2) : register(s2)` binds both halves to slot 2. No output change.
 
 - **The raylib and SkSL converters compile a legacy sampler declared in an `#include` or through a
   macro (issue #327).** `RaylibConverter.Convert` and `SkslConverter.Convert` pre-parse the raw main
