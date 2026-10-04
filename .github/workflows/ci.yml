@@ -412,7 +412,7 @@ jobs:
       # stall always lost the race (macOS, run 37063450434: stalled 3 min 48 s, no dump). The
       # rule is
       #     TestSessionTimeout >= slowest healthy assembly run + blame-hang-timeout + dump time
-      #     10 min             >= 4 min budget                 + 3 min              + 1 min
+      #     10 min             >= 6 min budget                 + 3 min              + 1 min
       # so any stall in a run that was otherwise on schedule is dumped before the session cap
       # can pre-empt it. CiHangGuardTests enforces that inequality against this file; change
       # both numbers together. xunit.runner.json (longRunningTestSeconds) also names every test

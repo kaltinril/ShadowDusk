@@ -26,10 +26,11 @@ public sealed class CiHangGuardTests
     /// The longest a healthy assembly run is allowed to be assumed. With every test host at once
     /// the measured worst was 4 min 42 s (<c>ShadowDusk.Slang.Tests</c>, ubuntu, 2026-10-03), over
     /// this assumption; since the integration step runs at most two hosts at once (<c>-m:2</c>,
-    /// issue #373) it is 3 min 25 s (windows-latest, 4 runs per lane). If the suite outgrows this, raise it AND the session
+    /// issue #373) it is 5 min 32 s (macOS, <c>ShadowDusk.Slang.Tests</c>, on a slow runner instance; 3 min 25 s at worst on the other
+    /// lanes over 5 runs each). If the suite outgrows this, raise it AND the session
     /// timeout: do not shrink the margin.
     /// </summary>
-    private static readonly TimeSpan HealthyAssemblyRun = TimeSpan.FromMinutes(4);
+    private static readonly TimeSpan HealthyAssemblyRun = TimeSpan.FromMinutes(6);
 
     /// <summary>Time for the blame collector to dump the host and its children once it fires.</summary>
     private static readonly TimeSpan DumpTime = TimeSpan.FromMinutes(1);

@@ -21,9 +21,9 @@ namespace ShadowDusk.Integration.Tests;
 /// windows-latest, with four test hosts sharing the 4-vCPU runner, one host at a time made no
 /// progress at all for up to 131 s in the middle of a run (up to 176 s at start-up), so 30 and
 /// 60 s budgets around a sub-second compile failed. The integration step now runs at most two
-/// test hosts at once; over 4 CI runs per lane the longest no-progress gap was then 28 s and the
-/// slowest single test 67 s. This budget is the blame timeout (3 min): 2.7 times the slowest
-/// test since that change, and 1.37 times the worst stall ever measured before it.
+/// test hosts at once; over 5 CI runs per lane the longest no-progress gap was then 34 s and the
+/// slowest test that runs under this budget 67 s. This budget is the blame timeout (3 min): 2.7
+/// times that test, and 1.37 times the worst stall ever measured before the change.
 /// </para>
 /// </remarks>
 internal static class TestBudget
