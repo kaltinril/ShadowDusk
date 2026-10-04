@@ -77,6 +77,18 @@ public sealed record FxParseResult
         new Dictionary<string, string>(StringComparer.Ordinal);
 
     /// <summary>
+    /// SAMPLER name -> the texture its <c>sampler_state</c> block names (<c>Texture = &lt;T&gt;</c>),
+    /// for every legacy sampler the rewrite turned into <c>SamplerState</c> whose texture the MAIN
+    /// file's code never declares or mentions. <c>mgfxc</c> reads the name off the state block and
+    /// emits a <c>T</c> parameter even when nothing declares <c>T</c>, while the rewritten
+    /// <c>T.Sample(...)</c> needs a declaration. These are CANDIDATES: an <c>#include</c>d file or a
+    /// macro can still declare <c>T</c>, so the compiler adds <c>Texture2D T;</c> only when the
+    /// preprocessed source (includes inlined, macros expanded) declares no <c>T</c>.
+    /// </summary>
+    public IReadOnlyDictionary<string, string> UndeclaredStateTextures { get; init; } =
+        new Dictionary<string, string>(StringComparer.Ordinal);
+
+    /// <summary>
     /// OpenGL sampler registers that an explicit <c>register(sN)</c> on a MODERN
     /// <c>SamplerState</c> declaration takes out of circulation, so a synthesized combined
     /// sampler must be allocated around them rather than onto them.

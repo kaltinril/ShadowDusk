@@ -198,7 +198,10 @@ internal sealed class CompilationPipeline
             macros = macros with { UserDefines = options.Defines };
         }
 
-        IIncludeResolver includeResolver = options.IncludeResolver ?? new FileSystemIncludeResolver();
+        // Memoized for this compile: the source is flattened more than once (the compile, the
+        // preprocessed sampler views, the legacy-sampler recovery), and the consumer's resolver
+        // must see one call per include, not one per pass.
+        IIncludeResolver includeResolver = MemoizingIncludeResolver.Wrap(options.IncludeResolver ?? new FileSystemIncludeResolver());
         var preprocessor = new Preprocessor();
 
         PreprocessedSource preprocessed;
@@ -223,6 +226,20 @@ internal sealed class CompilationPipeline
                 return Fail(preprocessResult.Error);
 
             preprocessed = preprocessResult.Value;
+        }
+
+        // A sampler_state texture the main file never declares (`Texture = <T>` and no `T`): mgfxc
+        // reads the name off the block and emits a `T` parameter. Declare it beside the rewritten
+        // sampler, but only when the PREPROCESSED source declares no `T` either: a header or a
+        // macro (`DECL_TEX(Mask)` giving `Texture2D MaskTex;`) can, and a second declaration is a
+        // redefinition error.
+        if (fxParsed.UndeclaredStateTextures.Count > 0)
+        {
+            Result<string, ShaderError> declared =
+                FxPreParser.DeclareUndeclaredStateTextures(preprocessed.Text, sourceFileName, fxParsed);
+            if (declared.IsFailure)
+                return Fail(declared.Error);
+            preprocessed = preprocessed with { Text = declared.Value };
         }
 
         IReadOnlyList<ShaderError> preprocessWarnings = preprocessed.Warnings;

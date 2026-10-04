@@ -47,24 +47,25 @@ public sealed class FxPreParserSynthesizedSamplerTextureTests
     }
 
     [Fact]
-    public void SamplerStateNamingAnUndeclaredTexture_DeclaresItUnderTheReferencedName()
+    public void SamplerStateNamingATextureTheMainFileNeverDeclares_IsACandidate_NotADeclaration()
     {
         // mgfxc reads `Texture = <Tex>` off the state block and emits a `Tex` parameter even
-        // though nothing declares it; the rewrite used to hand DXC `Tex.Sample(...)` with no
-        // `Tex` in scope.
-        // The comment naming it does not count as a declaration.
+        // though nothing declares it. The pre-parser cannot see #include'd files or expand
+        // macros, either of which can declare `Tex`, so it only RECORDS the candidate; the
+        // compiler declares it after checking the preprocessed source. The comment naming it
+        // does not count as a mention.
         var result = FxPreParser.Parse(
             "// Tex is never declared\nsampler2D A = sampler_state { Texture = <Tex>; };" + Body, sourceFile: "test.fx");
 
         result.IsSuccess.ShouldBeTrue();
-        result.Value.StrippedHlsl.ShouldContain("Texture2D Tex; SamplerState A;", Case.Sensitive);
+        result.Value.UndeclaredStateTextures.ShouldBe(new Dictionary<string, string> { ["A"] = "Tex" });
+        result.Value.StrippedHlsl.ShouldNotContain("Texture2D Tex", Case.Sensitive);
         result.Value.StrippedHlsl.ShouldContain("Tex.Sample(A, uv)", Case.Sensitive);
-        // Its name is the author's, so it is not a synthesized companion.
         result.Value.SynthesizedSamplerTextures.ShouldBeEmpty();
     }
 
     [Fact]
-    public void TwoStateBlocksNamingOneUndeclaredTexture_DeclareItOnce()
+    public void DeclareUndeclaredStateTextures_DeclaresOncePerTexture_WhenThePreprocessedSourceHasNone()
     {
         const string source = """
             sampler2D A = sampler_state { Texture = <Tex>; };
@@ -73,26 +74,28 @@ public sealed class FxPreParserSynthesizedSamplerTextureTests
             technique Main { pass P0 { PixelShader = compile ps_3_0 PS(); } }
             """;
 
-        var result = FxPreParser.Parse(source, sourceFile: "test.fx");
+        var parsed = FxPreParser.Parse(source, sourceFile: "test.fx");
+        parsed.IsSuccess.ShouldBeTrue();
+        var declared = FxPreParser.DeclareUndeclaredStateTextures(parsed.Value.StrippedHlsl, "test.fx", parsed.Value);
 
-        result.IsSuccess.ShouldBeTrue();
-        string stripped = result.Value.StrippedHlsl;
-        stripped.ShouldContain("Texture2D Tex; SamplerState A;", Case.Sensitive);
-        stripped.ShouldContain("SamplerState B;", Case.Sensitive);
-        stripped.Split("Texture2D Tex;").Length.ShouldBe(2, "the texture must be declared exactly once");
+        declared.IsSuccess.ShouldBeTrue();
+        declared.Value.ShouldContain("Texture2D Tex; SamplerState A;", Case.Sensitive);
+        declared.Value.Split("Texture2D Tex;").Length.ShouldBe(2, "the texture must be declared exactly once");
     }
 
     [Theory]
-    // Declared AFTER the sampler: still a declaration, so nothing is added.
-    [InlineData("sampler2D A = sampler_state { Texture = <Tex>; }; Texture2D Tex;")]
-    // Mentioned anywhere else (here a macro), so the rewrite stays exactly as it was.
-    [InlineData("#define Tex OtherTex\nTexture2D OtherTex; sampler2D A = sampler_state { Texture = <Tex>; };")]
-    public void ReferencedTextureMentionedElsewhere_IsLeftAlone(string declarations)
+    // Declared by a macro the pre-parser cannot expand (the case the raw reading got wrong).
+    [InlineData("#define DECL_TEX(x) Texture2D x##Tex;\nDECL_TEX(Mask)\nsampler2D A = sampler_state { Texture = <MaskTex>; };", "MaskTex")]
+    // Declared after the sampler, in both spellings.
+    [InlineData("sampler2D A = sampler_state { Texture = <Tex>; };\ntexture Tex;", "Tex")]
+    [InlineData("sampler2D A = sampler_state { Texture = <Tex>; };\nTexture2D Tex : register(t2);", "Tex")]
+    public void DeclareUndeclaredStateTextures_LeavesADeclaredTextureAlone(string declarations, string texture)
     {
-        var result = FxPreParser.Parse(declarations + Body, sourceFile: "test.fx");
+        var parsed = FxPreParser.Parse(declarations + Body.Replace("tex2D(A, uv)", "tex2D(A, uv)"), sourceFile: "test.fx");
+        parsed.IsSuccess.ShouldBeTrue();
+        var declared = FxPreParser.DeclareUndeclaredStateTextures(parsed.Value.StrippedHlsl, "test.fx", parsed.Value);
 
-        result.IsSuccess.ShouldBeTrue();
-        result.Value.StrippedHlsl.ShouldNotContain("Texture2D Tex; SamplerState A;", Case.Sensitive);
-        result.Value.StrippedHlsl.ShouldContain("SamplerState A;", Case.Sensitive);
+        declared.IsSuccess.ShouldBeTrue();
+        declared.Value.ShouldNotContain($"Texture2D {texture}; SamplerState A;", Case.Sensitive);
     }
 }
