@@ -202,6 +202,17 @@ that loads and renders identically to `mgfxc`'s in the real MonoGame/KNI runtime
 
 ### Changed
 
+- **Android DXC is now 16 KB page aligned, built reproducibly in CI.** Google Play has required 16 KB
+  page support for new apps and updates targeting Android 15+ since November 2025; the
+  `libdxcompiler.so` ShadowDusk.HLSL packed for android-arm64 used 4 KB pages (the Android SDK's
+  `XA0141` warning), so an app compiling shaders on-device could be rejected. It is rebuilt at the same
+  pinned DXC commit (e043f4a1) by `tools/build-dxc-android.sh` (run by `dxc-android-build.yml`: NDK
+  r27c, API 24, 16 KB pages, no debug info, stripped; two independent builds per ABI must be
+  byte-identical and equal the shipped pins), hosted on the new `native-dxc-android-1.7.2212.40-16k`
+  release, with the SHA-256 pins in `tools/restore.*` and the build-id pins in `DxcNativeIdentity`
+  updated. No output changed: on an emulator, the 50-shader OpenGL corpus compiled on the device is
+  byte-identical to the desktop at every stage (SPIR-V, GLSL, `.mgfx`) with the new DXC. The package's
+  arm64 DXC shrinks from 33.4 MB to 25.1 MB. The Android emulator lane now fails on any `XA0141`.
 - **Android SPIRV-Cross is now the desktop's SPIRV-Cross (issue #304 follow-up).** The
   `libspirv-cross.so` ShadowDusk.GLSL packs for android-arm64 (and the emulator's android-x64 copy)
   is rebuilt at SPIRV-Cross `d8e3e2b1`, the commit the desktop natives (Silk.NET.SPIRV.Cross.Native

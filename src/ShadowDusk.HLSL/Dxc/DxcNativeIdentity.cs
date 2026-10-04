@@ -74,22 +74,24 @@ internal static class DxcNativeIdentity
 
     /// <summary>
     /// GNU build id of our <c>android-arm64</c> <c>libdxcompiler.so</c>, the one ShadowDusk.HLSL
-    /// packs (release tag <c>native-dxc-1.7.2212.40</c>, SHA-256 pinned in <c>tools/restore.*</c>).
+    /// packs: the 16 KB page aligned, byte-reproducible build of <c>.github/workflows/dxc-android-build.yml</c>
+    /// (<c>tools/build-dxc-android.sh</c>, the pinned commit), release tag
+    /// <c>native-dxc-android-1.7.2212.40-16k</c>, SHA-256 pinned in <c>tools/restore.*</c>.
     /// Android has no file to read it from (the library is mapped straight out of the APK), so
     /// <see cref="DxcLoader"/> reads it from the MAPPED image instead.
     /// </summary>
-    internal const string AndroidArm64CompilerBuildId = "076af3e5babc2ac0c79bed08b4d8d1b1ac338bc7";
+    internal const string AndroidArm64CompilerBuildId = "5882f6181b9e7149c5c5c4dbb2a88ed4e78d3223";
 
     /// <summary>
     /// GNU build id of the <c>android-x64</c> <c>libdxcompiler.so</c> that the x86_64 emulator
-    /// lane of <c>validation/AndroidGl</c> bundles (<c>.wasm-build/build-dxc-android.ps1</c> for
-    /// x86_64, the same pinned commit; hosted on release tag <c>native-dxc-1.7.2212.40</c> and
-    /// SHA-256 pinned in <c>tools/restore.*</c>, issue #304). No package ships it: it is pinned so
+    /// lane of <c>validation/AndroidGl</c> bundles (the same CI build as android-arm64, release
+    /// tag <c>native-dxc-android-1.7.2212.40-16k</c>, SHA-256 pinned in <c>tools/restore.*</c>).
+    /// No package ships it: it is pinned so
     /// the emulator lane (<c>.github/workflows/android-emulator.yml</c>) runs with the identity
     /// check on. A rebuild of that file gets a new build id and an <c>SD0219</c> naming both,
     /// which is the cue to update this line.
     /// </summary>
-    internal const string AndroidX64CompilerBuildId = "38487f7242f477f1eefcb58e587a128c2a54906e";
+    internal const string AndroidX64CompilerBuildId = "225337e5e08f3850fa4299f5499ae303f636aea0";
 
     /// <summary>
     /// The one Vortice.Dxc release ShadowDusk.HLSL runs with: it ships the pinned DXC natives

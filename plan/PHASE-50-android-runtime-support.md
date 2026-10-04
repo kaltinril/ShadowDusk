@@ -330,7 +330,7 @@ for real devices; x86_64 for the emulator).
   `ShadowDusk.HLSL` / `ShadowDusk.GLSL` under `runtimes/android-arm64/native/` (shipping in
   0.11.0)** — so other devs/CI/consumers restore them instead of building locally, and the
   release/`pack-consume` CI hard-gates their presence. Still open: author the CI form
-  `dxc-android-build.yml` to rebuild them; size-optimize; decide the minimum API level. The
+  `dxc-android-build.yml` to rebuild them (done 2026-10-03, 16 KB aligned); size-optimize; decide the minimum API level. The
   `x86_64` emulator natives are hosted on the same tag and SHA-256 pinned since issue #304
   (2026-10-03), and `.github/workflows/android-emulator.yml` runs the on-device compile + `Effect`
   load and the DXC / SPIRV-Cross identity checks on an API-34 x86_64 emulator in CI. The local
@@ -347,7 +347,9 @@ for real devices; x86_64 for the emulator).
   packages an APK with no source change. The on-device proof above was taken on 3.8.4.1; it was
   **re-run on 3.8.5 on 2026-10-03** (489-byte `.mgfx` into a live `Effect`, API-34 x86_64
   emulator) and is now scenario 1 of the Android CI lane (issue #304).
-- **NEW blocker for the productionization tail — `libdxcompiler.so` is not 16 KB-page-size
+- **FIXED 2026-10-03 (`dxc-android-build.yml`, `tools/build-dxc-android.sh`, 16 KB pages,
+  byte-reproducible; both Android natives are now 16 KB aligned and the emulator lane fails on any
+  `XA0141`).** Was: **`libdxcompiler.so` is not 16 KB-page-size
   aligned** (surfaced by the 3.8.5 build as `XA0141`): *"Android 16 will require 16 KB page sizes,
   shared library 'libdxcompiler.so' does not have a 16 KB page size."* Our own NDK build produced
   it, so this is ours to fix, and it lands squarely on the open `dxc-android-build.yml` /

@@ -46,8 +46,11 @@ by design) and must never appear in this manifest.
 - **Generated on:** win-x64 (Windows 11), 2026-09-10 (regenerated for the vkd3d 1.17 to 2.1 bump, Phase 56: the DirectX_Vkd3d and FNA hashes moved, OpenGL did not), via the regeneration path below.
 - **Compiler git SHA:** the commit that last touched `manifest.json` — `git log -1 --format=%H -- tests/fixtures/golden/byte-identity/manifest.json`.
 - **Pinned natives the hashes depend on:** DXC 1.7.2212.40 (Vortice.Dxc 3.3.4 on
-  win/linux; our own dylib from the identical commit on macOS, tag
-  `native-dxc-1.7.2212.40`), SPIRV-Cross (Silk.NET.SPIRV.Cross.Native 2.23.0),
+  win/linux; our own dylib on macOS, tag `native-dxc-1.7.2212.40`). These are NOT all one
+  commit: the Windows DLL and our macOS dylib are `e043f4a1`, Vortice's linux-x64 `.so` reports
+  `8c9d92be7` (the `v1.7.2212` tag, 28 commits earlier). The OpenGL hashes match on all three
+  hosts anyway; this manifest pins no Vulkan or DirectX 12 output, so that gap is unmeasured there
+  (see `project_facts.md`), SPIRV-Cross (Silk.NET.SPIRV.Cross.Native 2.23.0),
   vkd3d-shader 2.1 (tag `native-vkd3d-2.1`). Bumping any of these legitimately changes
   the manifest — regenerate and review.
 

@@ -24,8 +24,10 @@
 
 .NOTES
     Prereq: run build-dxc-wasm.ps1 at least through Stage 0 first (it clones+patches dxc-src
-    and builds the host tablegen this script reuses). This is the local-build recipe; the
-    CI form is dxc-android-build.yml.
+    and builds the host tablegen this script reuses). This is the original Windows-host
+    recipe. The HOSTED Android DXC is no longer built with it: since the 16 KB fix it comes from
+    tools/build-dxc-android.sh (run by .github/workflows/dxc-android-build.yml), which adds 16 KB
+    pages and byte-reproducibility. Use that one to produce a file ShadowDusk ships.
 #>
 param(
     [switch]$ConfigureOnly,   # stop after CMake configure (don't run the long ninja build)

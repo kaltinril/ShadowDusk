@@ -71,10 +71,10 @@ If you are building ShadowDusk from source rather than from a published package,
 - **DXC** — the pinned DirectXShaderCompiler cross-compiled for the NDK (a port of the WebAssembly recipe; it reuses the same host tablegen tools and CMake cross-compile patches):
 
   ```
-  ./.wasm-build/build-dxc-android.ps1 -Abi arm64-v8a   # and -Abi x86_64 for emulators
+  tools/build-dxc-android.sh <NDK r27c dir> <out dir> <work dir>   # Linux host
   ```
 
-  This stages a stripped `libdxcompiler.so` as `tools/dxc/<rid>/libdxcompiler.so`.
+  It pins the DXC commit, the NDK, the API level and every flag, links with 16 KB pages (Google Play requires 16 KB page support for apps targeting Android 15+), and is byte-reproducible; it writes `<out>/android-arm64/libdxcompiler.so` and `<out>/android-x64/libdxcompiler.so`. (`tools/restore.*` downloads the CI-built, SHA-256-pinned copies instead.)
 
 Bundle the per-ABI `.so` into your APK with `<AndroidNativeLibrary Include="..." Abi="arm64-v8a">` items (the published package does this for you). A worked, end-to-end harness — compile a shader on the device and render with it — lives in `validation/AndroidGl`.
 
