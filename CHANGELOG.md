@@ -304,6 +304,25 @@ that loads and renders identically to `mgfxc`'s in the real MonoGame/KNI runtime
   hosts that a solution `dotnet test` runs together are serialized around GL by a named mutex. The
   test project retires idle pool threads after 100 ms, which reproduced the old failure on every run,
   so every ImageTests run now re-proves the fix. Test infrastructure only; no shipped package changes.
+- **`ShadowDusk.Slang` on OpenGL: an array of combined samplers (`Sampler2D Comb[3]`) is `SD0217`,
+  located at the author's declaration and saying what to do, like the `Texture2D Tex[3]` array
+  (issue #356).** It used to surface as SPIRV-Cross's bare `SD0100` ("arrays or structs of separate
+  samplers"), which is kept verbatim at the end of the new message and in `RawDiagnostics`. An
+  author-written `SamplerState S[N]` is unchanged (`SD0100`, as on the `.fx` route), and so is one named
+  like slangc's lowering (`SamplerState My_sampler_0[2]`): the rewrite needs the author's source to
+  declare the combined sampler as an array.
+- **`ShadowDusk.Slang`: a slangc that Windows cannot start no longer opens a modal system dialog.**
+  On an interactive Windows desktop, launching a damaged or wrong-architecture `slangc.exe` raised
+  an "Unsupported 16-Bit Application" message box that blocked the compiling thread until someone
+  clicked OK. The launch now runs with the calling thread's hard-error dialogs off
+  (`SetThreadErrorMode`, restored afterwards, nothing else in the process changes), so it fails at
+  once as `SD0622` with the OS's reason.
+- **`ShadowDusk.Slang` on DirectX: `Sampler2D A : register(s2)` binding texture `t0` and sampler `s2`
+  is confirmed correct and pinned (issue #355).** slangc binds `register(sN)` on a combined sampler
+  to its sampler half only, and real `mgfxc` 3.8.4.1 compiles the hand-written legacy
+  `sampler2D A : register(s2)` to the same bindings (`fxc /dumpbin`: `dcl_resource_texture2d t0`,
+  `dcl_sampler s2`), so `GraphicsDevice.Textures[2]` does not reach that texture under `mgfxc`
+  either. `Sampler2D A : register(t2) : register(s2)` binds both halves to slot 2. No output change.
 
 - **Debug output no longer depends on the files in the working directory or on the host (issue
   #343).** With `Debug` set, DXC's SPIR-V emitter (OpenGL, Vulkan) fills each `OpSource` by
