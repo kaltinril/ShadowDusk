@@ -53,12 +53,15 @@ internal static class Vkd3dLoader
 
     private static readonly object RegisterGate = new();
     private static volatile bool _registered;
-    private static readonly Lazy<PinnedNativeLibrary.LoadResult> Loaded = new(Load, LazyThreadSafetyMode.ExecutionAndPublication);
+    // Cached once it succeeds; a failed load is retried on the next compile (a transient
+    // failure, e.g. a file briefly locked, must not refuse every compile for the process).
+    private static readonly PinnedNativeLibrary.RetryableLoad Loaded = new(Load);
 
     /// <summary>
     /// Idempotently installs the import resolver and loads the pinned library, returning
     /// <c>null</c> when vkd3d-shader may be used, or the <see cref="LoadErrorCode"/> error the
-    /// caller must return instead of compiling. The outcome is computed once per process.
+    /// caller must return instead of compiling. A success is final for the process; a failure is
+    /// retried on the next call.
     /// A lock (not a lone CAS) so a concurrent second caller BLOCKS until the winner has
     /// finished installing the resolver (the DxcLoader race class, observed as an intermittent
     /// DllNotFoundException under test parallelism).
@@ -81,7 +84,7 @@ internal static class Vkd3dLoader
     }
 
     /// <summary>The file the pinned library was loaded from, or <c>null</c> (not loaded, or refused).</summary>
-    internal static string? LoadedPath => Loaded.IsValueCreated ? Loaded.Value.Path : null;
+    internal static string? LoadedPath => Loaded.Succeeded?.Path;
 
     private static void RegisterCore()
     {

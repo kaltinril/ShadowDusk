@@ -292,7 +292,19 @@ that loads and renders identically to `mgfxc`'s in the real MonoGame/KNI runtime
   is refused with `SD0103`, measured on an x86_64 emulator by `validation/AndroidGl/run-dxc-identity-checks.ps1`.
   Proven by `CliNativeSearchPathHijackTest` (all three desktop OSes; on Windows it fails 5/8 against
   the previous loaders), `SpvcLoaderPinTests`, `SpvcLoaderAndroidIdentityTests`, `Vkd3dLoaderTests`
-  and `PinnedNativeLibraryTests`.
+  and `PinnedNativeLibraryTests`. A host that loads the packages in place from the NuGet global
+  packages folder (`dotnet fsi` `#r "nuget: ..."`, .NET Interactive notebooks) finds SPIRV-Cross in
+  its own `silk.net.spirv.cross.native/<version>` folder beside `shadowdusk.glsl/<version>`, still
+  SHA-256 checked; vkd3d and DXC ship in the packages of the assemblies that load them and were
+  already found there. `tools/verify-fsi-consumer.sh` proves it with a real `dotnet fsi` script in
+  Pack & Consume on all three OSes (OpenGL failed `SD0103` there before this was added). A failed
+  load is retried on the next compile (only a success is cached), so a transient failure such as a
+  briefly locked file no longer refuses every compile for the life of the process.
+  **Also changed by the absolute-path rule:** on linux-arm64 and win-arm64 (and any RID ShadowDusk
+  ships no vkd3d-shader for) DirectX 11 and FNA now refuse with `SD0211`, where a distro-installed
+  or PATH `libvkd3d-shader` used to be picked up by bare name. ShadowDusk packs vkd3d-shader for
+  win-x64, linux-x64, osx-x64 and osx-arm64 only; an x64 process (emulated on Windows on Arm) still
+  works.
 
 - **A full `dotnet test` no longer rewrites a tracked file (issue #361).**
   `Phase41StructuralDivergenceMatrixTests` regenerated

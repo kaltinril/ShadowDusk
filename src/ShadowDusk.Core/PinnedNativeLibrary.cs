@@ -18,6 +18,11 @@ namespace ShadowDusk.Core;
 /// <param name="FileNames">The file names the library ships under on this OS, in probe order.</param>
 /// <param name="Sha256ByRid">The lowercase-hex SHA-256 of each shipped file, keyed by RID.</param>
 /// <param name="MismatchHint">The usual cause of a different build and its fix, for a diagnostic.</param>
+/// <param name="NativePackage">
+/// The NuGet package that carries the native when it is NOT the package of the assembly that
+/// loads it (SPIRV-Cross ships in Silk.NET.SPIRV.Cross.Native, not ShadowDusk.GLSL), or
+/// <c>null</c> when they are the same package. See <see cref="PinnedNativeLibrary.CandidatePaths"/>.
+/// </param>
 internal sealed record PinnedNative(
     string DisplayName,
     string ErrorCode,
@@ -26,7 +31,11 @@ internal sealed record PinnedNative(
     string ProbeExport,
     IReadOnlyList<string> FileNames,
     IReadOnlyDictionary<string, string> Sha256ByRid,
-    string MismatchHint);
+    string MismatchHint,
+    NuGetPackageIdentity? NativePackage = null);
+
+/// <summary>A NuGet package id and exact version, as the global packages folder lays it out.</summary>
+internal sealed record NuGetPackageIdentity(string Id, string Version);
 
 /// <summary>
 /// Loads a <see cref="PinnedNative"/> by ABSOLUTE PATH from the places ShadowDusk's packages
@@ -62,7 +71,42 @@ internal sealed record PinnedNative(
 internal static class PinnedNativeLibrary
 {
     /// <summary>The outcome of <see cref="Load"/>: a handle and the file it came from, or the refusal.</summary>
-    internal readonly record struct LoadResult(IntPtr Handle, string? Path, ShaderError? Error);
+    internal sealed record LoadResult(IntPtr Handle, string? Path, ShaderError? Error);
+
+    /// <summary>
+    /// A load that is cached once it SUCCEEDS and retried on the next request while it fails.
+    /// A failure can be transient (a file another process briefly holds open, an antivirus scan
+    /// mid-copy), and caching it would refuse every compile for the life of the process; a
+    /// success is final, because the handle the runtime binds P/Invokes to cannot change.
+    /// </summary>
+    internal sealed class RetryableLoad
+    {
+        private readonly Func<LoadResult> _load;
+        private readonly object _gate = new();
+        private volatile LoadResult? _succeeded;
+
+        internal RetryableLoad(Func<LoadResult> load) => _load = load;
+
+        /// <summary>The cached success, or a fresh attempt (cached only if it succeeds).</summary>
+        internal LoadResult Value
+        {
+            get
+            {
+                if (_succeeded is { } done) return done;
+                lock (_gate)
+                {
+                    if (_succeeded is { } raced) return raced;
+                    LoadResult result = _load();
+                    if (result.Error is null)
+                        _succeeded = result;
+                    return result;
+                }
+            }
+        }
+
+        /// <summary>The successful load, or <c>null</c> while none has succeeded.</summary>
+        internal LoadResult? Succeeded => _succeeded;
+    }
 
     /// <summary>
     /// Finds, verifies and loads <paramref name="native"/> for this process. Windows, Linux and
@@ -90,7 +134,8 @@ internal static class PinnedNativeLibrary
                 NativeSearchDirectories(),
                 rid,
                 native.FileNames,
-                ignoreCase)
+                ignoreCase,
+                native.NativePackage)
             .Concat(extraCandidates)
             .ToList();
 
@@ -199,8 +244,12 @@ internal static class PinnedNativeLibrary
     ///   (a framework-dependent app, a dotnet tool, a plugin directory), <c>&lt;rid&gt;/</c> (the
     ///   per-arch macOS build-output layout, whose arches share one file name), the directory
     ///   itself (a RID-specific or self-contained publish), and, when the assembly was loaded
-    ///   straight from a NuGet package's <c>lib/&lt;tfm&gt;/</c>, that package's own
-    ///   <c>runtimes/&lt;rid&gt;/native</c>;</item>
+    ///   straight from a NuGet package's <c>lib/&lt;tfm&gt;/</c> (<c>dotnet fsi</c> and .NET
+    ///   Interactive notebooks load packages in place from the global packages folder), that
+    ///   package's own <c>runtimes/&lt;rid&gt;/native</c> and, when the native ships in another
+    ///   package (<paramref name="nativePackage"/>), that package's
+    ///   <c>&lt;packages&gt;/&lt;id&gt;/&lt;version&gt;/runtimes/&lt;rid&gt;/native</c> in the same
+    ///   folder (ids are lowercase there);</item>
     /// <item>the same three under <paramref name="baseDirectory"/>;</item>
     /// <item>each host native search directory, as <c>&lt;rid&gt;/</c> (a single-file bundle's
     ///   extraction keeps the per-arch subdirectory) and flat (the NuGet cache's
@@ -214,7 +263,8 @@ internal static class PinnedNativeLibrary
         IEnumerable<string> nativeSearchDirectories,
         string rid,
         IReadOnlyList<string> fileNames,
-        bool ignoreCase)
+        bool ignoreCase,
+        NuGetPackageIdentity? nativePackage = null)
     {
         IEnumerable<string> Directories()
         {
@@ -224,7 +274,18 @@ internal static class PinnedNativeLibrary
                 yield return System.IO.Path.Combine(dir, rid);
                 yield return dir;
                 if (PackageRootOf(dir) is { } package)
+                {
                     yield return System.IO.Path.Combine(package, "runtimes", rid, "native");
+
+                    // <packages>/<id>/<version>/lib/<tfm>: the native's own package sits beside it.
+                    string? packagesFolder = System.IO.Path.GetDirectoryName(System.IO.Path.GetDirectoryName(package));
+                    if (nativePackage is not null && packagesFolder is not null)
+                    {
+                        yield return System.IO.Path.Combine(
+                            packagesFolder, nativePackage.Id.ToLowerInvariant(),
+                            nativePackage.Version.ToLowerInvariant(), "runtimes", rid, "native");
+                    }
+                }
             }
 
             yield return System.IO.Path.Combine(baseDirectory, "runtimes", rid, "native");

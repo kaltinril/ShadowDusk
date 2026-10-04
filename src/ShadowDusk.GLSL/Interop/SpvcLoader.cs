@@ -81,7 +81,9 @@ internal static class SpvcLoader
 
     private static readonly object RegisterGate = new();
     private static volatile bool _registered;
-    private static readonly Lazy<PinnedNativeLibrary.LoadResult> Loaded = new(Load, LazyThreadSafetyMode.ExecutionAndPublication);
+    // Cached once it succeeds; a failed load is retried on the next transpile (a transient
+    // failure, e.g. a file briefly locked, must not refuse every compile for the process).
+    private static readonly PinnedNativeLibrary.RetryableLoad Loaded = new(Load);
 
     /// <summary>
     /// Idempotently installs the import resolver. Cheap: the library itself is found, verified
@@ -111,7 +113,7 @@ internal static class SpvcLoader
     }
 
     /// <summary>The file the pinned library was loaded from (desktop), or <c>null</c>.</summary>
-    internal static string? LoadedPath => Loaded.IsValueCreated ? Loaded.Value.Path : null;
+    internal static string? LoadedPath => Loaded.Succeeded?.Path;
 
     private static IntPtr Resolve(string name, Assembly assembly, DllImportSearchPath? searchPath)
     {
@@ -148,6 +150,10 @@ internal static class SpvcLoader
             ProbeExport: "spvc_context_create",
             FileNames: [GetLibFileName()],
             Sha256ByRid: Sha256ByRid,
+            // SPIRV-Cross ships in Silk.NET.SPIRV.Cross.Native, not in ShadowDusk.GLSL: a host that
+            // loads packages in place from the global packages folder (dotnet fsi, .NET Interactive)
+            // has it only there, beside ShadowDusk.GLSL's own package folder.
+            NativePackage: new NuGetPackageIdentity("Silk.NET.SPIRV.Cross.Native", PinnedSilkVersion),
             MismatchHint: $"The usual cause is the application resolving a Silk.NET.SPIRV.Cross.Native other than {PinnedSilkVersion} " +
                           "(a Silk.NET package or a direct reference; build warning SD0226 names it), " +
                           "which ships a different SPIRV-Cross: pin it in the application " +

@@ -106,6 +106,9 @@ ShadowDusk/
 │   │                              #   tools/verify-vortice-dxc-conflict.sh (run by pack-consume.yml) COPIES out of
 │   │                              #   tree and builds against Vortice.Dxc 3.8.3, then 3.3.4, then none (issue #282:
 │   │                              #   build warning SD0220 + runtime SD0219). Never built in place.
+│   ├── fsi-consumer/              # consume.fsx, the body tools/verify-fsi-consumer.sh (pack-consume.yml) runs
+│   │                              #   under real `dotnet fsi` against the packed feed (issue #350 review:
+│   │                              #   natives found in place in the global packages folder). Never run in place.
 │   ├── spirv-cross-conflict-consumer/ # The csproj tools/verify-spirv-cross-conflict.sh (pack-consume.yml)
 │   │                              #   copies out of tree with the Vortice consumer's Program.cs and builds
 │   │                              #   against Silk.NET.SPIRV.Cross.Native 2.22.0, then 2.23.0, then none

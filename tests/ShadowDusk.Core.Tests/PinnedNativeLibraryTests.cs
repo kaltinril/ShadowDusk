@@ -64,6 +64,56 @@ public sealed class PinnedNativeLibraryTests
         candidates.ShouldContain(P("nuget", "shadowdusk.hlsl", "1.0.0", "runtimes", "win-x64", "native", "libvkd3d-shader-1.dll"));
     }
 
+    /// <summary>
+    /// dotnet fsi / .NET Interactive load packages in place from the global packages folder, and
+    /// SPIRV-Cross ships in Silk.NET.SPIRV.Cross.Native, not ShadowDusk.GLSL: its own package
+    /// folder beside ShadowDusk.GLSL's is a candidate (id lowercased, as NuGet lays it out), right
+    /// after the loading package's own runtimes folder.
+    /// </summary>
+    [Fact]
+    public void CandidatePaths_AssemblyFromTheGlobalPackagesFolder_ProbesTheNativesOwnPackage()
+    {
+        string lib = P("nuget", "packages", "shadowdusk.glsl", "1.2.3", "lib", "net8.0");
+        List<string> candidates = PinnedNativeLibrary.CandidatePaths(
+                P("dotnet", "sdk", "FSharp"), [lib], [], "linux-x64", ["libspirv-cross.so"], ignoreCase: false,
+                new NuGetPackageIdentity("Silk.NET.SPIRV.Cross.Native", "2.23.0"))
+            .ToList();
+
+        string own = P("nuget", "packages", "shadowdusk.glsl", "1.2.3", "runtimes", "linux-x64", "native", "libspirv-cross.so");
+        string silk = P("nuget", "packages", "silk.net.spirv.cross.native", "2.23.0", "runtimes", "linux-x64", "native", "libspirv-cross.so");
+        candidates.ShouldContain(silk);
+        candidates.IndexOf(silk).ShouldBe(candidates.IndexOf(own) + 1);
+    }
+
+    [Fact]
+    public void CandidatePaths_NoNativePackage_OrAnAssemblyOutsideAPackage_AddsNoSiblingPackage()
+    {
+        var silk = new NuGetPackageIdentity("Silk.NET.SPIRV.Cross.Native", "2.23.0");
+        PinnedNativeLibrary.CandidatePaths(
+                P("app"), [P("nuget", "packages", "shadowdusk.glsl", "1.2.3", "lib", "net8.0")], [],
+                "linux-x64", ["libspirv-cross.so"], ignoreCase: false)
+            .ShouldNotContain(c => c.Contains("silk.net.spirv.cross.native", StringComparison.Ordinal));
+        PinnedNativeLibrary.CandidatePaths(
+                P("app"), [P("app", "bin")], [], "linux-x64", ["libspirv-cross.so"], ignoreCase: false, silk)
+            .ShouldNotContain(c => c.Contains("silk.net.spirv.cross.native", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void RetryableLoad_RetriesAFailure_AndKeepsTheFirstSuccess()
+    {
+        int calls = 0;
+        var failure = new PinnedNativeLibrary.LoadResult(IntPtr.Zero, null, new ShaderError("", 0, 0, "SD0103", "locked"));
+        var success = new PinnedNativeLibrary.LoadResult(new IntPtr(42), "/x/libspirv-cross.so", null);
+        var load = new PinnedNativeLibrary.RetryableLoad(() => ++calls == 1 ? failure : success);
+
+        load.Value.ShouldBeSameAs(failure);
+        load.Succeeded.ShouldBeNull();
+        load.Value.ShouldBeSameAs(success);
+        load.Value.ShouldBeSameAs(success);
+        load.Succeeded.ShouldBeSameAs(success);
+        calls.ShouldBe(2, "a success must be cached, a failure retried");
+    }
+
     [Fact]
     public void CandidatePaths_ProbeEachDirectoryOnce_EveryFileNameInOrder()
     {
