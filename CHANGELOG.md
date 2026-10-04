@@ -14,6 +14,18 @@ that loads and renders identically to `mgfxc`'s in the real MonoGame/KNI runtime
 
 ### Added
 
+- **The Android on-device checks run in CI (issue #304).** The new `android-emulator.yml` boots an
+  API-34 x86_64 emulator on ubuntu and runs `validation/AndroidGl/run-dxc-identity-checks.ps1`: an
+  HLSL string compiled on the device and loaded into a live MonoGame `Effect` (now on MonoGame
+  Android 3.8.5), a foreign and a missing DXC refused with `SD0219`, and a foreign and a missing
+  SPIRV-Cross refused with `SD0103`. Any wrong or missing verdict fails the job. It runs on PRs
+  labelled `run-android`, weekly, on manual dispatch and on pushes to main that touch the loaders,
+  the harness or the restore pins. The x86_64 emulator natives it needs are now hosted on the
+  `native-dxc-1.7.2212.40` release (`libdxcompiler.android-x64.so`,
+  `libspirv-cross.android-x64.so`) and restored with SHA-256 verification by `tools/restore.*`,
+  like the android-arm64 pair; no package ships them. Integration tests now tie the Android DXC
+  and SPIRV-Cross build-id pins to the restored files, and CI's integration job requires all four
+  Android natives. The identity script runs under `pwsh` on Linux and macOS too.
 - **`SkslConverter` can run in the browser (issue #349).** `SkslConverter.Convert` has an overload taking
   DXC / SPIRV-Cross factories (like `EffectCompiler`), and `WasmShaderCompiler.ConvertToSksl` is the
   synchronous entry point after `InitializeAsync()`. The default desktop path is unchanged.

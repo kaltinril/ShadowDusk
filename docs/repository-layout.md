@@ -90,7 +90,7 @@ ShadowDusk/
 │                                  #   desktop/Android native reaches a net8.0-browser build or publish (issue #273)
 ├── tools/                         # Vendored / downloaded native binaries (restored, not committed)
 │   ├── dxc/<rid>/                 # OUR pinned DXC builds for osx-x64/osx-arm64 (dylib) and android-arm64
-│   │                              #   (restored + hash-pinned; android-x64 is a local emulator build only).
+│   │                              #   (restored + hash-pinned; android-x64 is the emulator lane's pair, never packed).
 │   │                              #   Windows/Linux DXC comes from the Vortice.Dxc 3.3.4 NuGet.
 │   ├── spirv-cross/               # libspirv-cross-c-shared (.dll/.so/.dylib)
 │   ├── vkd3d/                     # vkd3d-shader native (cross-platform DXBC backend)
