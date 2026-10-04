@@ -398,8 +398,10 @@ jobs:
       # --blame-hang-timeout is the hang guard. A test's CancellationToken cannot interrupt a
       # native compile (one uninterruptible P/Invoke), so only this can turn a hung native call
       # into a failure, and it dumps every thread's stack (the host's and its children's) while
-      # doing it. 3m sits above the slowest healthy test (about 100 s at worst on a contended
-      # runner).
+      # doing it. What it has to clear is the longest stretch in which a healthy host records no
+      # test event at all (issue #351, measured from every .trx of 74 CI runs per lane before
+      # -m:2): 39 s on ubuntu, 42 s on macOS, and 176 s on windows-latest, which -m:2 removes
+      # (the numbers after it, and the headroom, are in project_rules.md).
       #
       # THE TWO TIMEOUTS MUST AGREE (issue #312). The blame timer is an INACTIVITY timer: every
       # test that starts or finishes anywhere in the assembly resets it, so it fires 3 minutes
@@ -452,18 +454,18 @@ jobs:
           echo $! > TestResults/hang-dumps/watchdog.pid
           echo "stall watchdog started, pid $(cat TestResults/hang-dumps/watchdog.pid)"
 
-      # Issue #373: on windows-latest one test host at a time can complete no test for 40 to
-      # 160 s while the other hosts keep going. This samples CPU, run queue, memory, paging,
-      # disk queue and every test host's thread states for the whole step, so such a freeze can
-      # be lined up with what that process was doing. tools/ci/load-sampler.ps1. Never fails.
-      - name: Start the load sampler (Windows, issue #373)
-        if: runner.os == 'Windows'
-        shell: pwsh
-        run: |
-          New-Item -ItemType Directory -Force -Path TestResults/load | Out-Null
-          Start-Process pwsh -WindowStyle Hidden -ArgumentList '-NoProfile', '-File', 'tools/ci/load-sampler.ps1', "$PWD/TestResults/load", '2'
-          Write-Host "load sampler started"
-
+      # AT MOST TWO TEST HOSTS AT ONCE (-m:2, issue #373). `dotnet test` on the solution starts
+      # one test host per assembly and TFM, up to one per core, and each runs four xUnit
+      # collections that compile on further threads and spawn slangc / CLI children. On the
+      # 4-vCPU windows-latest runner that kept the run queue at 20 to 60 for the whole step, and
+      # one host at a time then made no progress at all for 40 to 176 s (measured over 74 CI
+      # runs, 2026-10-02 to 2026-10-03; a 45 s blame dump of one caught it blocked in
+      # Thread.Start, waiting for a new OS thread to begin, with every native compiler idle).
+      # Every 30 and 60 s test budget that expired on Windows (#373, #316) was a test inside such
+      # a stall. Two hosts at a time leaves the step's wall time unchanged (the runner is CPU
+      # bound either way) and, measured on 4 pinned cores, cut the slowest test from 95 s to 34 s
+      # and the longest no-progress gap to 16 s. Do not raise it without re-measuring the gaps
+      # (project_rules.md, "Integration lane load").
       - name: dotnet test (integration)
         timeout-minutes: 14
         env:
@@ -471,10 +473,10 @@ jobs:
           SHADOWDUSK_REQUIRE_DXC: "1"
           SHADOWDUSK_HANG_DUMP_DIR: ${{ github.workspace }}/TestResults/probe-hangs
         run: >
-          dotnet test ShadowDusk.slnx --no-build -c Release
+          dotnet test ShadowDusk.slnx --no-build -c Release -m:2
           --filter "Category=Integration"
           --settings ShadowDusk.runsettings
-          --blame-hang-timeout 45s --blame-hang-dump-type full
+          --blame-hang-timeout 3m --blame-hang-dump-type full
           --logger "trx;LogFilePrefix=integration-${{ matrix.os }}"
           --results-directory TestResults/
           -- RunConfiguration.TestSessionTimeout=600000
@@ -521,37 +523,26 @@ jobs:
             done
           fi
 
-      - name: Stop the load sampler (Windows)
-        if: always() && runner.os == 'Windows'
-        shell: pwsh
-        run: |
-          New-Item -ItemType File -Force -Path TestResults/load/stop | Out-Null
-          Start-Sleep -Seconds 8
-          Get-ChildItem TestResults/load -ErrorAction SilentlyContinue | Format-Table Name, Length
-
-      - name: Analyze blame dumps (Windows, diagnostic)
+      # A blame-hang dump of a Windows test host, turned into managed stacks HERE (issue #373),
+      # where the matching runtime is at hand, so the uploaded hang-dumps artifact carries them
+      # as text. This is how the #373 stall was read: the frozen host's thread was in
+      # Thread.StartCore. Never fails.
+      - name: Analyze blame-hang dumps (Windows)
         if: always() && runner.os == 'Windows'
         shell: pwsh
         run: |
           $dumps = Get-ChildItem TestResults -Recurse -Filter *.dmp -ErrorAction SilentlyContinue
-          if (-not $dumps) { Write-Host "no dumps"; exit 0 }
-          dotnet tool install -g dotnet-dump | Out-Null
+          if (-not $dumps) { Write-Host "no hang dumps"; exit 0 }
+          New-Item -ItemType Directory -Force -Path TestResults/hang-dumps | Out-Null
+          dotnet tool install -g dotnet-dump 2>&1 | Out-Null
           $env:PATH += ";$env:USERPROFILE\.dotnet\tools"
           foreach ($d in $dumps) {
-            $txt = Join-Path 'TestResults/load' ($d.BaseName + '-analysis.txt')
-            Write-Host "--- $($d.FullName) ($([int]($d.Length/1MB)) MB)"
+            $txt = Join-Path 'TestResults/hang-dumps' ($d.BaseName + '-managed.txt')
+            Write-Host "--- $($d.FullName) ($([int]($d.Length / 1MB)) MB)"
             dotnet-dump analyze $d.FullName -c "threads" -c "threadpool" -c "clrstack -all" -c "syncblk" -c "exit" *> $txt
             Get-Content $txt -TotalCount 400
           }
-
-      - name: Upload the load samples (Windows)
-        if: always() && runner.os == 'Windows'
-        uses: actions/upload-artifact@v7
-        with:
-          name: integration-load-${{ matrix.os }}-attempt${{ github.run_attempt }}
-          path: TestResults/load/
-          retention-days: 14
-          if-no-files-found: ignore
+          exit 0
 
       # Guard the line above: if someone reverts to a fixed LogFileName, the run still goes
       # green while 13 of 14 assemblies' results vanish. The solution always has more than

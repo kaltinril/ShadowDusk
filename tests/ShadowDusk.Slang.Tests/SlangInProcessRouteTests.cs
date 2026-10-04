@@ -233,7 +233,7 @@ public sealed class SlangInProcessRouteTests
 
         // The delegate shape is synchronous by contract, so this is the blocking form of the
         // shared child-process helper: same concurrent drain, tree kill and evidence on timeout.
-        ChildProcessResult run = ChildProcess.Run(psi, TimeSpan.FromSeconds(120), "slangc", standardInput: source);
+        ChildProcessResult run = ChildProcess.Run(psi, TestBudget.Compile, "slangc", standardInput: source);
         return (run.ExitCode, run.Stdout, run.Stderr);
     }
 

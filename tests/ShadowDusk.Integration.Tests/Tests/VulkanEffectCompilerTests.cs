@@ -50,7 +50,7 @@ public sealed class VulkanEffectCompilerTests
     [Fact]
     public async Task Compile_ParameterizedShader_ProducesRealVulkanContainer()
     {
-        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(60));
+        using var cts = new CancellationTokenSource(TestBudget.Compile);
 
         var result = await new EffectCompiler().CompileAsync(ParameterizedShader, new CompilerOptions
         {
@@ -116,7 +116,7 @@ public sealed class VulkanEffectCompilerTests
     [Fact]
     public async Task Compile_WaveIntrinsicShader_Vulkan_RejectedWithSD0218_AtTheCall()
     {
-        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(60));
+        using var cts = new CancellationTokenSource(TestBudget.Compile);
 
         var result = await new EffectCompiler().CompileAsync(WaveShader, new CompilerOptions
         {
@@ -139,7 +139,7 @@ public sealed class VulkanEffectCompilerTests
     [Fact]
     public async Task Compile_VsWaveQuadIntrinsicsFixture_Vulkan_RejectedWithSD0218()
     {
-        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(60));
+        using var cts = new CancellationTokenSource(TestBudget.Compile);
         string path = Path.Combine(AppContext.BaseDirectory, "fixtures", "shaders", "VsWaveQuadIntrinsics.fx");
 
         var result = await new EffectCompiler().CompileAsync(await File.ReadAllTextAsync(path, cts.Token), new CompilerOptions
@@ -159,7 +159,7 @@ public sealed class VulkanEffectCompilerTests
     [Fact]
     public async Task Compile_VsWaveQuadIntrinsicsFixture_DirectX12_StillCompiles()
     {
-        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(60));
+        using var cts = new CancellationTokenSource(TestBudget.Compile);
         string path = Path.Combine(AppContext.BaseDirectory, "fixtures", "shaders", "VsWaveQuadIntrinsics.fx");
 
         var result = await new EffectCompiler().CompileAsync(await File.ReadAllTextAsync(path, cts.Token), new CompilerOptions
@@ -175,7 +175,7 @@ public sealed class VulkanEffectCompilerTests
     [Fact]
     public async Task Compile_NonWaveShader_Vulkan_BothStagesStaySpirv10()
     {
-        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(60));
+        using var cts = new CancellationTokenSource(TestBudget.Compile);
 
         var result = await new EffectCompiler().CompileAsync(ParameterizedShader, new CompilerOptions
         {
@@ -234,7 +234,7 @@ public sealed class VulkanEffectCompilerTests
             technique T { pass P { VertexShader = compile vs_6_0 VS(); PixelShader = compile ps_6_0 PS(); } }
             """;
 
-        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(60));
+        using var cts = new CancellationTokenSource(TestBudget.Compile);
         var result = await new EffectCompiler().CompileAsync(twoCbuffers, new CompilerOptions
         {
             Target = PlatformTarget.Vulkan,
@@ -284,7 +284,7 @@ public sealed class VulkanEffectCompilerTests
         // HLSL can be told to use row-major. We should handle that too."). So every matrix
         // arrived transposed and a VS-driven effect threw its geometry out of clip space.
         // mgfxc's Vulkan command line carries no -Zpr; the shipped SPIR-V must agree.
-        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(60));
+        using var cts = new CancellationTokenSource(TestBudget.Compile);
 
         var result = await new EffectCompiler().CompileAsync(MatrixVertexShader, new CompilerOptions
         {
@@ -311,7 +311,7 @@ public sealed class VulkanEffectCompilerTests
         // DIVERGENCE S3. mgfxc compiles twice so the SHIPPED module has no -fspv-reflect
         // Google extensions; ShadowDusk reflects from core decorations only, so it simply
         // never requests them.
-        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(60));
+        using var cts = new CancellationTokenSource(TestBudget.Compile);
 
         var result = await new EffectCompiler().CompileAsync(MatrixVertexShader, new CompilerOptions
         {
@@ -337,7 +337,7 @@ public sealed class VulkanEffectCompilerTests
     {
         // DIVERGENCE S1. mgfxc emits one attribute entry per VS input location (usage +
         // semantic index); ShadowDusk emitted an empty table.
-        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(60));
+        using var cts = new CancellationTokenSource(TestBudget.Compile);
 
         var result = await new EffectCompiler().CompileAsync(MatrixVertexShader, new CompilerOptions
         {
@@ -397,7 +397,7 @@ public sealed class VulkanEffectCompilerTests
             }
             """;
 
-        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(60));
+        using var cts = new CancellationTokenSource(TestBudget.Compile);
 
         var result = await new EffectCompiler().CompileAsync(legacy, new CompilerOptions
         {
@@ -454,7 +454,7 @@ public sealed class VulkanEffectCompilerTests
             }
             """;
 
-        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(60));
+        using var cts = new CancellationTokenSource(TestBudget.Compile);
 
         var result = await new EffectCompiler().CompileAsync(typo, new CompilerOptions
         {
@@ -481,7 +481,7 @@ public sealed class VulkanEffectCompilerTests
     [Fact]
     public async Task Compile_AllSemanticsRecognized_EmitsNoSd0104()
     {
-        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(60));
+        using var cts = new CancellationTokenSource(TestBudget.Compile);
 
         var result = await new EffectCompiler().CompileAsync(ParameterizedShader, new CompilerOptions
         {

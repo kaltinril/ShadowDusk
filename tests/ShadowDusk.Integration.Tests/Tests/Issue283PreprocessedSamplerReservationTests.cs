@@ -20,7 +20,7 @@ namespace ShadowDusk.Integration.Tests.Tests;
 [Trait("Category", "Integration")]
 public sealed class Issue283PreprocessedSamplerReservationTests
 {
-    private static CancellationTokenSource Cts() => new(TimeSpan.FromSeconds(120));
+    private static CancellationTokenSource Cts() => new(TestBudget.Compile);
 
     private const string Header = """
         #if OPENGL

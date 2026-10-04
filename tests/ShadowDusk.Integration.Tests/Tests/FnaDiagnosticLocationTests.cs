@@ -28,7 +28,7 @@ namespace ShadowDusk.Integration.Tests.Tests;
 [Trait("Platform", "FNA")]
 public sealed class FnaDiagnosticLocationTests
 {
-    private static readonly TimeSpan CompileTimeout = TimeSpan.FromSeconds(60);
+    private static readonly TimeSpan CompileTimeout = TestBudget.Compile;
 
     private static string IssueFixturePath(int issue, string fileName) =>
         Path.Combine(AppContext.BaseDirectory, "fixtures", "issues", issue.ToString(), fileName);

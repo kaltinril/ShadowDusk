@@ -68,7 +68,7 @@ public sealed class GlSamplerSlotCorpusTests
     [Trait("Platform", "OpenGL")]
     public async Task SamplerTable_MatchesMgfxcGolden(string stem)
     {
-        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(120));
+        using var cts = new CancellationTokenSource(TestBudget.Compile);
         CancellationToken ct = cts.Token;
 
         string fxPath = FindSource(stem);

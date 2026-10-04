@@ -13,6 +13,11 @@
     <ProjectReference Include="..\..\src\ShadowDusk.Compiler\ShadowDusk.Compiler.csproj" />
   </ItemGroup>
 
+  <ItemGroup>
+    <!-- One measured compile budget for every test assembly (issues #373, #316). -->
+    <Compile Include="..\ShadowDusk.Integration.Tests\TestBudget.cs" Link="TestBudget.cs" />
+  </ItemGroup>
+
   <ItemGroup Label="Test framework">
     <PackageReference Include="xunit" />
     <PackageReference Include="xunit.runner.visualstudio" />

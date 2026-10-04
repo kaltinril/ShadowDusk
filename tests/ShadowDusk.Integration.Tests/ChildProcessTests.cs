@@ -27,7 +27,7 @@ public sealed class ChildProcessTests
     private const string StderrMarker = "stderr-written-before-the-hang";
 
     /// <summary>How long a probe may take to come up; it only bounds a failure, never a pass.</summary>
-    private static readonly TimeSpan StartupBudget = TimeSpan.FromSeconds(120);
+    private static readonly TimeSpan StartupBudget = TestBudget.Compile;
 
     /// <summary>
     /// The latent deadlock in the old helpers: they read stdout to the end and only then
@@ -311,7 +311,7 @@ public sealed class ChildProcessTests
 
     private static async Task<bool> IsGoneAsync(int pid)
     {
-        using var budget = new CancellationTokenSource(TimeSpan.FromSeconds(30));
+        using var budget = new CancellationTokenSource(TestBudget.Compile);
         while (!budget.IsCancellationRequested)
         {
             try
