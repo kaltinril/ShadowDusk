@@ -565,6 +565,8 @@ internal sealed class CompilationPipeline
         // `register(REG)` through a macro was missed).
         IReadOnlyDictionary<string, int> explicitGlSamplerSlots = fxParsed.ExplicitGlSamplerSlots;
         IReadOnlySet<int> reservedGlSamplerSlots = fxParsed.ReservedGlSamplerSlots;
+        IReadOnlySet<string> legacyGlTextures = new HashSet<string>(StringComparer.Ordinal);
+        IReadOnlyDictionary<string, string> legacySamplerTextureView = new Dictionary<string, string>(StringComparer.Ordinal);
         ShaderError? reservationError = null;
         IReadOnlyDictionary<string, int> legacySamplerRegisters = new Dictionary<string, int>(StringComparer.Ordinal);
         if (options.Target == PlatformTarget.OpenGL)
@@ -580,6 +582,8 @@ internal sealed class CompilationPipeline
                 explicitGlSamplerSlots = reservation.Value.Explicit;
                 reservedGlSamplerSlots = reservation.Value.Reserved;
                 legacySamplerRegisters = reservation.Value.LegacySamplerRegisters;
+                legacyGlTextures = reservation.Value.LegacyTextures;
+                legacySamplerTextureView = reservation.Value.LegacySamplerTextures;
             }
             else
             {
@@ -599,7 +603,7 @@ internal sealed class CompilationPipeline
         else if (fxParsed.Samplers.Select(s => s.Name)
                      .Concat(fxParsed.SynthesizedSamplerTextures.Keys)
                      .Distinct(StringComparer.Ordinal)
-                     .Skip(1).Any())
+                     .Skip(directX ? 0 : 1).Any())
         {
             // The other targets need the same preprocessed view for one thing only: two legacy
             // samplers on one explicit register (SD0227, below). It is read only when two legacy
@@ -611,7 +615,66 @@ internal sealed class CompilationPipeline
                 : GlSamplerReservation.Collect(
                     hlslSource, sourceFileName, macros, includeResolver, options.AdditionalIncludePaths, fxParsed);
             if (view.IsSuccess)
+            {
                 legacySamplerRegisters = view.Value.LegacySamplerRegisters;
+                legacySamplerTextureView = view.Value.LegacySamplerTextures;
+            }
+        }
+
+        // DirectX 11: a LEGACY `sampler A : register(sN)` binds its SAMPLER at sN in fxc's DXBC
+        // (mgfxc 3.8.4.1 /Profile:DirectX_11: `t0 s1` for `register(s1)`), but the SM4 rewrite
+        // drops the clause, so the sampler fell to s0 and a state the game set on
+        // GraphicsDevice.SamplerStates[N] never reached it. Put the register back on the
+        // rewritten `SamplerState A;` for this target only (registers read off the preprocessed
+        // view, so a dead #if branch does not count; every rewritten declaration of the name
+        // gets the live register, which is harmless in the branch that does not compile). The
+        // texture keeps the slot fxc's own order gives it. OpenGL decides units from the
+        // register itself (SpirvCombinedSamplerPairs.ResolveSlots); DirectX 12 and Vulkan are
+        // left as they were: mgfxc 3.8.5 offers no reference for legacy samplers there.
+        if (directX && legacySamplerRegisters.Count > 0)
+        {
+            glCompileSource = glCompileSource with
+            {
+                Text = PinLegacySamplerRegisters(glCompileSource.Text, legacySamplerRegisters),
+            };
+        }
+
+        // The pinned register can collide with a MODERN `SamplerState S : register(sN)` the same
+        // shader reads; fxc (mgfxc 3.8.4.1 /Profile:DirectX_11) refuses that with X4500 at the
+        // modern declaration, and vkd3d with its own E5015 ("Multiple variables bound to space
+        // 115"). Report it as SD0227, naming both samplers, with vkd3d's text kept raw.
+        ShaderError ExplainDirectXRegisterClash(ShaderError error)
+        {
+            if (!directX || legacySamplerRegisters.Count == 0 || !string.Equals(error.Code, "E5015", StringComparison.Ordinal))
+                return error;
+            foreach (System.Text.RegularExpressions.Match m in System.Text.RegularExpressions.Regex.Matches(
+                         glCompileSource.Text,
+                         @"(?<![A-Za-z0-9_])Sampler(?:Comparison)?State\s+(\w+)\s*:\s*register\s*\(\s*[sS](\d+)\s*\)"))
+            {
+                string modern = m.Groups[1].Value;
+                if (legacySamplerRegisters.ContainsKey(modern)
+                    || !int.TryParse(m.Groups[2].Value, System.Globalization.NumberStyles.None,
+                                     System.Globalization.CultureInfo.InvariantCulture, out int slot))
+                {
+                    continue;
+                }
+                string? legacy = legacySamplerRegisters
+                    .Where(r => r.Value == slot)
+                    .Select(r => r.Key)
+                    .OrderBy(n => n, StringComparer.Ordinal)
+                    .FirstOrDefault();
+                if (legacy is null)
+                    continue;
+                return error with
+                {
+                    Code = "SD0227",
+                    Message = $"legacy sampler '{legacy}' and sampler '{modern}' are both bound to register s{slot} and both " +
+                              "read by the same shader. fxc (and so mgfxc) refuses this on DirectX 11 (X4500: overlapping " +
+                              $"register semantics not yet implemented 's{slot}'); give each sampler its own register.",
+                    RawDiagnostics = error.RawDiagnostics ?? error.FxcFormattedMessage,
+                };
+            }
+            return error;
         }
 
         foreach (TechniqueInfo technique in fxParsed.Techniques)
@@ -650,13 +713,14 @@ internal sealed class CompilationPipeline
                         explicitGlSamplerSlots: explicitGlSamplerSlots,
                         reservedGlSamplerSlots: reservedGlSamplerSlots,
                         glTextureDeclarationOrder: options.GlTextureDeclarationOrder,
+                        legacyGlTextures: legacyGlTextures,
                         cancellationToken);
 
                     if (compileOutput.Blob.IsFailure)
                     {
                         compileFailure = LegacySamplerRecoveryCandidate(
                             options.Target, recovered, sourceFileName, macros, includeResolver);
-                        return Fail(compileOutput.Blob.Error, runWarnings);
+                        return Fail(ExplainDirectXRegisterClash(compileOutput.Blob.Error), runWarnings);
                     }
 
                     AccumulateWarnings(runWarnings, seenWarnings, compileOutput.Warnings);
@@ -707,13 +771,14 @@ internal sealed class CompilationPipeline
                         explicitGlSamplerSlots: explicitGlSamplerSlots,
                         reservedGlSamplerSlots: reservedGlSamplerSlots,
                         glTextureDeclarationOrder: options.GlTextureDeclarationOrder,
+                        legacyGlTextures: legacyGlTextures,
                         cancellationToken);
 
                     if (compileOutput.Blob.IsFailure)
                     {
                         compileFailure = LegacySamplerRecoveryCandidate(
                             options.Target, recovered, sourceFileName, macros, includeResolver);
-                        return Fail(compileOutput.Blob.Error, runWarnings);
+                        return Fail(ExplainDirectXRegisterClash(compileOutput.Blob.Error), runWarnings);
                     }
 
                     AccumulateWarnings(runWarnings, seenWarnings, compileOutput.Warnings);
@@ -1187,9 +1252,18 @@ internal sealed class CompilationPipeline
                     {
                         int slot = tex.BindSlot;
                         // The sampler paired with this texture, for the baked sampler_state.
-                        // Slot first (the 1:1 modern shape), then the sole shared sampler.
+                        // A LEGACY sampler's texture pairs with that sampler by name (DirectX 11:
+                        // mgfxc's record carries the sampler's own DXBC binding, which is not the
+                        // texture's when a register or a modern SamplerState moved it). Otherwise
+                        // slot first (the 1:1 modern shape), then the sole shared sampler.
+                        SamplerReflection? legacySamp = directX
+                            ? samplerRefs.FirstOrDefault(s =>
+                                legacySamplerTextureView.TryGetValue(s.Name, out string? t)
+                                && string.Equals(t, tex.Name, StringComparison.Ordinal))
+                            : null;
                         SamplerReflection? matchedSamp =
-                            samplerRefs.FirstOrDefault(s => s.BindSlot == slot)
+                            legacySamp
+                            ?? samplerRefs.FirstOrDefault(s => s.BindSlot == slot)
                             ?? (samplerRefs.Count == 1 ? samplerRefs[0] : null);
                         // No Math.Max(0, …) clamp (bug-hunt 2026-07-27 N11): a failed
                         // name→parameter join used to be silently coerced to parameter 0 —
@@ -1201,7 +1275,7 @@ internal sealed class CompilationPipeline
                             // Critical for binding — cube/3D won't bind at runtime if left 0.
                             Type:        SamplerTypeByte(tex.Dimension),
                             TextureSlot: (byte)slot,
-                            SamplerSlot: (byte)slot,
+                            SamplerSlot: (byte)(legacySamp?.BindSlot ?? slot),
                             // DX11 binds samplers via the DXBC resource table, not by name, so
                             // the name is empty — matching the mgfxc DirectX_11 goldens. DX12
                             // keeps the positional form it has been rung-4 proven with (Phase
@@ -1243,7 +1317,7 @@ internal sealed class CompilationPipeline
                     IReadOnlyList<CombinedSamplerPair> pairs = pairResult.Value;
                     IReadOnlyList<int> glSamplerSlots =
                         SpirvCombinedSamplerPairs.ResolveSlots(
-                            pairs, explicitGlSamplerSlots, reservedGlSamplerSlots, options.GlTextureDeclarationOrder);
+                            pairs, explicitGlSamplerSlots, reservedGlSamplerSlots, options.GlTextureDeclarationOrder, legacyGlTextures);
 
                     for (int k = 0; k < pairs.Count; k++)
                     {
@@ -2322,6 +2396,7 @@ internal sealed class CompilationPipeline
             IReadOnlyDictionary<string, int> explicitGlSamplerSlots,
             IReadOnlySet<int> reservedGlSamplerSlots,
             IReadOnlyDictionary<string, int> glTextureDeclarationOrder,
+            IReadOnlySet<string> legacyGlTextures,
             CancellationToken ct)
     {
         IReadOnlyList<MgfxVertexAttributeInfo> noAttributes = Array.Empty<MgfxVertexAttributeInfo>();
@@ -2447,7 +2522,7 @@ internal sealed class CompilationPipeline
                     if (pairsForSlots.IsSuccess)
                     {
                         samplerSlots = SpirvCombinedSamplerPairs.ResolveSlots(
-                            pairsForSlots.Value, explicitGlSamplerSlots, reservedGlSamplerSlots, glTextureDeclarationOrder);
+                            pairsForSlots.Value, explicitGlSamplerSlots, reservedGlSamplerSlots, glTextureDeclarationOrder, legacyGlTextures);
                     }
 
                     MonoGameGlslResult rewritten =
@@ -2807,6 +2882,33 @@ internal sealed class CompilationPipeline
             }
         }
         return (line, offset - lineStart + 1, offset);
+    }
+
+    /// <summary>
+    /// Adds <c>: register(sN)</c> to every rewritten <c>SamplerState A;</c> whose legacy sampler
+    /// carries an explicit register in <paramref name="registers"/> (DirectX 11 only).
+    /// </summary>
+    private static string PinLegacySamplerRegisters(string text, IReadOnlyDictionary<string, int> registers)
+    {
+        // Two legacy samplers on one register are fxc's X4500 when both are read, which SD0227
+        // reports after the compile; pinning both would make the backend refuse first, with its
+        // own message. Pin only the first declared of each register (mgfxc compiles the shape
+        // when the second one is never read, and binds the first there).
+        var pinned = registers
+            .GroupBy(r => r.Value)
+            .Select(g => g.OrderBy(r =>
+            {
+                int offset = FindSamplerDeclaration(text, r.Key).Offset;
+                return offset < 0 ? int.MaxValue : offset;
+            }).ThenBy(r => r.Key, StringComparer.Ordinal).First());
+        foreach ((string sampler, int slot) in pinned)
+        {
+            text = System.Text.RegularExpressions.Regex.Replace(
+                text,
+                $@"(?<![A-Za-z0-9_])SamplerState(\s+){System.Text.RegularExpressions.Regex.Escape(sampler)}\s*;",
+                m => $"SamplerState{m.Groups[1].Value}{sampler} : register(s{slot});");
+        }
+        return text;
     }
 
     private static int IndexOfParam(IReadOnlyList<ParameterReflection> parameters, string name)

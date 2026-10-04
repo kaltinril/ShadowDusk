@@ -485,14 +485,16 @@ public sealed class ReviewRegressionTests
 
     /// <summary>
     /// A legacy <c>sampler2D</c> declaration mixed with a modern
-    /// <c>Texture2D</c>+<c>SamplerState</c> pair. The pre-parser rewrites the legacy form to the
-    /// modern one before DXC sees it, so both become combined-sampler pairs and both are slotted
-    /// by DECLARATION order — here the modern pair is sampled first but declared second, so it
-    /// gets unit 1 (issue #189). The rewrite must not perturb that ordering.
+    /// <c>Texture2D</c>+<c>SamplerState</c> pair. This test used to pin plain DECLARATION order
+    /// (the legacy pair, declared first, on unit 0) without an <c>mgfxc</c> measurement behind
+    /// it. Measured 2026-10-03, <c>mgfxc</c> 3.8.4.1 <c>/Profile:OpenGL</c> on this exact shape
+    /// (at <c>ps_3_0</c>; it refuses <c>ps_4_0</c> for OpenGL): <c>ModernSampler+ModernTex</c> on
+    /// <c>ps_s0</c>, <c>LegacyTex</c> on <c>ps_s1</c>. fxc gives every modern pair its unit
+    /// before any legacy sampler's (see <c>LegacySamplerUnitTests</c>).
     /// </summary>
     [Fact]
     [Trait("Platform", "OpenGL")]
-    public async Task OpenGl_MixedLegacyAndModernSamplerDeclarations_KeepDeclarationOrder()
+    public async Task OpenGl_MixedLegacyAndModernSamplerDeclarations_ModernPairTakesItsUnitFirst()
     {
         const string source = """
             Texture2D LegacyTex;
@@ -528,8 +530,8 @@ public sealed class ReviewRegressionTests
         var records = reader.Samplers.Where(s => s.ShaderIndex == ps.Index).ToList();
 
         records.Select(s => s.Name).ShouldBe(new[] {"ps_s0", "ps_s1"});
-        reader.Parameters[records[0].Parameter].Name.ShouldBe("LegacyTex", customMessage: "LegacyTex is declared first, so it owns texture unit 0 the way fxc allocates (issue #189) — even though ModernTex is sampled first");
-        reader.Parameters[records[1].Parameter].Name.ShouldBe("ModernTex");
+        reader.Parameters[records[0].Parameter].Name.ShouldBe("ModernTex", customMessage: "mgfxc: the modern pair takes unit 0 although the legacy sampler is declared first");
+        reader.Parameters[records[1].Parameter].Name.ShouldBe("LegacyTex");
     }
 
     /// <summary>

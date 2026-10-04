@@ -22,8 +22,8 @@
 ## Headline
 
 - Golden-backed cells (fixture x target): **118**
-  - Structurally **clean**: **85**
-  - **Divergent** (>=1 level): **23**
+  - Structurally **clean**: **87**
+  - **Divergent** (>=1 level): **21**
   - Compile/parse **failures**: **10**
 - Non-golden census cells: **226** (**163** compile, **63** fail with a code)
 
@@ -97,13 +97,13 @@ Legend: `OK` = match, `XX` = diverge, `--` = compile/parse failed (see notes). L
 | SamplerLegacyMacroDecl | OpenGL | OK | OK | OK | OK | OK |  |
 | SamplerLegacyRegisterIfBranch | DirectX_11 | OK | OK | OK | OK | OK |  |
 | SamplerLegacyRegisterIfBranch | OpenGL | OK | OK | OK | OK | OK |  |
-| SamplerLegacyRegisterMacro | DirectX_11 | OK | OK | XX | OK | OK | sampler slot 2 missing (golden ``); sampler slot 3 missing (golden ``); extra sampler slot 0 (``); extra sampler slot 1 (``) |
+| SamplerLegacyRegisterMacro | DirectX_11 | OK | OK | OK | OK | OK |  |
 | SamplerLegacyRegisterMacro | OpenGL | OK | OK | OK | OK | OK |  |
 | SamplerPairMirror | DirectX_11 | OK | OK | OK | OK | OK |  |
 | SamplerPairMirror | OpenGL | OK | OK | OK | OK | OK |  |
 | SamplerRegisterOrder | DirectX_11 | OK | OK | OK | OK | OK |  |
 | SamplerRegisterOrder | OpenGL | OK | OK | OK | OK | OK |  |
-| SamplerRegisterSparse | DirectX_11 | OK | OK | XX | OK | OK | sampler slot 2 missing (golden ``); sampler slot 3 missing (golden ``); extra sampler slot 0 (``); extra sampler slot 1 (``) |
+| SamplerRegisterSparse | DirectX_11 | OK | OK | OK | OK | OK |  |
 | SamplerRegisterSparse | OpenGL | OK | OK | OK | OK | OK |  |
 | SamplerReservationIfBranch | DirectX_11 | OK | OK | OK | OK | OK |  |
 | SamplerReservationIfBranch | OpenGL | XX | OK | OK | OK | OK | param `SpriteSampler+SpriteTexture` missing (golden class=3 type=7); extra value-class param `SpriteTexture` (class=3 type=7) |
@@ -215,17 +215,17 @@ A Scalar/Vector/Matrix parameter's reflection metadata (class/type/rows/cols/ele
 
 Affected cells: SamplerLegacyInclude [DirectX_11], SamplerLegacyMacroDecl [DirectX_11], SamplerReservationIfBranch [OpenGL], SamplerReservationKeywords [OpenGL], SamplerReservationMacro [OpenGL], SharedSamplerPair [OpenGL]
 
-### Sampler slot / baked-state delta (4 cell(s))
-
-A sampler slot is missing/extra or its baked sampler_state differs.
-
-Affected cells: SamplerLegacyInclude [DirectX_11], SamplerLegacyMacroDecl [DirectX_11], SamplerLegacyRegisterMacro [DirectX_11], SamplerRegisterSparse [DirectX_11]
-
 ### GL per-stage cbuffer sizing (full-layout vs used-only) — KNOWN, render-equivalent (3 cell(s))
 
 On the OpenGL target, mgfxc sizes each per-stage `{vs,ps}_uniforms_vec4` record to ONLY the members that stage actually uses (dead-uniform elimination); ShadowDusk emits each stage's FULL declared cbuffer layout. Both `.mgfx` files are internally self-consistent — the USED parameter's offset and the GLSL `uniform vec4 {vs,ps}_uniforms_vec4[size/16]` array length agree within each file, so `SetValue` binds correctly either way. This is the pinned, render-equivalent divergence already documented and tolerated by `Phase43CbufferModelTests` (F4); the accompanying `offset N vs 0` lines are the SAME shape (the used member sits at a different absolute offset but the same relative slot). Not a defect.
 
 Affected cells: PolygonLight [OpenGL], SharedCbuffer [OpenGL], VertexAndPixel [OpenGL]
+
+### Sampler slot / baked-state delta (2 cell(s))
+
+A sampler slot is missing/extra or its baked sampler_state differs.
+
+Affected cells: SamplerLegacyInclude [DirectX_11], SamplerLegacyMacroDecl [DirectX_11]
 
 ### Constant-buffer layout (size / offset) — TRIAGE (1 cell(s))
 

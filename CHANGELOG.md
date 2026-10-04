@@ -319,6 +319,23 @@ that loads and renders identically to `mgfxc`'s in the real MonoGame/KNI runtime
 
 ### Fixed
 
+- **OpenGL: a legacy sampler beside modern `Texture2D` + `SamplerState` pairs now gets `mgfxc`'s
+  texture unit.** fxc gives every modern pair its unit before any legacy sampler's; ShadowDusk used
+  plain declaration order. So `sampler2D Mask; Texture2D SpriteTexture; SamplerState SpriteSampler;`
+  put `Mask` on unit 0, where SpriteBatch binds the sprite, and the sprite never reached
+  `SpriteTexture` (measured in real MonoGame DesktopGL: black instead of yellow). Matched against
+  `mgfxc` 3.8.4.1 on 24 mixed shapes. **Consumer-visible:** an effect that mixes the two styles
+  now binds the sprite to the modern texture, as with `mgfxc`; code that worked around the old
+  order by binding the legacy sampler's texture to the sprite should stop doing so. Effects that
+  use only one style are unchanged.
+- **DirectX 11: a legacy `sampler A : register(sN)` binds its sampler at `sN`**, as `mgfxc` does,
+  and the effect's sampler record carries `sN`. The rewrite dropped the clause, so the sampler sat
+  at `s0` and a state set on `GraphicsDevice.SamplerStates[N]` never reached it (measured in real
+  MonoGame WindowsDX: clamped instead of wrapped). **Consumer-visible:** such a shader now reads
+  the sampler state at slot N, as with `mgfxc`, instead of slot 0. DirectX 12 and Vulkan are
+  unchanged (no `mgfxc` reference for legacy samplers there). DirectX 11 texture SLOTS still differ
+  from `mgfxc` when legacy and modern textures are mixed or legacy textures are sampled out of
+  declaration order (recorded in `project_facts.md`).
 - **`sampler2D A = sampler_state { Texture = <Tex>; };` compiles when nothing declares `Tex`.**
   `mgfxc` reads the name off the state block and emits a `Tex` parameter; ShadowDusk handed DXC an
   undeclared identifier. The compiler now declares `Texture2D Tex;` only when the PREPROCESSED source
