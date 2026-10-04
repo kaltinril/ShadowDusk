@@ -1,0 +1,23 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!--
+    Issue #350 end-to-end consumer, driven by tools/verify-spirv-cross-conflict.sh. Copied OUTSIDE
+    the repo (so none of the repo's MSBuild/NuGet context leaks in) and built with
+    -p:SdVersion=<packed ShadowDusk version> and -p:SilkVersion=<the Silk.NET.SPIRV.Cross.Native
+    to force>, the way a Silk.NET game (or any package in the application) moves the SPIRV-Cross
+    native package off the release ShadowDusk pins. 2.23.0 is the newest release, so the conflict
+    is forced DOWN (2.22.0, an explicit downgrade, hence NoWarn NU1605); a future release lifting
+    it resolves the same way and gets the same warning. The program is
+    tools/vortice-conflict-consumer/Program.cs, copied in by the script.
+  -->
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net8.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="ShadowDusk.Compiler" Version="$(SdVersion)" />
+    <PackageReference Include="Silk.NET.SPIRV.Cross.Native" Version="$(SilkVersion)" NoWarn="NU1605" Condition="'$(SilkVersion)' != ''" />
+    <None Include="Grayscale.fx" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+</Project>

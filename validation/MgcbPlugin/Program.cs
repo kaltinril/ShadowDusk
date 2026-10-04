@@ -71,7 +71,10 @@ namespace ShadowDusk.Validation.MgcbPluginGate;
 /// every effect. The decoy is a renamed non-DXC library: a bare-name load takes it and dies at
 /// <c>DxcCreateInstance</c>, so the case fails loudly unless the plugin resolved its own pinned
 /// DXC first. The DirectX 12 cases additionally prove <c>dxil.dll</c> was found (their payload
-/// must equal the CLI's SIGNED bytes; an unsigned module differs).</para>
+/// must equal the CLI's SIGNED bytes; an unsigned module differs). Since issue #350 the same
+/// directory holds a foreign <c>libvkd3d-shader-1.dll</c> and <c>spirv-cross.dll</c>: inside
+/// MGCB those loaders' base-directory probes miss too, and their old bare-name fallback took
+/// whatever the OS search path offered.</para>
 ///
 /// <para>Exits 0 only if every case passes; non-zero (with the failing case named) otherwise.</para>
 /// </summary>
@@ -166,8 +169,8 @@ internal static class Program
 
         string? decoyDir = CreateDecoyDxcDirectory(plugin, work);
         Console.WriteLine(decoyDir is null
-            ? "decoy dxcompiler/dxil on PATH: (not on Windows - skipped)"
-            : $"decoy dxcompiler/dxil on PATH: {decoyDir}");
+            ? "decoy dxcompiler/dxil/vkd3d/spirv-cross on PATH: (not on Windows - skipped)"
+            : $"decoy dxcompiler/dxil/vkd3d/spirv-cross on PATH: {decoyDir}");
         Console.WriteLine();
 
         int failures = 0;
@@ -203,8 +206,9 @@ internal static class Program
 
     /// <summary>
     /// A directory holding a <c>dxcompiler.dll</c> and a <c>dxil.dll</c> that are neither DXC nor
-    /// a validator (the plugin's own <c>spirv-cross.dll</c>, renamed), to sit first on the
-    /// plugin-arm MGCB's <c>PATH</c>. The <c>dxil.dll</c> decoy pins the 2026-10-01 fix: DXC binds
+    /// a validator (the plugin's own <c>spirv-cross.dll</c>, renamed), plus a
+    /// <c>libvkd3d-shader-1.dll</c> and a <c>spirv-cross.dll</c> that are each the other library
+    /// (issue #350), to sit first on the plugin-arm MGCB's <c>PATH</c>. The <c>dxil.dll</c> decoy pins the 2026-10-01 fix: DXC binds
     /// its validator with a bare <c>LoadLibrary("dxil.dll")</c>, and ShadowDusk used to pre-load
     /// it by bare name too, so a <c>dxil.dll</c> on <c>PATH</c> won and DirectX 12 came out
     /// unsigned (or, with the Windows SDK's newer one, failed validation outright).
@@ -219,10 +223,19 @@ internal static class Program
         if (!File.Exists(source))
             throw new FileNotFoundException($"cannot build the decoy dxcompiler.dll: {source} not found beside the plugin");
 
+        // Issue #350: vkd3d-shader and SPIRV-Cross under their own names too, each the OTHER
+        // library renamed (loadable, not the one asked for). Inside MGCB both loaders used to miss
+        // their base-directory probe and fall back to a bare-name load, which took these.
+        string vkd3d = Path.Combine(Path.GetDirectoryName(plugin)!, "libvkd3d-shader-1.dll");
+        if (!File.Exists(vkd3d))
+            throw new FileNotFoundException($"cannot build the decoy spirv-cross.dll: {vkd3d} not found beside the plugin");
+
         string decoyDir = Path.Combine(work, "decoy-path");
         Directory.CreateDirectory(decoyDir);
         File.Copy(source, Path.Combine(decoyDir, "dxcompiler.dll"), overwrite: true);
         File.Copy(source, Path.Combine(decoyDir, "dxil.dll"), overwrite: true);
+        File.Copy(source, Path.Combine(decoyDir, "libvkd3d-shader-1.dll"), overwrite: true);
+        File.Copy(vkd3d, Path.Combine(decoyDir, "spirv-cross.dll"), overwrite: true);
         return decoyDir;
     }
 

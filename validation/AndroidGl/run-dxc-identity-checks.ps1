@@ -1,6 +1,7 @@
 <#
 .SYNOPSIS
-    Issue #289: the on-device DXC load paths of DxcLoader, on a real Android emulator.
+    Issues #289 and #350: the on-device load paths of DxcLoader and SpvcLoader, on a real
+    Android emulator.
 
 .DESCRIPTION
     Builds validation/AndroidGl three times, installs each APK on the connected device or
@@ -13,6 +14,10 @@
                    the MAPPED image because the APK holds no separate file)
       3. missing   no x86_64 libdxcompiler.so in the APK            -> SD0219, "is not in this app"
                    (never a raw DllNotFoundException at the first P/Invoke)
+      4. spvc-foreign  a libspirv-cross.so whose GNU build id differs by one byte
+                                                                  -> SD0103, "not ShadowDusk's pinned build"
+                   (issue #350: SpvcLoader's identity check, read from the mapped image too)
+      5. spvc-missing  no x86_64 libspirv-cross.so in the APK       -> SD0103, "is not in this app"
 
     Exits non-zero if any verdict differs. Not run by `dotnet test` and not in CI (no Android
     lane): registered in docs/validation-matrix.md section 6.
@@ -32,28 +37,37 @@ $ErrorActionPreference = 'Stop'
 $repo = Resolve-Path (Join-Path $PSScriptRoot '..\..')
 $project = Join-Path $PSScriptRoot 'AndroidGl.csproj'
 $pinned = Join-Path $repo 'tools\dxc\android-x64\libdxcompiler.so'
+$pinnedSpvc = Join-Path $repo 'tools\spirv-cross\android-x64\libspirv-cross.so'
 $package = 'com.shadowdusk.androidgl'
 if (-not (Test-Path $pinned)) { throw "The x86_64 DXC is not restored at $pinned." }
+if (-not (Test-Path $pinnedSpvc)) { throw "The x86_64 SPIRV-Cross is not present at $pinnedSpvc." }
 if (-not (Get-Command adb -ErrorAction SilentlyContinue)) { throw 'adb is not on PATH.' }
 
 $work = Join-Path ([IO.Path]::GetTempPath()) ("sd-android-dxc-" + [guid]::NewGuid().ToString('N'))
 New-Item -ItemType Directory -Force (Join-Path $work 'foreign') | Out-Null
 
-# The foreign build: the pinned library with one byte of its GNU build id flipped, i.e. a
-# working DXC that is not ShadowDusk's build (the same construction as ForeignDxc.cs).
-$bytes = [IO.File]::ReadAllBytes($pinned)
-$buildId = [Convert]::FromHexString('38487f7242f477f1eefcb58e587a128c2a54906e')
-$at = -1
-for ($i = 0; $i -le $bytes.Length - $buildId.Length -and $at -lt 0; $i++) {
-    if ($bytes[$i] -ne $buildId[0]) { continue }
-    $match = $true
-    for ($j = 1; $j -lt $buildId.Length -and $match; $j++) { $match = $bytes[$i + $j] -eq $buildId[$j] }
-    if ($match) { $at = $i }
+# A foreign build: the pinned library with one byte of its GNU build id flipped, i.e. a working
+# library that is not ShadowDusk's build (the same construction as ForeignDxc.cs).
+function New-ForeignCopy([string]$Source, [string]$BuildIdHex, [string]$Destination, [string]$PinName) {
+    $bytes = [IO.File]::ReadAllBytes($Source)
+    $buildId = [Convert]::FromHexString($BuildIdHex)
+    $at = -1
+    for ($i = 0; $i -le $bytes.Length - $buildId.Length -and $at -lt 0; $i++) {
+        if ($bytes[$i] -ne $buildId[0]) { continue }
+        $match = $true
+        for ($j = 1; $j -lt $buildId.Length -and $match; $j++) { $match = $bytes[$i + $j] -eq $buildId[$j] }
+        if ($match) { $at = $i }
+    }
+    if ($at -lt 0) { throw "The pinned build id is not in $Source; re-pin $PinName first." }
+    $bytes[$at] = $bytes[$at] -bxor 0xFF
+    New-Item -ItemType Directory -Force (Split-Path $Destination) | Out-Null
+    [IO.File]::WriteAllBytes($Destination, $bytes)
 }
-if ($at -lt 0) { throw "The pinned build id is not in $pinned; re-pin DxcNativeIdentity.AndroidX64CompilerBuildId first." }
-$bytes[$at] = $bytes[$at] -bxor 0xFF
+
 $foreign = Join-Path $work 'foreign\libdxcompiler.so'
-[IO.File]::WriteAllBytes($foreign, $bytes)
+New-ForeignCopy $pinned '38487f7242f477f1eefcb58e587a128c2a54906e' $foreign 'DxcNativeIdentity.AndroidX64CompilerBuildId'
+$foreignSpvc = Join-Path $work 'foreign-spvc\libspirv-cross.so'
+New-ForeignCopy $pinnedSpvc '8d426179db1d42462bfc8dd3db6cdd2222efccdd' $foreignSpvc 'SpvcLoader.AndroidBuildIdByRid[android-x64]'
 
 function Remove-Apks {
     # The APK packaging step is incremental on its inputs and does not notice a native library
@@ -63,10 +77,10 @@ function Remove-Apks {
         Remove-Item -Force
 }
 
-function Invoke-Scenario([string]$Name, [string]$Dxc, [string[]]$Expect) {
+function Invoke-Scenario([string]$Name, [string]$Dxc, [string[]]$Expect, [string]$Spvc = '') {
     Write-Host "== $Name"
     Remove-Apks
-    & dotnet build $project -c Debug "-p:AndroidGlDxcX64=$Dxc" -t:Install --nologo -v quiet | Out-Host
+    & dotnet build $project -c Debug "-p:AndroidGlDxcX64=$Dxc" "-p:AndroidGlSpvcX64=$Spvc" -t:Install --nologo -v quiet | Out-Host
     if ($LASTEXITCODE -ne 0) { throw "${Name}: build/install failed ($LASTEXITCODE)" }
 
     & adb shell am force-stop $package | Out-Null
@@ -97,7 +111,9 @@ try {
     $results = @(
         (Invoke-Scenario 'pinned' '' @('ON-DEVICE COMPILE OK')),
         (Invoke-Scenario 'foreign' $foreign @('COMPILE REJECTED: SD0219', "not ShadowDusk's pinned build for 'android-x64'")),
-        (Invoke-Scenario 'missing' 'none' @('COMPILE REJECTED: SD0219', 'is not in this app'))
+        (Invoke-Scenario 'missing' 'none' @('COMPILE REJECTED: SD0219', 'is not in this app')),
+        (Invoke-Scenario 'spvc-foreign' '' @('COMPILE REJECTED: SD0103', "not ShadowDusk's pinned build for 'android-x64'") $foreignSpvc),
+        (Invoke-Scenario 'spvc-missing' '' @('COMPILE REJECTED: SD0103', 'is not in this app') 'none')
     )
 }
 finally {
@@ -108,4 +124,4 @@ finally {
 }
 
 if ($results -contains $false) { Write-Host 'run-dxc-identity-checks: FAILED'; exit 1 }
-Write-Host 'run-dxc-identity-checks: PASSED (pinned compiles; foreign and missing DXC refused with SD0219)'
+Write-Host 'run-dxc-identity-checks: PASSED (pinned compiles; foreign and missing DXC refused with SD0219, foreign and missing SPIRV-Cross with SD0103)'
