@@ -267,6 +267,17 @@ that loads and renders identically to `mgfxc`'s in the real MonoGame/KNI runtime
 
 ### Fixed
 
+- **`ShadowDusk.Slang` on OpenGL: a combined sampler's register is its texture unit, as `mgfxc` gives
+  the legacy `sampler2D X : register(sN)` (refs issue #252).** `Sampler2D SpriteTexture : register(s0)`
+  landed on unit 1, so SpriteBatch's unit-0 texture never reached the shader (it rendered white),
+  while DirectX 11 sampled `t0`: slangc splits the combined sampler into a texture and a
+  `SamplerState : register(s0)`, which the GL allocator read as a modern reservation. The sampler
+  register of a combined sampler now pins its texture's unit instead. Measured with `mgfxc` 3.8.4.1
+  `/Profile:OpenGL` and matched exactly: `s0`/`s1`/`s2` give units 0/1/2, `A : s1` + `B : s0` give
+  1/0, `A : s2` + an unregistered `B` give 2/0, an unregistered `A` + `B : s0` give 1/0. An
+  author's split `Texture2D` + `SamplerState : register(sN)` pair keeps the reservation rule, and
+  DirectX, Vulkan and FNA output is unchanged. Rendered in real MonoGame DesktopGL by a new
+  `validation/SlangTexturedGl` row (maxd 0 vs the `mgfxc` golden; it rendered white before).
 - **vkd3d-shader and SPIRV-Cross are loaded only as ShadowDusk's pinned builds, by absolute path
   (issue #350, the counterpart of #270's DXC fix).** `Vkd3dLoader` (DirectX 11, FNA) and
   `SpvcLoader` (OpenGL) used to fall back to a bare-name load and then to the runtime's default

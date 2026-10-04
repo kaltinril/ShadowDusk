@@ -32,6 +32,10 @@
 // source text, the dead register kept slangc's invented register(s0) alive and put the
 // texture back on ps_s1.
 //
+// One more row (issue #252, author-written register): Invert through a combined
+// 'Sampler2D SpriteTexture : register(s0)', which must land on unit 0 like mgfxc's legacy
+// 'sampler2D : register(s0)' (it used to land on unit 1), and match the CPU and the mgfxc golden.
+//
 // One more row (issue #302): Invert's sprite multiplied by a SECOND texture read through a
 // combined 'Sampler2D Comb', which the game sets the way a game sets any texture parameter:
 // effect.Parameters["Comb"].SetValue(texture). slangc hoists the combined sampler's texture
@@ -176,6 +180,22 @@ AddRow("InvertComb", """
         return float4((1.0 - c.rgb) * k.rgb, c.a);
     }
     """, "InvertCombinedSampler.slang", Expectations.InvertComb, compareWithInvertGolden: false);
+
+// Issue #252, author-written register: the sprite read through a COMBINED sampler the author
+// pinned to s0, the way a ported '.fx' writes 'sampler2D SpriteTextureSampler : register(s0)'.
+// mgfxc gives the legacy combined sampler unit 0 on OpenGL; this used to land on unit 1 (the
+// split pair's reservation rule), where SpriteBatch's texture never was.
+AddRow("InvertS0", """
+    // Gate row: Invert through a combined sampler with the author's register(s0).
+    Sampler2D SpriteTexture : register(s0);
+
+    [shader("fragment")]
+    float4 MainPS(float4 pos : SV_Position, float2 uv : TEXCOORD0) : SV_Target
+    {
+        float4 c = SpriteTexture.Sample(uv);
+        return float4(1.0 - c.rgb, c.a);
+    }
+    """, "InvertCombinedS0.slang", Expectations.All["Invert"], compareWithInvertGolden: true);
 Console.WriteLine();
 
 Directory.CreateDirectory(outDir);
