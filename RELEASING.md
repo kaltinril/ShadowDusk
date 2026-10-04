@@ -240,7 +240,10 @@ first (the `/release` skill does this for you).
 > release assets are intact and the restore-step log shows four "hash OK" lines.
 
 > **Android natives (Phase 50, issue #304):** `tools/restore.{ps1,sh}` also restore four Android
-> `.so` files, SHA-256 pinned: DXC from the `native-dxc-1.7.2212.40` release, SPIRV-Cross from
+> `.so` files, SHA-256 pinned, all reproducible CI builds with 16 KB pages (Google Play's
+> requirement for Android 15+ targets; the emulator lane fails on `XA0141`): DXC from
+> `native-dxc-android-1.7.2212.40-16k` (built by `dxc-android-build.yml` with
+> `tools/build-dxc-android.sh` at the pinned DXC commit), SPIRV-Cross from
 > `native-spirv-cross-android-d8e3e2b1` (built by `spirv-cross-android-build.yml` with
 > `tools/build-spirv-cross-android.sh` at the desktop's SPIRV-Cross commit; a SPIRV-Cross bump on
 > the desktop, i.e. a Silk.NET bump, must move that script's commit and re-host both files). The `android-arm64`

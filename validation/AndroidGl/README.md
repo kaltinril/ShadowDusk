@@ -31,9 +31,9 @@ The faithful OpenGL pipeline needs DXC (`libdxcompiler.so`) and SPIRV-Cross
 | `arm64-v8a` (`android-arm64`) | real devices | yes, `ShadowDusk.HLSL` / `ShadowDusk.GLSL` |
 | `x86_64` (`android-x64`) | the emulator (and its CI lane) | no, restored for this harness only |
 
-Both are built locally with the NDK (`.wasm-build/build-dxc-android.ps1 -Abi arm64-v8a|x86_64`
-for DXC; `tools/build-spirv-cross-android.sh` for SPIRV-Cross, at the desktop's SPIRV-Cross commit,
-run in CI by `spirv-cross-android-build.yml`). A missing native is reported as `SD0219`
+All four are reproducible CI builds, 16 KB page aligned: `tools/build-dxc-android.sh`
+(`dxc-android-build.yml`, the pinned DXC commit) and `tools/build-spirv-cross-android.sh`
+(`spirv-cross-android-build.yml`, the desktop's SPIRV-Cross commit). A missing native is reported as `SD0219`
 (DXC) or `SD0103` (SPIRV-Cross), never a raw `DllNotFoundException`.
 
 ## The identity checks (CI)
