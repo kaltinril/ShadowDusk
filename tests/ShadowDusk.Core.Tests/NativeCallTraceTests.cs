@@ -14,6 +14,7 @@ namespace ShadowDusk.Core.Tests;
 /// time, whether the compile ever started, and what else was inside a native call in the
 /// process when it gave up.
 /// </summary>
+[Collection(NativeCompileStackCollection.Name)]
 public sealed class NativeCallTraceTests
 {
     [Fact]
