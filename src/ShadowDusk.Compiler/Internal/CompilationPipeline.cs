@@ -549,6 +549,7 @@ internal sealed class CompilationPipeline
         IReadOnlyDictionary<string, int> explicitGlSamplerSlots = fxParsed.ExplicitGlSamplerSlots;
         IReadOnlySet<int> reservedGlSamplerSlots = fxParsed.ReservedGlSamplerSlots;
         ShaderError? reservationError = null;
+        IReadOnlyDictionary<string, int> legacySamplerRegisters = new Dictionary<string, int>(StringComparer.Ordinal);
         if (options.Target == PlatformTarget.OpenGL)
         {
             // A recovery pass (issue #308) has the flattened raw source in hand already, and its
@@ -561,11 +562,29 @@ internal sealed class CompilationPipeline
             {
                 explicitGlSamplerSlots = reservation.Value.Explicit;
                 reservedGlSamplerSlots = reservation.Value.Reserved;
+                legacySamplerRegisters = reservation.Value.LegacySamplerRegisters;
             }
             else
             {
                 reservationError = reservation.Error;
             }
+        }
+        else if (fxParsed.Samplers.Select(s => s.Name)
+                     .Concat(fxParsed.SynthesizedSamplerTextures.Keys)
+                     .Distinct(StringComparer.Ordinal)
+                     .Skip(1).Any())
+        {
+            // The other targets need the same preprocessed view for one thing only: two legacy
+            // samplers on one explicit register (SD0227, below). It is read only when two legacy
+            // samplers exist at all. A view that cannot be built skips the check rather than
+            // failing a compile that never needed the view before; OpenGL, where the view
+            // decides the units, keeps failing loudly (SD0009).
+            Result<GlSamplerSlots, ShaderError> view = recovered is not null
+                ? FxPreParser.CollectGlSamplerSlots(recovered.FlattenedRawSource, sourceFileName, fxParsed)
+                : GlSamplerReservation.Collect(
+                    hlslSource, sourceFileName, macros, includeResolver, options.AdditionalIncludePaths, fxParsed);
+            if (view.IsSuccess)
+                legacySamplerRegisters = view.Value.LegacySamplerRegisters;
         }
 
         foreach (TechniqueInfo technique in fxParsed.Techniques)
@@ -858,6 +877,19 @@ internal sealed class CompilationPipeline
         // GL sampler registers were allocated on a guess (issue #283).
         if (reservationError is not null)
             return Fail(reservationError, runWarnings);
+
+        // fxc (so mgfxc, and FNA's reference) refuses two legacy samplers that one entry point
+        // reads through one explicit register: `sampler2D A : register(s0); sampler2D B :
+        // register(s0);` is X4500 "overlapping register semantics not yet implemented 's0'" on
+        // OpenGL and DirectX_11 (measured, mgfxc 3.8.4.1). The SM4 rewrite drops the clause, so
+        // without this the compile succeeded and quietly gave B the next unit. Only samplers the
+        // compiled stage actually reflects count, as in fxc: a second declaration nothing reads
+        // compiles in mgfxc too.
+        if (OverlappingLegacySamplerRegister(shaderSamplers, legacySamplerRegisters, hlslSource, sourceFileName)
+            is { } overlapError)
+        {
+            return Fail(overlapError, runWarnings);
+        }
 
         // A legacy sampler that binds no texture (`sampler2D A;`) is ONE object to mgfxc, and
         // the effect parameter it emits for it is named `A` on every profile. The SM4 rewrite
@@ -2677,6 +2709,74 @@ internal sealed class CompilationPipeline
         }
 
         return renamed;
+    }
+
+    /// <summary>
+    /// <c>SD0227</c>: two legacy samplers read by ONE compiled stage share an explicit
+    /// <c>register(sN)</c>, which fxc refuses (<c>X4500</c>). Located at the second declaration in
+    /// the source when it can be found there.
+    /// </summary>
+    private static ShaderError? OverlappingLegacySamplerRegister(
+        IReadOnlyDictionary<int, IReadOnlyList<SamplerReflection>> shaderSamplers,
+        IReadOnlyDictionary<string, int> legacySamplerRegisters,
+        string source,
+        string sourceFileName)
+    {
+        if (legacySamplerRegisters.Count < 2)
+            return null;
+
+        foreach (int shader in shaderSamplers.Keys.Order())
+        {
+            IGrouping<int, string>? clash = shaderSamplers[shader]
+                .Select(s => s.Name)
+                .Distinct(StringComparer.Ordinal)
+                .Where(legacySamplerRegisters.ContainsKey)
+                .GroupBy(name => legacySamplerRegisters[name])
+                .Where(g => g.Count() > 1)
+                .OrderBy(g => g.Key)
+                .FirstOrDefault();
+            if (clash is null)
+                continue;
+
+            // Declaration order, so the message names them as the author wrote them.
+            var names = clash
+                .Select(n => (Name: n, Location: FindSamplerDeclaration(source, n)))
+                .OrderBy(x => x.Location.Offset < 0 ? int.MaxValue : x.Location.Offset)
+                .ThenBy(x => x.Name, StringComparer.Ordinal)
+                .ToList();
+            (int line, int column, _) = names[1].Location;
+            return new ShaderError(
+                File: sourceFileName,
+                Line: line,
+                Column: column,
+                Code: "SD0227",
+                Message: $"legacy samplers {string.Join(" and ", names.Select(x => $"'{x.Name}'"))} are both bound to " +
+                         $"register s{clash.Key} and both read by the same shader. fxc (and so mgfxc) refuses this " +
+                         $"(X4500: overlapping register semantics not yet implemented 's{clash.Key}'); give each " +
+                         "sampler its own register.");
+        }
+        return null;
+    }
+
+    /// <summary>The 1-based line/column (and offset) of <c>sampler... name</c> in <paramref name="source"/>, or (0, 0, -1).</summary>
+    private static (int Line, int Column, int Offset) FindSamplerDeclaration(string source, string samplerName)
+    {
+        System.Text.RegularExpressions.Match m = System.Text.RegularExpressions.Regex.Match(
+            source,
+            $@"(?<![A-Za-z0-9_])[Ss][Aa][Mm][Pp][Ll][Ee][Rr]\w*\s+({System.Text.RegularExpressions.Regex.Escape(samplerName)})(?![A-Za-z0-9_])");
+        if (!m.Success)
+            return (0, 0, -1);
+        int offset = m.Groups[1].Index;
+        int line = 1, lineStart = 0;
+        for (int i = 0; i < offset; i++)
+        {
+            if (source[i] == '\n')
+            {
+                line++;
+                lineStart = i + 1;
+            }
+        }
+        return (line, offset - lineStart + 1, offset);
     }
 
     private static int IndexOfParam(IReadOnlyList<ParameterReflection> parameters, string name)

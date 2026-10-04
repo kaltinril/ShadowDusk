@@ -284,6 +284,14 @@ that loads and renders identically to `mgfxc`'s in the real MonoGame/KNI runtime
   undeclared identifier. The rewrite now declares `Texture2D Tex;` when the name appears nowhere in
   the source but in `Texture = ...` state entries (a declaration anywhere, a use, or any mention in
   a preprocessor directive leaves the rewrite as it was).
+- **Two legacy samplers on one register are refused (`SD0227`), as `mgfxc` refuses them.**
+  `sampler2D A : register(s0); sampler2D B : register(s0);` with both read compiled and gave B the
+  next unit on every target, while fxc (so `mgfxc` 3.8.4.1 on OpenGL and DirectX_11) stops with
+  `X4500: overlapping register semantics`. OpenGL, DirectX 11, DirectX 12 and Vulkan now fail with
+  `SD0227` at the second declaration, naming both samplers. Decided on the preprocessed source and
+  only for samplers the compiled shader reads, like fxc: a second declaration nothing reads, a
+  clash in an inactive `#if` branch, and a sampler sharing its number with a `Texture2D :
+  register(tN)` or a constant `register(cN)` all still compile. FNA was already refused by vkd3d.
 - **A full `dotnet test` no longer rewrites a tracked file (issue #361).**
   `Phase41StructuralDivergenceMatrixTests` regenerated
   `plan/PHASE-41-appendix/structural-divergence-matrix.md` on every run, so the tree went dirty

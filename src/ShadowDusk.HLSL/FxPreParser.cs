@@ -1905,14 +1905,21 @@ public sealed class FxPreParser
         // pinned, and the allocator falls back to declaration order for it.
         Dictionary<string, int> registers = CollectLegacySamplerRegisters(tokens);
         var explicitSlots = new Dictionary<string, int>(StringComparer.Ordinal);
+        var legacyRegisters = new Dictionary<string, int>(StringComparer.Ordinal);
         foreach ((string samplerName, string textureName) in parsed.LegacySamplerTextures)
         {
             if (registers.TryGetValue(ViewName(samplerName), out int slot))
+            {
                 explicitSlots[ViewName(textureName)] = slot;
+                legacyRegisters[ViewName(samplerName)] = slot;
+            }
         }
 
         return Result<GlSamplerSlots, ShaderError>.Ok(
-            new GlSamplerSlots(explicitSlots, CollectReservedSamplerRegisters(tokens)));
+            new GlSamplerSlots(explicitSlots, CollectReservedSamplerRegisters(tokens))
+            {
+                LegacySamplerRegisters = legacyRegisters,
+            });
     }
 
     // -------------------------------------------------------------------------
