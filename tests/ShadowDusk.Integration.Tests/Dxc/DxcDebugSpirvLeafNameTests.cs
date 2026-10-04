@@ -182,11 +182,23 @@ public sealed class DxcDebugSpirvLeafNameTests
         // in-memory source (before the fix the hlsl.hlsl in the working directory won on macOS
         // and with the copy on LD_LIBRARY_PATH; DxcDebugSourceWorkingDirectoryTests keeps that
         // control).
+        // Every debug Vulkan compile that produced a module must say where its OpSource came from;
+        // a refused one (SD0223, the Linux foreign-build scenario, asserted above) has no module.
+        bool anyCompiled = false;
         foreach ((Decoy decoy, Report report) in reports)
         {
+            if (report.Values["Vulkan.debug"] is not ["OK"])
+            {
+                report.Values.ContainsKey("Vulkan.debug.opsource").ShouldBeFalse($"[{decoy}] a refused compile reported an OpSource");
+                continue;
+            }
+
+            anyCompiled = true;
             report.Values.ContainsKey("Vulkan.debug.opsource").ShouldBeTrue($"[{decoy}] the probe did not report where the debug Vulkan OpSource came from");
             report.Values["Vulkan.debug.opsource"].ShouldBe(["memory"], $"[{decoy}] the debug Vulkan OpSource came from a file, not the compiled source");
         }
+
+        anyCompiled.ShouldBeTrue("no scenario produced a debug Vulkan module, so the OpSource check above checked nothing");
 
         // No emitted byte moves with what sits on the search path, release or debug.
         Report baseline = reports[Decoy.None];
