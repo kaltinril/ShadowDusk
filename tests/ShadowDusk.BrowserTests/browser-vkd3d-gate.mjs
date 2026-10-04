@@ -698,7 +698,7 @@ async function writeResults(rows, pass, failures, wasmFetch) {
     `sync and async; ${warningRows.length} async + ${syncApi.warningsMatched} sync compiles carried a non-empty list:`);
   lines.push('');
   for (const r of warningRows)
-    lines.push(`- \`${r.key}\`: ${r.warnings.map((w) => `\`${w.replace(/\|/g, '\\|')}\``).join(', ')}`);
+    lines.push(`- \`${r.key}\`: ${r.warnings.map((w) => `\`${w.replace(/\\/g, '\\\\').replace(/\|/g, '\\|')}\``).join(', ')}`);
   lines.push('');
   lines.push('## Phase 42 (issue #28) — InitializeAsync + synchronous Compile()');
   lines.push('');
