@@ -25,7 +25,7 @@ namespace ShadowDusk.Integration.Tests;
 [Trait("Category", "Integration")]
 public sealed class Phase48ProfileValidationCorpusTests
 {
-    private static readonly TimeSpan CompileTimeout = TimeSpan.FromSeconds(60);
+    private static readonly TimeSpan CompileTimeout = TestBudget.Compile;
 
     /// <summary>Fixtures whose compile target is NOT a recognized profile — must reject SD0013.</summary>
     public static TheoryData<string> RejectFixtures() => new()

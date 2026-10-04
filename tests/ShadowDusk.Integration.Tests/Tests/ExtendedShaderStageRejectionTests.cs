@@ -95,7 +95,7 @@ public sealed class ExtendedShaderStageRejectionTests
     public async Task UnloadableStage_FailsWithFX0014_AndWritesNoOutput(
         string stageKey, string assignment, string stageName, string target)
     {
-        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(60));
+        using var cts = new CancellationTokenSource(TestBudget.Compile);
 
         string tempDir    = Path.Combine(Path.GetTempPath(), $"shadowdusk_p58_{Guid.NewGuid():N}");
         string inputPath  = Path.Combine(tempDir, "stage_test.fx");
@@ -145,7 +145,7 @@ public sealed class ExtendedShaderStageRejectionTests
         // The control arm. The guard sits in the pass-key loop ahead of the '=' consume, so
         // this pins that the ordinary two-stage pass it now precedes is untouched on every
         // target - i.e. that the reject set really did not move.
-        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(60));
+        using var cts = new CancellationTokenSource(TestBudget.Compile);
 
         string tempDir    = Path.Combine(Path.GetTempPath(), $"shadowdusk_p58ok_{Guid.NewGuid():N}");
         string inputPath  = Path.Combine(tempDir, "ok_shader.fx");

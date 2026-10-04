@@ -79,6 +79,7 @@ internal static class HostStallHint
           .Append(ThreadPool.PendingWorkItemCount).Append(" queued work items; ")
           .Append(Environment.ProcessorCount).AppendLine(" logical cores");
         sb.AppendLine(ForkGateState());
+        sb.AppendLine(NativeCallsInFlight());
 
         try
         {
@@ -115,6 +116,24 @@ internal static class HostStallHint
         }
 
         return sb.ToString();
+    }
+
+    /// <summary>
+    /// Every native compiler call in flight in this process and for how long (issue #373), from
+    /// <c>ShadowDusk.Core.NativeCallTrace</c>, read by reflection like the fork gate below.
+    /// </summary>
+    internal static string NativeCallsInFlight()
+    {
+        Type? trace = AppDomain.CurrentDomain.GetAssemblies()
+            .Select(a => a.GetType("ShadowDusk.Core.NativeCallTrace", throwOnError: false))
+            .FirstOrDefault(t => t is not null);
+        if (trace is null)
+            return "native calls: ShadowDusk.Core not loaded";
+
+        MethodInfo? describe = trace.GetMethod(
+            "DescribeInFlight", BindingFlags.Static | BindingFlags.NonPublic | BindingFlags.Public);
+        return describe?.Invoke(null, null) as string
+            ?? "native calls: NativeCallTrace.DescribeInFlight is gone; update HostStallHint";
     }
 
     /// <summary>

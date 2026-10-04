@@ -158,7 +158,7 @@ public sealed class CliIntegrationTest : IClassFixture<CliBinaryFixture>
         params string[] extraArgs)
     {
         ChildProcessResult run = await CliProcess.RunAsync(
-            _fixture.ExecutablePath, [sourceFile, outputFile, .. extraArgs], TimeSpan.FromSeconds(60));
+            _fixture.ExecutablePath, [sourceFile, outputFile, .. extraArgs], TestBudget.Compile);
         return (run.ExitCode, run.Stdout, run.Stderr);
     }
 

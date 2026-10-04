@@ -64,7 +64,7 @@ public static class TestHelpers
         // The caller's token is its own deadline (30 to 120 s across the suite); the ceiling here
         // is the largest CLI budget in use, so a caller that passes no token is still bounded.
         ChildProcessResult run = await CliProcess.RunAsync(
-            cliBinary, [inputPath, outputPath, $"/Profile:{profile}"], TimeSpan.FromSeconds(120), cancellationToken: ct)
+            cliBinary, [inputPath, outputPath, $"/Profile:{profile}"], TestBudget.Compile, cancellationToken: ct)
             .ConfigureAwait(false);
 
         byte[] mgfx = File.Exists(outputPath) ? await File.ReadAllBytesAsync(outputPath, ct).ConfigureAwait(false) : Array.Empty<byte>();

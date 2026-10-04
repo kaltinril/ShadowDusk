@@ -117,7 +117,7 @@ public sealed class DxcConcurrencyStressTests
     public async Task SetlocaleCalls_HappenOnlyInTheNativeCompileCalls_AndNeverOnceTheLocaleHasSettled()
     {
         string output = await RunProbeAsync(
-            "DXC setlocale audit", TimeSpan.FromSeconds(60), DxcConcurrencyProbe.SetlocaleProbeArgument);
+            "DXC setlocale audit", TestBudget.Compile, DxcConcurrencyProbe.SetlocaleProbeArgument);
 
         Dictionary<string, bool> steps = output.Split('\n')
             .Where(l => l.StartsWith("STEP ", StringComparison.Ordinal))
@@ -167,7 +167,7 @@ public sealed class DxcConcurrencyStressTests
     public async Task ProcessStart_ForkMechanism_MatchesTheForkGatePlatforms()
     {
         string output = await RunProbeAsync(
-            "Process.Start fork-mechanism probe", TimeSpan.FromSeconds(60), DxcConcurrencyProbe.ForkKindProbeArgument);
+            "Process.Start fork-mechanism probe", TestBudget.Compile, DxcConcurrencyProbe.ForkKindProbeArgument);
 
         string[] line = output.Split('\n').Single(l => l.StartsWith("ATFORK ", StringComparison.Ordinal)).Trim().Split(' ');
         int calls = int.Parse(line[1], System.Globalization.CultureInfo.InvariantCulture);

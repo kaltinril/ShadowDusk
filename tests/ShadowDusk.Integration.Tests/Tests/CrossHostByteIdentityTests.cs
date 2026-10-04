@@ -54,7 +54,7 @@ namespace ShadowDusk.Integration.Tests.Tests;
 public sealed class CrossHostByteIdentityTests
 {
     private const string RegenerateEnvVar = "SHADOWDUSK_REGENERATE_BYTE_MANIFEST";
-    private static readonly TimeSpan TargetTimeout = TimeSpan.FromSeconds(120);
+    private static readonly TimeSpan TargetTimeout = TestBudget.Compile;
 
     private static bool RegenerateRequested =>
         Environment.GetEnvironmentVariable(RegenerateEnvVar) == "1";

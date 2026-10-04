@@ -473,7 +473,7 @@ public sealed class DxcDebugSpirvLeafNameTests
         foreach (string argument in new[] { "--force", "--sign", "-", path })
             psi.ArgumentList.Add(argument);
 
-        ChildProcessResult run = await ChildProcess.RunAsync(psi, TimeSpan.FromSeconds(60));
+        ChildProcessResult run = await ChildProcess.RunAsync(psi, TestBudget.Compile);
         _output.WriteLine($"codesign {path}: {run.Output}");
         run.ExitCode.ShouldBe(0, $"codesign failed: {run.Output}");
     }

@@ -94,7 +94,7 @@ public sealed class DxilReflectionExtractor
 
             // DXC parses the whole DXIL module here. On a large-stack worker like every other
             // call into DXC (issue #306); the getters below only read what this built.
-            ID3D12ShaderReflection? reflection = NativeCompileStack.Run(() =>
+            ID3D12ShaderReflection? reflection = NativeCompileStack.Run("DXC CreateReflection", () =>
             {
                 utils.CreateReflection(encodingBlob, out ID3D12ShaderReflection? created);
                 return created;

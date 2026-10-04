@@ -95,7 +95,7 @@ public sealed class VerifySlangNupkgScriptTests : IDisposable
         var start = new ProcessStartInfo(bash) { WorkingDirectory = _work };
         start.ArgumentList.Add(script);
         start.ArgumentList.Add(Path.GetFileName(package));
-        return await ChildProcess.RunAsync(start, TimeSpan.FromSeconds(60), "verify-slang-nupkg.sh");
+        return await ChildProcess.RunAsync(start, TestBudget.Compile, "verify-slang-nupkg.sh");
     }
 
     [BashFact]

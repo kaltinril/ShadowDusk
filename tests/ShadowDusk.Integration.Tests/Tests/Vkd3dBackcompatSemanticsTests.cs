@@ -34,7 +34,7 @@ namespace ShadowDusk.Integration.Tests.Tests;
 [Trait("Platform", "DirectX")]
 public sealed class Vkd3dBackcompatSemanticsTests
 {
-    private static readonly TimeSpan CompileTimeout = TimeSpan.FromSeconds(60);
+    private static readonly TimeSpan CompileTimeout = TestBudget.Compile;
 
     /// <summary>The real MRT fixture: a struct with two legacy <c>COLOR</c> outputs.</summary>
     [FnaFact]

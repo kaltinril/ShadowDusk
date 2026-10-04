@@ -23,14 +23,24 @@ namespace ShadowDusk.Integration.Tests;
 public sealed class CiHangGuardTests
 {
     /// <summary>
-    /// The longest a healthy assembly run is allowed to be assumed. Measured worst on CI is
-    /// 3 min 20 s (<c>ShadowDusk.Integration.Tests</c>, windows-latest, 2026-10-02). If the
-    /// suite outgrows this, raise it AND the session timeout: do not shrink the margin.
+    /// The longest a healthy assembly run is allowed to be assumed. With every test host at once
+    /// the measured worst was 4 min 42 s (<c>ShadowDusk.Slang.Tests</c>, ubuntu, 2026-10-03), over
+    /// this assumption; since the integration step runs at most two hosts at once (<c>-m:2</c>,
+    /// issue #373) it is 5 min 32 s (macOS, <c>ShadowDusk.Slang.Tests</c>, on a slow runner instance; 3 min 25 s at worst on the other
+    /// lanes over 5 runs each). If the suite outgrows this, raise it AND the session
+    /// timeout: do not shrink the margin.
     /// </summary>
-    private static readonly TimeSpan HealthyAssemblyRun = TimeSpan.FromMinutes(4);
+    private static readonly TimeSpan HealthyAssemblyRun = TimeSpan.FromMinutes(6);
 
     /// <summary>Time for the blame collector to dump the host and its children once it fires.</summary>
     private static readonly TimeSpan DumpTime = TimeSpan.FromMinutes(1);
+
+    /// <summary>
+    /// Slack on top of the sum, so the pair never sits exactly on the line (review of PR #376).
+    /// The dump is a FULL dump (378 MB, 1.2 s for an Integration host with DXC loaded, measured
+    /// locally 2026-10-04; a slow CI disk takes longer), and a cap that equals the sum loses it.
+    /// </summary>
+    private static readonly TimeSpan Slack = TimeSpan.FromMinutes(1);
 
     [Fact]
     public void EveryBlameHangStep_LeavesTheSessionTimeoutRoomForALateStallToBeDumped()
@@ -58,7 +68,7 @@ public sealed class CiHangGuardTests
                     ? TimeSpan.FromMilliseconds(long.Parse(inline.Groups[1].Value, CultureInfo.InvariantCulture))
                     : runsettingsSession;
 
-                TimeSpan needed = HealthyAssemblyRun + blameTimeout + DumpTime;
+                TimeSpan needed = HealthyAssemblyRun + blameTimeout + DumpTime + Slack;
                 session.ShouldBeGreaterThanOrEqualTo(needed,
                     $"{where}: TestSessionTimeout {session.TotalMinutes:0.#} min cannot outlast a stall that starts late in " +
                     $"a healthy run ({HealthyAssemblyRun.TotalMinutes:0.#} min) plus the {blameTimeout.TotalMinutes:0.#} min " +
