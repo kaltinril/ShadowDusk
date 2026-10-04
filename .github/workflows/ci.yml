@@ -118,6 +118,17 @@ jobs:
           path: tools/dxc
           key: dxc-1.7.2212.40-android-x64-${{ runner.os }}
 
+      # The Android SPIRV-Cross natives (android-arm64 packed, android-x64 for the emulator lane;
+      # ~80 MB together), keyed on restore.sh so a re-pin invalidates it. restore.* re-verifies
+      # the SHA-256 of a cached file and re-downloads on a mismatch.
+      - name: Cache Android SPIRV-Cross natives
+        uses: actions/cache@v5
+        with:
+          path: |
+            tools/spirv-cross/android-arm64
+            tools/spirv-cross/android-x64
+          key: spirv-cross-android-${{ runner.os }}-${{ hashFiles('tools/restore.sh', 'tools/restore.ps1') }}
+
       # Restore the vkd3d-shader natives (DirectX DXBC backend + the FNA target's
       # engine) and the macOS DXC dylibs (OpenGL frontend on macOS, Phase 37 A).
       # A failed pinned DOWNLOAD only warns (the script is offline-tolerant by design;
@@ -313,6 +324,17 @@ jobs:
         with:
           path: tools/dxc
           key: dxc-1.7.2212.40-android-x64-${{ runner.os }}
+
+      # The Android SPIRV-Cross natives (android-arm64 packed, android-x64 for the emulator lane;
+      # ~80 MB together), keyed on restore.sh so a re-pin invalidates it. restore.* re-verifies
+      # the SHA-256 of a cached file and re-downloads on a mismatch.
+      - name: Cache Android SPIRV-Cross natives
+        uses: actions/cache@v5
+        with:
+          path: |
+            tools/spirv-cross/android-arm64
+            tools/spirv-cross/android-x64
+          key: spirv-cross-android-${{ runner.os }}-${{ hashFiles('tools/restore.sh', 'tools/restore.ps1') }}
 
       # slangc for all four RIDs (ShadowDusk.Slang, issue #227): ~170 MB of release zips to
       # download otherwise. The restore scripts hash-verify every file, so a stale or corrupt

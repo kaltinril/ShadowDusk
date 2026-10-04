@@ -40,6 +40,10 @@ on:
       - 'src/ShadowDusk.Compiler/**'
       - 'validation/AndroidGl/**'
       - 'tools/restore.sh'
+      - 'Directory.Build.props'
+      - 'Directory.Build.targets'
+      - 'Directory.Packages.props'
+      - 'global.json'
       - '.github/workflows/android-emulator.yml'
   pull_request:
     branches: [ main ]
@@ -50,10 +54,6 @@ on:
 permissions:
   contents: read
 
-concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
-
 env:
   DOTNET_SKIP_FIRST_TIME_EXPERIENCE: '1'
   DOTNET_NOLOGO: '1'
@@ -63,9 +63,16 @@ jobs:
   android-identity:
     name: Android emulator (DXC/SPIRV-Cross identity)
     runs-on: ubuntu-latest
+    # On a PR: only with the run-android label, and a `labeled` event only for that label (any
+    # other label added to the PR must not start, or restart, the lane).
     if: |
       github.event_name != 'pull_request' ||
-      contains(github.event.pull_request.labels.*.name, 'run-android')
+      (contains(github.event.pull_request.labels.*.name, 'run-android') &&
+       (github.event.action != 'labeled' || github.event.label.name == 'run-android'))
+    # Job-level, so a run whose job is skipped (another label added) never cancels a live one.
+    concurrency:
+      group: ${{ github.workflow }}-${{ github.ref }}
+      cancel-in-progress: true
     timeout-minutes: 60
     steps:
       - name: Checkout
@@ -102,6 +109,14 @@ jobs:
           key: nuget-android-${{ runner.os }}-${{ hashFiles('**/packages.lock.json', '**/Directory.Packages.props') }}
           restore-keys: |
             nuget-android-${{ runner.os }}-
+
+      - name: Cache the x86_64 Android natives
+        uses: actions/cache@v5
+        with:
+          path: |
+            tools/dxc/android-x64
+            tools/spirv-cross/android-x64
+          key: android-x64-natives-${{ runner.os }}-${{ hashFiles('tools/restore.sh') }}
 
       # Restores (among the rest) tools/dxc/android-x64/libdxcompiler.so and
       # tools/spirv-cross/android-x64/libspirv-cross.so, SHA-256 verified. A failed download only

@@ -195,6 +195,17 @@ jobs:
           path: tools/dxc
           key: dxc-1.7.2212.40-android-x64-${{ runner.os }}
 
+      # The Android SPIRV-Cross natives (android-arm64 packed, android-x64 for the emulator lane;
+      # ~80 MB together), keyed on restore.sh so a re-pin invalidates it. restore.* re-verifies
+      # the SHA-256 of a cached file and re-downloads on a mismatch.
+      - name: Cache Android SPIRV-Cross natives
+        uses: actions/cache@v5
+        with:
+          path: |
+            tools/spirv-cross/android-arm64
+            tools/spirv-cross/android-x64
+          key: spirv-cross-android-${{ runner.os }}-${{ hashFiles('tools/restore.sh', 'tools/restore.ps1') }}
+
       - name: Cache slangc natives
         uses: actions/cache@v5
         with:
