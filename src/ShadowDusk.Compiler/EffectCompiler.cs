@@ -93,7 +93,7 @@ public sealed class EffectCompiler : IShaderCompiler
     /// 0.1 ms each; a pixel-shader effect makes four to six). The pool still decides how
     /// many compiles run at once, exactly as before.
     /// </remarks>
-    public Task<Result<CompiledShader, ShaderError[]>> CompileAsync(
+    public async Task<Result<CompiledShader, ShaderError[]>> CompileAsync(
         string hlslSource,
         CompilerOptions options,
         CancellationToken cancellationToken = default)
@@ -102,11 +102,15 @@ public sealed class EffectCompiler : IShaderCompiler
         // while it waits for a pool thread would otherwise end as a bare TaskCanceledException
         // that says nothing. Inside, the first cancellation check throws the traced
         // OperationCanceledException instead, which says how long the compile waited to start.
+        // The await is load-bearing: the inner task ends FAULTED (its OperationCanceledException
+        // carries the caller's token, not Task.Run's None), and an async method turns an
+        // OperationCanceledException back into a CANCELED task, which is what IsCanceled,
+        // OnlyOnCanceled continuations and WhenAll/WhenAny callers rely on.
         long queued = Stopwatch.GetTimestamp();
-        return Task.Run(
+        return await Task.Run(
             () => NativeCompileStack.Run(
                 () => CompileTraced(hlslSource, options, Stopwatch.GetElapsedTime(queued), cancellationToken)),
-            CancellationToken.None);
+            CancellationToken.None).ConfigureAwait(false);
     }
 
     /// <inheritdoc/>

@@ -59,6 +59,48 @@ public sealed class NativeCallTraceTests
         }
     }
 
+    /// <summary>
+    /// Review of #376: the message is about THIS compile. Calls other compiles have in flight are
+    /// a count and the oldest, never a list, and every sentence starts with a capital.
+    /// </summary>
+    [Fact]
+    public void Cancellation_SummarisesOtherCompilesCalls_AsACountAndTheOldest()
+    {
+        using var inside = new ManualResetEventSlim();
+        using var release = new ManualResetEventSlim();
+        var other = new Thread(() => NativeCompileStack.Run("other compile call 7b1e", () =>
+        {
+            inside.Set();
+            release.Wait(TimeSpan.FromMinutes(1));
+            return 0;
+        }));
+        other.Start();
+        try
+        {
+            inside.Wait(TimeSpan.FromMinutes(1)).ShouldBeTrue();
+            NativeCallTrace trace = NativeCallTrace.Begin(TimeSpan.Zero);
+            try
+            {
+                string message = trace.DescribeCancellation();
+
+                message.ShouldContain("Other compiles had ", Case.Sensitive);
+                message.ShouldContain("native compiler call(s) in flight in this process; the oldest, ", Case.Sensitive);
+                message.ShouldNotContain("; other compile call 7b1e", Case.Sensitive);
+                message.ShouldContain("Load: ", Case.Sensitive);
+                message.ShouldNotMatch(@"\. [a-z]");
+            }
+            finally
+            {
+                trace.End();
+            }
+        }
+        finally
+        {
+            release.Set();
+            other.Join(TimeSpan.FromMinutes(1)).ShouldBeTrue();
+        }
+    }
+
     [Fact]
     public void Cancellation_BeforeAnyNativeCall_SaysSo_AndReportsTheWaitToStart()
     {

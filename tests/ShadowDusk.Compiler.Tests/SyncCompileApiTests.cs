@@ -3,6 +3,7 @@
 using Shouldly;
 using ShadowDusk.Compiler;
 using ShadowDusk.Core;
+using ShadowDusk.Integration.Tests;
 using Xunit;
 
 namespace ShadowDusk.Compiler.Tests;
@@ -119,11 +120,55 @@ public sealed class SyncCompileApiTests
         using var cts = new CancellationTokenSource();
         cts.Cancel();
 
-        OperationCanceledException ex = await Should.ThrowAsync<OperationCanceledException>(() => compiler.CompileAsync(
+        OperationCanceledException ex = await AwaitCancellation(compiler.CompileAsync(
             NoTechniqueSource, new CompilerOptions { Target = PlatformTarget.OpenGL }, cts.Token));
 
         ex.CancellationToken.ShouldBe(cts.Token);
         ex.Message.ShouldContain("The compile was cancelled after ", Case.Sensitive);
         ex.Message.ShouldContain("native-compile worker(s) busy", Case.Sensitive);
+    }
+
+    /// <summary>
+    /// Review of #376: the traced exception must not turn a cancelled task into a faulted one.
+    /// <c>IsCanceled</c>, <c>OnlyOnCanceled</c> continuations and <c>WhenAll</c> callers see a
+    /// CANCELED task, as before.
+    /// </summary>
+    [Fact]
+    public async Task CompileAsync_AlreadyCancelled_TaskIsCanceled_NotFaulted()
+    {
+        var compiler = new EffectCompiler();
+        using var cts = new CancellationTokenSource();
+        cts.Cancel();
+
+        Task<Result<CompiledShader, ShaderError[]>> task = compiler.CompileAsync(
+            NoTechniqueSource, new CompilerOptions { Target = PlatformTarget.OpenGL }, cts.Token);
+        Task onlyOnCanceled = task.ContinueWith(
+            _ => { }, CancellationToken.None, TaskContinuationOptions.OnlyOnCanceled, TaskScheduler.Default);
+
+        await AwaitCancellation(task);
+        task.IsCanceled.ShouldBeTrue();
+        task.Status.ShouldBe(TaskStatus.Canceled);
+        task.IsFaulted.ShouldBeFalse();
+        await onlyOnCanceled.WaitAsync(TestBudget.Compile);
+        onlyOnCanceled.Status.ShouldBe(TaskStatus.RanToCompletion, "the OnlyOnCanceled continuation must run");
+    }
+
+    /// <summary>
+    /// Awaits <paramref name="task"/> itself and returns the exception the AWAIT throws.
+    /// <c>Should.ThrowAsync</c> is not used: for a canceled task it builds its own
+    /// "A task was canceled." exception, hiding the one a caller's await actually sees.
+    /// </summary>
+    private static async Task<OperationCanceledException> AwaitCancellation(Task task)
+    {
+        try
+        {
+            await task;
+        }
+        catch (OperationCanceledException ex)
+        {
+            return ex;
+        }
+
+        throw new Shouldly.ShouldAssertException($"the task completed with status {task.Status} instead of being cancelled");
     }
 }

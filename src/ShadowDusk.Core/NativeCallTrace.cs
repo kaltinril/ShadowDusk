@@ -89,7 +89,7 @@ internal sealed class NativeCallTrace
         long now = Stopwatch.GetTimestamp();
         var calls = InFlight.Values.OrderBy(c => c.Started).ToList();
         if (calls.Count == 0)
-            return "no native compiler call in flight in this process";
+            return "No native compiler call in flight in this process";
 
         var sb = new StringBuilder();
         sb.Append(calls.Count.ToString(CultureInfo.InvariantCulture))
@@ -131,13 +131,36 @@ internal sealed class NativeCallTrace
             sb.Append(". ");
         }
 
-        sb.Append(DescribeInFlight()).Append(". ");
-        sb.Append(NativeCompileStack.BusyWorkers.ToString(CultureInfo.InvariantCulture))
+        if (_current is not null)
+        {
+            sb.Append("Its own ").Append(_current).Append(" call has been in flight for ")
+              .Append(Seconds(Stopwatch.GetElapsedTime(_currentStarted))).Append(" s. ");
+        }
+
+        sb.Append(SummarizeOthersInFlight(_current is null ? 0 : _currentStarted)).Append(' ');
+        sb.Append("Load: ").Append(NativeCompileStack.BusyWorkers.ToString(CultureInfo.InvariantCulture))
           .Append(" native-compile worker(s) busy, ")
           .Append(ThreadPool.ThreadCount.ToString(CultureInfo.InvariantCulture)).Append(" thread-pool threads, ")
           .Append(ThreadPool.PendingWorkItemCount.ToString(CultureInfo.InvariantCulture)).Append(" queued work items, ")
           .Append(Environment.ProcessorCount.ToString(CultureInfo.InvariantCulture)).Append(" logical cores.");
         return sb.ToString();
+    }
+
+    /// <summary>
+    /// The native calls other compiles have in flight, as a count and the oldest one, not a list
+    /// (issue #373 review): the message is about THIS compile, the rest is load.
+    /// </summary>
+    private static string SummarizeOthersInFlight(long ownStarted)
+    {
+        long now = Stopwatch.GetTimestamp();
+        var others = InFlight.Values.Where(c => c.Started != ownStarted).ToList();
+        if (others.Count == 0)
+            return "No other native compiler call was in flight in this process.";
+
+        InFlightCall oldest = others.MinBy(c => c.Started)!;
+        return $"Other compiles had {others.Count.ToString(CultureInfo.InvariantCulture)} native compiler " +
+               $"call(s) in flight in this process; the oldest, {oldest.Name}, for " +
+               $"{Seconds(Stopwatch.GetElapsedTime(oldest.Started, now))} s.";
     }
 
     private void Completed(string name, long started, long ended)

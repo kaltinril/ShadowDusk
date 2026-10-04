@@ -20,8 +20,8 @@
 
   Apply by passing this file via the dotnet test "settings" option.
 
-  CI's INTEGRATION step overrides this to 10 minutes inline
-  (RunConfiguration.TestSessionTimeout=600000 after the double dash), because it also runs
+  CI's INTEGRATION step overrides this to 11 minutes inline
+  (RunConfiguration.TestSessionTimeout=660000 after the double dash), because it also runs
   a 3-minute blame-hang timeout: the session cap aborts with no dump, so it has to outlast a
   healthy run plus the blame timeout or a late stall is never dumped (issue #312). The rule
   and the numbers are in .github/workflows/ci.yml; CiHangGuardTests enforces them. The

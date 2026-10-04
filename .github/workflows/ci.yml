@@ -272,7 +272,7 @@ jobs:
     runs-on: ${{ matrix.os }}
     needs: build-and-test
     # Heavier than the unit gate (CLI child-process spawn + native DXC/SPIRV-Cross). The test
-    # step caps each assembly's session at 10 min and itself at 14 (see the step); 20 leaves
+    # step caps each assembly's session at 11 min and itself at 14 (see the step); 20 leaves
     # room for setup, restore, build (about 3 min) and the artifact uploads after a failure.
     timeout-minutes: 20
     if: |
@@ -412,7 +412,10 @@ jobs:
       # stall always lost the race (macOS, run 37063450434: stalled 3 min 48 s, no dump). The
       # rule is
       #     TestSessionTimeout >= slowest healthy assembly run + blame-hang-timeout + dump time
-      #     10 min             >= 6 min budget                 + 3 min              + 1 min
+      #     11 min             >= 6 min budget                 + 3 min              + 1 min + 1 min slack
+      # (the dump is a FULL dump, so dotnet-dump can print managed stacks: 378 MB and 1.2 s for an
+      # Integration test host with DXC loaded, measured locally 2026-10-04; a CI full dump of a
+      # smaller host was written well inside a minute)
       # so any stall in a run that was otherwise on schedule is dumped before the session cap
       # can pre-empt it. CiHangGuardTests enforces that inequality against this file; change
       # both numbers together. xunit.runner.json (longRunningTestSeconds) also names every test
@@ -420,7 +423,7 @@ jobs:
       #
       # timeout-minutes on the step, not just the job: a step timeout FAILS the step, so the
       # `failure()` uploads below still run; a job timeout cancels them. Assemblies run in
-      # parallel, so the step's wall time is about one session (10 min) at worst.
+      # parallel, so the step's wall time is about one session (11 min) at worst.
       # The DXC fork/setlocale probes (DxcConcurrencyStressTests, issue #256) run in a child of
       # the test host. If one hangs, HangDiagnostics attaches gdb and createdump to it before the
       # watchdog kills it; --blame-hang only ever dumps the host. Attaching to a sibling needs
@@ -479,7 +482,7 @@ jobs:
           --blame-hang-timeout 3m --blame-hang-dump-type full
           --logger "trx;LogFilePrefix=integration-${{ matrix.os }}"
           --results-directory TestResults/
-          -- RunConfiguration.TestSessionTimeout=600000
+          -- RunConfiguration.TestSessionTimeout=660000
 
       # The sidecar's log goes into the job log either way, so a healthy run shows "nothing to
       # capture" and a stalled one shows what was captured. A watchdog still sleeping (the tests

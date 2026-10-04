@@ -35,6 +35,13 @@ public sealed class CiHangGuardTests
     /// <summary>Time for the blame collector to dump the host and its children once it fires.</summary>
     private static readonly TimeSpan DumpTime = TimeSpan.FromMinutes(1);
 
+    /// <summary>
+    /// Slack on top of the sum, so the pair never sits exactly on the line (review of PR #376).
+    /// The dump is a FULL dump (378 MB, 1.2 s for an Integration host with DXC loaded, measured
+    /// locally 2026-10-04; a slow CI disk takes longer), and a cap that equals the sum loses it.
+    /// </summary>
+    private static readonly TimeSpan Slack = TimeSpan.FromMinutes(1);
+
     [Fact]
     public void EveryBlameHangStep_LeavesTheSessionTimeoutRoomForALateStallToBeDumped()
     {
@@ -61,7 +68,7 @@ public sealed class CiHangGuardTests
                     ? TimeSpan.FromMilliseconds(long.Parse(inline.Groups[1].Value, CultureInfo.InvariantCulture))
                     : runsettingsSession;
 
-                TimeSpan needed = HealthyAssemblyRun + blameTimeout + DumpTime;
+                TimeSpan needed = HealthyAssemblyRun + blameTimeout + DumpTime + Slack;
                 session.ShouldBeGreaterThanOrEqualTo(needed,
                     $"{where}: TestSessionTimeout {session.TotalMinutes:0.#} min cannot outlast a stall that starts late in " +
                     $"a healthy run ({HealthyAssemblyRun.TotalMinutes:0.#} min) plus the {blameTimeout.TotalMinutes:0.#} min " +
