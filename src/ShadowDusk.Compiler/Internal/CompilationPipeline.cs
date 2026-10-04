@@ -565,6 +565,16 @@ internal sealed class CompilationPipeline
             {
                 reservationError = reservation.Error;
             }
+
+            // The real-slangc route's combined samplers (Sampler2D X : register(sN)) pin their
+            // texture like a legacy sampler does; see CompilerOptions.CombinedSamplerGlSlots.
+            if (options.CombinedSamplerGlSlots.Count > 0)
+            {
+                var merged = new Dictionary<string, int>(explicitGlSamplerSlots, StringComparer.Ordinal);
+                foreach ((string texture, int slot) in options.CombinedSamplerGlSlots)
+                    merged.TryAdd(texture, slot);
+                explicitGlSamplerSlots = merged;
+            }
         }
 
         foreach (TechniqueInfo technique in fxParsed.Techniques)

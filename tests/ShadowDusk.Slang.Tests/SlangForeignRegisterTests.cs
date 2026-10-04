@@ -181,7 +181,12 @@ public sealed class SlangForeignRegisterTests : IDisposable
         var (_, fx) = Slang(source, target);
 
         fx.ShouldContain("Texture2D<float4 > Comb : register(t2);", Case.Sensitive);
-        fx.ShouldContain("SamplerState Comb_sampler_0 : register(s3);", Case.Sensitive);
+        // OpenGL: the sampler register of a combined sampler is the legacy combined sampler's,
+        // a texture-unit pin handed to the GL allocator (SlangcCombinedSamplerGlSlots), not a
+        // SamplerState reservation left in the HLSL.
+        fx.ShouldContain(
+            target == PlatformTarget.OpenGL ? "SamplerState Comb_sampler_0;" : "SamplerState Comb_sampler_0 : register(s3);",
+            Case.Sensitive);
     }
 
     [Theory]
