@@ -421,12 +421,25 @@ public sealed class SlangCompiler
         // author wrote (effect.Parameters["Comb"], not "Comb_texture_0"); one hoisted out of
         // anything else has no author-written name and is rejected. Before the FNA respelling,
         // so the DX9 texture it declares carries the author's name too.
-        Result<string, ShaderError> named = NameHoistedTextures(
+        Result<(string Hlsl, IReadOnlyCollection<string> CombinedSamplers), ShaderError> named = NameHoistedTextures(
             mergedHlsl, kept.Value.Texts, entries, slangSource, sourceName, options.Defines, platformMacros,
             runnableSlangc, toolDirectory, cancellationToken);
         if (named.IsFailure)
             return Fail(named.Error);
-        mergedHlsl = named.Value;
+        mergedHlsl = named.Value.Hlsl;
+
+        // OpenGL: a combined sampler with a sampler register is the legacy combined object, so
+        // it pins its texture unit the way mgfxc's 'sampler2D X : register(sN)' does, instead of
+        // reserving unit N as the split pair's SamplerState would. See SlangcCombinedSamplerGlSlots.
+        IReadOnlyDictionary<string, int> combinedGlSlots = new Dictionary<string, int>();
+        if (options.Target == PlatformTarget.OpenGL && named.Value.CombinedSamplers.Count > 0)
+        {
+            Result<(string Hlsl, IReadOnlyDictionary<string, int> Slots), ShaderError> pinned =
+                SlangcCombinedSamplerGlSlots.Pin(mergedHlsl, named.Value.CombinedSamplers, slangSource, sourceName);
+            if (pinned.IsFailure)
+                return Fail(pinned.Error);
+            (mergedHlsl, combinedGlSlots) = pinned.Value;
+        }
 
         // Issue #230: FNA's fx_2_0 needs DX9 effect texture syntax; slangc only emits texture
         // objects, which compiled but crashed real FNA on the first draw. See the respeller.
@@ -459,6 +472,33 @@ public sealed class SlangCompiler
         CompilerOptions downstreamOptions = combinedHalves.Count == 0
             ? options
             : options.WithSamplerArraysFromCombinedSamplers(combinedHalves);
+        if (combinedGlSlots.Count > 0)
+            downstreamOptions = downstreamOptions.WithCombinedSamplerGlSlots(combinedGlSlots);
+        if (options.Target == PlatformTarget.OpenGL)
+        {
+            // OpenGL fills units in the author's declaration order (mgfxc's rule); slangc emits
+            // globals in first-use order. Read from the entry text the register pass read when it
+            // ran (slangc's own preprocessed view), else the raw source. No extra slangc run.
+            // slangc's own preprocessed entry text when a pass already read it; else the raw text
+            // outside every conditional block, when nothing else in it can add or rename a
+            // declaration (an inactive #if branch must not place one); else no order (the
+            // allocator keeps slangc's order, as before). Never an extra slangc run.
+            string? readEntryText = kept.Value.ReadTexts
+                .Where(t => t.File == sourceName).Select(t => t.Text).FirstOrDefault();
+            string? unconditionalRaw = readEntryText is null
+                ? SlangcCombinedSamplerGlSlots.UnconditionalRawText(slangSource, options.Defines)
+                : null;
+            if (readEntryText is not null)
+            {
+                downstreamOptions = downstreamOptions.WithGlTextureDeclarationOrder(
+                    SlangcCombinedSamplerGlSlots.DeclarationOrder(readEntryText, sourceName, rawSource: false));
+            }
+            else if (unconditionalRaw is not null)
+            {
+                downstreamOptions = downstreamOptions.WithGlTextureDeclarationOrder(
+                    SlangcCombinedSamplerGlSlots.DeclarationOrder(unconditionalRaw, sourceName, rawSource: true));
+            }
+        }
 
         Result<CompiledShader, ShaderError[]> downstream = _downstreamCompiler.Compile(fxText, downstreamOptions, cancellationToken);
         if (downstream.IsFailure)
@@ -947,7 +987,7 @@ public sealed class SlangCompiler
     /// source also spells, or a combined sampler declared through a macro. Pinned by
     /// <c>SlangRegisterPassCostTests</c>.
     /// </remarks>
-    private Result<string, ShaderError> NameHoistedTextures(
+    private Result<(string Hlsl, IReadOnlyCollection<string> CombinedSamplers), ShaderError> NameHoistedTextures(
         string mergedHlsl,
         SlangcHoistedResourceNames.PreprocessedTexts? texts,
         IReadOnlyList<SlangEntryPoint> entries,
@@ -968,13 +1008,13 @@ public sealed class SlangCompiler
                 includeEntry: true, [], platformMacros, defines, slangSource, sourceName, runnableSlangc,
                 toolDirectory, cancellationToken, reads, out (int ExitCode, string Text, string Stderr) entry);
             if (startError is not null)
-                return Result<string, ShaderError>.Fail(startError);
+                return Result<(string, IReadOnlyCollection<string>), ShaderError>.Fail(startError);
             ShaderError? unusable = CheckEntryPreprocessOutput(
                 entry, entries, sourceName, "which finds the names the author wrote",
                 "cannot tell which resource names are the author's and will not guess (guessing would silently " +
                 "rename an effect parameter)");
             if (unusable is not null)
-                return Result<string, ShaderError>.Fail(unusable);
+                return Result<(string, IReadOnlyCollection<string>), ShaderError>.Fail(unusable);
 
             decision = SlangcHoistedResourceNames.Decide(
                 mergedHlsl, slangSource, sourceName, defines,
@@ -982,8 +1022,11 @@ public sealed class SlangCompiler
         }
 
         return decision.Error is not null
-            ? Result<string, ShaderError>.Fail(decision.Error)
-            : Result<string, ShaderError>.Ok(SlangcHoistedResourceNames.Apply(mergedHlsl, decision.Renames));
+            ? Result<(string, IReadOnlyCollection<string>), ShaderError>.Fail(decision.Error)
+            // Every rename is a combined sampler's texture half taking the author's global name
+            // (any other hoist is an error above), so the rename targets ARE the combined samplers.
+            : Result<(string, IReadOnlyCollection<string>), ShaderError>.Ok(
+                (SlangcHoistedResourceNames.Apply(mergedHlsl, decision.Renames), decision.Renames.Values.ToList()));
     }
 
     /// <summary>
