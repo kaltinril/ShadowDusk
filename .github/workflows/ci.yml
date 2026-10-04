@@ -501,6 +501,10 @@ jobs:
           SHADOWDUSK_REQUIRE_VKD3D: "1"
           SHADOWDUSK_REQUIRE_DXC: "1"
           SHADOWDUSK_HANG_DUMP_DIR: ${{ github.workspace }}/TestResults/probe-hangs
+          # DxcTargetsCrossHostByteIdentityTests writes each fixture's SPIR-V / DXIL (and its
+          # disassembly) here, uploaded below on failure, so a cross-host mismatch can be diffed
+          # against the win-x64 dump instead of guessed at.
+          SHADOWDUSK_BYTE_IDENTITY_DUMP: ${{ github.workspace }}/TestResults/dxc-identity
         run: >
           dotnet test ShadowDusk.slnx --no-build -c Release -m:2
           --filter "Category=Integration"

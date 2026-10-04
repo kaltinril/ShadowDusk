@@ -300,16 +300,24 @@ public sealed class DxcTargetsCrossHostByteIdentityTests
     /// The two notices that say a DirectX 12 compile was not signed, which every non-Windows
     /// host emits by construction: ShadowDusk's own <c>SD0214</c>, and DXC's own warning (DXC
     /// reports it when no <c>dxil.dll</c> validator is bound). Matched exactly, so no other
-    /// diagnostic can hide behind the filter.
+    /// diagnostic can hide behind the filter. DXC's text is itself one of the measured per-host
+    /// differences: Vortice's Linux build (<c>8c9d92be7</c>) says <c>DXIL.dll not found.</c>,
+    /// our <c>e043f4a1</c> macOS build says <c>DXIL signing library (dxil.dll,libdxil.so) not
+    /// found.</c> (DXC #5004, one of the 28 commits between them, which also taught Linux DXC to
+    /// look for <c>libdxil.so</c>).
     /// </summary>
     private static bool IsSigningNotice(ShaderError e) =>
         e.Severity == ShaderErrorSeverity.Warning
         && (e.Code == "SD0214"
-            || e.Message.Equals(DxcUnsignedWarning, StringComparison.Ordinal)
-            || e.Message.Equals("warning: " + DxcUnsignedWarning, StringComparison.Ordinal));
+            || DxcUnsignedWarnings.Any(w =>
+                e.Message.Equals(w, StringComparison.Ordinal)
+                || e.Message.Equals("warning: " + w, StringComparison.Ordinal)));
 
-    private const string DxcUnsignedWarning =
-        "DXIL.dll not found.  Resulting DXIL will not be signed for use in release environments.";
+    private static readonly string[] DxcUnsignedWarnings =
+    [
+        "DXIL.dll not found.  Resulting DXIL will not be signed for use in release environments.",
+        "DXIL signing library (dxil.dll,libdxil.so) not found.  Resulting DXIL will not be signed for use in release environments.",
+    ];
 
     /// <summary>
     /// The DXIL disassembly with the host-identity facts removed, and nothing else: the
