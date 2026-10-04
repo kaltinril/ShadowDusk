@@ -495,13 +495,13 @@ public sealed class SlangGlSamplerSlotTests
     // slangc splits 'Sampler2D X : register(rN)' into a texture half and a sampler half: tN goes
     // to the texture, sN to the sampler, and the OTHER half gets slangc's own number (stripped).
     // The oracle is the hand-written pair carrying only the author's register.
-    // OpenGL: a texture register is not a reservation (mgfxc's rule), 's0' on the sampler is.
+    // OpenGL: a texture register is not a reservation (mgfxc's rule). A SAMPLER register on a
+    // combined sampler is the legacy combined sampler's register on OpenGL instead (see
+    // CombinedSamplerRegister_OnOpenGL_PinsTheUnitMgfxcGivesTheLegacySampler).
     [InlineData("Sampler2D SpriteTexture : register(t2);\n", PlatformTarget.OpenGL,
         "Texture2D SpriteTexture : register(t2);\nSamplerState SpriteSampler;\n", 0)]
     [InlineData("Sampler2D SpriteTexture : register(t2);\n", PlatformTarget.DirectX,
         "Texture2D SpriteTexture : register(t2);\nSamplerState SpriteSampler;\n", 2)]
-    [InlineData("Sampler2D SpriteTexture : register(s0);\n", PlatformTarget.OpenGL,
-        "Texture2D SpriteTexture;\nSamplerState SpriteSampler : register(s0);\n", 1)]
     public void AuthorRegisterOnACombinedSampler_IsHonoured_LikeTheHandWrittenPair(
         string combined, PlatformTarget target, string handWritten, int expectedSlot)
     {
@@ -510,6 +510,199 @@ public sealed class SlangGlSamplerSlotTests
 
         Slots(slang).ShouldBe([((byte)expectedSlot, (byte)expectedSlot)]);
         Slots(slang).ShouldBe(Slots(fx));
+    }
+
+    public static TheoryData<string, string, string, string, (string, byte)[]> LegacyCombinedSamplerCases() => new()
+    {
+        // Slang declarations, the legacy .fx declarations, the Slang and .fx return expressions,
+        // and the units real mgfxc 3.8.4.1 /Profile:OpenGL gives the legacy shader (measured
+        // 2026-10-03, decoded with validation/decode_mgfx.py: texture parameter -> ps_sN unit).
+        { "Sampler2D A : register(s0);", "sampler2D A : register(s0);", "A.Sample(uv)", "tex2D(A, uv)", [("A", 0)] },
+        { "Sampler2D A : register(s1);", "sampler2D A : register(s1);", "A.Sample(uv)", "tex2D(A, uv)", [("A", 1)] },
+        { "Sampler2D A : register(s2);", "sampler2D A : register(s2);", "A.Sample(uv)", "tex2D(A, uv)", [("A", 2)] },
+        {
+            "Sampler2D A : register(s1);\nSampler2D B : register(s0);", "sampler2D A : register(s1);\nsampler2D B : register(s0);",
+            "A.Sample(uv) + B.Sample(uv)", "tex2D(A, uv) + tex2D(B, uv)", [("A", 1), ("B", 0)]
+        },
+        {
+            "Sampler2D A : register(s2);\nSampler2D B;", "sampler2D A : register(s2);\nsampler2D B;",
+            "A.Sample(uv) + B.Sample(uv)", "tex2D(A, uv) + tex2D(B, uv)", [("A", 2), ("B", 0)]
+        },
+        {
+            "Sampler2D A;\nSampler2D B : register(s0);", "sampler2D A;\nsampler2D B : register(s0);",
+            "A.Sample(uv) + B.Sample(uv)", "tex2D(A, uv) + tex2D(B, uv)", [("A", 1), ("B", 0)]
+        },
+        {
+            // Sampled in the reverse of their declaration order.
+            "Sampler2D A : register(s0);\nSampler2D B : register(s1);", "sampler2D A : register(s0);\nsampler2D B : register(s1);",
+            "B.Sample(uv) + A.Sample(uv)", "tex2D(B, uv) + tex2D(A, uv)", [("A", 0), ("B", 1)]
+        },
+    };
+
+    [Theory]
+    [MemberData(nameof(LegacyCombinedSamplerCases))]
+    public void CombinedSamplerRegister_OnOpenGL_PinsTheUnitMgfxcGivesTheLegacySampler(
+        string slangDeclarations, string fxDeclarations, string slangSample, string fxSample, (string, byte)[] mgfxcUnits)
+    {
+        // A combined Sampler2D is the legacy combined sampler2D; its sampler register is the unit
+        // the texture binds on OpenGL (the issue #252 symptom otherwise: 'register(s0)' landed on
+        // unit 1, off SpriteBatch's unit 0, while DirectX 11 sampled t0). The split
+        // 'Texture2D + SamplerState : register(sN)' pair keeps mgfxc's reservation rule
+        // (AuthorWrittenSamplerRegister_IsHonoured_LikeTheFxRoute).
+        MgfxBlobReader slang = SlangEffect(
+            slangDeclarations + "\n[shader(\"fragment\")]\nfloat4 MainPS(float4 pos : SV_Position, float2 uv : TEXCOORD0) : SV_Target { return " +
+            slangSample + "; }\n",
+            PlatformTarget.OpenGL);
+        var fx = new EffectCompiler().Compile(
+            FxHeader + fxDeclarations + "\nfloat4 MainPS(float4 pos : SV_Position, float2 uv : TEXCOORD0) : COLOR0 { return " + fxSample +
+            "; }\ntechnique T { pass P0 { PixelShader = compile PS_SHADERMODEL MainPS(); } }\n",
+            new CompilerOptions { Target = PlatformTarget.OpenGL, SourceFileName = "Legacy.fx" });
+        fx.IsSuccess.ShouldBeTrue(fx.IsFailure ? string.Join("; ", fx.Error.Select(e => e.FxcFormattedMessage)) : "");
+
+        var expected = mgfxcUnits.Select(u => (u.Item1, u.Item2, u.Item2)).ToArray();
+        Named(slang).ShouldBe(expected);
+        // The uniform each record names is the one the GLSL samples through (ps_s<unit>).
+        slang.Samplers.Select(s => s.Name).OrderBy(n => n, StringComparer.Ordinal)
+            .ShouldBe(mgfxcUnits.Select(u => $"ps_s{u.Item2}").OrderBy(n => n, StringComparer.Ordinal));
+        // The .fx route's units already match mgfxc (issue #189); it names a bare legacy sampler's
+        // texture parameter 'A_SDTexture' where mgfxc says 'A', so the units are compared by name stem.
+        FxNamed(MgfxBlobReader.Parse(fx.Value.Data)).ShouldBe(expected, "the .fx route already matches mgfxc (issue #189)");
+    }
+
+    [Fact]
+    public void CombinedSamplerRegister_BesideASplitPair_OnOpenGL_MatchesTheLegacyAndModernFxMix()
+    {
+        // A combined sampler pins its unit; an author's own split pair beside it keeps the
+        // split-pair rule. The oracle is the .fx route's legacy-plus-modern mix (its allocator is
+        // the one verified against mgfxc on 10 shapes, issue #189).
+        MgfxBlobReader slang = SlangEffect("""
+            Sampler2D A : register(s1);
+            Texture2D T;
+            SamplerState S : register(s0);
+            [shader("fragment")]
+            float4 MainPS(float4 pos : SV_Position, float2 uv : TEXCOORD0) : SV_Target { return A.Sample(uv) + T.Sample(S, uv); }
+            """, PlatformTarget.OpenGL);
+        var fx = new EffectCompiler().Compile(FxHeader + """
+            sampler2D A : register(s1);
+            Texture2D T;
+            SamplerState S : register(s0);
+            float4 MainPS(float4 pos : SV_Position, float2 uv : TEXCOORD0) : COLOR0 { return tex2D(A, uv) + T.Sample(S, uv); }
+            technique T0 { pass P0 { PixelShader = compile PS_SHADERMODEL MainPS(); } }
+            """, new CompilerOptions { Target = PlatformTarget.OpenGL, SourceFileName = "Mix.fx" });
+        fx.IsSuccess.ShouldBeTrue(fx.IsFailure ? string.Join("; ", fx.Error.Select(e => e.FxcFormattedMessage)) : "");
+
+        Named(slang).ShouldBe(FxNamed(MgfxBlobReader.Parse(fx.Value.Data)));
+        Named(slang).ShouldBe([("A", (byte)1, (byte)1), ("T", (byte)2, (byte)2)]);
+    }
+
+    [Fact]
+    public void TwoCombinedSamplersOnOneRegister_OnOpenGL_AreRefusedLoudly()
+    {
+        // fxc refuses the legacy pair (X4500) and the DirectX targets refuse it too; on OpenGL the
+        // allocator would silently move the second texture to another unit.
+        var result = new SlangCompiler().Compile("""
+            Sampler2D A : register(s0);
+            Sampler2D B : register(s0);
+            [shader("fragment")]
+            float4 MainPS(float4 pos : SV_Position, float2 uv : TEXCOORD0) : SV_Target { return A.Sample(uv) + B.Sample(uv); }
+            """, new CompilerOptions { Target = PlatformTarget.OpenGL, SourceFileName = "Dup.slang" });
+
+        ShaderError error = result.Error.ShouldHaveSingleItem();
+        (error.File, error.Line, error.Code).ShouldBe(("Dup.slang", 2, "SD0644"));
+        error.Message.ShouldContain("'A' and 'B' all declare register(s0)", Case.Sensitive);
+    }
+
+    [Fact]
+    public void CombinedSamplerSharingARegisterWithASplitSamplerState_OnOpenGL_MatchesTheFxRoute()
+    {
+        // mgfxc accepts a legacy sampler and a modern SamplerState on one register; so does this.
+        MgfxBlobReader slang = SlangEffect("""
+            Sampler2D A : register(s0);
+            Texture2D T;
+            SamplerState S : register(s0);
+            [shader("fragment")]
+            float4 MainPS(float4 pos : SV_Position, float2 uv : TEXCOORD0) : SV_Target { return T.Sample(S, uv) + A.Sample(uv); }
+            """, PlatformTarget.OpenGL);
+        var fx = new EffectCompiler().Compile(FxHeader + """
+            sampler2D A : register(s0);
+            Texture2D T;
+            SamplerState S : register(s0);
+            float4 MainPS(float4 pos : SV_Position, float2 uv : TEXCOORD0) : COLOR0 { return T.Sample(S, uv) + tex2D(A, uv); }
+            technique T0 { pass P0 { PixelShader = compile PS_SHADERMODEL MainPS(); } }
+            """, new CompilerOptions { Target = PlatformTarget.OpenGL, SourceFileName = "Share.fx" });
+        fx.IsSuccess.ShouldBeTrue(fx.IsFailure ? string.Join("; ", fx.Error.Select(e => e.FxcFormattedMessage)) : "");
+
+        Named(slang).ShouldBe(FxNamed(MgfxBlobReader.Parse(fx.Value.Data)));
+        Named(slang).ShouldBe([("A", (byte)0, (byte)0), ("T", (byte)1, (byte)1)]);
+    }
+
+    [Fact]
+    public void CombinedSamplerRegisterWithASpace_OnOpenGL_PinsTheUnit()
+    {
+        // OpenGL has no register spaces: 'register(s1, space1)' is unit 1 like 'register(s1)'.
+        Named(SlangEffect("""
+            Sampler2D A : register(s1, space1);
+            [shader("fragment")]
+            float4 MainPS(float4 pos : SV_Position, float2 uv : TEXCOORD0) : SV_Target { return A.Sample(uv); }
+            """, PlatformTarget.OpenGL)).ShouldBe([("A", (byte)1, (byte)1)]);
+    }
+
+    [Theory]
+    // slangc emits globals in FIRST-USE order; mgfxc fills GL units in DECLARATION order. Each
+    // shape samples the later-declared texture first. Measured with mgfxc 3.8.4.1 for the first
+    // (T unit 1, A unit 2); the .fx route's allocator is the oracle for both.
+    [InlineData("Texture2D T;\nSamplerState S : register(s0);\nSampler2D A;", "sampler2D A;", "T1A2")]
+    [InlineData("Texture2D T;\nSamplerState S;\nSampler2D A;", "sampler2D A;", "T0A1")]
+    public void UnitsFollowTheAuthorsDeclarationOrder_NotSlangcsFirstUseOrder(string slangDeclarations, string fxLegacy, string expected)
+    {
+        string split = slangDeclarations[..slangDeclarations.LastIndexOf('\n')];
+        MgfxBlobReader slang = SlangEffect(
+            slangDeclarations + "\n[shader(\"fragment\")]\nfloat4 MainPS(float4 pos : SV_Position, float2 uv : TEXCOORD0) : SV_Target { return A.Sample(uv) + T.Sample(S, uv); }\n",
+            PlatformTarget.OpenGL);
+        var fx = new EffectCompiler().Compile(
+            FxHeader + split + "\n" + fxLegacy +
+            "\nfloat4 MainPS(float4 pos : SV_Position, float2 uv : TEXCOORD0) : COLOR0 { return tex2D(A, uv) + T.Sample(S, uv); }\ntechnique T0 { pass P0 { PixelShader = compile PS_SHADERMODEL MainPS(); } }\n",
+            new CompilerOptions { Target = PlatformTarget.OpenGL, SourceFileName = "Order.fx" });
+        fx.IsSuccess.ShouldBeTrue(fx.IsFailure ? string.Join("; ", fx.Error.Select(e => e.FxcFormattedMessage)) : "");
+
+        Named(slang).ShouldBe(FxNamed(MgfxBlobReader.Parse(fx.Value.Data)));
+        string.Concat(Named(slang).OrderBy(s => s.TextureSlot).Select(s => s.Texture + s.TextureSlot)).ShouldBe(expected);
+    }
+
+    [Theory]
+    // A declaration in an INACTIVE #if branch is not the declaration order slangc compiled: with
+    // no register written no preprocess pass runs, so the raw text must not place it. mgfxc (per
+    // the PR #384 review) and the .fx route: A 0, B 1 for the first; B 0, A 1 for the second.
+    [InlineData("SamplerState S;\n#if FEATURE_X\nTexture2D B;\nTexture2D A;\n#else\nTexture2D A;\nTexture2D B;\n#endif\n", "A0B1")]
+    [InlineData("SamplerState S;\n#if 0\nfloat A;\n#endif\nTexture2D B;\nTexture2D A;\n", "B0A1")]
+    public void DeclarationsInAnInactiveBranch_DoNotDecideTheUnits(string declarations, string expected)
+    {
+        MgfxBlobReader slang = SlangEffect(
+            declarations + "[shader(\"fragment\")]\nfloat4 MainPS(float4 pos : SV_Position, float2 uv : TEXCOORD0) : SV_Target { return A.Sample(S, uv) + B.Sample(S, uv); }\n",
+            PlatformTarget.OpenGL);
+        var fx = new EffectCompiler().Compile(
+            FxHeader + declarations +
+            "float4 MainPS(float4 pos : SV_Position, float2 uv : TEXCOORD0) : SV_Target { return A.Sample(S, uv) + B.Sample(S, uv); }\ntechnique T0 { pass P0 { PixelShader = compile PS_SHADERMODEL MainPS(); } }\n",
+            new CompilerOptions { Target = PlatformTarget.OpenGL, SourceFileName = "Branch.fx" });
+        fx.IsSuccess.ShouldBeTrue(fx.IsFailure ? string.Join("; ", fx.Error.Select(e => e.FxcFormattedMessage)) : "");
+
+        Named(slang).ShouldBe(Named(MgfxBlobReader.Parse(fx.Value.Data)));
+        string.Concat(Named(slang).OrderBy(s => s.TextureSlot).Select(s => s.Texture + s.TextureSlot)).ShouldBe(expected);
+    }
+
+    [Fact]
+    public void AStructHeaderWrittenPerBranch_DoesNotMakeItsFieldAGlobal()
+    {
+        // PR #384 review: blanking the branches removed the struct's opening line, so its field
+        // 'Texture2D A' read as a global declared before B and took unit 0. main (B sampled first,
+        // and declared first): B 0, A 1.
+        const string declarations =
+            "SamplerState S;\n#if X\nstruct P {\n#else\nstruct P {\n#endif\nTexture2D A; };\nTexture2D B;\nTexture2D A;\n";
+        MgfxBlobReader slang = SlangEffect(
+            declarations + "[shader(\"fragment\")]\nfloat4 MainPS(float4 pos : SV_Position, float2 uv : TEXCOORD0) : SV_Target { return B.Sample(S, uv) + A.Sample(S, uv); }\n",
+            PlatformTarget.OpenGL);
+
+        string.Concat(Named(slang).OrderBy(s => s.TextureSlot).Select(s => s.Texture + s.TextureSlot)).ShouldBe("B0A1");
     }
 
     private const string CombinedAPixelShader = """
@@ -590,6 +783,14 @@ public sealed class SlangGlSamplerSlotTests
         Slots(slang).ShouldBe(Slots(fx));
         slang.ShouldHaveSingleItem().TextureSlot.ShouldBe((byte)0);
     }
+
+    // Named, with the .fx route's synthesized texture name for a bare legacy sampler ('A_SDTexture')
+    // taken back to the sampler's own name, as mgfxc spells the parameter.
+    private static (string Texture, byte TextureSlot, byte SamplerSlot)[] FxNamed(MgfxBlobReader effect) =>
+        Named(effect)
+            .Select(s => (s.Texture.EndsWith("_SDTexture", StringComparison.Ordinal) ? s.Texture[..^"_SDTexture".Length] : s.Texture, s.TextureSlot, s.SamplerSlot))
+            .OrderBy(s => s.Item1, StringComparer.Ordinal)
+            .ToArray();
 
     // Each sampler record keyed by the name of the texture parameter it binds.
     private static (string Texture, byte TextureSlot, byte SamplerSlot)[] Named(MgfxBlobReader effect) =>
