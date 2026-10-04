@@ -93,6 +93,12 @@ public sealed class CompilerOptions
     /// no-op for <see cref="PlatformTarget.Fna"/>: MojoShader is stricter on fxc
     /// debug-style codegen, so the FNA path always compiles optimized — Debug can never
     /// produce a <c>.fxb</c> the FNA runtime rejects.
+    /// <para>
+    /// Debug output depends only on the source and these options, never on the files on the
+    /// host's disk: the source text embedded in SPIR-V debug information
+    /// (<see cref="PlatformTarget.Vulkan"/>, and the SPIR-V behind
+    /// <see cref="PlatformTarget.OpenGL"/>) is the text ShadowDusk compiled, on every host.
+    /// </para>
     /// </summary>
     public bool Debug { get; init; }
 
