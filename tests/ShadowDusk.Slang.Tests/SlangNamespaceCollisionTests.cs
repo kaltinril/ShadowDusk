@@ -258,6 +258,59 @@ public sealed class SlangNamespaceCollisionTests : IDisposable
         runs.ShouldBe(1);
     }
 
+    private const string PiEntry =
+        "[shader(\"fragment\")]\nfloat4 MainPS(float4 pos : SV_Position) : SV_Target {{ return float4({0}, 0, 1); }}\n";
+
+    // Shapes that compile correctly today and must keep compiling, at no extra slangc run (the
+    // owner's cost constraint): a future attempt at the issue #337 residue (a merged pair no read
+    // text shows) must not refuse them. Verified with real slangc during the PR #383 review.
+    public static TheoryData<string> MustCompileShapes() => ["P1", "P2", "P3", "P8", "P12"];
+
+    [Theory]
+    [MemberData(nameof(MustCompileShapes))]
+    public void SameNamedModuleConstantsThatCompileCorrectly_StillCompile_AtOneRun(string shape)
+    {
+        string source;
+        switch (shape)
+        {
+            case "P1": // two modules, each with a private 'static const float PI', both used
+            case "P2": // the same, one module's function never called
+            {
+                string a = WriteModule($"{shape}a.slang", "module " + shape + "a;\nstatic const float PI = 3.14159;\npublic float fa() { return PI; }\n");
+                string b = WriteModule($"{shape}b.slang", "module " + shape + "b;\nstatic const float PI = 3.14159;\npublic float fb() { return PI * 2; }\n");
+                source = $"import \"{a}\";\nimport \"{b}\";\n" + string.Format(PiEntry, shape == "P1" ? "fa(), fb()" : "fa(), 0");
+                break;
+            }
+            case "P3": // two modules that each #include one header holding 'static const float PI'
+            {
+                WriteModule("common.h", "static const float PI = 3.14159;\n");
+                string a = WriteModule("p3a.slang", "module p3a;\n#include \"common.h\"\npublic float fa() { return PI; }\n");
+                string b = WriteModule("p3b.slang", "module p3b;\n#include \"common.h\"\npublic float fb() { return PI * 2; }\n");
+                source = $"import \"{a}\";\nimport \"{b}\";\n" + string.Format(PiEntry, "fa(), fb()");
+                break;
+            }
+            case "P8": // a link-time constant: 'extern static const' in one module, 'export' in another
+            {
+                string a = WriteModule("p8a.slang", "module p8a;\nextern static const int kCount;\npublic float countA() { return kCount; }\n");
+                string b = WriteModule("p8b.slang", "module p8b;\nexport static const int kCount = 4;\n");
+                source = $"import \"{a}\";\nimport \"{b}\";\n" + string.Format(PiEntry, "countA(), 0");
+                break;
+            }
+            default: // P12: both modules with 'namespace Detail { static const float EPS = 1e-5; }'
+            {
+                string a = WriteModule("p12a.slang", "module p12a;\nnamespace Detail { static const float EPS = 1e-5; }\npublic float fa() { return Detail::EPS; }\n");
+                string b = WriteModule("p12b.slang", "module p12b;\nnamespace Detail { static const float EPS = 1e-5; }\npublic float fb() { return Detail::EPS * 2; }\n");
+                source = $"import \"{a}\";\nimport \"{b}\";\n" + string.Format(PiEntry, "fa(), fb()");
+                break;
+            }
+        }
+
+        var (result, runs) = Compile(source, PlatformTarget.OpenGL);
+
+        result.IsSuccess.ShouldBeTrue(Errors(result));
+        runs.ShouldBe(1);
+    }
+
     [Fact]
     public void PairNoTextShows_StillFailsLoudly_AsSlangcsCrashWithTheKnownTrigger()
     {
