@@ -26,6 +26,8 @@ on:
     paths:
       - 'tools/build-spirv-cross-android.sh'
       - '.github/workflows/spirv-cross-android-build.yml'
+      - 'tools/restore.sh'
+      - 'tools/restore.ps1'
 
 # Builds and uploads a run artifact only; publishing to a release is a deliberate manual step.
 permissions:
@@ -59,6 +61,19 @@ jobs:
             b=$(sha256sum "$RUNNER_TEMP/out-b/$rid/libspirv-cross.so" | cut -d' ' -f1)
             echo "$rid $a $b"
             [ "$a" = "$b" ] || { echo "::error::$rid: two builds of the same recipe differ"; exit 1; }
+          done
+
+      - name: Require the build to equal the shipped, pinned natives
+        # A script, flag, NDK or SPIRV_CROSS_REF change must re-host and re-pin in the same PR,
+        # or the committed recipe would silently stop producing the bytes ShadowDusk ships.
+        run: |
+          for pair in android-arm64:SPVC_ANDROID_ARM64_SHA256 android-x64:SPVC_ANDROID_X64_SHA256; do
+            rid="${pair%%:*}"; var="${pair##*:}"
+            pin=$(grep "^${var}=" tools/restore.sh | cut -d'"' -f2)
+            got=$(sha256sum "out/$rid/libspirv-cross.so" | cut -d' ' -f1)
+            echo "$rid built $got pinned $pin"
+            [ -n "$pin" ] || { echo "::error::$var not found in tools/restore.sh"; exit 1; }
+            [ "$got" = "$pin" ] || { echo "::error::$rid: the recipe no longer produces the pinned native; re-host and re-pin"; exit 1; }
           done
 
       - name: Verify ABI, C API exports, 16 KB alignment, build ids
