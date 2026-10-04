@@ -68,8 +68,9 @@ internal static class SpvcLoader
     /// against the image the linker mapped from the APK. <c>android-arm64</c> is the one
     /// ShadowDusk.GLSL packs (SHA-256 pinned in <c>tools/restore.*</c>; <c>SpvcLoaderPinTests</c>
     /// fails if the restored file's build id differs). <c>android-x64</c> is the copy the x86_64
-    /// emulator lane of <c>validation/AndroidGl</c> bundles: no package ships it, it is pinned only
-    /// so the emulator harness keeps running with the check on (the same rule as DXC's
+    /// emulator lane of <c>validation/AndroidGl</c> bundles (hosted on release tag
+    /// <c>native-dxc-1.7.2212.40</c> and SHA-256 pinned in <c>tools/restore.*</c>, issue #304): no
+    /// package ships it, it is pinned so the emulator lane runs with the check on (the same rule as DXC's
     /// <c>AndroidX64CompilerBuildId</c>); a rebuild gets a new build id and an <c>SD0103</c> naming
     /// both, which is the cue to update this line.
     /// </summary>

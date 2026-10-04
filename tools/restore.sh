@@ -207,6 +207,17 @@ restore_dxc_macos
 # spirv-cross-android-build.yml re-pins the SHA-256s here.
 DXC_ANDROID_ARM64_SHA256="b3a25ca724f71155ba3ccc8d32f94bce11375a5f44dac9d5cb6e4636271cfe67"
 SPVC_ANDROID_ARM64_SHA256="7b1e5e366080b6ea9652debd1126b1a52d2d5779d7f8a1e06f0a7c6a9ce9870f"
+# android-x64 (issue #304): the x86_64 pair the Android EMULATOR runs (validation/AndroidGl and
+# its CI lane, .github/workflows/android-emulator.yml). No package ships them; they are hosted
+# on the same tag and pinned the same way so the emulator lane restores them instead of needing
+# a local NDK build. Provenance: the DXC is `.wasm-build/build-dxc-android.ps1 -Abi x86_64`
+# (pinned e043f4a1, NDK r27c, API 24, llvm-strip --strip-debug; the same recipe and session as
+# the hosted arm64 file, re-verified 2026-10-03 by stripping the build tree's output to these
+# exact bytes); the SPIRV-Cross is the same NDK r27c CMake build as the hosted arm64 file
+# (shared C API, Release, API 24), source revision unrecorded (project_facts.md). Their GNU
+# build ids are the android-x64 pins in DxcNativeIdentity / SpvcLoader.
+DXC_ANDROID_X64_SHA256="4a7b255c17ce4b8cfddd7018c39c444ec0baa8bab8f8825bf7e4da7d99783a5a"
+SPVC_ANDROID_X64_SHA256="c495af0e95320aa837a5ddfd7f02b7e4415f2ecf15a2d0cd5950566419da0db1"
 
 # restore_spvc_android_file <asset-name> <dest-relative-to-tools/spirv-cross> <sha256>
 restore_spvc_android_file() {
@@ -252,6 +263,10 @@ restore_android() {
         "$DXC_ANDROID_ARM64_SHA256"
     restore_spvc_android_file "libspirv-cross.android-arm64.so" "android-arm64/libspirv-cross.so" \
         "$SPVC_ANDROID_ARM64_SHA256"
+    restore_dxc_file "libdxcompiler.android-x64.so" "android-x64/libdxcompiler.so" \
+        "$DXC_ANDROID_X64_SHA256"
+    restore_spvc_android_file "libspirv-cross.android-x64.so" "android-x64/libspirv-cross.so" \
+        "$SPVC_ANDROID_X64_SHA256"
 }
 
 restore_android

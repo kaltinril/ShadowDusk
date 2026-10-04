@@ -19,13 +19,19 @@
                    (issue #350: SpvcLoader's identity check, read from the mapped image too)
       5. spvc-missing  no x86_64 libspirv-cross.so in the APK       -> SD0103, "is not in this app"
 
-    Exits non-zero if any verdict differs. Not run by `dotnet test` and not in CI (no Android
-    lane): registered in docs/validation-matrix.md section 6.
+    Scenario 1 is also the Phase 50 on-device compile + MonoGame Effect load, on the MonoGame
+    Android version validation/AndroidGl pins.
+
+    Exits non-zero if any verdict differs. Not run by `dotnet test`; CI runs it on an API-34
+    x86_64 emulator in the label-gated `Android emulator (DXC/SPIRV-Cross identity)` job of
+    .github/workflows/android-emulator.yml (issue #304). Registered in
+    docs/validation-matrix.md section 6. Runs on Windows, Linux and macOS (PowerShell 7).
 
 .EXAMPLE
     E:\Android\SDK\emulator\emulator -avd pixel_7_-_api_34 -no-window -no-audio   # in another shell
     ./validation/AndroidGl/run-dxc-identity-checks.ps1
 #>
+#Requires -Version 7
 [CmdletBinding()]
 param(
     [int]$TimeoutSeconds = 180
@@ -34,13 +40,22 @@ param(
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 
-$repo = Resolve-Path (Join-Path $PSScriptRoot '..\..')
+$repo = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..' '..'))
 $project = Join-Path $PSScriptRoot 'AndroidGl.csproj'
-$pinned = Join-Path $repo 'tools\dxc\android-x64\libdxcompiler.so'
-$pinnedSpvc = Join-Path $repo 'tools\spirv-cross\android-x64\libspirv-cross.so'
+$pinned = Join-Path $repo 'tools' 'dxc' 'android-x64' 'libdxcompiler.so'
+$pinnedSpvc = Join-Path $repo 'tools' 'spirv-cross' 'android-x64' 'libspirv-cross.so'
 $package = 'com.shadowdusk.androidgl'
-if (-not (Test-Path $pinned)) { throw "The x86_64 DXC is not restored at $pinned." }
-if (-not (Test-Path $pinnedSpvc)) { throw "The x86_64 SPIRV-Cross is not present at $pinnedSpvc." }
+if (-not (Test-Path $pinned)) { throw "The x86_64 DXC is not restored at $pinned (run tools/restore.*)." }
+if (-not (Test-Path $pinnedSpvc)) { throw "The x86_64 SPIRV-Cross is not restored at $pinnedSpvc (run tools/restore.*)." }
+
+# The pins the loaders check, read from the source so this script can never test another id.
+function Get-Pin([string]$File, [string]$Pattern) {
+    $text = Get-Content -Raw (Join-Path $repo $File)
+    if ($text -notmatch $Pattern) { throw "Could not read the android-x64 build-id pin from $File." }
+    return $Matches[1]
+}
+$dxcPin = Get-Pin (Join-Path 'src' 'ShadowDusk.HLSL' 'Dxc' 'DxcNativeIdentity.cs') 'AndroidX64CompilerBuildId = "([0-9a-f]{40})"'
+$spvcPin = Get-Pin (Join-Path 'src' 'ShadowDusk.GLSL' 'Interop' 'SpvcLoader.cs') '\["android-x64"\] = "([0-9a-f]{40})"'
 if (-not (Get-Command adb -ErrorAction SilentlyContinue)) { throw 'adb is not on PATH.' }
 
 $work = Join-Path ([IO.Path]::GetTempPath()) ("sd-android-dxc-" + [guid]::NewGuid().ToString('N'))
@@ -64,10 +79,10 @@ function New-ForeignCopy([string]$Source, [string]$BuildIdHex, [string]$Destinat
     [IO.File]::WriteAllBytes($Destination, $bytes)
 }
 
-$foreign = Join-Path $work 'foreign\libdxcompiler.so'
-New-ForeignCopy $pinned '38487f7242f477f1eefcb58e587a128c2a54906e' $foreign 'DxcNativeIdentity.AndroidX64CompilerBuildId'
-$foreignSpvc = Join-Path $work 'foreign-spvc\libspirv-cross.so'
-New-ForeignCopy $pinnedSpvc '8d426179db1d42462bfc8dd3db6cdd2222efccdd' $foreignSpvc 'SpvcLoader.AndroidBuildIdByRid[android-x64]'
+$foreign = Join-Path $work 'foreign' 'libdxcompiler.so'
+New-ForeignCopy $pinned $dxcPin $foreign 'DxcNativeIdentity.AndroidX64CompilerBuildId'
+$foreignSpvc = Join-Path $work 'foreign-spvc' 'libspirv-cross.so'
+New-ForeignCopy $pinnedSpvc $spvcPin $foreignSpvc 'SpvcLoader.AndroidBuildIdByRid[android-x64]'
 
 function Remove-Apks {
     # The APK packaging step is incremental on its inputs and does not notice a native library
@@ -80,7 +95,7 @@ function Remove-Apks {
 function Invoke-Scenario([string]$Name, [string]$Dxc, [string[]]$Expect, [string]$Spvc = '') {
     Write-Host "== $Name"
     Remove-Apks
-    & dotnet build $project -c Debug "-p:AndroidGlDxcX64=$Dxc" "-p:AndroidGlSpvcX64=$Spvc" -t:Install --nologo -v quiet | Out-Host
+    & dotnet build $project -c Debug "-p:AndroidGlDxcX64=$Dxc" "-p:AndroidGlSpvcX64=$Spvc" -t:Install --nologo -v quiet -clp:ErrorsOnly | Out-Host
     if ($LASTEXITCODE -ne 0) { throw "${Name}: build/install failed ($LASTEXITCODE)" }
 
     & adb shell am force-stop $package | Out-Null
@@ -96,7 +111,11 @@ function Invoke-Scenario([string]$Name, [string]$Dxc, [string[]]$Expect, [string
             Select-Object -First 1
     }
     & adb shell am force-stop $package | Out-Null
-    if (-not $verdict) { Write-Host "  FAIL  no verdict in logcat within $TimeoutSeconds s"; return $false }
+    if (-not $verdict) {
+        Write-Host "  FAIL  no verdict in logcat within $TimeoutSeconds s; the app's log follows"
+        & adb logcat -d -s SHADOWDUSK:* AndroidRuntime:* monodroid:* DOTNET:* | Select-Object -Last 80 | Out-Host
+        return $false
+    }
 
     Write-Host "  $verdict"
     $ok = $true

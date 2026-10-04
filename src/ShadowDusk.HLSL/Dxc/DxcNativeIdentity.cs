@@ -83,9 +83,11 @@ internal static class DxcNativeIdentity
     /// <summary>
     /// GNU build id of the <c>android-x64</c> <c>libdxcompiler.so</c> that the x86_64 emulator
     /// lane of <c>validation/AndroidGl</c> bundles (<c>.wasm-build/build-dxc-android.ps1</c> for
-    /// x86_64, the same pinned commit). No package ships it: it is pinned only so the emulator
-    /// harness keeps running with the identity check on. A rebuild of that file gets a new build
-    /// id and an <c>SD0219</c> naming both, which is the cue to update this line.
+    /// x86_64, the same pinned commit; hosted on release tag <c>native-dxc-1.7.2212.40</c> and
+    /// SHA-256 pinned in <c>tools/restore.*</c>, issue #304). No package ships it: it is pinned so
+    /// the emulator lane (<c>.github/workflows/android-emulator.yml</c>) runs with the identity
+    /// check on. A rebuild of that file gets a new build id and an <c>SD0219</c> naming both,
+    /// which is the cue to update this line.
     /// </summary>
     internal const string AndroidX64CompilerBuildId = "38487f7242f477f1eefcb58e587a128c2a54906e";
 

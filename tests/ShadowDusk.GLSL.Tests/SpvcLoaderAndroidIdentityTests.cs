@@ -64,6 +64,34 @@ public sealed class SpvcLoaderAndroidIdentityTests
         ReadBuildId(File.ReadAllBytes(path)).ShouldBe(SpvcLoader.AndroidBuildIdByRid[Arm64], path);
     }
 
+    /// <summary>
+    /// The android-x64 pin is the build id of the x86_64 file <c>tools/restore.*</c> restores from
+    /// the release (issue #304): the emulator lane bundles exactly that file, so a pin that drifts
+    /// from it would refuse the lane's every compile with <c>SD0103</c>. Skipped as passed where it
+    /// was not restored; CI's integration job hard-gates its presence.
+    /// </summary>
+    [Fact]
+    [Trait("Category", "Integration")]
+    public void TheX64Pin_IsTheBuildIdOfTheRestoredEmulatorFile()
+    {
+        string path = Path.Combine(RepoRoot(), "tools", "spirv-cross", "android-x64", "libspirv-cross.so");
+        if (!File.Exists(path))
+            return;
+
+        ReadBuildId(File.ReadAllBytes(path)).ShouldBe(SpvcLoader.AndroidBuildIdByRid["android-x64"], path);
+    }
+
+    private static string RepoRoot()
+    {
+        for (DirectoryInfo? dir = new(AppContext.BaseDirectory); dir is not null; dir = dir.Parent)
+        {
+            if (File.Exists(Path.Combine(dir.FullName, "ShadowDusk.slnx")))
+                return dir.FullName;
+        }
+
+        throw new InvalidOperationException("Could not locate the repo root (ShadowDusk.slnx).");
+    }
+
     /// <summary>The GNU build id from an ELF64 little-endian file's PT_NOTE segments.</summary>
     private static string? ReadBuildId(byte[] elf)
     {

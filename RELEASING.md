@@ -239,6 +239,18 @@ first (the `/release` skill does this for you).
 > broken for any consumer RID. If the gate trips, check that the `native-vkd3d-2.1`
 > release assets are intact and the restore-step log shows four "hash OK" lines.
 
+> **Android natives (Phase 50, issue #304):** `tools/restore.{ps1,sh}` also restore four Android
+> `.so` files from the `native-dxc-1.7.2212.40` release, SHA-256 pinned. The `android-arm64`
+> DXC + SPIRV-Cross pack into `ShadowDusk.HLSL` / `ShadowDusk.GLSL` under
+> `runtimes/android-arm64/native/` (gated by `release.yml` and `pack-consume.yml`); the
+> `android-x64` pair is restored only for the emulator lane (`android-emulator.yml`) and is never
+> packed. **Before dispatching**, confirm the `Android emulator` workflow is green on the release
+> commit (`gh workflow run android-emulator.yml --ref main` if the last run is older): it is the
+> only run of the on-device compile and the Android identity checks. If any Android native is
+> rebuilt, upload it as a NEW asset (never replace one), re-pin its SHA-256 in both restore
+> scripts AND its GNU build id in `DxcNativeIdentity` / `SpvcLoader.AndroidBuildIdByRid`
+> (`DxcPinnedNativeIdentityTests` and `SpvcLoaderAndroidIdentityTests` fail when they drift).
+
 > **slangc packing (`ShadowDusk.Slang` — Phase 66, issues #226/#227):** `ShadowDusk.Slang.csproj`
 > packs each **restored** `tools/slang/<rid>/` pair (the slangc executable + its slang-compiler
 > library) for win-x64, linux-x64, osx-x64 and osx-arm64. `tools/restore.{ps1,sh}` download the

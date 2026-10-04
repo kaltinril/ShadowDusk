@@ -156,6 +156,11 @@ history, not just SemVer's letter):
   (its macOS `verify-slang-osx-x64-rosetta.sh` step is the only run of the osx-x64 slangc).
   It has no push trigger, so dispatch it (`gh workflow run pack-consume.yml --ref main`) if the
   last run predates the release commit.
+- **`Android emulator` must be green on the release commit before dispatch** (issue #304). It is
+  the only run of the on-device compile + `Effect` load and of the Android DXC / SPIRV-Cross
+  identity checks (`validation/AndroidGl/run-dxc-identity-checks.ps1`). It runs on a push to
+  main only when the loaders, the harness or `tools/restore.sh` changed, so dispatch it
+  (`gh workflow run android-emulator.yml --ref main`) if the last run predates the release commit.
 - **Commit directly, no `/commit` skill, no co-author / tool-attribution trailer of any
   kind** (CLAUDE.md Git Commit Conventions).
 - **Tests pass `--settings ShadowDusk.runsettings`** (the Phase 21 suite-timeout guardrail),

@@ -99,7 +99,7 @@ jobs:
         uses: actions/cache@v5
         with:
           path: tools/dxc
-          key: dxc-1.7.2212.40-${{ runner.os }}
+          key: dxc-1.7.2212.40-android-x64-${{ runner.os }}
 
       - name: Cache slangc natives
         uses: actions/cache@v5
