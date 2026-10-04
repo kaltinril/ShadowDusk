@@ -285,6 +285,17 @@ public sealed class FxPreParser
     // in this map by the time its tex2D call is reached.
     private readonly Dictionary<string, string> _samplerTextureBindings = new(StringComparer.Ordinal);
 
+    // The subset of _samplerTextureBindings whose texture this parser INVENTED
+    // (SynthTextureName) because the source bound none: sampler name -> synthesized name.
+    // Kept apart from the bindings because the effect parameter for such a pair must carry
+    // the SAMPLER's name, as mgfxc's does (see FxParseResult.SynthesizedSamplerTextures).
+    private readonly Dictionary<string, string> _synthesizedSamplerTextures = new(StringComparer.Ordinal);
+
+    // Textures a sampler_state block references but the source never declares, already
+    // given a 'Texture2D' declaration by the rewrite (so a second sampler on the same
+    // texture does not declare it twice).
+    private readonly HashSet<string> _declaredReferencedTextures = new(StringComparer.Ordinal);
+
     /// <summary>
     /// SAMPLER name -> the explicit <c>register(sN)</c> index on its legacy declaration, captured
     /// before the SM4 rewrite drops the clause (issue #189). Resolved to TEXTURE names against
@@ -646,9 +657,21 @@ public sealed class FxPreParser
                             // (declared separately as 'Texture2D T;'); otherwise synthesize.
                             string texture = info.TextureReference ?? SynthTextureName(info.Name);
                             _samplerTextureBindings[info.Name] = texture;
-                            string newDecl = info.TextureReference is not null
-                                ? $"SamplerState {info.Name};"
-                                : $"Texture2D {texture}; SamplerState {info.Name};";
+                            if (info.TextureReference is null)
+                                _synthesizedSamplerTextures[info.Name] = texture;
+                            // A referenced texture the source never declares
+                            // ('sampler2D A = sampler_state { Texture = <T>; };' and no 'T'):
+                            // mgfxc reads the name off the state block and emits a 'T'
+                            // parameter, so declare it here, once, rather than hand DXC an
+                            // undeclared identifier.
+                            bool declareReference = info.TextureReference is not null
+                                && !_declaredReferencedTextures.Contains(info.TextureReference)
+                                && IsOnlyNamedByTextureStates(info.TextureReference);
+                            if (declareReference)
+                                _declaredReferencedTextures.Add(info.TextureReference!);
+                            string newDecl = info.TextureReference is null || declareReference
+                                ? $"Texture2D {texture}; SamplerState {info.Name};"
+                                : $"SamplerState {info.Name};";
 
                             replacedRanges.Add((blockStart, declEnd,
                                 BuildDeclReplacement(blockStart, declEnd, newDecl)));
@@ -701,6 +724,7 @@ public sealed class FxPreParser
                         // A bare sampler binds no texture in source — synthesize one.
                         string synth = SynthTextureName(name);
                         _samplerTextureBindings[name] = synth;
+                        _synthesizedSamplerTextures[name] = synth;
                         string newDecl = $"Texture2D {synth}; SamplerState {name};";
 
                         replacedRanges.Add((blockStart, declEnd,
@@ -1018,6 +1042,7 @@ public sealed class FxPreParser
             ParameterAnnotations = paramAnnotations,
             ExplicitGlSamplerSlots = explicitGlSlots,
             LegacySamplerTextures = new Dictionary<string, string>(_samplerTextureBindings, StringComparer.Ordinal),
+            SynthesizedSamplerTextures = new Dictionary<string, string>(_synthesizedSamplerTextures, StringComparer.Ordinal),
             ReservedGlSamplerSlots = CollectReservedSamplerRegisters(),
         });
     }
@@ -2290,6 +2315,53 @@ public sealed class FxPreParser
 
         int o3 = NextCodeOffset(o2 + 1);
         return Peek(o3).Kind == TokenKind.Equals;
+    }
+
+    /// <summary>
+    /// Whether <paramref name="textureName"/> appears in the source ONLY as the value of a
+    /// sampler_state <c>Texture = &lt;T&gt;</c> (or <c>(T)</c>, or bare <c>T</c>) entry. Then nothing
+    /// declares it, and without a declaration the rewritten <c>T.Sample(…)</c> cannot compile
+    /// (while <c>mgfxc</c>, which reads the name off the state block itself, emits a <c>T</c>
+    /// parameter). Every other code mention (a declaration anywhere in the file, a use) and any
+    /// mention inside a preprocessor directive (a macro could produce or rename it) keeps the
+    /// rewrite exactly as it was. Comments do not count.
+    /// </summary>
+    private bool IsOnlyNamedByTextureStates(string textureName)
+    {
+        var word = new System.Text.RegularExpressions.Regex(
+            $@"(?<![A-Za-z0-9_]){System.Text.RegularExpressions.Regex.Escape(textureName)}(?![A-Za-z0-9_])");
+
+        int PreviousCode(int index)
+        {
+            int k = index - 1;
+            while (k >= 0 && _tokens[k].Kind is TokenKind.LineComment or TokenKind.BlockComment)
+                k--;
+            return k;
+        }
+
+        int mentions = 0, stateValues = 0;
+        for (int i = 0; i < _tokens.Count; i++)
+        {
+            Token tok = _tokens[i];
+            if (tok.Kind == TokenKind.Preprocessor && word.IsMatch(tok.Text))
+                return false;
+            if (tok.Kind != TokenKind.Identifier || !string.Equals(tok.Text, textureName, StringComparison.Ordinal))
+                continue;
+
+            mentions++;
+            int k = PreviousCode(i);
+            if (k >= 0 && _tokens[k].Kind is TokenKind.LAngle or TokenKind.LParen)
+                k = PreviousCode(k);
+            if (k < 0 || _tokens[k].Kind != TokenKind.Equals)
+                continue;
+            k = PreviousCode(k);
+            if (k >= 0 && _tokens[k].Kind == TokenKind.Identifier
+                && string.Equals(_tokens[k].Text, "Texture", StringComparison.OrdinalIgnoreCase))
+            {
+                stateValues++;
+            }
+        }
+        return mentions > 0 && mentions == stateValues;
     }
 
     /// <summary>The synthesized <c>Texture2D</c> name bound to a bare/untextured sampler.</summary>

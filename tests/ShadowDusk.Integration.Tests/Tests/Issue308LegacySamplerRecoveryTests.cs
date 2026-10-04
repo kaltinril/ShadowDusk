@@ -143,7 +143,7 @@ public sealed class Issue308LegacySamplerRecoveryTests
         string table = string.Join(" ", PixelSamplers(mgfx)
             .OrderBy(s => s.TextureSlot)
             .Select(s => $"{s.Name}={mgfx.Parameters[s.Parameter].Name}"));
-        table.ShouldBe("ps_s1=B_SDTexture ps_s2=A_SDTexture", customMessage: "mgfxc: A on ps_s2, B on ps_s1");
+        table.ShouldBe("ps_s1=B ps_s2=A", customMessage: "mgfxc: A on ps_s2, B on ps_s1");
     }
 
     [Theory]

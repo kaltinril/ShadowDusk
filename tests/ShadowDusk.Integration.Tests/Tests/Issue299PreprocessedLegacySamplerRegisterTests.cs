@@ -236,7 +236,7 @@ public sealed class Issue299PreprocessedLegacySamplerRegisterTests
     [InlineData("VsTransformColorTexture.fx", "ps_s0=SpriteTexture")]
     [InlineData("VsWaveQuadIntrinsics.fx", "ps_s0=SpriteTexture")]
     [InlineData("third-party/Apos.Shapes/apos-shapes-sm6.fx",
-        "ps_s0=TextureSampler_SDTexture ps_s1=FontSampler_SDTexture ps_s2=BlueNoiseSampler_SDTexture")]
+        "ps_s0=TextureSampler ps_s1=FontSampler ps_s2=BlueNoiseSampler")]
     public async Task OpenGl_FixturesWhoseRegistersLiveInTheDeadSm6Arm_KeepTheirUnits(string fixture, string expected)
     {
         string path = TestHelpers.FixturePath(fixture);

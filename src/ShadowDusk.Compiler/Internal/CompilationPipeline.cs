@@ -859,6 +859,20 @@ internal sealed class CompilationPipeline
         if (reservationError is not null)
             return Fail(reservationError, runWarnings);
 
+        // A legacy sampler that binds no texture (`sampler2D A;`) is ONE object to mgfxc, and
+        // the effect parameter it emits for it is named `A` on every profile. The SM4 rewrite
+        // had to split it into `Texture2D A_SDTexture; SamplerState A;`, so reflection names
+        // the texture after the synthesized declaration. Give it the sampler's name back, and
+        // drop the standalone sampler parameter of that same name, which on OpenGL and Vulkan
+        // would otherwise sit beside it bound to nothing (setting it did not reach the
+        // texture). Done before ANY index into the table is taken, so the cbuffer and sampler
+        // records below all see the final list; texture lookups go through
+        // TextureParameterName. Rendering is unchanged: the records point at the same texture.
+        Dictionary<string, string> textureParameterNames =
+            ApplySynthesizedSamplerParameterNames(allParameters, fxParsed.SynthesizedSamplerTextures);
+        string TextureParameterName(string textureName) =>
+            textureParameterNames.TryGetValue(textureName, out string? parameterName) ? parameterName : textureName;
+
         // GL (Phase 43 F4/F5): one cbuffer record PER SHADER, built from the uniform
         // register layout the GLSL rewriter returned for that shader, deduplicated
         // across shaders mgfxc-style (ConstantBufferData.SameAs). A cbuffer bound by
@@ -1134,7 +1148,7 @@ internal sealed class CompilationPipeline
                             // separate divergence tracked in Phase 51, not changed here because
                             // it needs its own DX12 render re-proof.
                             Name:        directX ? string.Empty : $"ps_s{slot}",
-                            Parameter:   IndexOfParam(allParameters, tex.Name),
+                            Parameter:   IndexOfParam(allParameters, TextureParameterName(tex.Name)),
                             State:       matchedSamp is null
                                              ? null
                                              : samplerStateByName.GetValueOrDefault(matchedSamp.Name)));
@@ -1213,7 +1227,7 @@ internal sealed class CompilationPipeline
                             TextureSlot: (byte)glSamplerSlots[k],
                             SamplerSlot: (byte)glSamplerSlots[k],
                             Name:        $"ps_s{glSamplerSlots[k]}",
-                            Parameter:   IndexOfParam(allParameters, pair.TextureName),
+                            Parameter:   IndexOfParam(allParameters, TextureParameterName(pair.TextureName)),
                             // Keyed on the .fx sampler identifier, which survives the SM4
                             // rewrite verbatim, so the baked sampler_state follows the SAMPLER
                             // half of the pair — two pairs sharing one texture but different
@@ -1273,7 +1287,7 @@ internal sealed class CompilationPipeline
                         // No Math.Max(0, …) clamp — see the DirectX branch (bug-hunt N11).
                         int paramIndex = matchedTex is null
                             ? 0
-                            : IndexOfParam(allParameters, matchedTex.Name);
+                            : IndexOfParam(allParameters, TextureParameterName(matchedTex.Name));
                         samplers.Add(new MgfxSamplerInfo(
                             Type:        SamplerTypeByte(matchedTex?.Dimension),
                             TextureSlot: (byte)slot,
@@ -2605,6 +2619,65 @@ internal sealed class CompilationPipeline
         TextureDimension.Texture1D   => 3,
         _                            => 0, // Texture2D / Unknown / null
     };
+
+    /// <summary>
+    /// Renames each texture the SM4 rewrite synthesized for a texture-less legacy sampler
+    /// (<c>A_SDTexture</c>) to the sampler's own name (<c>A</c>), mgfxc's name for that
+    /// parameter on every profile, and removes the standalone sampler parameter of that name
+    /// (OpenGL/Vulkan emit one per reflected sampler; it would duplicate the name and bind
+    /// nothing). Only a texture that actually reached the table is renamed, and only then is
+    /// its sampler's parameter removed. Returns reflected texture name -> parameter name for
+    /// the renamed textures, which the sampler records join through.
+    /// </summary>
+    private static Dictionary<string, string> ApplySynthesizedSamplerParameterNames(
+        List<ParameterReflection> parameters,
+        IReadOnlyDictionary<string, string> synthesizedSamplerTextures)
+    {
+        var renamed = new Dictionary<string, string>(StringComparer.Ordinal);
+        if (synthesizedSamplerTextures.Count == 0)
+            return renamed;
+
+        var samplerOfTexture = new Dictionary<string, string>(StringComparer.Ordinal);
+        foreach ((string samplerName, string textureName) in synthesizedSamplerTextures)
+            samplerOfTexture[textureName] = samplerName;
+
+        foreach (ParameterReflection p in parameters)
+        {
+            if (p.Class == EffectParameterClass.Object
+                && samplerOfTexture.TryGetValue(p.Name, out string? samplerName))
+            {
+                renamed[p.Name] = samplerName;
+            }
+        }
+        if (renamed.Count == 0)
+            return renamed;
+
+        var renamedSamplers = new HashSet<string>(renamed.Values, StringComparer.Ordinal);
+        var samplerAnnotations = new Dictionary<string, IReadOnlyList<AnnotationReflection>?>(StringComparer.Ordinal);
+        foreach (ParameterReflection p in parameters)
+        {
+            // The parameter of the SAMPLER half: the only global left with the sampler's
+            // name after the rewrite is the SamplerState itself, and it is always Object-class.
+            if (p.Class == EffectParameterClass.Object && renamedSamplers.Contains(p.Name))
+                samplerAnnotations[p.Name] = p.Annotations;
+        }
+        parameters.RemoveAll(p => p.Class == EffectParameterClass.Object && renamedSamplers.Contains(p.Name));
+
+        for (int i = 0; i < parameters.Count; i++)
+        {
+            if (parameters[i].Class == EffectParameterClass.Object
+                && renamed.TryGetValue(parameters[i].Name, out string? parameterName))
+            {
+                // An annotation written on the legacy sampler (`sampler2D A < ... >;`) is keyed
+                // by the sampler's name, which this parameter now carries.
+                IReadOnlyList<AnnotationReflection>? annotations = parameters[i].Annotations
+                    ?? samplerAnnotations.GetValueOrDefault(parameterName);
+                parameters[i] = parameters[i] with { Name = parameterName, Annotations = annotations };
+            }
+        }
+
+        return renamed;
+    }
 
     private static int IndexOfParam(IReadOnlyList<ParameterReflection> parameters, string name)
     {

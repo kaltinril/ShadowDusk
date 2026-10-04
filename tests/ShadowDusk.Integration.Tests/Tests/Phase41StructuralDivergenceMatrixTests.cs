@@ -47,7 +47,6 @@ public sealed class Phase41StructuralDivergenceMatrixTests
     // an expected object-class class so the matrix does not flag them as real divergences.
     private const byte ClassObject = 3;
     private const byte TypeSampler = 5;
-    private const string SynthesizedTextureSuffix = "_SDTexture";
 
     private static readonly string[] s_targets = { "DirectX_11", "OpenGL" };
 
@@ -206,8 +205,9 @@ public sealed class Phase41StructuralDivergenceMatrixTests
     /// <summary>
     /// Parameter metadata diff, keyed by name (order is not part of the contract — MonoGame
     /// looks parameters up by name). Mirrors MgfxParameterMatchTests' value-vs-object rules:
-    /// value-class params must match exactly; the two pinned object-class shapes (extra
-    /// sampler params, legacy `sampler s0;` -> synthesized `_SDTexture`) are not divergences.
+    /// value-class params must match exactly; the one pinned object-class shape (extra
+    /// sampler params) is not a divergence. A legacy `sampler s0;` is named `s0`, as mgfxc
+    /// names it, so it needs no allowance.
     /// </summary>
     private static bool DiffParameters(MgfxBlobReader subject, MgfxBlobReader golden, List<string> div)
     {
@@ -221,14 +221,6 @@ public sealed class Phase41StructuralDivergenceMatrixTests
         {
             if (!subjectByName.TryGetValue(gold.Name, out MgfxParameterRecord? sub))
             {
-                // mgfxc-texture vs ShadowDusk-sampler legacy rename: the texture lives at
-                // the companion name; the sampler param carries the golden name.
-                if (gold.Class == ClassObject &&
-                    subjectByName.ContainsKey(gold.Name + SynthesizedTextureSuffix))
-                {
-                    continue; // pinned legacy `sampler s0;` shape — equivalent.
-                }
-
                 div.Add($"param `{gold.Name}` missing (golden class={gold.Class} type={gold.Type})");
                 clean = false;
                 continue;
@@ -250,25 +242,20 @@ public sealed class Phase41StructuralDivergenceMatrixTests
                 continue;
             }
 
-            // Object-class: identical type is clean; the sampler-rename is a pinned, allowed shape.
+            // Object-class: identical type is clean.
             if (sub.Class == ClassObject && sub.Type == gold.Type)
-                continue;
-            if (sub.Class == ClassObject && sub.Type == TypeSampler &&
-                subjectByName.ContainsKey(gold.Name + SynthesizedTextureSuffix))
                 continue;
 
             div.Add($"object-param `{gold.Name}` class {sub.Class}/{gold.Class} type {sub.Type}/{gold.Type}");
             clean = false;
         }
 
-        // Extras: only object-class sampler params and synthesized _SDTexture companions
-        // are allowed (pinned divergence 1). An extra value-class param is a real divergence.
+        // Extras: only object-class sampler params are allowed (the pinned divergence). An
+        // extra value-class or texture param is a real divergence.
         var goldenNames = golden.Parameters.Select(p => p.Name).ToHashSet(StringComparer.Ordinal);
         foreach (MgfxParameterRecord extra in subject.Parameters.Where(p => !goldenNames.Contains(p.Name)))
         {
-            bool allowed = extra.Class == ClassObject &&
-                           (extra.Type == TypeSampler ||
-                            extra.Name.EndsWith(SynthesizedTextureSuffix, StringComparison.Ordinal));
+            bool allowed = extra.Class == ClassObject && extra.Type == TypeSampler;
             if (!allowed)
             {
                 div.Add($"extra value-class param `{extra.Name}` (class={extra.Class} type={extra.Type})");
@@ -849,8 +836,8 @@ public sealed class Phase41StructuralDivergenceMatrixTests
                         + "should be triaged.", cell);
                 else if (d.Contains("object-param") || d.Contains("missing (golden class=3"))
                     Add("objparam", "Object-class (texture/sampler) parameter shape",
-                        "A texture/sampler (object-class) parameter diverges beyond the two pinned, render-proven shapes "
-                        + "(extra sampler params; legacy `sampler s0;` -> synthesized `_SDTexture`).", cell);
+                        "A texture/sampler (object-class) parameter diverges beyond the one pinned, render-proven shape "
+                        + "(extra sampler params).", cell);
                 else if (d.Contains("param `") && d.Contains("missing"))
                     Add("missingparam", "Missing parameter (not reachable by name)",
                         "A golden parameter is not reachable by name in the ShadowDusk output.", cell);

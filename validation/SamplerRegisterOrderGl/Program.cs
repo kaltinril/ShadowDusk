@@ -118,6 +118,19 @@
 //       reserved (mgfxc ps_s2/ps_s3)           -> (255, 255, 0)  yellow
 //       keywords not recognised (bug, 0/1)     -> (  0, 255, 0)  green
 //
+// ARM "param-names" (tests/fixtures/golden/legacy-sampler-names/ParamNamesRender.fx):
+// the effect-parameter NAME of a texture-less legacy sampler. mgfxc names it after the
+// sampler (`MaskA`); ShadowDusk used to name it after the texture its SM4 rewrite
+// synthesizes (`MaskA_SDTexture`), and `Parameters["MaskA"]` then found only a
+// standalone sampler parameter no sampler record points at, so SetValue drew nothing.
+// SpriteBatch's `SpriteSampler : register(s0)`, a bare `sampler2D MaskA;` and a
+// texture-less `sampler2D MaskB = sampler_state { ... }`; the masks are bound ONLY
+// through `Parameters["MaskA"]` / `Parameters["MaskB"]`, which must exist and be
+// Texture2D parameters, and no parameter may carry the synthesized suffix.
+//     BLUE sprite, RED MaskA, GREEN MaskB, output (a.r, b.g, sprite.b, 1):
+//       mgfxc's names bind                   -> (255, 255, 255)  white
+//       the names bind nothing (the bug)     -> (  0,   0, 255)  blue
+//
 // EVIDENCE EACH ARM PRODUCES
 //   1. ShadowDusk's own build renders the expected colour (the absolute claim).
 //   2. The mgfxc golden renders it too (the CONTROL — without it, both builds being
@@ -172,10 +185,19 @@ var fixtures = new[]
 };
 var compiled = new Dictionary<string, (byte[] Candidate, byte[] Golden)>(StringComparer.Ordinal);
 
-foreach (string name in fixtures)
+// The legacy-sampler parameter NAME arm keeps its fixture and golden together, outside the corpus.
+string namesDir = Path.Combine(repoRoot, "tests", "fixtures", "golden", "legacy-sampler-names");
+var inputs = fixtures
+    .Select(name => (Name: name,
+                     Fx: Path.Combine(repoRoot, "tests", "fixtures", "shaders", name + ".fx"),
+                     Golden: Path.Combine(repoRoot, "tests", "fixtures", "golden", "OpenGL", name + ".mgfx")))
+    .Append((Name: "ParamNamesRender",
+             Fx: Path.Combine(namesDir, "ParamNamesRender.fx"),
+             Golden: Path.Combine(namesDir, "ParamNamesRender.OpenGL.mgfx")))
+    .ToList();
+
+foreach ((string name, string fxPath, string goldenPath) in inputs)
 {
-    string fxPath = Path.Combine(repoRoot, "tests", "fixtures", "shaders", name + ".fx");
-    string goldenPath = Path.Combine(repoRoot, "tests", "fixtures", "golden", "OpenGL", name + ".mgfx");
 
     if (!File.Exists(goldenPath))
     {
@@ -238,6 +260,7 @@ using var game = new RegisterOrderGame(
     compiled["SamplerReservationIfBranch"], compiled["SamplerReservationMacro"],
     compiled["SamplerLegacyRegisterIfBranch"], compiled["SamplerLegacyRegisterMacro"],
     compiled["SamplerLegacyInclude"], compiled["SamplerLegacyMacroDecl"], compiled["SamplerReservationKeywords"],
+    compiled["ParamNamesRender"],
     outDir, tolerance);
 game.Run();
 
@@ -260,7 +283,7 @@ if (game.Skipped)
 foreach (string line in game.Report)
     Console.WriteLine(line);
 
-Console.WriteLine($"\n[regorder] {(game.Passed ? "PASS" : "FAIL")} — rung-4 OpenGL sampler register-order validation (issues #189, #283, #299, #308, #309).");
+Console.WriteLine($"\n[regorder] {(game.Passed ? "PASS" : "FAIL")} — rung-4 OpenGL sampler register-order validation (issues #189, #283, #299, #308, #309, legacy-sampler parameter names).");
 return game.Passed ? 0 : 1;
 
 // -----------------------------------------------------------------------------
@@ -398,6 +421,7 @@ sealed class RegisterOrderGame : Game
     private readonly byte[] _candidate, _golden, _sparseCandidate, _sparseGolden;
     private readonly (byte[] Candidate, byte[] Golden) _ifBranch, _macro, _legacyIfBranch, _legacyMacro;
     private readonly (byte[] Candidate, byte[] Golden) _legacyInclude, _legacyMacroDecl, _keywordReservation;
+    private readonly (byte[] Candidate, byte[] Golden) _paramNames;
     private readonly string _outDir;
     private readonly int _tolerance;
     private bool _done;
@@ -414,8 +438,10 @@ sealed class RegisterOrderGame : Game
         (byte[] Candidate, byte[] Golden) legacyIfBranch, (byte[] Candidate, byte[] Golden) legacyMacro,
         (byte[] Candidate, byte[] Golden) legacyInclude, (byte[] Candidate, byte[] Golden) legacyMacroDecl,
         (byte[] Candidate, byte[] Golden) keywordReservation,
+        (byte[] Candidate, byte[] Golden) paramNames,
         string outDir, int tolerance)
     {
+        _paramNames = paramNames;
         _legacyInclude = legacyInclude;
         _legacyMacroDecl = legacyMacroDecl;
         _keywordReservation = keywordReservation;
@@ -508,6 +534,12 @@ sealed class RegisterOrderGame : Game
             Report.Add($"[regorder] keyword-reservation EXCEPTION: {ex.GetType().Name}: {ex.Message}");
             ok = false;
         }
+        try { ok &= ValidateParamNames(); }
+        catch (Exception ex)
+        {
+            Report.Add($"[regorder] param-names EXCEPTION: {ex.GetType().Name}: {ex.Message}");
+            ok = false;
+        }
         Passed = ok;
         Exit();
     }
@@ -543,14 +575,13 @@ sealed class RegisterOrderGame : Game
         // That is the realistic idiom and it is load-bearing for this test: it is what
         // makes "which unit did the sampler land on" observable in the picture.
         //
-        // The mask IS set through a parameter, under BOTH naming spellings, because
-        // FxPreParser's synthesized texture name (`MaskSampler_SDTexture`) leaks into
-        // ShadowDusk's parameter table where mgfxc emits the plain `MaskSampler`
-        // (recorded in ISSUE-145). Setting both means this gate measures the SLOT
-        // assignment rather than accidentally measuring that naming divergence.
+        // The mask IS set through a parameter, under mgfxc's name for it (`MaskSampler`),
+        // which ShadowDusk now emits too (it used to leak the synthesized
+        // `MaskSampler_SDTexture`, so this gate set both spellings; the "param-names" arm
+        // below is the gate for the name itself).
         void Bind(Effect e)
         {
-            foreach (string n in new[] { "MaskSampler", "MaskSampler_SDTexture", "MaskSampler+MaskSampler" })
+            foreach (string n in new[] { "MaskSampler", "MaskSampler+MaskSampler" })
                 e.Parameters[n]?.SetValue(mask);
         }
 
@@ -624,9 +655,9 @@ sealed class RegisterOrderGame : Game
 
         void Bind(Effect e)
         {
-            foreach (string n in new[] { "MaskA", "MaskA_SDTexture", "MaskA+MaskA" })
+            foreach (string n in new[] { "MaskA", "MaskA+MaskA" })
                 e.Parameters[n]?.SetValue(maskA);
-            foreach (string n in new[] { "MaskB", "MaskB_SDTexture", "MaskB+MaskB" })
+            foreach (string n in new[] { "MaskB", "MaskB+MaskB" })
                 e.Parameters[n]?.SetValue(maskB);
         }
 
@@ -729,7 +760,7 @@ sealed class RegisterOrderGame : Game
             {
                 foreach (string n in new[] { "SpriteTexture", "SpriteSampler+SpriteTexture" })
                     e.Parameters[n]?.SetValue(parameterTexture);
-                foreach (string n in new[] { "MaskSampler", "MaskSampler_SDTexture", "MaskSampler+MaskSampler" })
+                foreach (string n in new[] { "MaskSampler", "MaskSampler+MaskSampler" })
                     e.Parameters[n]?.SetValue(mask);
             },
             want: Yellow,
@@ -754,7 +785,7 @@ sealed class RegisterOrderGame : Game
             "legacy-macro", _legacyMacro, sprite: Blue,
             bind: e =>
             {
-                foreach (string n in new[] { "MaskA", "MaskA_SDTexture", "MaskA+MaskA" })
+                foreach (string n in new[] { "MaskA", "MaskA+MaskA" })
                     e.Parameters[n]?.SetValue(maskA);
                 foreach (string n in new[] { "MaskBTexture", "MaskB+MaskBTexture" })
                     e.Parameters[n]?.SetValue(maskB);
@@ -774,7 +805,7 @@ sealed class RegisterOrderGame : Game
     /// overwrote MaskA. Before the fix the candidate did not compile at all.
     /// </summary>
     private bool ValidateLegacyInclude() => ValidateMaskPair("legacy-include", _legacyInclude,
-        maskANames: new[] { "MaskA", "MaskA_SDTexture", "MaskA+MaskA" },
+        maskANames: new[] { "MaskA", "MaskA+MaskA" },
         maskBNames: new[] { "MaskBTexture", "MaskB+MaskBTexture" },
         wrong: "WRONG (issue #308): the include's legacy registers were not honoured, so MaskA sat on unit 0 and SpriteBatch overwrote it");
 
@@ -784,7 +815,7 @@ sealed class RegisterOrderGame : Game
     /// macro register clause `SLOT(s3)`. Same colours and verdicts as "legacy-include".
     /// </summary>
     private bool ValidateLegacyMacroDecl() => ValidateMaskPair("legacy-macro-decl", _legacyMacroDecl,
-        maskANames: new[] { "MaskA", "MaskA_SDTexture", "MaskA+MaskA" },
+        maskANames: new[] { "MaskA", "MaskA+MaskA" },
         maskBNames: new[] { "MaskBTexture", "MaskB+MaskBTexture" },
         wrong: "WRONG (issue #308): the macro-declared legacy samplers were not honoured, so MaskA sat on unit 0 and SpriteBatch overwrote it");
 
@@ -870,6 +901,56 @@ sealed class RegisterOrderGame : Game
         candidate.Dispose();
         golden.Dispose();
         return candCorrect && goldCorrect && match;
+    }
+
+    /// <summary>
+    /// Arm "param-names": the effect-parameter NAME of a texture-less legacy sampler. The masks
+    /// are bound ONLY through mgfxc's names, with no fallback spelling, so the picture is white
+    /// only if `Parameters["MaskA"]` / `["MaskB"]` reach the textures the sampler records bind.
+    /// Before the fix both lookups found a standalone sampler parameter that nothing reads (blue).
+    /// Also asserts, in the real runtime, that both names resolve to Texture2D parameters and
+    /// that no parameter carries the synthesized `_SDTexture` suffix.
+    /// </summary>
+    private bool ValidateParamNames()
+    {
+        const string tag = "[regorder] param-names";
+        Color white = new(255, 255, 255, 255);
+        bool structural = true;
+        foreach ((string label, byte[] bytes) in new[] { ("candidate", _paramNames.Candidate), ("mgfxc    ", _paramNames.Golden) })
+        {
+            using var effect = new Effect(GraphicsDevice, bytes);
+            Report.Add($"{tag} {label} params = [" + string.Join(", ",
+                effect.Parameters.Select(p => $"{p.Name}:{p.ParameterType}")) + "]");
+            foreach (string name in new[] { "MaskA", "MaskB" })
+            {
+                EffectParameter? p = effect.Parameters[name];
+                bool ok = p is not null && p.ParameterType == EffectParameterType.Texture2D;
+                Report.Add($"{tag} {label} Parameters[\"{name}\"] = " +
+                           (p is null ? "null" : $"{p.ParameterType}") + $" -> {(ok ? "OK" : "WRONG")}");
+                structural &= ok;
+            }
+            if (effect.Parameters.Any(p => p.Name.Contains("_SDTexture", StringComparison.Ordinal)))
+            {
+                Report.Add($"{tag} {label} WRONG: a parameter carries the synthesized `_SDTexture` name");
+                structural = false;
+            }
+        }
+
+        using Texture2D maskA = Solid(GraphicsDevice, Red);
+        using Texture2D maskB = Solid(GraphicsDevice, Green);
+        bool rendered = ValidateArm(
+            "param-names", _paramNames, sprite: Blue,
+            bind: e =>
+            {
+                e.Parameters["MaskA"]?.SetValue(maskA);
+                e.Parameters["MaskB"]?.SetValue(maskB);
+            },
+            want: white,
+            describe: c =>
+                Approx(c, white) ? "correct: Parameters[\"MaskA\"] and [\"MaskB\"] bind the textures the shader samples"
+                : Approx(c, Blue) ? "WRONG: neither mgfxc name reaches a texture the shader samples (the synthesized-name bug)"
+                                  : "WRONG: unrecognised, check the harness bindings");
+        return structural && rendered;
     }
 
     private static Texture2D Solid(GraphicsDevice gd, Color c)

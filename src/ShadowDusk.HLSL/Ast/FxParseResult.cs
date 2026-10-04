@@ -62,6 +62,21 @@ public sealed record FxParseResult
         new Dictionary<string, string>(StringComparer.Ordinal);
 
     /// <summary>
+    /// SAMPLER name -> the <c>Texture2D</c> the SM4 rewrite SYNTHESIZED for it, for every legacy
+    /// sampler that binds no texture of its own (<c>sampler2D A;</c>, <c>sampler A : register(s1);</c>,
+    /// <c>sampler2D A = sampler_state { MinFilter = Point; };</c>). The rewrite has to give the
+    /// texture a name of its own (<c>A_SDTexture</c>), because HLSL cannot declare a
+    /// <c>Texture2D A</c> beside the <c>SamplerState A</c>; but to <c>mgfxc</c> the legacy
+    /// sampler is ONE object, and the effect parameter it emits for it is named <c>A</c> on every
+    /// profile. The compiler uses this map to give the parameter that name back, so
+    /// <c>effect.Parameters["A"]</c> finds the texture exactly as it does under <c>mgfxc</c>.
+    /// Empty when nothing was synthesized (including the FNA <c>fx_2_0</c> mode, which keeps
+    /// the legacy declaration verbatim).
+    /// </summary>
+    public IReadOnlyDictionary<string, string> SynthesizedSamplerTextures { get; init; } =
+        new Dictionary<string, string>(StringComparer.Ordinal);
+
+    /// <summary>
     /// OpenGL sampler registers that an explicit <c>register(sN)</c> on a MODERN
     /// <c>SamplerState</c> declaration takes out of circulation, so a synthesized combined
     /// sampler must be allocated around them rather than onto them.

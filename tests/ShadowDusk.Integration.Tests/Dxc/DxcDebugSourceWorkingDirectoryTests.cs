@@ -53,8 +53,13 @@ public sealed class DxcDebugSourceWorkingDirectoryTests
     private const string HlslDecoyMarker = "SdDecoyHlslHlslText";
     private const string FxDecoyMarker = "SdDecoySourceFileText";
 
-    /// <summary>SHA-256 of the debug Vulkan <c>.mgfx</c>, measured on win-x64; every host must match it.</summary>
-    private const string ExpectedVulkanDebugSha256 = "905D1FE6969180FDC942EAE164BB7EABEDE85E0AD4503A7DDA7F285B2ACBF054";
+    /// <summary>
+    /// SHA-256 of the debug Vulkan <c>.mgfx</c>, measured on win-x64; every host must match it.
+    /// Re-measured 2026-10-03 when the bare <c>sampler s;</c>'s parameter took mgfxc's name
+    /// (<c>s</c>, was <c>s_SDTexture</c> plus a standalone sampler parameter <c>s</c>); the
+    /// SPIR-V is unchanged.
+    /// </summary>
+    private const string ExpectedVulkanDebugSha256 = "091019E0BE05767FE18A3E4E09A54107318570EAEB4818E923677928D9C452B4";
 
     private const string Fx = """
         #if OPENGL

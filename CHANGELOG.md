@@ -267,6 +267,23 @@ that loads and renders identically to `mgfxc`'s in the real MonoGame/KNI runtime
 
 ### Fixed
 
+- **A legacy sampler with no texture of its own now gets `mgfxc`'s parameter name.** For
+  `sampler2D A;`, `sampler A;`, `sampler2D A : register(sN);` or a `sampler_state` block that names
+  no texture, `mgfxc` names the effect parameter `A` (Texture2D) on OpenGL and DirectX 11, and
+  ShadowDusk named it `A_SDTexture`, the texture its SM4 rewrite synthesizes. Game code calling
+  `effect.Parameters["A"]` got `null` on DirectX, and on OpenGL and Vulkan a standalone sampler
+  parameter that no sampler record points at, so `SetValue(texture)` drew nothing (measured in real
+  MonoGame DesktopGL: blue instead of white, maxd 255). The parameter is now named `A` on OpenGL,
+  DirectX 11, DirectX 12, Vulkan and KNI, and the duplicate sampler parameter of that name is gone;
+  shader bytecode is unchanged (the 26 byte-identity entries that moved differ only in the table).
+  SpriteBatch's `sampler s0;` idiom is the commonest case. FNA never synthesized the texture.
+  `mgfxc` 3.8.5 gives no reference for DirectX 12 (empty table) or Vulkan (rejects the legacy
+  types), so those targets follow the name `mgfxc` uses everywhere it compiles the shape.
+- **`sampler2D A = sampler_state { Texture = <Tex>; };` compiles when nothing declares `Tex`.**
+  `mgfxc` reads the name off the state block and emits a `Tex` parameter; ShadowDusk handed DXC an
+  undeclared identifier. The rewrite now declares `Texture2D Tex;` when the name appears nowhere in
+  the source but in `Texture = ...` state entries (a declaration anywhere, a use, or any mention in
+  a preprocessor directive leaves the rewrite as it was).
 - **A full `dotnet test` no longer rewrites a tracked file (issue #361).**
   `Phase41StructuralDivergenceMatrixTests` regenerated
   `plan/PHASE-41-appendix/structural-divergence-matrix.md` on every run, so the tree went dirty

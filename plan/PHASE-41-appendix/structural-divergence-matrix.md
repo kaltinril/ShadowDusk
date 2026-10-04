@@ -205,7 +205,7 @@ Affected cells: AlphaTestEffect [DirectX_11], BasicEffect [DirectX_11], ClipShad
 
 ### Object-class (texture/sampler) parameter shape (6 cell(s))
 
-A texture/sampler (object-class) parameter diverges beyond the two pinned, render-proven shapes (extra sampler params; legacy `sampler s0;` -> synthesized `_SDTexture`).
+A texture/sampler (object-class) parameter diverges beyond the one pinned, render-proven shape (extra sampler params).
 
 Affected cells: SamplerLegacyInclude [DirectX_11], SamplerLegacyMacroDecl [DirectX_11], SamplerReservationIfBranch [OpenGL], SamplerReservationKeywords [OpenGL], SamplerReservationMacro [OpenGL], SharedSamplerPair [OpenGL]
 

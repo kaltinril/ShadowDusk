@@ -168,7 +168,7 @@ public sealed class Issue309SamplerKeywordReservationTests
         MgfxBlobReader mgfx = await CompileGl(source);
 
         string table = string.Join(" ", mgfx.Samplers.OrderBy(s => s.TextureSlot).Select(s => $"{s.Name}={mgfx.Parameters[s.Parameter].Name}"));
-        table.ShouldBe("ps_s0=Tex ps_s1=S_SDTexture", customMessage: "mgfxc: the legacy combined sampler sits on s1, the (Tex, S) pair takes the lowest free unit");
+        table.ShouldBe("ps_s0=Tex ps_s1=S", customMessage: "mgfxc: the legacy combined sampler sits on s1, the (Tex, S) pair takes the lowest free unit");
     }
 
     /// <summary>A shape mgfxc rejects must not start compiling here: the keyword stays DXC's error, plus SD0016.</summary>
