@@ -53,6 +53,11 @@ public sealed class SpirvCrossGlslTranspiler : ISpirvToGlslTranspiler
     {
         cancellationToken.ThrowIfCancellationRequested();
 
+        // The pinned SPIRV-Cross, loaded by absolute path and identity-checked, or SD0103
+        // (issue #350): never a library the OS search path happened to offer.
+        if (SpvcLoader.EnsureLoaded() is { } loadError)
+            return Result<GlslSource, ShaderError>.Fail(loadError);
+
         // On a large-stack worker (issue #306). SPIRV-Cross recurses once per level of nested
         // control flow, and the stack it would otherwise run on is whatever the caller's thread
         // has. The copy is what crosses to the worker (a span cannot).
@@ -149,14 +154,14 @@ public sealed class SpirvCrossGlslTranspiler : ISpirvToGlslTranspiler
         catch (DllNotFoundException ex)
         {
             // Mirror Vkd3dShaderCompiler's SD0211 policy: a missing native is a clear
-            // SD-coded error with the restore instruction, never a raw exception.
+            // SD-coded error, never a raw exception. SpvcLoader's resolver throws this with
+            // its full SD0103 diagnostic.
             return Result<GlslSource, ShaderError>.Fail(new ShaderError(
                 File: "<spirv-cross>",
                 Line: 0,
                 Column: 0,
                 Code: "SD0103",
-                Message: "SPIRV-Cross native library not found. Restore it via tools/restore.ps1 " +
-                         "(places tools/spirv-cross/). Underlying error: " + ex.Message));
+                Message: ex.Message));
         }
         catch (Exception ex) when (ex is EntryPointNotFoundException or BadImageFormatException)
         {

@@ -351,6 +351,33 @@ jobs:
           ./tools/verify-vortice-dxc-conflict.sh \
             "$GITHUB_WORKSPACE/localfeed" "${{ steps.version.outputs.smoke }}" "${{ matrix.tfm }}" "$RUNNER_TEMP/sd-vortice-conflict"
 
+      # ── A consumer whose graph moves Silk.NET.SPIRV.Cross.Native off 2.23.0 (issue #350) ──
+      # The SPIRV-Cross counterpart of the step above (a Silk.NET game is the realistic case).
+      # Consumed cold three times: with 2.22.0 forced in the build must WARN SD0226 (never fail)
+      # and OpenGL must be refused at runtime with SD0103 (the natives are not the pinned
+      # SHA-256s) while DirectX 11 and FNA compile; pinning 2.23.0 must clear both; and a consumer
+      # with no reference must see nothing new.
+      - name: Silk.NET.SPIRV.Cross.Native version conflict (build warning SD0226 + runtime SD0103, issue #350)
+        shell: bash
+        run: |
+          chmod +x tools/verify-spirv-cross-conflict.sh
+          ./tools/verify-spirv-cross-conflict.sh \
+            "$GITHUB_WORKSPACE/localfeed" "${{ steps.version.outputs.smoke }}" "${{ matrix.tfm }}" "$RUNNER_TEMP/sd-spirv-cross-conflict"
+
+      # ── A host that loads the packages IN PLACE from the global packages folder (issue #350) ──
+      # dotnet fsi `#r "nuget: ..."` (and .NET Interactive notebooks, same mechanism): no app-local
+      # natives and no deps.json naming them, so SPIRV-Cross is reachable only in its own
+      # silk.net.spirv.cross.native/<ver> folder beside shadowdusk.glsl/<ver>. OpenGL, DirectX 11
+      # and FNA must all compile; before the review fix OpenGL failed SD0103 here. fsi has no TFM
+      # knob (it runs on the SDK's), so the net8.0 lane is enough.
+      - name: dotnet fsi consumer (packages loaded in place from the global packages folder, issue #350)
+        if: matrix.tfm == 'net8.0'
+        shell: bash
+        run: |
+          chmod +x tools/verify-fsi-consumer.sh
+          ./tools/verify-fsi-consumer.sh \
+            "$GITHUB_WORKSPACE/localfeed" "${{ steps.version.outputs.smoke }}" "$RUNNER_TEMP/sd-fsi-consumer"
+
       # ── ShadowDusk.ContentPipeline consumed cold by a MonoGame 3.8.5 Content Builder ──────
       # (Phase 63, issue #203). Exactly what a 3.8.5 user does: the MonoGame.ContentBuilder.CSharp
       # template's project + `dotnet add package ShadowDusk.ContentPipeline`, then a real

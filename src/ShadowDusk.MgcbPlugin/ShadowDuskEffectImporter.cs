@@ -28,10 +28,6 @@ namespace ShadowDusk.ContentPipeline;
     CacheImportedData = false)]
 public sealed class ShadowDuskEffectImporter : ContentImporter<EffectContent>
 {
-    // Installs the plugin-directory native fallback before anything can P/Invoke. See
-    // PluginNativeLibraryResolver for why an MGCB host cannot find our natives otherwise.
-    static ShadowDuskEffectImporter() => PluginNativeLibraryResolver.Register();
-
     /// <summary>
     /// Reads <paramref name="filename"/> and returns its text as <see cref="EffectContent"/>.
     /// </summary>

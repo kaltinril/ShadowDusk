@@ -267,6 +267,45 @@ that loads and renders identically to `mgfxc`'s in the real MonoGame/KNI runtime
 
 ### Fixed
 
+- **vkd3d-shader and SPIRV-Cross are loaded only as ShadowDusk's pinned builds, by absolute path
+  (issue #350, the counterpart of #270's DXC fix).** `Vkd3dLoader` (DirectX 11, FNA) and
+  `SpvcLoader` (OpenGL) used to fall back to a bare-name load and then to the runtime's default
+  probing, both of which are the OS search (`PATH`, `LD_LIBRARY_PATH`, `DYLD_LIBRARY_PATH` and the
+  macOS working directory). Whenever the app-local probe missed (a RID-specific publish for
+  SPIRV-Cross; every MGCB plugin build for both) a `libvkd3d-shader` or `spirv-cross` found there
+  was loaded instead: measured before the fix, a CLI with its pinned native removed and a copy on
+  `PATH` compiled DirectX 11, FNA and OpenGL with the `PATH` copy (Windows, measured). Both loaders now probe beside the
+  ShadowDusk assemblies, the application directory and the host's native search directories by
+  absolute path, check each file's SHA-256 against the pin for the process RID BEFORE loading it
+  (vkd3d: the `tools/restore.*` pins; SPIRV-Cross: Silk.NET.SPIRV.Cross.Native 2.23.0's files), check
+  on macOS that dyld really mapped that file, and otherwise refuse with `SD0211` / `SD0103` naming
+  what was found and where they looked. A foreign library is never loaded. The MGCB plugin's
+  last-resort `PluginNativeLibraryResolver` is gone: the loaders find the plugin directory
+  themselves. **Behavior change:** an application whose graph resolves a `Silk.NET.SPIRV.Cross.Native`
+  other than 2.23.0 now gets `SD0103` for OpenGL (a different SPIRV-Cross) instead of silently different
+  GLSL; pin it to 2.23.0. The same build now warns **`SD0226`** at build time
+  (`buildTransitive/ShadowDusk.GLSL.targets`, the counterpart of `SD0220`; a warning, never an error,
+  `NoWarn`-able), proven cold by `tools/verify-spirv-cross-conflict.sh` in Pack & Consume on all three
+  OSes. **Android:** SPIRV-Cross still loads by SONAME from the APK, and the image the linker mapped
+  must now carry the pinned GNU build id for its ABI (the mapped-image reader moved from `DxcLoader`
+  to `ShadowDusk.Core.ElfImages`, shared by both); another package's `libspirv-cross.so` in the APK
+  is refused with `SD0103`, measured on an x86_64 emulator by `validation/AndroidGl/run-dxc-identity-checks.ps1`.
+  Proven by `CliNativeSearchPathHijackTest` (all three desktop OSes; on Windows it fails 5/8 against
+  the previous loaders), `SpvcLoaderPinTests`, `SpvcLoaderAndroidIdentityTests`, `Vkd3dLoaderTests`
+  and `PinnedNativeLibraryTests`. A host that loads the packages in place from the NuGet global
+  packages folder (`dotnet fsi` `#r "nuget: ..."`, .NET Interactive notebooks) finds SPIRV-Cross in
+  its own `silk.net.spirv.cross.native/<version>` folder beside `shadowdusk.glsl/<version>`, still
+  SHA-256 checked; vkd3d and DXC ship in the packages of the assemblies that load them and were
+  already found there. `tools/verify-fsi-consumer.sh` proves it with a real `dotnet fsi` script in
+  Pack & Consume on all three OSes (OpenGL failed `SD0103` there before this was added). A failed
+  load is retried on the next compile (only a success is cached), so a transient failure such as a
+  briefly locked file no longer refuses every compile for the life of the process.
+  **Also changed by the absolute-path rule:** on linux-arm64 and win-arm64 (and any RID ShadowDusk
+  ships no vkd3d-shader for) DirectX 11 and FNA now refuse with `SD0211`, where a distro-installed
+  or PATH `libvkd3d-shader` used to be picked up by bare name. ShadowDusk packs vkd3d-shader for
+  win-x64, linux-x64, osx-x64 and osx-arm64 only; an x64 process (emulated on Windows on Arm) still
+  works.
+
 - **A full `dotnet test` no longer rewrites a tracked file (issue #361).**
   `Phase41StructuralDivergenceMatrixTests` regenerated
   `plan/PHASE-41-appendix/structural-divergence-matrix.md` on every run, so the tree went dirty
