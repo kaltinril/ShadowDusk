@@ -75,7 +75,16 @@ internal sealed class JsDxcShaderCompiler : IDxcShaderCompiler
         try
         {
             byte[] spirv = DxcInterop.CompileToSpirv(request.HlslSource, arguments.ToArray());
-            var blob = new PlatformBlob(BlobKind.Spirv, spirv);
+
+            // Issue #343: the same debug-SPIR-V normalization as the desktop DxcShaderCompiler.
+            // In the browser DXC's leaf-name self-load is a stubbed dlopen that always fails, so
+            // its OpSource text already comes from memory; the shared step keeps the two
+            // byte-identical whatever the DXC module's file system holds.
+            Result<byte[], ShaderError> normalized = DxcDebugSpirvSource.Normalize(arguments, spirv, request.SourceFileName);
+            if (normalized.IsFailure)
+                return Result<PlatformBlob, ShaderError>.Fail(normalized.Error);
+
+            var blob = new PlatformBlob(BlobKind.Spirv, normalized.Value);
             return Result<PlatformBlob, ShaderError>.Ok(blob);
         }
         catch (JSException ex) when (WasmCompilerInitialization.IsTrap(ex, "DXC"))

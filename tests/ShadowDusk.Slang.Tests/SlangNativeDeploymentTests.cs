@@ -126,16 +126,27 @@ public sealed class SlangNativeDeploymentTests : IDisposable
     }
 
     [Fact]
-    public void BinaryTheOsCannotStart_SD0622_WithTheOsReason()
+    public async Task BinaryTheOsCannotStart_SD0622_WithTheOsReason()
     {
         string exe = CopyRestoredNative();
         File.WriteAllBytes(exe, [0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07]);   // not an executable format
 
-        var result = CompileWith(exe);
+        // On an interactive Windows desktop the launch used to raise a MODAL system dialog
+        // ("Unsupported 16-Bit Application") that blocked until someone clicked OK. The failure
+        // must come back on its own, promptly: a dialog shows up here as a timeout.
+        var compile = Task.Run(() => CompileWith(exe));
+        Task finished = await Task.WhenAny(compile, Task.Delay(TimeSpan.FromSeconds(60)));
+        finished.ShouldBeSameAs(compile, "the launch blocked (a system error dialog?) instead of failing");
+        var result = await compile;
 
         result.IsFailure.ShouldBeTrue();
         var error = result.Error.Single();
         error.Code.ShouldBe("SD0622");
         error.Message.ShouldContain("could not be started", Case.Sensitive);
+        if (OperatingSystem.IsWindows())
+        {
+            // The OS's own reason, verbatim from the Win32Exception (ERROR_BAD_EXE_FORMAT, 193).
+            error.Message.ShouldContain("not a valid application", Case.Sensitive);
+        }
     }
 }

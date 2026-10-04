@@ -1,0 +1,45 @@
+<Project>
+  <!--
+    ShadowDusk.GLSL build-time check (issue #350): warn when the project resolves a
+    Silk.NET.SPIRV.Cross.Native other than the one release ShadowDusk.GLSL runs with.
+
+    Why it exists. SpvcLoader loads only the exact SPIRV-Cross natives Silk.NET.SPIRV.Cross.Native
+    2.23.0 ships (SpvcLoader.Sha256ByRid, the SHA-256 of each runtimes/<rid>/native file), because
+    another release is a different SPIRV-Cross and could emit different GLSL. A Silk.NET game, or
+    any package in the application, can move that package to another version; NuGet resolves it
+    without a word (ShadowDusk.GLSL's dependency is a >= range), and every OpenGL compile then
+    fails at RUNTIME with SD0103. This warning moves that discovery to build time and names the fix.
+    It is the SPIRV-Cross counterpart of SD0220 (Vortice.Dxc, ShadowDusk.HLSL.targets).
+
+    A WARNING, never an error: DirectX 11, DirectX 12, Vulkan and FNA do not use SPIRV-Cross and
+    must keep building. Silence it with <NoWarn>$(NoWarn);SD0226</NoWarn> once understood.
+
+    Shipped under buildTransitive/, so it runs for a project that references ShadowDusk.GLSL
+    directly or through ShadowDusk.Compiler / ShadowDusk.ContentPipeline. The pin below must equal
+    Directory.Packages.props and SpvcLoader.PinnedSilkVersion (SpvcLoaderPinTests).
+
+    Silk.NET.SPIRV.Cross.Native carries native assets only, so the resolved version is read from
+    the native items: RuntimeTargetsCopyLocalItems (a RID-agnostic build) and NativeCopyLocalItems
+    (a RID-specific build or publish).
+  -->
+  <PropertyGroup>
+    <_ShadowDuskPinnedSilkSpirvCrossVersion>2.23.0</_ShadowDuskPinnedSilkSpirvCrossVersion>
+  </PropertyGroup>
+
+  <Target Name="_ShadowDuskCheckSilkSpirvCrossVersion"
+          AfterTargets="ResolvePackageAssets">
+    <ItemGroup>
+      <_ShadowDuskSilkSpirvCrossAsset Include="@(RuntimeTargetsCopyLocalItems);@(NativeCopyLocalItems)"
+                                      Condition="'%(NuGetPackageId)' == 'Silk.NET.SPIRV.Cross.Native'" />
+      <_ShadowDuskSilkSpirvCrossVersion Include="@(_ShadowDuskSilkSpirvCrossAsset->'%(NuGetPackageVersion)'->Distinct())" />
+    </ItemGroup>
+
+    <PropertyGroup>
+      <_ShadowDuskResolvedSilkSpirvCrossVersion>@(_ShadowDuskSilkSpirvCrossVersion)</_ShadowDuskResolvedSilkSpirvCrossVersion>
+    </PropertyGroup>
+
+    <Warning Code="SD0226"
+             Condition="'$(_ShadowDuskResolvedSilkSpirvCrossVersion)' != '' and '$(_ShadowDuskResolvedSilkSpirvCrossVersion)' != '$(_ShadowDuskPinnedSilkSpirvCrossVersion)'"
+             Text="This project resolves Silk.NET.SPIRV.Cross.Native $(_ShadowDuskResolvedSilkSpirvCrossVersion), but ShadowDusk.GLSL runs only with Silk.NET.SPIRV.Cross.Native $(_ShadowDuskPinnedSilkSpirvCrossVersion), the release whose SPIRV-Cross natives ShadowDusk pins. With any other version every OpenGL compile (and raylib / SkSL conversion) fails at runtime with SD0103 (DirectX 11, DirectX 12, Vulkan and FNA do not use SPIRV-Cross and are unaffected). Fix: pin it in this project, &lt;PackageReference Include=&quot;Silk.NET.SPIRV.Cross.Native&quot; Version=&quot;$(_ShadowDuskPinnedSilkSpirvCrossVersion)&quot; /&gt; (or the matching PackageVersion under central package management). Suppress with NoWarn SD0226." />
+  </Target>
+</Project>

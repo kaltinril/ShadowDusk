@@ -290,6 +290,66 @@ that loads and renders identically to `mgfxc`'s in the real MonoGame/KNI runtime
 
 ### Fixed
 
+- **`ShadowDusk.Slang` on OpenGL: a combined sampler's register is its texture unit, as `mgfxc` gives
+  the legacy `sampler2D X : register(sN)` (refs issue #252).** `Sampler2D SpriteTexture : register(s0)`
+  landed on unit 1, so SpriteBatch's unit-0 texture never reached the shader (it rendered white),
+  while DirectX 11 sampled `t0`: slangc splits the combined sampler into a texture and a
+  `SamplerState : register(s0)`, which the GL allocator read as a modern reservation. The sampler
+  register of a combined sampler now pins its texture's unit instead. Measured with `mgfxc` 3.8.4.1
+  `/Profile:OpenGL` and matched exactly: `s0`/`s1`/`s2` give units 0/1/2, `A : s1` + `B : s0` give
+  1/0, `A : s2` + an unregistered `B` give 2/0, an unregistered `A` + `B : s0` give 1/0. An
+  author's split `Texture2D` + `SamplerState : register(sN)` pair keeps the reservation rule, and
+  DirectX, Vulkan and FNA output is unchanged. Rendered in real MonoGame DesktopGL by a new
+  `validation/SlangTexturedGl` row (maxd 0 vs the `mgfxc` golden; it rendered white before).
+  Two combined samplers declaring one register (`Sampler2D A : register(s0); Sampler2D B :
+  register(s0);`) are now refused as the new `SD0644` instead of the second moving silently (fxc
+  refuses the legacy pair, `X4500`, and the DirectX targets refuse it); `register(sN, spaceM)` pins
+  unit N too. Also fixed: the GL units follow the author's DECLARATION order, as `mgfxc` fills them,
+  not slangc's first-use order (`Texture2D T; SamplerState S : register(s0); Sampler2D A;` sampled A
+  first gave A unit 1 and T unit 2; `mgfxc` and the `.fx` route give T 1, A 2), when every sampled
+  texture is declared in the entry text slangc compiled: its preprocessed text when the register pass
+  read it, else the raw text outside every `#if` block when no `#define`, `#include`, paste, splice
+  or spelled `-D` can change it (a declaration in an inactive branch never places one); otherwise
+  slangc's own order, as before. No extra slangc run.
+- **vkd3d-shader and SPIRV-Cross are loaded only as ShadowDusk's pinned builds, by absolute path
+  (issue #350, the counterpart of #270's DXC fix).** `Vkd3dLoader` (DirectX 11, FNA) and
+  `SpvcLoader` (OpenGL) used to fall back to a bare-name load and then to the runtime's default
+  probing, both of which are the OS search (`PATH`, `LD_LIBRARY_PATH`, `DYLD_LIBRARY_PATH` and the
+  macOS working directory). Whenever the app-local probe missed (a RID-specific publish for
+  SPIRV-Cross; every MGCB plugin build for both) a `libvkd3d-shader` or `spirv-cross` found there
+  was loaded instead: measured before the fix, a CLI with its pinned native removed and a copy on
+  `PATH` compiled DirectX 11, FNA and OpenGL with the `PATH` copy (Windows, measured). Both loaders now probe beside the
+  ShadowDusk assemblies, the application directory and the host's native search directories by
+  absolute path, check each file's SHA-256 against the pin for the process RID BEFORE loading it
+  (vkd3d: the `tools/restore.*` pins; SPIRV-Cross: Silk.NET.SPIRV.Cross.Native 2.23.0's files), check
+  on macOS that dyld really mapped that file, and otherwise refuse with `SD0211` / `SD0103` naming
+  what was found and where they looked. A foreign library is never loaded. The MGCB plugin's
+  last-resort `PluginNativeLibraryResolver` is gone: the loaders find the plugin directory
+  themselves. **Behavior change:** an application whose graph resolves a `Silk.NET.SPIRV.Cross.Native`
+  other than 2.23.0 now gets `SD0103` for OpenGL (a different SPIRV-Cross) instead of silently different
+  GLSL; pin it to 2.23.0. The same build now warns **`SD0226`** at build time
+  (`buildTransitive/ShadowDusk.GLSL.targets`, the counterpart of `SD0220`; a warning, never an error,
+  `NoWarn`-able), proven cold by `tools/verify-spirv-cross-conflict.sh` in Pack & Consume on all three
+  OSes. **Android:** SPIRV-Cross still loads by SONAME from the APK, and the image the linker mapped
+  must now carry the pinned GNU build id for its ABI (the mapped-image reader moved from `DxcLoader`
+  to `ShadowDusk.Core.ElfImages`, shared by both); another package's `libspirv-cross.so` in the APK
+  is refused with `SD0103`, measured on an x86_64 emulator by `validation/AndroidGl/run-dxc-identity-checks.ps1`.
+  Proven by `CliNativeSearchPathHijackTest` (all three desktop OSes; on Windows it fails 5/8 against
+  the previous loaders), `SpvcLoaderPinTests`, `SpvcLoaderAndroidIdentityTests`, `Vkd3dLoaderTests`
+  and `PinnedNativeLibraryTests`. A host that loads the packages in place from the NuGet global
+  packages folder (`dotnet fsi` `#r "nuget: ..."`, .NET Interactive notebooks) finds SPIRV-Cross in
+  its own `silk.net.spirv.cross.native/<version>` folder beside `shadowdusk.glsl/<version>`, still
+  SHA-256 checked; vkd3d and DXC ship in the packages of the assemblies that load them and were
+  already found there. `tools/verify-fsi-consumer.sh` proves it with a real `dotnet fsi` script in
+  Pack & Consume on all three OSes (OpenGL failed `SD0103` there before this was added). A failed
+  load is retried on the next compile (only a success is cached), so a transient failure such as a
+  briefly locked file no longer refuses every compile for the life of the process.
+  **Also changed by the absolute-path rule:** on linux-arm64 and win-arm64 (and any RID ShadowDusk
+  ships no vkd3d-shader for) DirectX 11 and FNA now refuse with `SD0211`, where a distro-installed
+  or PATH `libvkd3d-shader` used to be picked up by bare name. ShadowDusk packs vkd3d-shader for
+  win-x64, linux-x64, osx-x64 and osx-arm64 only; an x64 process (emulated on Windows on Arm) still
+  works.
+
 - **A full `dotnet test` no longer rewrites a tracked file (issue #361).**
   `Phase41StructuralDivergenceMatrixTests` regenerated
   `plan/PHASE-41-appendix/structural-divergence-matrix.md` on every run, so the tree went dirty
@@ -327,6 +387,48 @@ that loads and renders identically to `mgfxc`'s in the real MonoGame/KNI runtime
   hosts that a solution `dotnet test` runs together are serialized around GL by a named mutex. The
   test project retires idle pool threads after 100 ms, which reproduced the old failure on every run,
   so every ImageTests run now re-proves the fix. Test infrastructure only; no shipped package changes.
+- **`ShadowDusk.Slang` on OpenGL: an array of combined samplers (`Sampler2D Comb[3]`) is `SD0217`,
+  located at the author's declaration and saying what to do, like the `Texture2D Tex[3]` array
+  (issue #356).** It used to surface as SPIRV-Cross's bare `SD0100` ("arrays or structs of separate
+  samplers"), which is kept verbatim at the end of the new message and in `RawDiagnostics`. An
+  author-written `SamplerState S[N]` is unchanged (`SD0100`, as on the `.fx` route), and so is one named
+  like slangc's lowering (`SamplerState My_sampler_0[2]`): the rewrite needs the author's source to
+  declare the combined sampler as an array.
+- **`ShadowDusk.Slang`: a slangc that Windows cannot start no longer opens a modal system dialog.**
+  On an interactive Windows desktop, launching a damaged or wrong-architecture `slangc.exe` raised
+  an "Unsupported 16-Bit Application" message box that blocked the compiling thread until someone
+  clicked OK. The launch now runs with the calling thread's hard-error dialogs off
+  (`SetThreadErrorMode`, restored afterwards, nothing else in the process changes), so it fails at
+  once as `SD0622` with the OS's reason.
+- **`ShadowDusk.Slang` on DirectX: `Sampler2D A : register(s2)` binding texture `t0` and sampler `s2`
+  is confirmed correct and pinned (issue #355).** slangc binds `register(sN)` on a combined sampler
+  to its sampler half only, and real `mgfxc` 3.8.4.1 compiles the hand-written legacy
+  `sampler2D A : register(s2)` to the same bindings (`fxc /dumpbin`: `dcl_resource_texture2d t0`,
+  `dcl_sampler s2`), so `GraphicsDevice.Textures[2]` does not reach that texture under `mgfxc`
+  either. `Sampler2D A : register(t2) : register(s2)` binds both halves to slot 2. No output change.
+
+- **Debug output no longer depends on the files in the working directory or on the host (issue
+  #343).** With `Debug` set, DXC's SPIR-V emitter (OpenGL, Vulkan) fills each `OpSource` by
+  reading the file it names wherever its leaf-name self-load succeeds (Windows, macOS 14+, Linux
+  with a copy of the pinned build on `LD_LIBRARY_PATH`): the main input, DXC's default `hlsl.hlsl`
+  in the working directory, and, found while fixing this, every file a `#line` directive names,
+  which includes a relative or absolute `SourceFileName` and the files it includes. So a
+  `hlsl.hlsl` in the working directory replaced the compiled source in the debug Vulkan module, and
+  any file at the `SourceFileName` path was embedded verbatim (measured on Windows with decoys:
+  both texts in the output); a plain Linux host embedded neither, so the same compile gave
+  different debug bytes per host. Debug SPIR-V compiles now name their input
+  `/dev/null/<shadowdusk-in-memory>/hlsl.hlsl`, which no host can open (not a directory on
+  Linux/macOS, an illegal Win32 name on Windows), so the main `OpSource` is always the in-memory
+  text; and every other `OpSource` drops any text DXC read (`DxcDebugSpirvSource`), which is what
+  it carries when the file does not exist. The browser build runs the same step (its DXC never
+  reads a file; its debug SPIR-V for the new arguments was measured byte-identical to desktop's).
+  Debug Vulkan bytes change once (the main file name, and no disk text); release output, DirectX
+  12 debug output and OpenGL debug output are byte-identical to before (measured over all 174
+  corpus fixtures, four targets, release and debug). A module the step cannot walk is `SD0225`.
+  Guarded by `DxcDebugSourceWorkingDirectoryTests` (every OS: decoys for `hlsl.hlsl` and the
+  `SourceFileName` in the child's working directory, outputs hashed against a clean directory, a
+  pre-fix positive control that must read both decoys, and the debug Vulkan hash pinned to
+  win-x64's so every lane proves cross-host identity) and `DxcDebugSpirvSourceTests`.
 
 - **The raylib and SkSL converters compile a legacy sampler declared in an `#include` or through a
   macro (issue #327).** `RaylibConverter.Convert` and `SkslConverter.Convert` pre-parse the raw main

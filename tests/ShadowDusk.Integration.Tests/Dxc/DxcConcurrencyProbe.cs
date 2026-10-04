@@ -52,6 +52,8 @@ public static class DxcConcurrencyProbe
             return DxcLibraryPathDecoyTests.RunProbe(args[1]);
         if (args.Length > 2 && args[0] == DxcDebugSpirvLeafNameTests.ProbeArgument)
             return DxcDebugSpirvLeafNameTests.RunProbe(args[1], args[2]);
+        if (args.Length > 0 && args[0] == DxcDebugSourceWorkingDirectoryTests.ProbeArgument)
+            return DxcDebugSourceWorkingDirectoryTests.RunProbe();
         if (args.Length > 1 && args[0] == ChildProcessTests.ProbeArgument)
             return ChildProcessTests.RunProbe(args[1..]);
         if (args.Length > 0 && args[0] == NativeStack.DeepShaderProbe.ProbeArgument)

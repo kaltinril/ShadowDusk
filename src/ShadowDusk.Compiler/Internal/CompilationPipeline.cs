@@ -566,6 +566,16 @@ internal sealed class CompilationPipeline
             {
                 reservationError = reservation.Error;
             }
+
+            // The real-slangc route's combined samplers (Sampler2D X : register(sN)) pin their
+            // texture like a legacy sampler does; see CompilerOptions.CombinedSamplerGlSlots.
+            if (options.CombinedSamplerGlSlots.Count > 0)
+            {
+                var merged = new Dictionary<string, int>(explicitGlSamplerSlots, StringComparer.Ordinal);
+                foreach ((string texture, int slot) in options.CombinedSamplerGlSlots)
+                    merged.TryAdd(texture, slot);
+                explicitGlSamplerSlots = merged;
+            }
         }
 
         foreach (TechniqueInfo technique in fxParsed.Techniques)
@@ -603,6 +613,7 @@ internal sealed class CompilationPipeline
                         // same way the .mgfx sampler table will (issues #189, #299).
                         explicitGlSamplerSlots: explicitGlSamplerSlots,
                         reservedGlSamplerSlots: reservedGlSamplerSlots,
+                        glTextureDeclarationOrder: options.GlTextureDeclarationOrder,
                         cancellationToken);
 
                     if (compileOutput.Blob.IsFailure)
@@ -659,6 +670,7 @@ internal sealed class CompilationPipeline
                         // same way the .mgfx sampler table will (issues #189, #299).
                         explicitGlSamplerSlots: explicitGlSamplerSlots,
                         reservedGlSamplerSlots: reservedGlSamplerSlots,
+                        glTextureDeclarationOrder: options.GlTextureDeclarationOrder,
                         cancellationToken);
 
                     if (compileOutput.Blob.IsFailure)
@@ -1168,7 +1180,7 @@ internal sealed class CompilationPipeline
                     IReadOnlyList<CombinedSamplerPair> pairs = pairResult.Value;
                     IReadOnlyList<int> glSamplerSlots =
                         SpirvCombinedSamplerPairs.ResolveSlots(
-                            pairs, explicitGlSamplerSlots, reservedGlSamplerSlots);
+                            pairs, explicitGlSamplerSlots, reservedGlSamplerSlots, options.GlTextureDeclarationOrder);
 
                     for (int k = 0; k < pairs.Count; k++)
                     {
@@ -2246,6 +2258,7 @@ internal sealed class CompilationPipeline
             bool reflectFromSpirv,
             IReadOnlyDictionary<string, int> explicitGlSamplerSlots,
             IReadOnlySet<int> reservedGlSamplerSlots,
+            IReadOnlyDictionary<string, int> glTextureDeclarationOrder,
             CancellationToken ct)
     {
         IReadOnlyList<MgfxVertexAttributeInfo> noAttributes = Array.Empty<MgfxVertexAttributeInfo>();
@@ -2371,7 +2384,7 @@ internal sealed class CompilationPipeline
                     if (pairsForSlots.IsSuccess)
                     {
                         samplerSlots = SpirvCombinedSamplerPairs.ResolveSlots(
-                            pairsForSlots.Value, explicitGlSamplerSlots, reservedGlSamplerSlots);
+                            pairsForSlots.Value, explicitGlSamplerSlots, reservedGlSamplerSlots, glTextureDeclarationOrder);
                     }
 
                     MonoGameGlslResult rewritten =

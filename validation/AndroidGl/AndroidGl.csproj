@@ -69,8 +69,14 @@
       <Abi>arm64-v8a</Abi>
     </AndroidNativeLibrary>
     <!-- x86_64: for the Android emulator (whose primary ABI is x86_64 on an x86 host). -->
+    <!-- AndroidGlSpvcX64 (issue #350, run-dxc-identity-checks.ps1): the SPIRV-Cross counterpart
+         of AndroidGlDxcX64 below, a foreign libspirv-cross.so for x86_64 or 'none'. -->
     <AndroidNativeLibrary Include="..\..\tools\spirv-cross\android-x64\libspirv-cross.so"
-                          Condition="Exists('..\..\tools\spirv-cross\android-x64\libspirv-cross.so')">
+                          Condition="'$(AndroidGlSpvcX64)' == '' and Exists('..\..\tools\spirv-cross\android-x64\libspirv-cross.so')">
+      <Abi>x86_64</Abi>
+    </AndroidNativeLibrary>
+    <AndroidNativeLibrary Include="$(AndroidGlSpvcX64)"
+                          Condition="'$(AndroidGlSpvcX64)' != '' and '$(AndroidGlSpvcX64)' != 'none'">
       <Abi>x86_64</Abi>
     </AndroidNativeLibrary>
     <!-- AndroidGlDxcX64 (issue #289, run-dxc-identity-checks.ps1): another libdxcompiler.so to

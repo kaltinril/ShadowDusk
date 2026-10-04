@@ -20,6 +20,9 @@
   </ItemGroup>
 
   <ItemGroup Label="SPIRV-Cross">
+    <!-- Issue #350: SpvcLoader loads only these exact natives (SpvcLoader.Sha256ByRid, the SHA-256
+         of each runtimes/<rid>/native file). A bump must re-pin those hashes (SpvcLoaderPinTests
+         fails until it does) and the Android build's SPIRV-Cross commit. -->
     <PackageVersion Include="Silk.NET.SPIRV.Cross.Native" Version="2.23.0" />
   </ItemGroup>
 

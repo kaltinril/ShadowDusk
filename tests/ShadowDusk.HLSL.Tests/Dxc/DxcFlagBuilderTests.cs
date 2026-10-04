@@ -172,6 +172,51 @@ public sealed class DxcFlagBuilderTests
         flags.ShouldContain("-Qembed_debug");
     }
 
+    // Issue #343: a debug SPIR-V compile names its input something no host can open, so DXC's
+    // OpSource read of the main file fails everywhere and the in-memory source is embedded.
+    [Theory]
+    [InlineData(PlatformTarget.OpenGL, ShaderStage.Vertex)]
+    [InlineData(PlatformTarget.OpenGL, ShaderStage.Pixel)]
+    [InlineData(PlatformTarget.Vulkan, ShaderStage.Vertex)]
+    [InlineData(PlatformTarget.Vulkan, ShaderStage.Pixel)]
+    [InlineData(PlatformTarget.Metal, ShaderStage.Pixel)]
+    public void DebugSpirv_NamesTheUnopenableInput(PlatformTarget platform, ShaderStage stage)
+    {
+        var flags = Build(platform, stage, options: new DxcCompileOptions { EmbedDebugInfo = true });
+        flags.Count(f => f == DxcDebugSpirvSource.InputName).ShouldBe(1);
+        flags.Count(f => !f.StartsWith('-') && f.Contains("hlsl", StringComparison.Ordinal)).ShouldBe(1,
+            "the input name must be the only positional argument DXC sees");
+    }
+
+    // Release compiles and DXIL keep DXC's default input name, so their arguments (and bytes)
+    // are exactly what they were before issue #343.
+    [Theory]
+    [InlineData(PlatformTarget.OpenGL, false)]
+    [InlineData(PlatformTarget.Vulkan, false)]
+    [InlineData(PlatformTarget.DirectX, false)]
+    [InlineData(PlatformTarget.DirectX12, false)]
+    [InlineData(PlatformTarget.DirectX, true)]
+    [InlineData(PlatformTarget.DirectX12, true)]
+    public void ReleaseAndDxil_PassNoInputName(PlatformTarget platform, bool debug)
+    {
+        foreach (ShaderStage stage in new[] { ShaderStage.Vertex, ShaderStage.Pixel })
+        {
+            var flags = Build(platform, stage, options: new DxcCompileOptions { EmbedDebugInfo = debug });
+            flags.ShouldNotContain(DxcDebugSpirvSource.InputName);
+        }
+    }
+
+    [Fact] public void DebugSpirvInputName_CannotBeOpenedOnAnyHost()
+    {
+        // Unix: under /dev/null, which is not a directory. Windows: '<' and '>' are not legal in
+        // a Win32 file name. DXC's option parser takes a '/'-led argument that matches no option
+        // as an input path, which the integration probe confirms by compiling with it.
+        DxcDebugSpirvSource.InputName.ShouldStartWith("/dev/null/", Case.Sensitive);
+        DxcDebugSpirvSource.InputName.IndexOfAny(['<', '>']).ShouldBeGreaterThan(0);
+        DxcDebugSpirvSource.InputName.ShouldNotContain(":", Case.Sensitive,
+            "a colon would be an NTFS stream separator and would confuse the file:line:col diagnostic parse");
+    }
+
     // Issue #185: the OpenGL path's reflection-only DirectX-target companion compile passes
     // SkipValidation so a hosted CI runner's version-skewed dxil.dll (ahead of the pinned one
     // on the native search path) can't reject an otherwise-correct DXIL module with a "DXIL

@@ -55,6 +55,11 @@ internal static partial class DxcDiagnosticReformatter
             // if it matches the request's file name use that for consistency.
             if (string.Equals(file, sourceFileName, StringComparison.OrdinalIgnoreCase))
                 file = sourceFileName;
+            // Issue #343: a debug SPIR-V compile names its input DxcDebugSpirvSource.InputName
+            // instead of DXC's default; report the location as the default does, so debug and
+            // release compiles point at the same file. RawDiagnostics keeps DXC's own text.
+            else if (file == DxcDebugSpirvSource.InputName)
+                file = DxcDebugSpirvSource.DefaultInputName;
 
             errors.Add(new ShaderError(
                 File: file,

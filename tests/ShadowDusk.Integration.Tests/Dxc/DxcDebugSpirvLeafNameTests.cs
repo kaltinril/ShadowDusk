@@ -177,33 +177,37 @@ public sealed class DxcDebugSpirvLeafNameTests
             }
         }
 
-        // Where the source read lands is the mechanism's own fingerprint: the in-memory text when
-        // DXC's leaf-name load fails (glibc, nothing on the path), the hlsl.hlsl on disk when it
-        // returns a working library (dyld: the pinned image; glibc: the copy it loaded).
-        string LinuxOrMac(string linux, string macOS) => mac ? macOS : linux;
-        reports[Decoy.None].Values["Vulkan.debug.opsource"].ShouldBe([LinuxOrMac("memory", "disk")],
-            "[None] " + LinuxOrMac("glibc found nothing for the leaf, so DXC must have fallen back to the in-memory source",
-                                   "dyld handed DXC the pinned image, so DXC must have read hlsl.hlsl from the working directory"));
-        reports[Decoy.CopyOfPinned].Values["Vulkan.debug.opsource"].ShouldBe(["disk"],
-            "[CopyOfPinned] " + LinuxOrMac("the copy glibc loaded from LD_LIBRARY_PATH did not serve the source read",
-                                           "dyld handed DXC the pinned image, so DXC must have read hlsl.hlsl from the working directory"));
+        // Issue #343: wherever DXC's leaf-name load lands, its source read never does. The input
+        // name ShadowDusk passes cannot be opened on any host, so every scenario embeds the
+        // in-memory source (before the fix the hlsl.hlsl in the working directory won on macOS
+        // and with the copy on LD_LIBRARY_PATH; DxcDebugSourceWorkingDirectoryTests keeps that
+        // control).
+        // Every debug Vulkan compile that produced a module must say where its OpSource came from;
+        // a refused one (SD0223, the Linux foreign-build scenario, asserted above) has no module.
+        bool anyCompiled = false;
+        foreach ((Decoy decoy, Report report) in reports)
+        {
+            if (report.Values["Vulkan.debug"] is not ["OK"])
+            {
+                report.Values.ContainsKey("Vulkan.debug.opsource").ShouldBeFalse($"[{decoy}] a refused compile reported an OpSource");
+                continue;
+            }
 
-        // No emitted byte moves with what sits on the search path, release or debug. The one
-        // exception is DXC's own: the Vulkan debug OpSource text follows where the read landed.
+            anyCompiled = true;
+            report.Values.ContainsKey("Vulkan.debug.opsource").ShouldBeTrue($"[{decoy}] the probe did not report where the debug Vulkan OpSource came from");
+            report.Values["Vulkan.debug.opsource"].ShouldBe(["memory"], $"[{decoy}] the debug Vulkan OpSource came from a file, not the compiled source");
+        }
+
+        anyCompiled.ShouldBeTrue("no scenario produced a debug Vulkan module, so the OpSource check above checked nothing");
+
+        // No emitted byte moves with what sits on the search path, release or debug.
         Report baseline = reports[Decoy.None];
         foreach (string key in baseline.Values.Keys.Where(k => k.EndsWith(".sha256", StringComparison.Ordinal)))
         {
             foreach ((Decoy decoy, Report report) in reports)
             {
-                if (!report.Values.TryGetValue(key, out List<string>? hash))
-                    continue;
-                if (key == "Vulkan.debug.sha256" && report.Values["Vulkan.debug.opsource"][0] != baseline.Values["Vulkan.debug.opsource"][0])
-                {
-                    _output.WriteLine($"[{decoy}] {key} not compared: OpSource came from {report.Values["Vulkan.debug.opsource"][0]}, the no-decoy compile's from {baseline.Values["Vulkan.debug.opsource"][0]}");
-                    continue;
-                }
-
-                hash.ShouldBe(baseline.Values[key], $"[{decoy}] {key} differs from the no-decoy compile");
+                if (report.Values.TryGetValue(key, out List<string>? hash))
+                    hash.ShouldBe(baseline.Values[key], $"[{decoy}] {key} differs from the no-decoy compile");
             }
         }
     }
@@ -219,7 +223,8 @@ public sealed class DxcDebugSpirvLeafNameTests
         report.Values["leaf.error"].ShouldBe(["-"]);
         foreach (string target in new[] { "OpenGL", "Vulkan" })
             report.Values[$"{target}.debug"].ShouldBe(["OK"], report.Message(target, "debug"));
-        _output.WriteLine($"Vulkan debug OpSource from {report.Values["Vulkan.debug.opsource"][0]}; lookup cost {report.Values["leaf.costMicros"][0]} us");
+        report.Values["Vulkan.debug.opsource"].ShouldBe(["memory"], "issue #343: the hlsl.hlsl in the working directory must not become the OpSource text");
+        _output.WriteLine($"lookup cost {report.Values["leaf.costMicros"][0]} us");
     }
 
     [ForeignDxcBuildFact]

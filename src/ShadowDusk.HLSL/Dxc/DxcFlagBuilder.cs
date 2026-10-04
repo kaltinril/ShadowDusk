@@ -164,6 +164,14 @@ internal static class DxcFlagBuilder
         {
             args.Add("-Zi");
             args.Add("-Qembed_debug");
+
+            // Issue #343: a SPIR-V compile with debug information fills OpSource by reading the
+            // main input's FILE (DXC's default name hlsl.hlsl, in the working directory) where
+            // DXC's leaf-name self-load succeeds. Name the input something no host can open, so
+            // every host embeds the in-memory source (DxcDebugSpirvSource). Release compiles and
+            // DXIL keep DXC's default name, and their bytes.
+            if (platformFlags.Contains("-spirv"))
+                args.Add(DxcDebugSpirvSource.InputName);
         }
 
         foreach ((string name, string? value) in macros)

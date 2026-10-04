@@ -59,10 +59,6 @@ namespace ShadowDusk.ContentPipeline;
 [ContentProcessor(DisplayName = "ShadowDusk Effect - ShadowDusk")]
 public sealed class ShadowDuskEffectProcessor : ContentProcessor<EffectContent, CompiledEffectContent>
 {
-    // Installs the plugin-directory native fallback before anything can P/Invoke. See
-    // PluginNativeLibraryResolver for why an MGCB host cannot find our natives otherwise.
-    static ShadowDuskEffectProcessor() => PluginNativeLibraryResolver.Register();
-
     /// <summary>
     /// The source-file string written into an MGFX v11 container (DirectX 12, Vulkan), which
     /// stores one per shader: exactly what MonoGame's stock <c>EffectProcessor</c> writes
