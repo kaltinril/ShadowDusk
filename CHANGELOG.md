@@ -17,8 +17,8 @@ that loads and renders identically to `mgfxc`'s in the real MonoGame/KNI runtime
 - **Vulkan and DirectX 12 output is now pinned across hosts, over the whole fixture corpus.**
   `DxcTargetsCrossHostByteIdentityTests` compiles all 174 corpus fixtures for both targets, release
   and `Debug`, on every CI OS against one win-x64 manifest (`dxc-targets-manifest.json`): Vulkan
-  byte for byte, DirectX 12 byte for byte on Windows and, elsewhere, with only the signature and
-  DXC's own identity string removed. It closes a measurement gap: Vortice.Dxc 3.3.4's Linux DXC is
+  byte for byte, DirectX 12 byte for byte on Windows and, elsewhere, with only the signature,
+  DXC's own identity string and the disassembler's locale-dependent non-ASCII escaping removed. It closes a measurement gap: Vortice.Dxc 3.3.4's Linux DXC is
   28 commits older than the Windows/macOS one. Measured: Linux matches Windows everywhere, and the gap shows only in the text of DXC's unsigned-DXIL warning; macOS matches everywhere but one `Debug` DXIL whose debug records come in a different order (instruction-identical, pinned as a macOS expected value).
   The integration lane uploads every fixture's SPIR-V/DXIL when it fails.
 - **The Android emulator lane checks the OpenGL corpus on the device, stage by stage (issue #304

@@ -70,7 +70,8 @@ It is not loosened away but pinned in the test's `MacOsDivergences` as macOS's e
 
 Regenerate exactly as `manifest.json` (below). `SHADOWDUSK_BYTE_IDENTITY_DUMP=<dir>` writes every
 fixture's SPIR-V, DXIL container and DXIL disassembly there; the CI integration lane sets it and
-uploads the directory when the job fails, so a mismatch can be diffed against a win-x64 dump.
+uploads the directory when the job fails, so a mismatch can be diffed against a win-x64 dump
+(made locally: the Windows job uploads its own dump only when it fails too).
 
 ## Input normalization (what makes the hashes host-independent)
 
