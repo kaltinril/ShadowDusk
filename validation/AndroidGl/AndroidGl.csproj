@@ -54,6 +54,19 @@
     <ProjectReference Include="..\..\src\ShadowDusk.Compiler\ShadowDusk.Compiler.csproj" />
   </ItemGroup>
 
+  <!-- Issue #304 follow-up: the OpenGL fixture corpus and the committed desktop manifests, as APK
+       assets, for CorpusCheck (compile on the device, compare SPIR-V / GLSL / .mgfx with the desktop). -->
+  <ItemGroup>
+    <AndroidAsset Include="..\..\tests\fixtures\shaders\**\*.fx" Link="Assets\shaders\%(RecursiveDir)%(Filename)%(Extension)" />
+    <AndroidAsset Include="..\..\tests\fixtures\golden\byte-identity\manifest.json" Link="Assets\golden\manifest.json" />
+    <!-- AndroidGlIntermediatesManifest: another manifest to bundle instead (run-dxc-identity-checks.ps1's
+         positive control bundles one with a single hash changed, which CorpusCheck must report). -->
+    <AndroidAsset Include="..\..\tests\fixtures\golden\byte-identity\intermediates-manifest.json" Link="Assets\golden\intermediates-manifest.json"
+                  Condition="'$(AndroidGlIntermediatesManifest)' == ''" />
+    <AndroidAsset Include="$(AndroidGlIntermediatesManifest)" Link="Assets\golden\intermediates-manifest.json"
+                  Condition="'$(AndroidGlIntermediatesManifest)' != ''" />
+  </ItemGroup>
+
   <!-- Android-arm64 natives bundled into the APK lib/arm64-v8a/ (Phase 50). Exists()-gated so
        the project builds before the natives land (it then fails at runtime with a clear
        DllNotFoundException naming the missing .so). libspirv-cross.so is the easy NDK build;

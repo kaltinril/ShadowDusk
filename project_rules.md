@@ -10,6 +10,7 @@ How to work on this project. One short rule per line. These OVERRIDE default beh
 - Never fork or own compiler internals; fail loudly, patch minimally and reversibly on our side of the boundary (the `D3d9BytecodePatcher` pattern), and record an upstream-fix follow-up.
 - Never bump a pinned native version casually; pins exist because output byte-stability is a product promise, and a bump re-baselines every golden and re-runs rung 4.
 - Never commit native binaries; they are restored, pinned, and hash-verified.
+- Never bump `Silk.NET.SPIRV.Cross.Native` (or `Vortice.Dxc`) without moving the Android build to the same compiler: measure which SPIRV-Cross commit the new desktop BINARIES contain (not the package's submodule pointer; see `project_facts.md`), set it in `tools/build-spirv-cross-android.sh`, rebuild with `spirv-cross-android-build.yml`, host the files under a new tag and re-pin; the emulator lane's on-device corpus check must stay 50/50.
 - Never take on a native dependency that has no Linux and macOS build; prefer a pinned prebuilt GitHub Release artifact, and fall back to building and hosting it ourselves.
 - Never destroy a background agent's uncommitted output; commit or copy out first, clean up last, and verify a "done" claim by re-running its gate rather than trusting an estimate. (operator)
 - Never add a `PackageVersion` **property** to a csproj; the ShadowDusk version lives only in `Directory.Build.props`.

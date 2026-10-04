@@ -14,6 +14,11 @@ that loads and renders identically to `mgfxc`'s in the real MonoGame/KNI runtime
 
 ### Added
 
+- **The Android emulator lane checks the OpenGL corpus on the device, stage by stage (issue #304
+  follow-up).** Every OpenGL fixture of the byte-identity manifest is compiled on the device and its
+  SPIR-V (DXC), GLSL (SPIRV-Cross) and `.mgfx` must equal the desktop's, with a positive control.
+  The desktop half, `OpenGlIntermediatesByteIdentityTests`, pins the new
+  `intermediates-manifest.json` on every OS.
 - **The Android on-device checks run in CI (issue #304).** The new `android-emulator.yml` boots an
   API-34 x86_64 emulator on ubuntu and runs `validation/AndroidGl/run-dxc-identity-checks.ps1`: an
   HLSL string compiled on the device and loaded into a live MonoGame `Effect` (now on MonoGame
@@ -196,6 +201,17 @@ that loads and renders identically to `mgfxc`'s in the real MonoGame/KNI runtime
   from it (issue #226).**
 
 ### Changed
+
+- **Android SPIRV-Cross is now the desktop's SPIRV-Cross (issue #304 follow-up).** The
+  `libspirv-cross.so` ShadowDusk.GLSL packs for android-arm64 (and the emulator's android-x64 copy)
+  is rebuilt at SPIRV-Cross `d8e3e2b1`, the commit the desktop natives (Silk.NET.SPIRV.Cross.Native
+  2.23.0) contain, by a byte-reproducible recipe (`tools/build-spirv-cross-android.sh`, run in CI by
+  `spirv-cross-android-build.yml`: NDK r27c, API 21, 16 KB page aligned). The previous file was a
+  local build of a newer, modified SPIRV-Cross. Hosted on the new `native-spirv-cross-android-d8e3e2b1`
+  release, SHA-256 pinned in `tools/restore.*`, build ids pinned in `SpvcLoader`. No GLSL changed on
+  the fixture corpus (measured on an emulator, before and after), so this is a guarantee by
+  construction rather than a fix of an observed difference. The new file carries no debug info, so
+  the android-arm64 SPIRV-Cross in the ShadowDusk.GLSL package shrinks from about 41.6 MB to 4.6 MB.
 
 - **BREAKING (output names): a legacy sampler with no texture of its own now gets `mgfxc`'s
   parameter name, `X`, instead of `X_SDTexture`.** For `sampler2D X;`, `sampler X;`,

@@ -23,7 +23,7 @@ and loads the resulting bytes into `new Effect(GraphicsDevice, mgfx)`. The outco
 
 The faithful OpenGL pipeline needs DXC (`libdxcompiler.so`) and SPIRV-Cross
 (`libspirv-cross.so`) for each ABI. `tools/restore.ps1` / `tools/restore.sh` download all four
-(SHA-256 pinned, release tag `native-dxc-1.7.2212.40`) into `tools/dxc/<rid>/` and
+(SHA-256 pinned; DXC from release tag `native-dxc-1.7.2212.40`, SPIRV-Cross from `native-spirv-cross-android-d8e3e2b1`) into `tools/dxc/<rid>/` and
 `tools/spirv-cross/<rid>/`; the csproj bundles them via `<AndroidNativeLibrary>`:
 
 | ABI | Used by | Shipped in a package? |
@@ -32,14 +32,19 @@ The faithful OpenGL pipeline needs DXC (`libdxcompiler.so`) and SPIRV-Cross
 | `x86_64` (`android-x64`) | the emulator (and its CI lane) | no, restored for this harness only |
 
 Both are built locally with the NDK (`.wasm-build/build-dxc-android.ps1 -Abi arm64-v8a|x86_64`
-for DXC, a stock NDK CMake build for SPIRV-Cross). A missing native is reported as `SD0219`
+for DXC; `tools/build-spirv-cross-android.sh` for SPIRV-Cross, at the desktop's SPIRV-Cross commit,
+run in CI by `spirv-cross-android-build.yml`). A missing native is reported as `SD0219`
 (DXC) or `SD0103` (SPIRV-Cross), never a raw `DllNotFoundException`.
 
 ## The identity checks (CI)
 
 `run-dxc-identity-checks.ps1` builds this app five times against one attached x86_64 device or
 emulator and reads each verdict from logcat: the pinned natives compile and load an `Effect`; a
-DXC or SPIRV-Cross whose GNU build id differs by one byte, or that is absent, is refused. CI runs
+DXC or SPIRV-Cross whose GNU build id differs by one byte, or that is absent, is refused. The
+first run also compiles the OpenGL fixture corpus ON the device (`CorpusCheck.cs`, started with
+`am start ... --es mode corpus`) and requires its SPIR-V, GLSL and `.mgfx` to be byte-identical to
+the committed desktop manifests; a positive control with one manifest hash changed must be
+reported. CI runs
 it on an API-34 emulator in `.github/workflows/android-emulator.yml` (label `run-android`, weekly,
 and on relevant pushes to main). Locally (PowerShell 7, `adb` on PATH):
 

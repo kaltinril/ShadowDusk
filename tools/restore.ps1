@@ -211,18 +211,25 @@ Restore-DxcMacos
 # hash mismatch -> re-download; offline -> non-fatal warning. Re-running dxc-android-build.yml /
 # spirv-cross-android-build.yml re-pins the SHA-256s here.
 $DxcAndroidArm64Sha256  = 'b3a25ca724f71155ba3ccc8d32f94bce11375a5f44dac9d5cb6e4636271cfe67'
-$SpvcAndroidArm64Sha256 = '7b1e5e366080b6ea9652debd1126b1a52d2d5779d7f8a1e06f0a7c6a9ce9870f'
+# SPIRV-Cross for Android (both ABIs) since the issue #304 follow-up: built by
+# .github/workflows/spirv-cross-android-build.yml (tools/build-spirv-cross-android.sh: SPIRV-Cross
+# d8e3e2b1, the commit the desktop Silk.NET.SPIRV.Cross.Native 2.23.0 natives are built from;
+# NDK r27c; API 21; byte-reproducible) and hosted on their own tag below. Their GNU build ids are
+# SpvcLoader.AndroidBuildIdByRid. The earlier android SPIRV-Cross assets on native-dxc-1.7.2212.40
+# (a dirty local build of a newer SPIRV-Cross, 146679f+) stay on that tag, unused.
+$SpvcAndroidReleaseUrl = 'https://github.com/kaltinril/ShadowDusk/releases/download/native-spirv-cross-android-d8e3e2b1'
+$SpvcAndroidArm64Sha256 = '0e0f1b9ba6cb47881109bbffe87b1dcac2a53142b81dd16fa63ff1ee1c1d3509'
 # android-x64 (issue #304): the x86_64 pair the Android EMULATOR runs (validation/AndroidGl and
 # its CI lane, .github/workflows/android-emulator.yml). No package ships them; they are hosted
 # on the same tag and pinned the same way so the emulator lane restores them instead of needing
 # a local NDK build. Provenance: the DXC is `.wasm-build/build-dxc-android.ps1 -Abi x86_64`
 # (pinned e043f4a1, NDK r27c, API 24, llvm-strip --strip-debug; the same recipe and session as
 # the hosted arm64 file, re-verified 2026-10-03 by stripping the build tree's output to these
-# exact bytes); the SPIRV-Cross is the same NDK r27c CMake build as the hosted arm64 file
-# (shared C API, Release, API 24), source revision unrecorded (project_facts.md). Their GNU
+# exact bytes); the SPIRV-Cross is the reproducible CI build described above (its own tag).
+# Their GNU
 # build ids are the android-x64 pins in DxcNativeIdentity / SpvcLoader.
 $DxcAndroidX64Sha256  = '4a7b255c17ce4b8cfddd7018c39c444ec0baa8bab8f8825bf7e4da7d99783a5a'
-$SpvcAndroidX64Sha256 = 'c495af0e95320aa837a5ddfd7f02b7e4415f2ecf15a2d0cd5950566419da0db1'
+$SpvcAndroidX64Sha256 = 'dc0397473bfab0f0e6f1e0b6cdda37a932726bf58aad2603e3b119eef2920233'
 
 function Restore-SpvcAndroidFile([string]$Asset, [string]$DestRel, [string]$Sha256) {
     $SpvcDir = Join-Path $RepoRoot 'tools' 'spirv-cross'
@@ -248,7 +255,7 @@ function Restore-SpvcAndroidFile([string]$Asset, [string]$DestRel, [string]$Sha2
 
     $tmp = "$Dest.tmp"
     try {
-        Invoke-WebRequest -Uri "$DxcReleaseUrl/$Asset" -OutFile $tmp -UseBasicParsing
+        Invoke-WebRequest -Uri "$SpvcAndroidReleaseUrl/$Asset" -OutFile $tmp -UseBasicParsing
     } catch {
         Write-Warning ("restore.ps1: could not download $Asset (offline?); on-device Android " +
             "compile (Phase 50) will be unavailable. $_")
