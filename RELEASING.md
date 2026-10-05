@@ -64,9 +64,9 @@ to nuget.org, and attaches self-contained CLI binaries for each RID to a GitHub 
    runs some of the rung-4 render proofs ("renders like `mgfxc`/`fxc` in the real engine") on
    software rasterizers: the in-process OpenGL gates and the GL corpus on Mesa llvmpipe; a
    `windows-latest` job pinned to **WARP** with `DxModernFeatures`, `KniWinFormsDX`, the DX11 and
-   DX12 corpora (issues #204/#209) and `SlangFullCorpus` gates 1 + 3 (issue #254); and both Vulkan
-   gates on Mesa lavapipe. Everything else still has no CI driver: the DX/DX12 Apos.Shapes gallery,
-   the ShaderToy DX route, FNA, real-KNI-desktop-GL, the MGCB plugin / XNB / Content Builder gates,
+   DX12 corpora (issues #204/#209), `SlangFullCorpus` gates 1 + 3 and the ShaderToy DX route
+   (`ShaderToyRouteDx`) (issue #254); and both Vulkan gates on Mesa lavapipe. Everything else still
+   has no CI driver: the DX/DX12 Apos.Shapes gallery, FNA, real-KNI-desktop-GL, the MGCB plugin / XNB / Content Builder gates,
    the Slang DX12/Vulkan/FNA arms, and browser-ANGLE (CI's browser smoke renders on SwiftShader,
    blind to ANGLE-D3D11 behavior like the issue-#136 gradient poisoning). No GPU driver is ever
    exercised in CI. **`release.yml` does not check any of this either**, so this gate is the only

@@ -14,6 +14,12 @@ that loads and renders identically to `mgfxc`'s in the real MonoGame/KNI runtime
 
 ### Added
 
+- **The ShaderToy route's DirectX render gate runs in CI (issue #254).** `validation/ShaderToyRouteDx`
+  now runs in `validation-render.yml`'s DX job on `windows-latest`, pinned to WARP: `GradientToy.glsl`
+  is converted in process, pinned to the committed `.fx`, and ShadowDusk's `DirectX_11` build is
+  pixel-diffed against the committed `mgfxc` `DirectX_11` golden in a real MonoGame WindowsDX `Effect`.
+  The golden is `.mgfx` bytes, so both arms are drawn on the same WARP device and the comparison is
+  like for like. The driver honours `SHADOWDUSK_DX_WARP=1`; a local run stays on the GPU.
 - **`.slang` input for the SkSL and raylib converters, through both Slang routes (issue #253).**
   `SkslConverter.ConvertSlang` and `RaylibConverter.ConvertSlang` take HLSL-compatible Slang through
   the built-in frontend; `SlangCompiler.ConvertToSksl` / `ConvertToRaylib` (and `Async` variants) in

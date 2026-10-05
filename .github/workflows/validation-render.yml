@@ -110,7 +110,7 @@
 #                              gradient check on BOTH arms. The golden is bytes, so both arms
 #                              render on the same WARP device in one process (like for like,
 #                              no GPU-rendered reference image involved). Proven red once in
-#                              real CI by a throwaway commit (RED_RUN_PLACEHOLDER), then
+#                              real CI by a throwaway commit (run 37261333697), then
 #                              green with it reverted.
 #
 # Vulkan render gates wired here (vulkan-render-gates job, ubuntu-latest, 2026-10-01): real
