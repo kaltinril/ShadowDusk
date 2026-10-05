@@ -249,7 +249,7 @@ public static class SkslConverter
     /// <summary>
     /// Converts HLSL-compatible <c>.slang</c> source to SkSL through the built-in Slang frontend
     /// (<see cref="SlangFrontend.ConvertToFx"/>, no extra package, every host): the Slang
-    /// becomes <c>.fx</c> text, then <see cref="Convert"/> applies every SkSL rule unchanged.
+    /// becomes <c>.fx</c> text, then <see cref="Convert(string, SkslConvertOptions, CancellationToken)"/> applies every SkSL rule unchanged.
     /// Slang-only constructs (<c>SD0600</c>) are refused by the frontend; for genuine Slang
     /// (<c>import</c>, generics, interfaces) use <c>ShadowDusk.Slang</c>'s
     /// <c>SlangCompiler.ConvertToSksl</c>. Set <see cref="SkslConvertOptions.SourceName"/> to the

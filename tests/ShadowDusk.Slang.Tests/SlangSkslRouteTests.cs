@@ -163,6 +163,37 @@ public sealed class SlangSkslRouteTests
     }
 
     [Fact]
+    public void Raylib_TwoTextures_SampledOutOfDeclarationOrder_BindTheSameTextureToTexture0AsTheSubsetRoute()
+    {
+        // slangc emits globals in first-use order ('Mask' first here); the draw texture must still
+        // be the first DECLARED one, as on the OpenGL target and the subset route.
+        const string slang = """
+            Texture2D Base;
+            SamplerState BaseSampler;
+            Texture2D Mask;
+            SamplerState MaskSampler;
+
+            [shader("fragment")]
+            float4 MainPS(float4 pos : SV_Position, float2 uv : TEXCOORD0) : SV_Target
+            {
+                float4 m = Mask.Sample(MaskSampler, uv);
+                float4 b = Base.Sample(BaseSampler, uv);
+                return b * m;
+            }
+            """;
+        var options = new RaylibConvertOptions { SourceName = "two.slang" };
+
+        var real = new SlangCompiler().ConvertToRaylib(slang, options);
+        var subset = RaylibConverter.ConvertSlang(slang, options);
+
+        real.IsSuccess.ShouldBeTrue(real.IsFailure ? string.Join(" | ", real.Error.Select(e => $"{e.Code}: {e.Message}")) : "");
+        subset.IsSuccess.ShouldBeTrue();
+        real.Value.Samplers.Single(s => s.BoundByDrawCall).HlslTextureName.ShouldBe("Base");
+        real.Value.Samplers.Select(s => (s.UniformName, s.HlslTextureName, s.BoundByDrawCall)).OrderBy(s => s.HlslTextureName)
+            .ShouldBe(subset.Value.Samplers.Select(s => (s.UniformName, s.HlslTextureName, s.BoundByDrawCall)).OrderBy(s => s.HlslTextureName));
+    }
+
+    [Fact]
     public void Raylib_AnAuthorWrittenSamplerRegister_IsHonored_NotStripped()
     {
         const string slang = """
