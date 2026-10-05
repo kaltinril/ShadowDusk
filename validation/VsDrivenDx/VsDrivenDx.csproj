@@ -21,6 +21,8 @@
     <Compile Include="..\SharedDx\DxEffectImageRenderer.cs" />
     <Compile Include="..\SharedDx\VsDxEffectImageRenderer.cs" />
     <Compile Include="..\SharedDx\AposGalleryRenderer.cs" />
+    <!-- Issue #254: SHADOWDUSK_DX_WARP=1 pins the device to WARP on the GPU-less CI lane. -->
+    <Compile Include="..\SharedDx\DxHeadlessRasterizer.cs" />
     <!-- Issues #339/#340 (modes texarr, samparr): the MGFX parameter-block reader, source-linked
          (BCL-only) so the driver compares the candidate's table with the mgfxc golden's record for
          record, the same way the in-suite tests do. -->

@@ -30,6 +30,8 @@
                                    ShapeBatch gallery through the real NuGet package; d3dcompiler_47
                                    arm vs the real mgfxc DirectX_11 golden, vkd3d arm vs the
                                    package's embedded (itself vkd3d-compiled) effect - both tol 0.
+                                   Also runs in CI on WARP (issue #254), with texarr, samparr and
+                                   the default VS-rig mode; this is the real-GPU run.
     * DX resource arrays         - validation/VsDrivenDx -- texarr / -- samparr (issues #339/#340):
                                    Texture2D Tex[2] must reflect mgfxc's table (one `Tex`
                                    parameter, one record at the base slot) on both DXBC backends
