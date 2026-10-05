@@ -94,6 +94,8 @@
                                    real-slangc route): 21 shaders x 4 targets compile, the
                                    procedural subset pixel-diffed vs slangc's raw HLSL, and every
                                    shader loaded + rendered in a real MonoGame WindowsDX Effect.
+                                   Gates 1 + 3 also run in CI on WARP (issue #254); this is the
+                                   real-GPU run, and the only Windows run of gate 2.
     * Slang textured GL          - validation/SlangTexturedGl (issue #252): the real-slangc
                                    textured shaders in real DesktopGL with the texture left to
                                    SpriteBatch's unit 0, the .mgfx sampler table checked, CPU-math

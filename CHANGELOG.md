@@ -14,6 +14,14 @@ that loads and renders identically to `mgfxc`'s in the real MonoGame/KNI runtime
 
 ### Added
 
+- **The real-slangc `ShadowDusk.Slang` route's real WindowsDX `Effect` load runs in CI (issue #254).**
+  `validation/SlangFullCorpus` gates 1 and 3 now run in `validation-render.yml`'s DX job on
+  `windows-latest`, pinned to WARP: all 21 corpus shaders compile on four targets through the
+  win-x64 slangc and load into a real MonoGame WindowsDX `Effect`. Gate 3 gained a positive control
+  that runs every time: a real `.mgfx` truncated to half, with its effect-cache key changed, must
+  be rejected by the `Effect` loader. The driver honours `SHADOWDUSK_DX_WARP=1` and takes
+  `--skip-gl-gate`, which prints gate 2 as NOT RUN on a host with no OpenGL 3.3 driver (gate 2
+  still runs on the ubuntu lane and in the Windows gate script).
 - **Vulkan and DirectX 12 output is now pinned across hosts, over the whole fixture corpus.**
   `DxcTargetsCrossHostByteIdentityTests` compiles all 174 corpus fixtures for both targets, release
   and `Debug`, on every CI OS against one win-x64 manifest (`dxc-targets-manifest.json`): Vulkan
