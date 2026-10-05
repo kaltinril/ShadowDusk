@@ -368,7 +368,8 @@ per-container, pixel-stage only, no vertex stage. Phase 1 is shaders whose only 
       OpenGL backend in real KNI v4.2.9001 SDL2.GL (`SpriteBatch`, tint as the vertex color), same
       procedural texels at 128x128, untinted and tinted. Measured 2026-10-04 on Windows (GPU GL):
       **12/12 within ±2/255, maxd 0-1**; three positive controls caught (tint left white on Skia
-      only maxd 53, V flipped maxd 255, resolution halved maxd 249). No converter change was
+      only maxd 53, V flipped maxd 255, resolution halved maxd 249). Same day in CI on ubuntu/Mesa
+      llvmpipe: 12/12, maxd 0 except Pixelated 1, controls caught. No converter change was
       needed. None of the corpus is time-dependent (Fading fades by texture V); Tint's
       `TintColor` is fixed at (1, 0.5, 0.5, 1) on both sides. Wired into the `validation-render.yml`
       llvmpipe lane and the Windows gate script; `docs/validation-matrix.md` §6 row.
