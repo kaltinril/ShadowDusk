@@ -48,8 +48,13 @@
 //     not a sweep of the ShaderToy corpus (that is the fidelity gate's job).
 //   * GradientToy is deliberately time-INDEPENDENT (no iTime), so the comparison is
 //     deterministic. A time-driven shader would need a pinned clock on both arms.
-//   * Windows + a DX11 GPU only. There is no headless D3D driver CI can run, which
-//     is why this lives in run-windows-render-gates.ps1 and not in a workflow.
+//   * Windows only. Honours SHADOWDUSK_DX_WARP=1 (validation/SharedDx/
+//     DxHeadlessRasterizer.cs), which pins the device to WARP, Windows' bundled software
+//     D3D rasterizer, so the GPU-less windows-latest CI lane (validation-render.yml,
+//     dx-render-gates, issue #254) runs it. A developer's run stays on the GPU.
+//     Both arms render on the SAME device in the SAME process, so whichever rasterizer
+//     is in use, mgfxc's build and ShadowDusk's build are compared like for like: the
+//     committed golden is mgfxc's .mgfx BYTES, never a pre-rendered image.
 // =============================================================================
 
 using System;
@@ -63,6 +68,7 @@ using ShadowDusk.Core;
 using ShadowDusk.Core.Preprocessor;
 using ShadowDusk.ShaderToy;
 using ShadowDusk.Validation;
+using ShadowDusk.Validation.Dx;
 
 int tolerance = 4;
 for (int i = 0; i < args.Length - 1; i++)
@@ -161,6 +167,12 @@ if (!File.Exists(goldenPath))
 }
 byte[] golden = await File.ReadAllBytesAsync(goldenPath);
 Console.WriteLine($"[toydx] mgfxc golden: {golden.Length} B — arm B pixel-diffs vs the reference compiler");
+
+// WARP on the GPU-less CI lane (SHADOWDUSK_DX_WARP=1, issues #204/#254); real GPU otherwise.
+// Must run before the GraphicsDeviceManager is constructed.
+DxHeadlessRasterizer.PinIfRequested();
+Console.WriteLine($"[toydx] GraphicsAdapter.UseDriverType = {GraphicsAdapter.UseDriverType} " +
+                  "(FastSoftware = WARP; Hardware = the real GPU)");
 
 using var game = new ShaderToyRouteDxGame(candidate, golden, outDir, tolerance);
 game.Run();

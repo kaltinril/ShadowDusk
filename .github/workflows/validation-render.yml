@@ -114,6 +114,16 @@
 #                              Proven red once in real CI by a throwaway commit perturbing every
 #                              fixture (run 37261334338: all four modes failed, maxd 127/128/85
 #                              and both SD0224 refusals missing), then green with it reverted.
+#   * ShaderToyRouteDx (issue #254) — the ShaderToy .glsl route, DX arm: GradientToy.glsl
+#                              converted in process, pinned to the committed .fx, then
+#                              ShadowDusk's DirectX_11 build vs the REQUIRED committed mgfxc
+#                              DirectX_11 golden .mgfx, real MonoGame WindowsDX, real NDC
+#                              fullscreen quad, maxd within tol 4 plus an absolute two-axis
+#                              gradient check on BOTH arms. The golden is bytes, so both arms
+#                              render on the same WARP device in one process (like for like,
+#                              no GPU-rendered reference image involved). Proven red once in
+#                              real CI by a throwaway commit (run 37261333697), then
+#                              green with it reverted.
 #
 # Vulkan render gates wired here (vulkan-render-gates job, ubuntu-latest, 2026-10-01): real
 # MonoGame DesktopVK (MonoGame.Runtime.Linux.Vulkan) on Mesa lavapipe (CPU Vulkan) under xvfb.
@@ -132,10 +142,7 @@
 #                              renders it at maxd 0, which is exactly why the layer is here).
 #
 # NOT here (issue #204 follow-ups, still manual-only via run-windows-render-gates.ps1):
-#   * ShaderToyRouteDx (converter route) — a heavier DX11 gate, left out of the day-one CI
-#     job on purpose; nothing about WARP is expected to be different for it, it just wasn't
-#     the smallest first step (issue #254 moves one gate per PR).
-#   * VsDrivenDx12 — same reasoning as VsDrivenDx; the issue #209 SwiftShader fix should
+#   * VsDrivenDx12 — the DX12 twin of VsDrivenDx (which now runs above); the issue #209 SwiftShader fix should
 #     carry over (same SDL_WINDOW_VULKAN precondition), but wiring it in is a follow-up,
 #     not the smallest next step.
 #   * FNA (validation/FnaValidation) — needs its own restore-fna.ps1 (heavy, clones the
@@ -463,6 +470,29 @@ jobs:
         env:
           SHADOWDUSK_DX_WARP: "1"
         run: dotnet run --project validation/SlangFullCorpus -c Release -f net8.0-windows --no-build -- --skip-gl-gate
+
+      # Issue #254: the ShaderToy .glsl route, DirectX arm. GradientToy.glsl is converted in
+      # process, pinned against the committed GradientToy.fx, compiled by ShadowDusk, and
+      # pixel-diffed against the REQUIRED committed mgfxc DirectX_11 golden .mgfx, both loaded
+      # into a real MonoGame WindowsDX Effect and drawn as a real NDC fullscreen quad on WARP.
+      # The golden is mgfxc's BYTES, not an image: both arms render on the same WARP device in
+      # the same process, so the diff is like for like. Self-contained (builds its own project,
+      # uploads its own output) so it does not touch the shared build/upload steps. Runs even if
+      # an earlier DX gate failed.
+      - name: Run ShaderToy .glsl route on DX (converted .fx vs mgfxc DirectX_11 golden, real MonoGame WindowsDX)
+        if: ${{ !cancelled() }}
+        env:
+          SHADOWDUSK_DX_WARP: "1"
+        run: dotnet run --project validation/ShaderToyRouteDx -c Release
+
+      - name: Upload ShaderToy DX route output (debug)
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: validation-render-output-shadertoy-dx
+          path: validation/output-shadertoy-dx/**
+          if-no-files-found: ignore
+          retention-days: 7
 
       # Issue #254: validation/VsDrivenDx, every mode, real MonoGame WindowsDX on WARP. Each mode
       # renders the committed mgfxc DirectX_11 golden (.mgfx) AND ShadowDusk's in-process build in

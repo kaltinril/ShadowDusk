@@ -45,7 +45,8 @@
                                    runs; it only became possible in Phase 51 A10, when the
                                    converter started emitting a DirectX-valid profile header
                                    (mgfxc refuses vs_3_0 for /Profile:DirectX_11).
-    * DirectX12 PS corpus        - validation/BaselineDx12 + CandidateDx12 + compare_dx12.py
+                                   Also runs in CI on WARP (issue #254); this is the real-GPU run.
+    * DirectX12 PS corpus       - validation/BaselineDx12 + CandidateDx12 + compare_dx12.py
                                    (ShadowDusk DX12 vs a real mgfxc DirectX_12 golden, real
                                    MonoGame 3.8.5 WindowsDX12, maxd 0).
     * DirectX12 VS-driven + Apos.Shapes gallery - validation/VsDrivenDx12 (+ `-- apos`): the VS rig
