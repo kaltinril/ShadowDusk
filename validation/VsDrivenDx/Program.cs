@@ -49,6 +49,13 @@ if (mode is not ("vs" or "apos" or "texarr" or "samparr"))
     return 2;
 }
 
+// Issue #254: WARP (Windows' software D3D rasterizer) on the GPU-less CI lane when
+// SHADOWDUSK_DX_WARP=1, the real GPU otherwise. Every mode's baseline and candidates render in
+// this one process on this one device, so the pin applies to both sides of every diff alike.
+// Must run before any renderer constructs its GraphicsDeviceManager.
+DxHeadlessRasterizer.PinIfRequested();
+Console.WriteLine($"[vsdriven-dx] D3D driver type: {GraphicsAdapter.UseDriverType} ({DxHeadlessRasterizer.EnvVar}={Environment.GetEnvironmentVariable(DxHeadlessRasterizer.EnvVar) ?? "unset"})");
+
 string repoRoot = FindRepoRoot();
 string? extraPath = args.Length > 1 ? args[1] : null;
 
