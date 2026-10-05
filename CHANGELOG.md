@@ -52,6 +52,13 @@ that loads and renders identically to `mgfxc`'s in the real MonoGame/KNI runtime
   must diverge or the gate fails. It runs in the Linux GL CI lane and in
   `run-windows-render-gates.ps1`. SkiaSharp and KNI stay driver and test dependencies only; a
   new test pins that no shipped project references either. No converter change was needed.
+- **The DX11 VS-driven rig, the Apos.Shapes gallery and the texture/sampler-array rows run in CI
+  (issue #254).** `validation/VsDrivenDx` runs all four modes (`vs`, `apos`, `texarr`, `samparr`) in
+  `validation-render.yml`'s DX job on `windows-latest`, pinned to WARP. Each mode renders the
+  committed `mgfxc` DirectX_11 golden and ShadowDusk's build in the same process on the same WARP
+  device and diffs them there, so no GPU-rendered image is involved. The driver now honours
+  `SHADOWDUSK_DX_WARP=1` and logs the D3D driver type it used. A throwaway commit perturbing every
+  fixture turned all four modes red in real CI before it was reverted.
 - **The real-slangc `ShadowDusk.Slang` route's real WindowsDX `Effect` load runs in CI (issue #254).**
   `validation/SlangFullCorpus` gates 1 and 3 now run in `validation-render.yml`'s DX job on
   `windows-latest`, pinned to WARP: all 21 corpus shaders compile on four targets through the

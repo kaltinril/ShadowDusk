@@ -102,6 +102,18 @@
 #                              (run 37254580107), then green with it reverted. No reference
 #                              compiler needed (a load gate, not an mgfxc diff). Gate 2 needs
 #                              an OpenGL 3.3 context the runner lacks; it runs in the GL job.
+#   * VsDrivenDx -- vs / apos / texarr / samparr (issue #254) — real MonoGame WindowsDX: the
+#                              VS rig (custom vertex buffer + float4x4), the 30-cell Apos.Shapes
+#                              ShapeBatch gallery (real NuGet package), the issue #339 texture-
+#                              array table + render and the issue #340 SD0224 sampler-array
+#                              refusal. Every pixel diff is in process: the committed mgfxc
+#                              DirectX_11 golden (.mgfx, or for the Apos vkd3d arm the package's
+#                              own embedded effect) and ShadowDusk's build render in the same
+#                              process on the same WARP device, so no GPU-rendered image is ever
+#                              compared with a WARP one. Measured maxd 0 on every arm on WARP.
+#                              Proven red once in real CI by a throwaway commit perturbing every
+#                              fixture (run 37261334338: all four modes failed, maxd 127/128/85
+#                              and both SD0224 refusals missing), then green with it reverted.
 #   * ShaderToyRouteDx (issue #254) — the ShaderToy .glsl route, DX arm: GradientToy.glsl
 #                              converted in process, pinned to the committed .fx, then
 #                              ShadowDusk's DirectX_11 build vs the REQUIRED committed mgfxc
@@ -130,10 +142,7 @@
 #                              renders it at maxd 0, which is exactly why the layer is here).
 #
 # NOT here (issue #204 follow-ups, still manual-only via run-windows-render-gates.ps1):
-#   * VsDrivenDx (Apos.Shapes gallery, real NuGet package) — a heavier DX11 gate, left out
-#     of the day-one CI job on purpose; nothing about WARP is expected to be different for
-#     it, it just wasn't the smallest first step.
-#   * VsDrivenDx12 — same reasoning as VsDrivenDx; the issue #209 SwiftShader fix should
+#   * VsDrivenDx12 — the DX12 twin of VsDrivenDx (which now runs above); the issue #209 SwiftShader fix should
 #     carry over (same SDL_WINDOW_VULKAN precondition), but wiring it in is a follow-up,
 #     not the smallest next step.
 #   * FNA (validation/FnaValidation) — needs its own restore-fna.ps1 (heavy, clones the
@@ -482,6 +491,53 @@ jobs:
         with:
           name: validation-render-output-shadertoy-dx
           path: validation/output-shadertoy-dx/**
+          if-no-files-found: ignore
+          retention-days: 7
+
+      # Issue #254: validation/VsDrivenDx, every mode, real MonoGame WindowsDX on WARP. Each mode
+      # renders the committed mgfxc DirectX_11 golden (.mgfx) AND ShadowDusk's in-process build in
+      # the SAME process on the SAME WARP device, then diffs them in process, so no GPU-rendered
+      # PNG is involved and both sides of every diff see the same rasterizer.
+      #   vs      - VsTransformColorTexture (custom vertex buffer + float4x4), d3dcompiler_47 and
+      #             vkd3d arms vs the golden, tol 4.
+      #   apos    - the 30-cell Apos.Shapes ShapeBatch gallery through the real NuGet package:
+      #             d3dcompiler_47 arm vs the real mgfxc golden (tol 1), vkd3d arm vs the package's
+      #             embedded (itself vkd3d-compiled) effect (tol 0).
+      #   texarr  - issue #339: Texture2D Tex[2] table equals mgfxc's record for record, and
+      #             renders like the mgfxc 3.8.4.1 golden (tol 1), both DXBC backends.
+      #   samparr - issue #340: a SamplerState array must be refused with SD0224 (no device).
+      # Built here rather than in the shared build step so this step stands alone. All four run
+      # even if one fails; the step fails if any did. Runs even if an earlier DX gate failed.
+      - name: Run VsDrivenDx gates (VS rig, Apos.Shapes gallery, texture/sampler arrays vs mgfxc DirectX_11 golden)
+        if: ${{ !cancelled() }}
+        env:
+          SHADOWDUSK_DX_WARP: "1"
+        run: |
+          dotnet build validation/VsDrivenDx/VsDrivenDx.csproj -c Release
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          $failed = @()
+          foreach ($mode in 'vs', 'apos', 'texarr', 'samparr') {
+            Write-Host "::group::VsDrivenDx -- $mode"
+            dotnet run --project validation/VsDrivenDx -c Release --no-build -- $mode
+            $rc = $LASTEXITCODE
+            Write-Host "::endgroup::"
+            if ($rc -ne 0) {
+              Write-Host "::error::validation/VsDrivenDx -- $mode FAILED (exit $rc)"
+              $failed += $mode
+            }
+          }
+          if ($failed.Count -gt 0) { Write-Host "VsDrivenDx failed modes: $($failed -join ', ')"; exit 1 }
+          Write-Host "VsDrivenDx: all 4 modes passed (vs, apos, texarr, samparr)."
+
+      - name: Upload VsDrivenDx render outputs (debug)
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: validation-render-output-dx-vsdriven
+          path: |
+            validation/output-vs-dx/**
+            validation/output-apos-dx/**
+            validation/output/texarr-dx11/**
           if-no-files-found: ignore
           retention-days: 7
 
