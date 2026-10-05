@@ -14,6 +14,16 @@ that loads and renders identically to `mgfxc`'s in the real MonoGame/KNI runtime
 
 ### Added
 
+- **Skia vs KNI render harness for the SkSL converter (issue #369, Phase 62 Area D).**
+  `validation/SkiaVsKni` takes XnaFiddle's texture-only example shaders (Fading, Grayscale,
+  Invert, Pixelated, Tint, and Mask with a second texture) and renders each one twice: through
+  `SkslConverter` in real SkiaSharp, set up the way Gum's Skia renderer will use it (the texture
+  as the child shader, `ShadowDusk_Color` set to the tint, `ShadowDusk_Resolution` set to the
+  texture size), and through the OpenGL backend in real KNI SDL2.GL via `SpriteBatch`. Same
+  texels, untinted and tinted: 12/12 match within 2/255 (max delta 0-1). Three positive controls
+  must diverge or the gate fails. It runs in the Linux GL CI lane and in
+  `run-windows-render-gates.ps1`. SkiaSharp and KNI stay driver and test dependencies only; a
+  new test pins that no shipped project references either. No converter change was needed.
 - **The Android emulator lane checks the OpenGL corpus on the device, stage by stage (issue #304
   follow-up).** Every OpenGL fixture of the byte-identity manifest is compiled on the device and its
   SPIR-V (DXC), GLSL (SPIRV-Cross) and `.mgfx` must equal the desktop's, with a positive control.
