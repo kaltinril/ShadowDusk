@@ -19,7 +19,7 @@ using ShadowDusk.Compiler;
 IShaderCompiler compiler = new EffectCompiler();
 var result = await compiler.CompileAsync(fxSource, new CompilerOptions
 {
-    Target = PlatformTarget.OpenGL,   // or DirectX, Vulkan, or Fna
+    Target = PlatformTarget.OpenGL,   // or DirectX, DirectX12, Vulkan, or Fna
 });
 
 if (result.IsFailure)
@@ -41,13 +41,14 @@ Need to compile from a **synchronous** call site (e.g. inside `Content.Load<Effe
 | `OpenGL` | `.mgfx` (GLSL) | MonoGame DesktopGL, KNI (incl. WebGL) |
 | `DirectX` | `.mgfx` (SM5 DXBC) | MonoGame WindowsDX, KNI | 
 | `Fna` | `.fxb` (D3D9 fx_2_0) | FNA |
+| `DirectX12` | `.mgfx` (SM6 DXIL) | MonoGame WindowsDX12 (3.8.5+) |
 | `Vulkan` | `.mgfx` (SPIR-V) | MonoGame DesktopVK (3.8.5+) |
 
 Every target compiles on every desktop OS with deterministic output — the same source, compiler version, and target produce the same bytes. Errors come back as `ShaderError[]` with the file, line, column, and compiler message verbatim.
 
 ### Output format
 
-By default you get **MGFX v10** (`.mgfx`), which loads on MonoGame 3.8.2 and every newer MonoGame, plus KNI. You never set a flag to get correct output.
+By default you get **MGFX v10** (`.mgfx`), which loads on every MonoGame from 3.8.1.263 (the measured floor) through 3.8.5, plus KNI. You never set a flag to get correct output. (`DirectX12` and `Vulkan` exist only on MonoGame 3.8.5+, so those two targets always emit v11.)
 
 Targeting a newer runtime? Two optional formats load and render exactly like v10:
 
@@ -57,6 +58,15 @@ Targeting a newer runtime? Two optional formats load and render exactly like v10
 If you're not sure, keep the default.
 
 Prefer to pick a whole target (backend **and** container) in one value? Set `CompilerOptions.Profile` to a `CapabilityProfile` (e.g. `CapabilityProfile.KniGL_4_02` for KNIFX on OpenGL); a profile fully specifies the output and overrides `Target` / `Container` / `MgfxVersion`. For an in-app compile, `RuntimeProfileDetector.Recommend(typeof(Game).Assembly, target)` returns the proven profile for the loaded framework.
+
+## Beyond MonoGame: SkiaSharp and raylib
+
+The same faithful front half (DXC, SPIRV-Cross) also feeds two source converters for a single-pass, pixel-only `.fx`. Neither produces an `.mgfx`, and neither runtime has a reference compiler, so both are judged by rendered-image fidelity, never `mgfxc`-equivalence:
+
+- **SkiaSharp (SkSL)**: `ShadowDusk.Compiler.Sksl.SkslConverter.Convert(fx, new SkslConvertOptions())` returns an `SkslConversion` whose SkSL text loads into `SKRuntimeEffect`.
+- **raylib (Raylib-cs)**: `ShadowDusk.Compiler.Raylib.RaylibConverter.Convert(fx, new RaylibConvertOptions())` returns a `RaylibShader`: a `#version 330` fragment shader for `Raylib.LoadShaderFromMemory(null, fs)` plus its uniform and sampler binding contract.
+
+Anything outside what each runtime can hold is refused by name, never silently dropped.
 
 ## Links
 
