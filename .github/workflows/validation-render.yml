@@ -90,7 +90,10 @@
 #                              MonoGame WindowsDX Effect on WARP and draw one frame). Gate 3
 #                              carries its own positive control: a real .mgfx truncated to half
 #                              (cache key inverted) must be REJECTED by the Effect loader, or
-#                              the gate fails; proven red once in real CI. No reference
+#                              the gate fails (that failure branch measured locally, when the
+#                              first draft of the control loaded). The STEP was proven red once
+#                              in real CI by a throwaway commit corrupting every gate-3 row
+#                              (run 37254580107), then green with it reverted. No reference
 #                              compiler needed (a load gate, not an mgfxc diff). Gate 2 needs
 #                              an OpenGL 3.3 context the runner lacks; it runs in the GL job.
 #

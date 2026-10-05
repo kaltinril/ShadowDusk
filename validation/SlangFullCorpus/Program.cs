@@ -428,12 +428,22 @@ internal static class Program
         // Deliberately NOT disposed: the control's Effect registers with the device before its
         // constructor throws, and MonoGame's Effect.Dispose then throws NullReferenceException on
         // that half-built object during device teardown (measured). Gate 3 is the last thing the
-        // process does, so the OS reclaims the device on exit.
+        // process does, so the OS reclaims the device on exit. Its finalizer is suppressed too,
+        // so a GC before exit cannot run teardown on that half-built Effect. (The control Effect
+        // itself is created inside DxEffectImageRenderer and is not reachable here; nothing
+        // allocates after gate 3, and .NET does not run finalizers at process exit.)
         var game = new DxEffectImageRenderer(catPath, outDir, allJobs, DxShaderInputs.SetParams);
         game.Run();
+        GC.SuppressFinalize(game);
 
         int failures = 0;
         bool controlCaught = false;
+        if (game.Outcomes.Count != allJobs.Count)
+        {
+            failures++;
+            Console.WriteLine($"  [FAIL] the renderer reported {game.Outcomes.Count} outcome(s) for {allJobs.Count} job(s); every job must produce exactly one");
+        }
+
         foreach (var outcome in game.Outcomes)
         {
             if (outcome.Name == ControlName)
@@ -459,7 +469,8 @@ internal static class Program
         }
 
         Console.WriteLine();
-        Console.WriteLine($"  {jobs.Count - failures}/{jobs.Count} loaded into a real DirectX_11 Effect.");
+        int loaded = game.Outcomes.Count(o => o.Name != ControlName && o.Loaded);
+        Console.WriteLine($"  {loaded}/{jobs.Count} loaded into a real DirectX_11 Effect.");
         if (!controlCaught)
         {
             failures++;
