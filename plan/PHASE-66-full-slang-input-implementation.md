@@ -37,6 +37,14 @@ it acts on them.
 > arbitrary runtime Slang. Record the bet here so it isn't re-litigated mid-implementation: the
 > demand question was heard and answered by the owner, not left open.
 
+> **Transport note (2026-10-04):** this phase built the route on a `slangc` child process per entry
+> point (A3). [Phase 68](PHASE-68-slang-in-process-everywhere.md) plans to make an in-process call
+> into the same pinned slang library (already shipped beside `slangc`) the desktop default, keeping
+> the subprocess only as a crash-isolation escape hatch, and to flip the default only after byte
+> identity with `slangc` on the full corpus on all three desktop OSes in CI (owner decision,
+> `project_decisions.md`). Everything this phase decided about arguments, rejections and the merge
+> is unchanged; only the transport moves.
+
 ---
 
 ## 1. What this is
