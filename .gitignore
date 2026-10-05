@@ -151,6 +151,7 @@ validation/output-mrt/
 validation/output-shadertoy/
 validation/output-shadertoy-dx/
 validation/output-raylib/
+validation/output-skia-kni/
 validation/output-xnb/
 validation/output-xnb-kni/
 validation/output-xnb-gl/
