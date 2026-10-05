@@ -266,7 +266,8 @@ sealed class ShaderToyRouteDxGame : Game
         Report.Add("[toydx] candidate new Effect(gd, mgfx) loaded OK in real WindowsDX; params = [" +
                    string.Join(", ", candidate.Parameters.Select(p => p.Name)) + "]");
 
-        Color[] img = Render(gd, candidate);
+        // THROWAWAY (issue #254 red proof, reverted next commit): skew the candidate arm only.
+        Color[] img = Render(gd, candidate, skew: true);
         SavePng(gd, img, "candidate.png");
 
         bool ok = AssertGradient("A candidate", img);
@@ -340,7 +341,7 @@ sealed class ShaderToyRouteDxGame : Game
     /// the quad would land far outside the frustum and render nothing. So this drives a real
     /// NDC fullscreen quad, which is also exactly what a consumer of the ShaderToy route does.
     /// </summary>
-    private Color[] Render(GraphicsDevice gd, Effect effect)
+    private Color[] Render(GraphicsDevice gd, Effect effect, bool skew = false)
     {
         // iResolution is what the shader divides by; without it the gradient is undefined.
         effect.Parameters["iResolution"]?.SetValue(new Vector3(Size, Size, 1f));
@@ -353,8 +354,8 @@ sealed class ShaderToyRouteDxGame : Game
 
         using var rt = new RenderTarget2D(gd, Size, Size, false, SurfaceFormat.Color, DepthFormat.None);
         gd.SetRenderTarget(rt);
-        gd.Clear(Color.Black);
-        gd.BlendState = BlendState.Opaque;
+        gd.Clear(skew ? new Color(40, 0, 0, 255) : Color.Black);
+        gd.BlendState = skew ? BlendState.Additive : BlendState.Opaque;
         gd.DepthStencilState = DepthStencilState.None;
         gd.RasterizerState = RasterizerState.CullNone;   // the quad's winding is not the subject
 
