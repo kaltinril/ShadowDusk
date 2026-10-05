@@ -54,6 +54,12 @@
                                    real-KNI-runtime GL proof CI's llvmpipe lane does not cover).
     * KNI OpenGL VS-driven       - validation/KniVsDriven (issue #70 matrix/POSITION rig,
                                    in-process compare).
+    * Skia vs KNI (SkSL)         - validation/SkiaVsKni (issue #369, Phase 62 Area D2): XnaFiddle's
+                                   texture-only shaders through the SkSL converter in real
+                                   SkiaSharp vs the same .fx's OpenGL build in real KNI SDL2.GL,
+                                   tol 2/255, three positive controls. Image fidelity, not an
+                                   mgfxc diff (Skia has no reference compiler). CI runs it on
+                                   llvmpipe too; this run is its GPU-GL-driver KNI arm.
     * Apos.Shapes GL render-proof - validation/VsDriven -- apos: a single shape plus a needle-thin
                                    ellipse vs the mgfxc OpenGL golden, tol 2/255. Uses the older
                                    apos-shapes.fx pin - the current revision's mgfxc GL compile is
@@ -259,6 +265,18 @@ $gates.Add(@{
 $gates.Add(@{
     Name   = 'KNI OpenGL VS-driven (issue #70 matrix/POSITION rig, real KNI SDL2.GL, in-process compare)'
     Action = { Invoke-Checked 'dotnet' @('run', '--project', 'validation/KniVsDriven', '-c', 'Release') }
+})
+# Issue #369 (Phase 62 Area D2): the same XnaFiddle .fx through the SkSL converter in real
+# SkiaSharp vs its OpenGL build in real KNI SDL2.GL (Gum authors on KNI and loads in Skia).
+# CI runs it on llvmpipe; here the KNI arm runs on the GPU's GL driver. SHADOWDUSK_REQUIRE_GL
+# turns a missing GL context into a failure instead of the driver's skip.
+$gates.Add(@{
+    Name   = 'Skia vs KNI (issue #369: XnaFiddle shaders via SkSL in real SkiaSharp vs OpenGL in real KNI SDL2.GL, tol 2/255)'
+    Action = {
+        $env:SHADOWDUSK_REQUIRE_GL = '1'
+        try { Invoke-Checked 'dotnet' @('run', '--project', 'validation/SkiaVsKni', '-c', 'Release') }
+        finally { Remove-Item Env:SHADOWDUSK_REQUIRE_GL -ErrorAction SilentlyContinue }
+    }
 })
 $gates.Add(@{
     Name   = 'Apos.Shapes GL render-proof (Phase 51 A3, real MonoGame DesktopGL vs mgfxc OpenGL golden)'
