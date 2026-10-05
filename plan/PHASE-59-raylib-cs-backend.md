@@ -46,7 +46,9 @@ and a trial with the requester.
   `raylib/CrtFilter.fx` and `raylib/RetroHandheld.fx` (the two §1 effects), Gum's Grayscale) in
   **real Raylib-cs 8.1.0 (raylib 6.0)** and pixel-diffs each against the same `.fx` built for OpenGL
   and rendered in **real MonoGame DesktopGL**: **13/13 maxd 0** on macOS (Apple GL) and on Linux CI
-  (Mesa llvmpipe), tolerance ±2/255. Positive
+  (Mesa llvmpipe), tolerance ±2/255; **15/15 maxd 0** since issue #327 (2026-10-02) added the
+  `SamplerLegacyInclude.fx` / `SamplerLegacyMacroDecl.fx` arms (measured on Windows), plus 10/10
+  `.slang` arms and a fourth (mutated Slang twin) control since issue #253. Positive
   controls, all caught: tint dropped (maxd 44, 16073 px over), V flipped (maxd 255), CRT curvature
   +0.01 (maxd 43, 8349 px). The oracle is the proven OpenGL backend rather than the original-GLSL
   render §8 sketched: for `.fx` input there is no original GLSL, and the proven backend is the

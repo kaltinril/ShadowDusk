@@ -30,6 +30,13 @@ that loads and renders identically to `mgfxc`'s in the real MonoGame/KNI runtime
   mutated-twin control. No `.mgfx` output changes: `Compile` is the same code, split at the point
   where the assembled `.fx` meets the downstream compiler.
 
+- **Vulkan and DirectX 12 output is now pinned across hosts, over the whole fixture corpus.**
+  `DxcTargetsCrossHostByteIdentityTests` compiles all 174 corpus fixtures for both targets, release
+  and `Debug`, on every CI OS against one win-x64 manifest (`dxc-targets-manifest.json`): Vulkan
+  byte for byte, DirectX 12 byte for byte on Windows and, elsewhere, with only the signature,
+  DXC's own identity string and the disassembler's locale-dependent non-ASCII escaping removed. It closes a measurement gap: Vortice.Dxc 3.3.4's Linux DXC is
+  28 commits older than the Windows/macOS one. Measured: Linux matches Windows everywhere, and the gap shows only in the text of DXC's unsigned-DXIL warning; macOS matches everywhere but one `Debug` DXIL whose debug records come in a different order (instruction-identical, pinned as a macOS expected value).
+  The integration lane uploads every fixture's SPIR-V/DXIL when it fails.
 - **The Android emulator lane checks the OpenGL corpus on the device, stage by stage (issue #304
   follow-up).** Every OpenGL fixture of the byte-identity manifest is compiled on the device and its
   SPIR-V (DXC), GLSL (SPIRV-Cross) and `.mgfx` must equal the desktop's, with a positive control.
@@ -149,8 +156,9 @@ that loads and renders identically to `mgfxc`'s in the real MonoGame/KNI runtime
   frontend with no raylib-specific code. **Evidence model: rendered-image fidelity, not
   `mgfxc`-equivalence** (raylib has no reference compiler): the new `validation/RaylibRoute`
   gate renders each conversion in real Raylib-cs 8.1.0 (raylib 6.0) and pixel-diffs it against
-  the same `.fx` built for OpenGL in real MonoGame DesktopGL; 13/13 shaders (the 10-shader GL
-  corpus, a CRT and a handheld-LCD effect, Gum's Grayscale) at maxd 0, with three positive
+  the same `.fx` built for OpenGL in real MonoGame DesktopGL; 15/15 shaders (the 10-shader GL
+  corpus, a CRT and a handheld-LCD effect, Gum's Grayscale, and since issue #327 the two
+  legacy-sampler fixtures whose samplers an `#include` or a macro supplies) at maxd 0, with three positive
   controls that must diverge. Runs in the Linux GL CI lane. `glsl100` (web) is not emitted yet.
 
 - **New package: `ShadowDusk.Slang`, a real-slangc compile route for genuine Slang (Phase 66,
@@ -217,6 +225,16 @@ that loads and renders identically to `mgfxc`'s in the real MonoGame/KNI runtime
   from it (issue #226).**
 
 ### Changed
+
+- **Documentation drift corrected (2026-10-04 audit).** No code or output change. The
+  `ShadowDusk.Compiler` package README now lists the `DirectX12` target, the measured MGFX v10
+  floor (MonoGame 3.8.1.263) and the SkSL and raylib converters; its package description and tags
+  mention raylib; the CLI README covers `.slang` input. The raylib gate count is 15/15 everywhere,
+  the shader-corpus counts are re-measured (174 `.fx`) with the XnaFiddle and cross-host fixtures
+  documented, `the-purpose.md` gains SkSL/raylib rows, the Stage 0 pipeline reference covers the
+  real-slangc and browser slangc routes, and the repository layout, release skill, gate-script
+  help and validation matrix are brought in line with the gates and recipes that actually run.
+  Phase 65's closed doc moved to `plan/DONE/`.
 
 - **Android DXC is now 16 KB page aligned, built reproducibly in CI.** Google Play has required 16 KB
   page support for new apps and updates targeting Android 15+ since November 2025; the

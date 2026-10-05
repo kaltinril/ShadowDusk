@@ -6,6 +6,18 @@
 
 ```
 ShadowDusk/
+├── .github/workflows/             # CI: ci.yml (build + unit + integration on ubuntu/macos/windows),
+│                                  #   validation-render.yml (the render gates CI can run: GL llvmpipe,
+│                                  #   DX on WARP, Vulkan on lavapipe), wasm.yml (WASM & browser gates),
+│                                  #   pack-consume.yml (cold consumers of the packed feed), docs.yml
+│                                  #   (DocFX site), release.yml (NuGet publish), android-emulator.yml
+│                                  #   (on-device Android checks, issue #304). Native builds (manual dispatch;
+│                                  #   the two Android ones also on PRs touching their recipe or the restore
+│                                  #   scripts), artifacts uploaded by hand to fixed native-* release tags:
+│                                  #   dxc-build.yml (macOS DXC), dxc-android-build.yml
+│                                  #   (tools/build-dxc-android.sh), spirv-cross-android-build.yml
+│                                  #   (tools/build-spirv-cross-android.sh), build-vkd3d-natives.yml
+│                                  #   (desktop vkd3d), vkd3d-wasm-build.yml (browser vkd3d)
 ├── src/
 │   ├── ShadowDusk.Core/          # Core types & contracts: IShaderCompiler, Result<T,E>, ShaderError,
 │   │                             #   CompilerOptions, CompiledShader, ShaderIR, MGFX writer, reflection
@@ -177,6 +189,19 @@ ShadowDusk/
 │                                  #     mgfxc 3.8.5 DirectX_12/Vulkan or fxc fx_2_0 on the same assembled .fx,
 │                                  #     real Effect load + render, positive controls; SharedSlang/ holds the
 │                                  #     corpus/capture/parameter/control code they share - issue #230)
+│                                  #   10-shader PS corpus, three steps per backend (Baseline* renders the
+│                                  #     mgfxc golden, Candidate* renders ShadowDusk's build, compare*.py diffs):
+│                                  #     GL (Baseline, Candidate + compare.py), DX11 (BaselineDx, CandidateDx
+│                                  #     + compare_dx.py; CandidateVkd3d = the same arm through the vkd3d DXBC
+│                                  #     backend, run on its own, not in the gate script),
+│                                  #   GL texture breadth (TextureBreadthValidation: cube + 3D texture render,
+│                                  #     in-process assert, Linux GL CI lane),
+│                                  #   forward compat (ForwardCompat: the SAME v10 bytes rendered on seven
+│                                  #     MonoGame releases, 3.8.1.263 (the measured floor) to 3.8.5
+│                                  #     + compare_forwardcompat.py, run-forwardcompat.ps1),
+│                                  #   shared source linked into the drivers (not projects): Shared/ (GL
+│                                  #     renderers + shader inputs), SharedDx/ (DX renderers, headless
+│                                  #     rasterizer, Apos.Shapes gallery renderer)
 │                                  #   + the compare_*.py oracles. See docs/validation-matrix.md §6.
 │                                  #   Two entries here are NOT render proofs:
 │                                  #     MgcbPlugin runs a real `dotnet mgcb` content build through the MGCB
