@@ -58,6 +58,21 @@ public sealed class SkslSlangSubsetRouteTests
     }
 
     [Fact]
+    public void UnsetSourceName_NamesTheSlangSource_NotAnFxFile()
+    {
+        const string slang = """
+            import lighting;
+            [shader("fragment")]
+            float4 MainPS(float2 uv : TEXCOORD0) : SV_Target { return 1; }
+            """;
+
+        var result = SkslConverter.ConvertSlang(slang, new SkslConvertOptions());
+
+        result.IsFailure.ShouldBeTrue();
+        result.Error.Single().File.ShouldBe("<memory>.slang");
+    }
+
+    [Fact]
     public void AVertexEntry_IsRefusedWithTheSkslCode()
     {
         const string slang = """

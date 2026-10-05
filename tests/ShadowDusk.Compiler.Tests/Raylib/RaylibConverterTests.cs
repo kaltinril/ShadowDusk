@@ -289,6 +289,23 @@ public sealed class RaylibConverterTests
     }
 
     [Fact]
+    public void ConvertSlang_UnsetSourceName_NamesTheSlangSource_NotAnFxFile()
+    {
+        const string slang = """
+            struct V { float4 Position : SV_Position; };
+            [shader("vertex")]
+            V MainVS(float4 p : POSITION) { V v; v.Position = p; return v; }
+            [shader("fragment")]
+            float4 MainPS(V v) : SV_Target { return 1; }
+            """;
+
+        var result = RaylibConverter.ConvertSlang(slang, new RaylibConvertOptions());
+
+        result.IsFailure.ShouldBeTrue();
+        result.Error.Single().File.ShouldBe("<memory>.slang");
+    }
+
+    [Fact]
     public void ConvertSlang_StillRefusesAVertexEntry_WithTheRaylibCode()
     {
         const string slang = """

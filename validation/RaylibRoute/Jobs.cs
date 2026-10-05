@@ -56,6 +56,30 @@ internal static class JobIo
     /// <summary>The shared source image both arms sample (RGBA8, rows top-first).</summary>
     public static string SourcePath(string outDir) => Path.Combine(outDir, "source.rgba");
 
+    /// <summary>
+    /// The texels both arms bind to every non-draw sampler: the source mirrored left to right with
+    /// its colour channels rotated (r,g,b to g,b,r). Different from the source on purpose
+    /// (issue #253): if the extra texture were a copy of the source, a converter that bound the
+    /// wrong texture to <c>texture0</c> would render the same picture and the gate could not see it.
+    /// </summary>
+    public static byte[] ExtraFrom(byte[] source, int size)
+    {
+        var extra = new byte[source.Length];
+        for (int y = 0; y < size; y++)
+        {
+            for (int x = 0; x < size; x++)
+            {
+                int from = (y * size + (size - 1 - x)) * 4;
+                int to = (y * size + x) * 4;
+                extra[to] = source[from + 1];
+                extra[to + 1] = source[from + 2];
+                extra[to + 2] = source[from];
+                extra[to + 3] = source[from + 3];
+            }
+        }
+        return extra;
+    }
+
     public static string ImagePath(string outDir, string arm, string job) =>
         Path.Combine(outDir, $"{job}.{arm}.rgba");
 }

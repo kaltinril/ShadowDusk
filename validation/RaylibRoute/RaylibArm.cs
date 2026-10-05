@@ -24,8 +24,10 @@ internal static unsafe class RaylibArm
         Console.WriteLine($"[raylib] raylib {Raylib.RAYLIB_VERSION}, default shader id {Rlgl.GetShaderIdDefault()}");
 
         byte[] sourceBytes = File.ReadAllBytes(JobIo.SourcePath(outDir));
+        byte[] extraBytes = JobIo.ExtraFrom(sourceBytes, size);
         Texture2D source, extra;
         fixed (byte* data = sourceBytes)
+        fixed (byte* extraData = extraBytes)
         {
             var image = new Image
             {
@@ -36,7 +38,7 @@ internal static unsafe class RaylibArm
                 Format = PixelFormat.UncompressedR8G8B8A8,
             };
             source = Raylib.LoadTextureFromImage(image);
-            extra = Raylib.LoadTextureFromImage(image);
+            extra = Raylib.LoadTextureFromImage(image with { Data = extraData });
         }
 
         var tint = new Color(jobs.Tint[0], jobs.Tint[1], jobs.Tint[2], jobs.Tint[3]);

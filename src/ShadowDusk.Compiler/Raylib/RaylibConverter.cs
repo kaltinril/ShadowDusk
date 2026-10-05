@@ -37,6 +37,23 @@ public sealed class RaylibConvertOptions
     /// whose HLSL is in the author's order. Not a consumer setting.
     /// </summary>
     internal IReadOnlyDictionary<string, int> GlTextureDeclarationOrder { get; init; } = new Dictionary<string, int>();
+
+    /// <summary>
+    /// These options for a <c>.slang</c> input (issue #253): an unset <see cref="SourceName"/>
+    /// names the source <c>"&lt;memory&gt;.slang"</c> in diagnostics instead of the <c>.fx</c>
+    /// default. A name the caller set is kept as is.
+    /// </summary>
+    internal RaylibConvertOptions ForSlangInput() =>
+        SourceName != "<memory>.fx"
+            ? this
+            : new RaylibConvertOptions
+            {
+                SourceName = "<memory>.slang",
+                IncludeResolver = IncludeResolver,
+                AdditionalIncludePaths = AdditionalIncludePaths,
+                CombinedSamplerGlSlots = CombinedSamplerGlSlots,
+                GlTextureDeclarationOrder = GlTextureDeclarationOrder,
+            };
 }
 
 /// <summary>
@@ -337,10 +354,19 @@ public static class RaylibConverter
         RaylibConvertOptions options,
         CancellationToken cancellationToken = default)
     {
+        options = options.ForSlangInput();
         var fx = SlangFrontend.ConvertToFx(slangSource, new SlangConvertOptions { SourceName = options.SourceName });
-        return fx.IsFailure
-            ? Result<RaylibShader, ShaderError[]>.Fail(fx.Error)
-            : Convert(fx.Value.FxText, options, cancellationToken);
+        if (fx.IsFailure)
+            return Result<RaylibShader, ShaderError[]>.Fail(fx.Error);
+
+        // The frontend's own non-fatal findings ride along with the converter's, never dropped.
+        Result<RaylibShader, ShaderError[]> converted = Convert(fx.Value.FxText, options, cancellationToken);
+        return converted.IsSuccess && fx.Value.Warnings.Count > 0
+            ? Result<RaylibShader, ShaderError[]>.Ok(converted.Value with
+            {
+                Warnings = [.. fx.Value.Warnings, .. converted.Value.Warnings],
+            })
+            : converted;
     }
 
     private static Result<RaylibShader, ShaderError[]> Fail(

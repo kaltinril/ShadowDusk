@@ -81,6 +81,15 @@ public sealed class SlangConverterFrontHalfTests
     }
 
     [Fact]
+    public void UnsetSourceName_NamesTheSlangSource_NotAnFxFile()
+    {
+        var compiler = new SlangCompiler(downstreamCompiler: null, MustNotBeReached);
+
+        compiler.ConvertToSksl(EffectSource, new SkslConvertOptions()).Error.Single().File.ShouldBe("<memory>.slang");
+        compiler.ConvertToRaylib(EffectSource, new RaylibConvertOptions()).Error.Single().File.ShouldBe("<memory>.slang");
+    }
+
+    [Fact]
     public void ConvertToRaylib_AnFxFile_IsRefusedWithSD0626()
     {
         var result = new SlangCompiler(downstreamCompiler: null, MustNotBeReached)
@@ -215,5 +224,104 @@ public sealed class SlangConverterFrontHalfTests
 
         plain.IsSuccess.ShouldBeTrue(plain.IsFailure ? string.Join(" | ", plain.Error.Select(e => $"{e.Code}: {e.Message}")) : "");
         plain.Value.Samplers.Single(s => s.BoundByDrawCall).HlslTextureName.ShouldBe("Mask");
+    }
+
+    // ---- A combined sampler's own register pins its unit in the raylib allocator ----
+
+    private const string CombinedSamplerSource = """
+        Sampler2D Tex : register(s1);
+
+        [shader("fragment")]
+        float4 MainPS(float4 pos : SV_Position, float2 uv : TEXCOORD0) : SV_Target
+        {
+            return Tex.Sample(uv);
+        }
+        """;
+
+    // Real slangc v2026.14.1 output for CombinedSamplerSource with the OpenGL macros, captured
+    // verbatim: the per-entry compile, which splits the combined sampler into two registered halves...
+    private const string CombinedSamplerEmission = Prelude + """
+        #ifndef __DXC_VERSION_MAJOR
+        // warning X3557: loop doesn't seem to do anything, forcing loop to unroll
+        #pragma warning(disable : 3557)
+        #endif
+
+
+        #line 93 "core"
+        Texture2D<float4 > Tex_texture_0 : register(t0);
+
+
+        #line 1188 "hlsl.meta.slang"
+        SamplerState Tex_sampler_0 : register(s1);
+
+
+        #line 4 "<stdin>"
+        float4 MainPS(float4 pos_0 : SV_Position, float2 uv_0 : TEXCOORD0) : SV_TARGET
+        {
+
+        #line 4
+            float2 _S1 = uv_0;
+
+            ;
+
+        #line 6
+            return Tex_texture_0.Sample(Tex_sampler_0, _S1);
+        }
+
+        """;
+
+    // ...and the preprocess-only pass the register pass reads to learn the author wrote register(s1).
+    private const string CombinedSamplerPreprocessed =
+        "Sampler2D Tex : register ( s1 ) ; [ shader ( \"fragment\" ) ] float4 MainPS ( float4 pos : SV_Position , " +
+        "float2 uv : TEXCOORD0 ) : SV_Target { return Tex . Sample ( uv ) ; }\n";
+
+    private static SlangCompiler CreateCombined(RecordingCompiler? downstream = null) =>
+        new(downstream ?? new RecordingCompiler(),
+            () => new SlangCompiler.SlangcLocation(null, FakeSlangcPath),
+            prepareSlangc: path => path,
+            runSlangc: (_, _, _, arguments) =>
+                arguments.Contains("-entry") ? (0, CombinedSamplerEmission, "")
+                : arguments.Contains("-E") ? (0, CombinedSamplerPreprocessed, "")
+                : throw new InvalidOperationException("unexpected slangc run: " + string.Join(' ', arguments)));
+
+    [Fact]
+    public void ConvertToRaylib_ACombinedSamplerRegister_PinsItsUnit_LikeTheLegacySamplerOfAnFx()
+    {
+        var result = CreateCombined().ConvertToRaylib(
+            CombinedSamplerSource, new RaylibConvertOptions { SourceName = "Combined.slang" });
+
+        result.IsSuccess.ShouldBeTrue(result.IsFailure ? string.Join(" | ", result.Error.Select(e => $"{e.Code}: {e.Message}")) : "");
+        RaylibSampler sampler = result.Value.Samplers.Single();
+        sampler.HlslTextureName.ShouldBe("Tex");
+        // Unit 1, as mgfxc gives 'sampler2D Tex : register(s1)': not the draw call's texture0.
+        sampler.BoundByDrawCall.ShouldBeFalse();
+        sampler.UniformName.ShouldBe("Tex");
+
+        const string legacyFx = """
+            sampler2D Tex : register(s1);
+            float4 MainPS(float4 pos : SV_Position, float2 uv : TEXCOORD0) : COLOR0 { return tex2D(Tex, uv); }
+            technique T { pass P { PixelShader = compile ps_3_0 MainPS(); } }
+            """;
+        var fx = RaylibConverter.Convert(legacyFx, new RaylibConvertOptions { SourceName = "Combined.fx" });
+        fx.IsSuccess.ShouldBeTrue(fx.IsFailure ? string.Join(" | ", fx.Error.Select(e => $"{e.Code}: {e.Message}")) : "");
+        fx.Value.Samplers.Single().BoundByDrawCall.ShouldBe(sampler.BoundByDrawCall);
+    }
+
+    [Fact]
+    public void PositiveControl_TheSameAssembledFx_WithoutTheCombinedSamplerSlot_BindsItToTexture0()
+    {
+        // The front half takes the sampler register out of the HLSL and hands the unit over as
+        // CombinedSamplerGlSlots; without that seam the converter sees no register and uses unit 0.
+        var downstream = new RecordingCompiler();
+        CreateCombined(downstream)
+            .Compile(CombinedSamplerSource, new CompilerOptions { Target = PlatformTarget.OpenGL, SourceFileName = "Combined.slang" })
+            .IsSuccess.ShouldBeTrue();
+        string fx = downstream.CapturedFx.ShouldNotBeNull();
+        fx.ShouldNotContain("register(s1)", Case.Sensitive);
+
+        var plain = RaylibConverter.Convert(fx, new RaylibConvertOptions { SourceName = "Combined.slang" });
+
+        plain.IsSuccess.ShouldBeTrue(plain.IsFailure ? string.Join(" | ", plain.Error.Select(e => $"{e.Code}: {e.Message}")) : "");
+        plain.Value.Samplers.Single().BoundByDrawCall.ShouldBeTrue();
     }
 }

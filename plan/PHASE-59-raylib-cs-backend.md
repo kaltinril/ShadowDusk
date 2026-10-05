@@ -37,7 +37,7 @@ and a trial with the requester.
   `SlangCompiler.ConvertToRaylib` (real slangc, through `SlangCompiler.Compile`'s own OpenGL front
   half, which also hands the converter the author's texture declaration order and a combined
   sampler's unit, so `texture0` matches the OpenGL build). `validation/RaylibRoute` renders 10
-  `.slang` arms (5 twins x both routes) in real Raylib-cs, 10/10 within tolerance.
+  `.slang` arms (6 twins x both routes) in real Raylib-cs, 12/12 within tolerance.
 - **Versions (A3):** `glsl330` only. `glsl100` is deferred, not dropped: the ES 1.00 lowerings live
   inside `MonoGameGlslRewriter`'s 110 dialect rather than at this seam, and no harness here can render
   `#version 100` in raylib (Raylib-cs 8.1.0's desktop native is GL 3.3 with a `#version 330` built-in
@@ -47,8 +47,8 @@ and a trial with the requester.
   **real Raylib-cs 8.1.0 (raylib 6.0)** and pixel-diffs each against the same `.fx` built for OpenGL
   and rendered in **real MonoGame DesktopGL**: **13/13 maxd 0** on macOS (Apple GL) and on Linux CI
   (Mesa llvmpipe), tolerance ±2/255; **15/15 maxd 0** since issue #327 (2026-10-02) added the
-  `SamplerLegacyInclude.fx` / `SamplerLegacyMacroDecl.fx` arms (measured on Windows), plus 10/10
-  `.slang` arms and a fourth (mutated Slang twin) control since issue #253. Positive
+  `SamplerLegacyInclude.fx` / `SamplerLegacyMacroDecl.fx` arms (measured on Windows), plus the
+  `TwoTextureOrder` case, 12/12 `.slang` arms and a fourth (mutated Slang twin) control since issue #253. Positive
   controls, all caught: tint dropped (maxd 44, 16073 px over), V flipped (maxd 255), CRT curvature
   +0.01 (maxd 43, 8349 px). The oracle is the proven OpenGL backend rather than the original-GLSL
   render §8 sketched: for `.fx` input there is no original GLSL, and the proven backend is the

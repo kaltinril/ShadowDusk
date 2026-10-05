@@ -25,9 +25,15 @@ that loads and renders identically to `mgfxc`'s in the real MonoGame/KNI runtime
   `SD0610`-`SD0615` / `SD0630`-`SD0636` refusal applies unchanged. Proven in real SkiaSharp: 7 Slang
   twins of existing `.fx` fixtures (Gum's Grayscale, Sepia, Bloom, Scanlines, Dots, Overlay, Gradient)
   render at maxd 0 against the `.fx`-sourced SkSL on both routes, each with a mutated-twin control.
-  Proven in real Raylib-cs: `validation/RaylibRoute` gains 10 `.slang` arms (5 twins, both routes)
+  Proven in real Raylib-cs: `validation/RaylibRoute` gains 12 `.slang` arms (6 twins, both routes)
   that match the `.fx` on real MonoGame DesktopGL (maxd 0, Dots maxd 1 like its `.fx`) plus a
-  mutated-twin control. No `.mgfx` output changes: `Compile` is the same code, split at the point
+  mutated-twin control. One twin (and its new `.fx` case, `TwoTextureOrder`) samples its
+  second-declared texture first, and every non-draw sampler is now bound to a mirrored,
+  channel-rotated copy of the source, so a wrong `texture0` changes the picture: with the
+  declaration order withheld, the real-slangc arm diverged at maxd 233. A combined sampler's own
+  register (`Sampler2D X : register(s1)`) pins its unit in the raylib allocator as on OpenGL. An
+  unset `SourceName` names a `.slang` input `<memory>.slang` in diagnostics, and the subset
+  frontend's warnings are passed through. No `.mgfx` output changes: `Compile` is the same code, split at the point
   where the assembled `.fx` meets the downstream compiler.
 
 - **Vulkan and DirectX 12 output is now pinned across hosts, over the whole fixture corpus.**

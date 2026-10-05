@@ -22,7 +22,8 @@
 //   * and the CRT's curvature uniform nudged by 0.01 on the raylib arm only (a ~1 px shift),
 // so a comparator that cannot see a real converter bug turns this gate red.
 //
-// .slang arms (issue #253): the Slang twin of five cases converts through the built-in subset
+// .slang arms (issue #253): the Slang twin of six cases (one samples its second-declared texture
+// first, so a wrong texture0 shows) converts through the built-in subset
 // frontend AND real slangc, and each raylib render must match the .fx case's MonoGame image; a
 // mutated Sepia twin through real slangc is the arms' own positive control.
 //
@@ -104,6 +105,29 @@ cases.Add(("GumGrayscale", Path.Combine(fixtures, "third-party", "Gum", "MonoGam
 // only when the recovered conversion binds exactly what the OpenGL build binds.
 cases.Add(("LegacyInclude", Path.Combine(fixtures, "SamplerLegacyInclude.fx")));
 cases.Add(("LegacyMacroDecl", Path.Combine(fixtures, "SamplerLegacyMacroDecl.fx")));
+// Issue #253: two textures, the SECOND declared sampled FIRST. Real slangc emits globals in
+// first-use order, so this is the case where the real-slangc raylib route must still bind the
+// first-DECLARED texture to texture0. The extra texture both arms bind is a mirrored,
+// channel-rotated copy of the source (JobIo.ExtraFrom), so a swap is visible. Written here, not
+// under tests/fixtures/shaders, so it does not join the compiled fixture corpus.
+const string TwoTextureOrderBody = """
+    Texture2D Base;
+    SamplerState BaseSampler;
+    Texture2D Mask;
+    SamplerState MaskSampler;
+
+    float4 MainPS(float4 pos : SV_Position, float4 color : COLOR0, float2 uv : TEXCOORD0) : SV_Target
+    {
+        float4 m = Mask.Sample(MaskSampler, uv);
+        float4 b = Base.Sample(BaseSampler, uv);
+        return float4(b.r, lerp(b.g, m.g, 0.5), m.b, 1.0) * color;
+    }
+    """;
+string twoTextureFx = Path.Combine(outDir, "TwoTextureOrder.fx");
+File.WriteAllText(twoTextureFx, TwoTextureOrderBody + "\ntechnique T { pass P { PixelShader = compile ps_4_0 MainPS(); } }\n");
+string twoTextureSlang = Path.Combine(outDir, "TwoTextureOrder.slang");
+File.WriteAllText(twoTextureSlang, TwoTextureOrderBody.Replace("float4 MainPS(", "[shader(\"fragment\")]\nfloat4 MainPS(", StringComparison.Ordinal));
+cases.Add(("TwoTextureOrder", twoTextureFx));
 
 // A tint that is neither white nor grey, so a dropped or mis-mapped COLOR0 changes the picture.
 byte[] tint = [255, 200, 150, 255];
@@ -164,12 +188,16 @@ foreach ((string name, string path) in cases)
 // is rendered on the raylib arm only and compared against the .fx case's MonoGame image.
 var slangArms = new List<(string Name, string Against)>();
 var slangCompiler = new SlangCompiler();
-foreach ((string twin, string against) in new[]
+foreach ((string twin, string against, string path) in new[]
 {
-    ("Sepia", "Sepia"), ("Bloom", "Saturate"), ("Scanlines", "Scanlines"), ("Dots", "Dots"), ("GumGrayscale", "GumGrayscale"),
+    ("Sepia", "Sepia", Path.Combine(fixtures, "slang-sksl", "Sepia.slang")),
+    ("Bloom", "Saturate", Path.Combine(fixtures, "slang-sksl", "Bloom.slang")),
+    ("Scanlines", "Scanlines", Path.Combine(fixtures, "slang-sksl", "Scanlines.slang")),
+    ("Dots", "Dots", Path.Combine(fixtures, "slang-sksl", "Dots.slang")),
+    ("GumGrayscale", "GumGrayscale", Path.Combine(fixtures, "slang-sksl", "GumGrayscale.slang")),
+    ("TwoTextureOrder", "TwoTextureOrder", twoTextureSlang),
 })
 {
-    string path = Path.Combine(fixtures, "slang-sksl", twin + ".slang");
     string slang = await File.ReadAllTextAsync(path);
     var options = new RaylibConvertOptions { SourceName = path };
     AddSlangArm($"{twin}-slang-subset", against, RaylibConverter.ConvertSlang(slang, options));

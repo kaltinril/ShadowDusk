@@ -82,8 +82,9 @@ internal sealed class MonoGameArm : Game
             source = new Texture2D(gd, size, size, false, SurfaceFormat.Color);
             source.SetData(texels);
             extra = new Texture2D(gd, size, size, false, SurfaceFormat.Color);
-            extra.SetData(texels);
-            File.WriteAllBytes(JobIo.SourcePath(_outDir), ToBytes(texels));
+            byte[] sourceBytes = ToBytes(texels);
+            extra.SetData(JobIo.ExtraFrom(sourceBytes, size));
+            File.WriteAllBytes(JobIo.SourcePath(_outDir), sourceBytes);
         }
 
         var tint = new Color(_jobs.Tint[0], _jobs.Tint[1], _jobs.Tint[2], _jobs.Tint[3]);

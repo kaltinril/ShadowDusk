@@ -254,6 +254,7 @@ public sealed class SlangCompiler
         SkslConvertOptions options,
         CancellationToken cancellationToken = default)
     {
+        options = options.ForSlangInput();
         Result<SlangFx, ShaderError[]> produced = ProduceFx(slangSource, ConverterOptions(options.SourceName), cancellationToken);
         return produced.IsFailure
             ? Result<SkslConversion, ShaderError[]>.Fail(produced.Error)
@@ -288,6 +289,7 @@ public sealed class SlangCompiler
         RaylibConvertOptions options,
         CancellationToken cancellationToken = default)
     {
+        options = options.ForSlangInput();
         Result<SlangFx, ShaderError[]> produced = ProduceFx(slangSource, ConverterOptions(options.SourceName), cancellationToken);
         if (produced.IsFailure)
             return Result<RaylibShader, ShaderError[]>.Fail(produced.Error);
