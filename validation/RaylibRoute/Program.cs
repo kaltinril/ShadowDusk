@@ -22,6 +22,10 @@
 //   * and the CRT's curvature uniform nudged by 0.01 on the raylib arm only (a ~1 px shift),
 // so a comparator that cannot see a real converter bug turns this gate red.
 //
+// .slang arms (issue #253): the Slang twin of five cases converts through the built-in subset
+// frontend AND real slangc, and each raylib render must match the .fx case's MonoGame image; a
+// mutated Sepia twin through real slangc is the arms' own positive control.
+//
 // Exit: 0 pass (or no GL context without SHADOWDUSK_REQUIRE_GL=1), 1 divergence, 2 setup error.
 // =============================================================================
 
@@ -31,6 +35,7 @@ using ShadowDusk.Compiler;
 using ShadowDusk.Compiler.Raylib;
 using ShadowDusk.Core;
 using ShadowDusk.Core.Preprocessor;
+using ShadowDusk.Slang;
 using ShadowDusk.Validation;
 using ShadowDusk.Validation.RaylibRoute;
 
@@ -153,8 +158,80 @@ foreach ((string name, string path) in cases)
             .Select(s => new ExtraTexture(s.HlslTextureName, s.UniformName, s.HlslSamplerName)).ToArray()));
 }
 
+// Issue #253: .slang input. The Slang twin (tests/fixtures/shaders/slang-sksl, same math in
+// Slang spelling) of each case above converts through BOTH Slang routes, the built-in subset
+// frontend (RaylibConverter.ConvertSlang) and real slangc (SlangCompiler.ConvertToRaylib). Each
+// is rendered on the raylib arm only and compared against the .fx case's MonoGame image.
+var slangArms = new List<(string Name, string Against)>();
+var slangCompiler = new SlangCompiler();
+foreach ((string twin, string against) in new[]
+{
+    ("Sepia", "Sepia"), ("Bloom", "Saturate"), ("Scanlines", "Scanlines"), ("Dots", "Dots"), ("GumGrayscale", "GumGrayscale"),
+})
+{
+    string path = Path.Combine(fixtures, "slang-sksl", twin + ".slang");
+    string slang = await File.ReadAllTextAsync(path);
+    var options = new RaylibConvertOptions { SourceName = path };
+    AddSlangArm($"{twin}-slang-subset", against, RaylibConverter.ConvertSlang(slang, options));
+    AddSlangArm($"{twin}-slang-slangc", against, slangCompiler.ConvertToRaylib(slang, options));
+}
+
+void AddSlangArm(string name, string against, Result<RaylibShader, ShaderError[]> converted)
+{
+    if (converted.IsFailure)
+    {
+        setupErrors.Add($"{name}: raylib conversion refused: {string.Join(" | ", converted.Error.Select(e => $"{e.Code}: {e.Message}"))}");
+        return;
+    }
+    if (jobs.FirstOrDefault(j => j.Name == against) is not { } baseJob)
+    {
+        setupErrors.Add($"{name}: the .fx case '{against}' it is compared against did not convert");
+        return;
+    }
+    RaylibShader shader = converted.Value;
+    foreach (RaylibUniform u in shader.Uniforms.Where(u => !uniforms.ContainsKey(u.Name)))
+        setupErrors.Add($"{name}: the converted shader declares uniform '{u.Name}' that this gate never sets, so it would ride along unexercised");
+    string fsPath = Path.Combine(outDir, name + ".fs");
+    File.WriteAllText(fsPath, shader.FragmentShader);
+    fragments[name] = shader.FragmentShader;
+    Console.WriteLine($"[route] {name}: converted; samplers [{string.Join(", ", shader.Samplers.Select(s => $"{s.UniformName}<-{s.HlslTextureName}"))}]");
+    jobs.Add(baseJob with
+    {
+        Name = name,
+        MgfxPath = null,
+        FragmentPath = fsPath,
+        DrawTextures = shader.Samplers.Where(s => s.BoundByDrawCall)
+            .Select(s => new ExtraTexture(s.HlslTextureName, s.UniformName, s.HlslSamplerName)).ToArray(),
+        ExtraTextures = shader.Samplers.Where(s => !s.BoundByDrawCall)
+            .Select(s => new ExtraTexture(s.HlslTextureName, s.UniformName, s.HlslSamplerName)).ToArray(),
+    });
+    slangArms.Add((name, against));
+}
+
 // Positive controls: raylib-arm-only renders compared against the unmutated case's MonoGame image.
 var controls = new List<(string Name, string Against)>();
+
+// The .slang arms' own control: the Sepia twin with one weight changed, through real slangc.
+{
+    string sepiaPath = Path.Combine(fixtures, "slang-sksl", "Sepia.slang");
+    string sepia = await File.ReadAllTextAsync(sepiaPath);
+    string mutated = sepia.Replace("0.59", "0.89", StringComparison.Ordinal);
+    if (mutated == sepia)
+    {
+        setupErrors.Add("control-slang-mutated: the mutation did not change the Sepia twin, so the control proves nothing");
+    }
+    else
+    {
+        int before = slangArms.Count;
+        AddSlangArm("control-slang-mutated", "Sepia",
+            slangCompiler.ConvertToRaylib(mutated, new RaylibConvertOptions { SourceName = sepiaPath }));
+        if (slangArms.Count > before)
+        {
+            slangArms.RemoveAt(slangArms.Count - 1);
+            controls.Add(("control-slang-mutated", "Sepia"));
+        }
+    }
+}
 void AddMutant(string name, string against, Func<string, string> mutate)
 {
     if (!fragments.TryGetValue(against, out string? original))
@@ -233,6 +310,16 @@ foreach (RenderJob job in jobs.Where(j => j.MgfxPath is not null))
     ok &= match && nontrivial;
     Console.WriteLine($"[route] {job.Name,-16} maxd {maxd,3}  px over tol {over,5}/{Size * Size}  " +
                       $"distinct colors {distinct,5}  -> {(match && nontrivial ? "MATCH" : nontrivial ? "DIVERGED" : "TRIVIAL IMAGE")}");
+}
+foreach ((string name, string against) in slangArms)
+{
+    byte[] mono = await File.ReadAllBytesAsync(JobIo.ImagePath(outDir, "monogame", against));
+    byte[] ray = await File.ReadAllBytesAsync(JobIo.ImagePath(outDir, "raylib", name));
+    (int maxd, int over) = Compare(mono, ray, tolerance);
+    bool match = over == 0;
+    ok &= match;
+    Console.WriteLine($"[route] {name,-24} maxd {maxd,3}  px over tol {over,5}/{Size * Size}  vs {against}.fx on MonoGame  -> " +
+                      (match ? "MATCH" : "DIVERGED"));
 }
 foreach ((string name, string against) in controls)
 {

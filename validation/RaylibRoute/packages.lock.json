@@ -96,6 +96,12 @@
           "Vortice.Dxc": "[3.3.4, 3.3.4]"
         }
       },
+      "shadowdusk.slang": {
+        "type": "Project",
+        "dependencies": {
+          "ShadowDusk.Compiler": "[0.20.0, )"
+        }
+      },
       "Silk.NET.SPIRV.Cross.Native": {
         "type": "CentralTransitive",
         "requested": "[2.23.0, )",
