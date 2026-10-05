@@ -36,7 +36,15 @@ In addition to `.fx`, the CLI accepts a single-pass **ShaderToy / GLSL image sha
 ShadowDuskCLI shader.glsl shader.mgfx /Profile:OpenGL
 ```
 
-Detection is automatic (by extension, with a content sniff for off-convention files); **`.fx` is never sniffed and behaves exactly as before**, and no flag is ever required for correct output. The non-required escape hatch `--input-format auto|fx|glsl` forces a route for an oddly-named or genuinely-ambiguous file. Unsupported GLSL constructs fail loudly with an MGCB-parseable `file(line,col): error SDxxxx: message` diagnostic pointing at the original `.glsl`. `--print-uniforms` lists the drivable effect parameters (e.g. `iResolution`, `iTime`, custom `uniform`s) you must set each frame at runtime. The converted shader needs a small per-frame harness (set the uniforms, draw a fullscreen triangle) — see the `ShaderToyViewer` sample.
+Detection is automatic (by extension, with a content sniff for off-convention files); **`.fx` is never sniffed and behaves exactly as before**, and no flag is ever required for correct output. The non-required escape hatch `--input-format auto|fx|glsl|slang` forces a route for an oddly-named or genuinely-ambiguous file. Unsupported GLSL constructs fail loudly with an MGCB-parseable `file(line,col): error SDxxxx: message` diagnostic pointing at the original `.glsl`. `--print-uniforms` lists the drivable effect parameters (e.g. `iResolution`, `iTime`, custom `uniform`s) you must set each frame at runtime. The converted shader needs a small per-frame harness (set the uniforms, draw a fullscreen triangle) — see the `ShaderToyViewer` sample.
+
+### Slang input
+
+A **`.slang`** file (detected by extension, or forced with `--input-format slang`) goes through ShadowDusk.Compiler's built-in Slang frontend: the HLSL-compatible subset of Slang, with entry points marked by `[shader("vertex")]` / `[shader("fragment")]` and the technique synthesized from the file name. It is a pure text transform ahead of the same pipeline every `.fx` takes, so nothing extra is installed and no `slangc` runs. Slang-only features (`import`, generics, `interface` conformances) are rejected by name with a diagnostic pointing at the `.slang` line; genuine full Slang needs the separate, opt-in **ShadowDusk.Slang** library package, which the CLI does not use.
+
+```
+ShadowDuskCLI shader.slang shader.mgfx /Profile:OpenGL
+```
 
 The output container defaults to **MGFX v10**, which loads on every MonoGame 3.8.1.263+ and KNI runtime — you never need a flag for correct output. For newer runtimes, `--mgfx-version 11` opts into a faithful MonoGame MGFX v11 container (MonoGame 3.8.5+, opt-in/experimental). To pick a whole target in one flag, `--target-runtime <name>` (`monogame-gl`, `monogame-dx`, `monogame-gl-v11`, `kni-knifx`, `fna`) selects the backend and container together — e.g. `--target-runtime kni-knifx` emits KNI's KNIFX v11 container.
 

@@ -1,6 +1,6 @@
 # Test Shader Corpus — Provenance & Fresh Examples
 
-**Last updated:** 2026-10-02 — issues #339/#340 added `DirectX_11` goldens (`mgfxc` 3.8.4.1, the pinned oracle) for the two texture-array fixtures and the expect-diagnostic `SamplerArray2.fx` (no golden on any profile) to the `texture-arrays/` set; earlier the same day issue #324 added that set (`TextureArray2.fx`, `TextureArray4NoRegister.fx`, `DirectX_12` **and** `Vulkan` goldens from `mgfxc` 3.8.5; see §3). Earlier the same day issues #308 and #309 added `SamplerLegacyInclude.fx` (+ `SamplerLegacyInclude.fxh`), `SamplerLegacyMacroDecl.fx` and `SamplerReservationKeywords.fx` (the sampler-register set below, `OpenGL` **and** `DirectX_11` goldens), and the nine vendored MonoGame `Include.fxh` effects now compile for OpenGL. Earlier the same day issue #299 added `SamplerLegacyRegisterIfBranch.fx` and `SamplerLegacyRegisterMacro.fx`, and issue #283 added `SamplerReservationIfBranch.fx` and `SamplerReservationMacro.fx` (the sampler-register set below), all four with `OpenGL` **and** `DirectX_11` goldens. Previously 2026-09-10 — vkd3d 2.1 (Phase 56) reclassified `Reflection.fx` and the Apos.Shapes revisions as FNA-compiling; the `E5017` loop/ternary gaps they sat behind were compiler gaps, not shader-model limits. Previously 2026-09-09: added the Slang input corpus: 17 `.slang` fixtures under
+**Last updated:** 2026-10-04 — documented the six vendored `third-party/XnaFiddle/` shaders (added 2026-10-03 by issue #368, the SkSL converter's `COLOR0` fixtures; see §4) and the two cross-host byte-identity fixtures `Sm3SemanticStructs.fx` (issue #295) and `ImplicitTruncationWarning.fx` (issue #335), both added 2026-10-02 (see §3), and recounted the corpus. Previously 2026-10-02 — issues #339/#340 added `DirectX_11` goldens (`mgfxc` 3.8.4.1, the pinned oracle) for the two texture-array fixtures and the expect-diagnostic `SamplerArray2.fx` (no golden on any profile) to the `texture-arrays/` set; earlier the same day issue #324 added that set (`TextureArray2.fx`, `TextureArray4NoRegister.fx`, `DirectX_12` **and** `Vulkan` goldens from `mgfxc` 3.8.5; see §3). Earlier the same day issues #308 and #309 added `SamplerLegacyInclude.fx` (+ `SamplerLegacyInclude.fxh`), `SamplerLegacyMacroDecl.fx` and `SamplerReservationKeywords.fx` (the sampler-register set below, `OpenGL` **and** `DirectX_11` goldens), and the nine vendored MonoGame `Include.fxh` effects now compile for OpenGL. Earlier the same day issue #299 added `SamplerLegacyRegisterIfBranch.fx` and `SamplerLegacyRegisterMacro.fx`, and issue #283 added `SamplerReservationIfBranch.fx` and `SamplerReservationMacro.fx` (the sampler-register set below), all four with `OpenGL` **and** `DirectX_11` goldens. Previously 2026-09-10 — vkd3d 2.1 (Phase 56) reclassified `Reflection.fx` and the Apos.Shapes revisions as FNA-compiling; the `E5017` loop/ternary gaps they sat behind were compiler gaps, not shader-model limits. Previously 2026-09-09: added the Slang input corpus: 17 `.slang` fixtures under
 `slang/`, cross-validated against the real `slangc` compiler (see `docs/validation-matrix.md`
 §8.0 and `validation/SlangCorpus`). Previously 2026-08-02: the issue-#189 fix added
 `SamplerRegisterOrder.fx` and `SamplerRegisterSparse.fx` (the sampler-register set below), both
@@ -9,8 +9,9 @@ four `ExPhantom*` fixtures (the phantom-parameter set below). Previously 2026-07
 A10 added three DirectX-profile-floor fixtures and **reclassified the vendored Nez set**, whose
 DirectX column collapsed once ShadowDusk started enforcing mgfxc's own floor (see the note
 above that table).
-Corpus on disk (counted 2026-10-02): **167 `.fx` + 8 `.fxh`** — 73 in the fixture root, 50 in
-`examples/`, 1 in `shadertoy/`, 38 under `third-party/`, 2 under `raylib/`, 3 under
+Corpus on disk (counted 2026-10-04): **174 `.fx` + 8 `.fxh`** — 74 in the fixture root, 50 in
+`examples/`, 1 in `shadertoy/`, 44 under `third-party/` (15 Nez, 3 Apos.Shapes, 3 Gum, 17 MonoGame,
+6 XnaFiddle), 2 under `raylib/`, 3 under
 `texture-arrays/` — plus **17 `.slang`** under `slang/` (a separate input corpus, not `.fx`; see §5).
 
 This document records (1) what is known about where the existing `.fx` test
@@ -321,6 +322,28 @@ ShadowDusk's matching `SD0015` rejection, one per way the condition arises:
   refused. It exists so that reimplementing the floor as a `major >= 4` comparison is caught by
   a test rather than by a consumer's failed Content Pipeline build.
 
+### Cross-host byte-identity fixtures (issues #295, #335)
+
+Two project-owned root fixtures, each the one corpus shape a cross-host gate could not see before.
+They feed the byte-identity manifests under `tests/fixtures/golden/byte-identity/`
+(`CrossHostByteIdentityTests`) and the browser vkd3d gates:
+
+- **`Sm3SemanticStructs.fx`** — GitHub issue **#295**. Every stage boundary carries an SM1-3
+  semantic on a **struct field** (`POSITION0` on the VS output and PS input, `COLOR0` on the PS
+  output struct), compiled for an SM4+ target. `fxc` maps these to `SV_Position`/`SV_Target`;
+  vkd3d-shader does so only with the backward-compatibility `MAP_SEMANTIC_NAMES` compile option, and
+  `FxPreParser` cannot rewrite a struct field. It is the only corpus fixture whose DXBC changes with
+  that option on or off, so a host passing a different option set (the browser vkd3d module, before
+  #295) becomes a byte mismatch. Pinned by `Vkd3dCompileOptionsParityTests`. Goldens on `OpenGL` +
+  `DirectX_11`.
+- **`ImplicitTruncationWarning.fx`** — GitHub issue **#335**. Compiles everywhere with a
+  **non-fatal warning** (`float3 rgb = color;`, vkd3d `W5300`, DXC `-Wconversion`, fxc `X3206`).
+  A successful compile with a warning was invisible to the byte-identity gates (the browser vkd3d
+  host returned the right bytes but dropped the message); `warnings-manifest.json` now records the
+  warnings beside the hashes, pinned by `Vkd3dWarningsParityTests`. The warning sits on a fixed
+  line/column behind the macro prelude so the location relocation is exercised too: keep the lines
+  above it stable or update the manifest. No committed golden.
+
 ### How they are used
 
 - **Now (no `mgfxc` golden required):** compile-level coverage in
@@ -526,6 +549,30 @@ Coverage note: every fixture in the corpus — these included — is exercised b
 structurally valid Vulkan container (combined descriptors at binding ≥ 32, unique bindings,
 column-major matrices, `main` entry point, no `SPV_GOOGLE_*` extensions) or fail with a real
 diagnostic. There is no skip list to quietly grow.
+
+### XnaFiddle (the SkSL converter's `COLOR0` fixtures, issue #368)
+
+`tests/fixtures/shaders/third-party/XnaFiddle/` vendors the six example shaders from **XnaFiddle**
+(`vchelaru/XnaFiddle`, Victor Chelaru's browser MonoGame/KNI playground, **MIT**, Copyright (c)
+2026 Victor Chelaru), pinned at commit `0a6edd690db3a8bd42b92676c8e5b31cf13969da`, fetched
+2026-10-03. The shader code is byte-for-byte upstream; the only change is a prepended provenance
+comment, and the local filenames carry an `XnaFiddle-` prefix so a stem lookup cannot collide with
+the root fixtures of the same name. They are the shaders Gum's authors reuse on both KNI and Skia,
+and every one reads `input.Color` (SpriteBatch's vertex color), so they back the SkSL converter's
+default `COLOR0` conversion (Phase 62 Area D).
+
+| File | Upstream (under `XnaFiddle.BlazorGL/wwwroot/examples/`) | SkSL converter |
+|---|---|---|
+| `XnaFiddle-Fading.fx` | `Fading/Fading.fx` | converts |
+| `XnaFiddle-Grayscale.fx` | `Grayscale/Grayscale.fx` | converts |
+| `XnaFiddle-Invert.fx` | `Invert/Invert.fx` | converts |
+| `XnaFiddle-Pixelated.fx` | `Pixelated/Pixelated.fx` | converts via `ShadowDusk_Resolution` (computed-UV sampling), pinned |
+| `XnaFiddle-Tint.fx` | `Tint/TintShader.fx` | converts |
+| `XnaFiddle-Mask.fx` | `Masking/Mask.fx` | converts |
+
+Used by `tests/ShadowDusk.Compiler.Tests/Sksl` (`SkslVertexColorUniformTests`,
+`SkslComputedUvSamplingTests`). A compile or render of these is not an `mgfxc`-equivalence claim;
+per-file detail is in the directory's `NOTICE.md`.
 
 ---
 

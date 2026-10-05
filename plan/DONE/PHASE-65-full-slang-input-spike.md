@@ -5,10 +5,10 @@
 runtime dependency of any `ShadowDusk.*` package.
 
 **Status:** ✅ Closed 2026-09-11. Delivered: measurements + a recommendation; the owner overruled the
-recommendation and the work moved to [Phase 66](PHASE-66-full-slang-input-implementation.md).
+recommendation and the work moved to [Phase 66](../PHASE-66-full-slang-input-implementation.md).
 
 **Opened 2026-09-11.** The repo owner has been publicly describing ShadowDusk as supporting
-Slang without the scope limit in view: the shipped [Phase 61](DONE/PHASE-61-slang-support.md)
+Slang without the scope limit in view: the shipped [Phase 61](PHASE-61-slang-support.md)
 frontend accepts only the **HLSL-compatible subset of Slang**, as a pure managed text
 transform — real Slang-only features (`import`, generics, `extension`, `associatedtype`) are
 rejected by name with `SD0600`, and no Slang toolchain is shipped, downloaded, or invoked by the
@@ -31,7 +31,7 @@ support full Slang input as a **general product capability** for **any** consume
 cheap Gum-specific answer exists. §4 below evaluates both, explicitly labeled, and does not let
 the cheap answer stand in for the general one.
 
-**Depends on:** [Phase 61](DONE/PHASE-61-slang-support.md) (all definitions, prior measurements,
+**Depends on:** [Phase 61](PHASE-61-slang-support.md) (all definitions, prior measurements,
 `SlangEntryScanner`, `SlangFrontend`). **Blocks:** nothing — this is read-only investigation.
 
 ---

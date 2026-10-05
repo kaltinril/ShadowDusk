@@ -30,6 +30,12 @@
                                    ShapeBatch gallery through the real NuGet package; d3dcompiler_47
                                    arm vs the real mgfxc DirectX_11 golden, vkd3d arm vs the
                                    package's embedded (itself vkd3d-compiled) effect - both tol 0.
+    * DX resource arrays         - validation/VsDrivenDx -- texarr / -- samparr (issues #339/#340):
+                                   Texture2D Tex[2] must reflect mgfxc's table (one `Tex`
+                                   parameter, one record at the base slot) on both DXBC backends
+                                   and render like the mgfxc 3.8.4.1 DirectX_11 golden; a
+                                   SamplerState array must be refused with SD0224, as mgfxc
+                                   refuses it.
     * ShaderToy .glsl route (DX) - validation/ShaderToyRouteDx: converts GradientToy.glsl in
                                    process, compiles the converted .fx for DirectX_11, and
                                    pixel-diffs it against mgfxc's own build of the SAME .fx on
@@ -47,6 +53,9 @@
                                    dxcoob 1.7.2212.40, the golden's is MonoGame 3.8.5's bundled
                                    dxcoob 1.8.2505.32 - NOT a ShadowDusk defect; see
                                    docs/validation-matrix.md section 7).
+                                   Plus `-- texarr` (issue #324): Texture2D Tex[2] vs the real
+                                   mgfxc 3.8.5 golden - same parameter table (one `Tex` bound to
+                                   slot 0), same picture, element [1] really read.
     * KNI DirectX                - validation/KniWinFormsDX (ShadowDusk DX vs mgfxc, real KNI
                                    WinForms.DX11).
     * KNI OpenGL desktop         - validation/Baseline + Candidate + KniDesktopGL + compare_kni.py
@@ -77,12 +86,29 @@
                                    the reference compiler (mgfxc DirectX_12 / Vulkan, fxc fx_2_0) on
                                    the assembled .fx, real Effect load + render, tol 4/255, two
                                    positive controls that must diverge.
+    * Slang corpus               - validation/SlangCorpus (Phase 61, the free subset frontend):
+                                   every corpus .slang accepted by the real pinned slangc (a
+                                   test-time oracle, downloaded on demand), and the procedural
+                                   subset pixel-identical vs slangc's own HLSL emission.
+    * Slang full corpus (DX11)   - validation/SlangFullCorpus (Phase 66 A7, the ShadowDusk.Slang
+                                   real-slangc route): 21 shaders x 4 targets compile, the
+                                   procedural subset pixel-diffed vs slangc's raw HLSL, and every
+                                   shader loaded + rendered in a real MonoGame WindowsDX Effect.
+                                   Gates 1 + 3 also run in CI on WARP (issue #254); this is the
+                                   real-GPU run, and the only Windows run of gate 2.
+    * Slang textured GL          - validation/SlangTexturedGl (issue #252): the real-slangc
+                                   textured shaders in real DesktopGL with the texture left to
+                                   SpriteBatch's unit 0, the .mgfx sampler table checked, CPU-math
+                                   render, Invert vs the mgfxc golden.
     * Vulkan PS corpus           - validation/CandidateVulkan (ShadowDusk's OWN output rendered on
                                    real MonoGame DesktopVK; not an mgfxc diff - mgfxc's output is
                                    unloadable for this corpus, a confirmed MonoGame SlotOffset bug).
     * Vulkan VS-driven + gallery - validation/VsDrivenVulkan (+ `-- apos`): a NON-IDENTITY
                                    asymmetric transform pixel-diffed vs the mgfxc 3.8.5 golden
-                                   (maxd 0), plus the 30-cell ShapeBatch gallery (maxd 0).
+                                   (maxd 0), plus the 30-cell ShapeBatch gallery (maxd 0), plus
+                                   `-- texarr` (issue #324, expect-diagnostic, no device): a
+                                   texture array must be refused with SD0221, since mgfxc 3.8.5's
+                                   own Vulkan output for it binds nothing.
     * XNB direct writer          - validation/XnbContentLoad: a ShadowDusk-written .xnb through a
                                    real MonoGame WindowsDX Content.Load<Effect> vs stock mgcb's
                                    (pixel-identical), plus the envelope assertions (Phase 60).
