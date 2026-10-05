@@ -44,5 +44,7 @@
          validation/CandidateDx links). -->
     <Compile Include="..\SharedDx\DxShaderInputs.cs" />
     <Compile Include="..\SharedDx\DxEffectImageRenderer.cs" />
+    <!-- SHADOWDUSK_DX_WARP=1 pins gate 3 to WARP on the GPU-less CI lane (issue #254). -->
+    <Compile Include="..\SharedDx\DxHeadlessRasterizer.cs" />
   </ItemGroup>
 </Project>
