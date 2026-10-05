@@ -383,15 +383,6 @@ internal static class Program
 
     // ------------------------------------------------------------------------------- gate 3
 #if WINDOWS
-    // THROWAWAY positive-control sabotage (issue #254): proves the CI job goes red. Reverted next.
-    private static byte[] Sabotage(byte[] data)
-    {
-        byte[] b = data[..(data.Length * 3 / 4)];
-        for (int i = 6; i < 10; i++)
-            b[i] ^= 0x5A;
-        return b;
-    }
-
     private static int RunDirectX11LoadGate(string[] corpus)
     {
         Console.WriteLine("=== GATE 3: every corpus shader loads into a REAL MonoGame.Framework.WindowsDX Effect (DirectX_11) ===");
@@ -414,7 +405,7 @@ internal static class Program
 
             jobs.Add(result.IsFailure
                 ? new ShaderJob(name, null, string.Join(" | ", result.Error.Select(e => $"{e.Code}: {e.Message}")))
-                : new ShaderJob(name, Sabotage(result.Value.Data), null));
+                : new ShaderJob(name, result.Value.Data, null));
         }
 
         // Positive control (issue #254): a real .mgfx truncated to half its length must be
