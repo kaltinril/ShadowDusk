@@ -16,6 +16,8 @@
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\..\src\ShadowDusk.Compiler\ShadowDusk.Compiler.csproj" />
+    <!-- Issue #253: the real-slangc arm (SlangCompiler.ConvertToRaylib). -->
+    <ProjectReference Include="..\..\src\ShadowDusk.Slang\ShadowDusk.Slang.csproj" />
   </ItemGroup>
   <ItemGroup>
     <Compile Include="..\Shared\ShaderInputs.cs" />

@@ -28,8 +28,8 @@ public sealed class DxcNativeIdentityTests
     [InlineData("linux-x64", false, "65681bf462e07b533a7c7bfa54bda4e23a6c5d9f")]
     [InlineData("osx-x64", false, "1b5513a41646349c89cb814d05326d9a")]
     [InlineData("osx-arm64", false, "9e2d66e9c3a934429f46afaae3fdc480")]
-    [InlineData("android-arm64", false, "076af3e5babc2ac0c79bed08b4d8d1b1ac338bc7")]
-    [InlineData("android-x64", false, "38487f7242f477f1eefcb58e587a128c2a54906e")]
+    [InlineData("android-arm64", false, "5882f6181b9e7149c5c5c4dbb2a88ed4e78d3223")]
+    [InlineData("android-x64", false, "225337e5e08f3850fa4299f5499ae303f636aea0")]
     public void Expected_IsThePinnedBuildOfEachBundledRid(string rid, bool validator, string expected)
     {
         DxcNativeIdentity.Expected(rid, Kind(validator)).ShouldBe(expected);

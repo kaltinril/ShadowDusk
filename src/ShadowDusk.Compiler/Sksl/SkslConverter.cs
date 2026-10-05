@@ -1,6 +1,7 @@
 #nullable enable
 
 using ShadowDusk.Compiler.Internal;
+using ShadowDusk.Compiler.Slang;
 using ShadowDusk.Core;
 using ShadowDusk.Core.Preprocessor;
 using ShadowDusk.GLSL;
@@ -38,6 +39,22 @@ public sealed class SkslConvertOptions
     /// <c>in_var_COLOR0</c>.</para>
     /// </summary>
     public IReadOnlyList<string> TreatVaryingsAsUniforms { get; init; } = [];
+
+    /// <summary>
+    /// These options for a <c>.slang</c> input (issue #253): an unset <see cref="SourceName"/>
+    /// names the source <c>"&lt;memory&gt;.slang"</c> in diagnostics instead of the <c>.fx</c>
+    /// default. A name the caller set is kept as is.
+    /// </summary>
+    internal SkslConvertOptions ForSlangInput() =>
+        SourceName != "<memory>.fx"
+            ? this
+            : new SkslConvertOptions
+            {
+                SourceName = "<memory>.slang",
+                IncludeResolver = IncludeResolver,
+                AdditionalIncludePaths = AdditionalIncludePaths,
+                TreatVaryingsAsUniforms = TreatVaryingsAsUniforms,
+            };
 }
 
 /// <summary>The successful product: SkSL text plus its runtime contract.</summary>
@@ -243,6 +260,38 @@ public static class SkslConverter
             mapped.Value.Warnings,
             mapped.Value.ChildShaders,
             mapped.Value.SynthesizedUniforms));
+    }
+
+    /// <summary>
+    /// Converts HLSL-compatible <c>.slang</c> source to SkSL through the built-in Slang frontend
+    /// (<see cref="SlangFrontend.ConvertToFx"/>, no extra package, every host): the Slang
+    /// becomes <c>.fx</c> text, then <see cref="Convert(string, SkslConvertOptions, CancellationToken)"/> applies every SkSL rule unchanged.
+    /// Slang-only constructs (<c>SD0600</c>) are refused by the frontend; for genuine Slang
+    /// (<c>import</c>, generics, interfaces) use <c>ShadowDusk.Slang</c>'s
+    /// <c>SlangCompiler.ConvertToSksl</c>. Set <see cref="SkslConvertOptions.SourceName"/> to the
+    /// <c>.slang</c> name for diagnostics.
+    /// </summary>
+    /// <param name="slangSource">The Slang source; pixel entry marked <c>[shader("fragment")]</c>.</param>
+    /// <param name="options">Conversion options; see <see cref="SkslConvertOptions"/>.</param>
+    /// <param name="cancellationToken">Observed between pipeline stages.</param>
+    public static Result<SkslConversion, ShaderError[]> ConvertSlang(
+        string slangSource,
+        SkslConvertOptions options,
+        CancellationToken cancellationToken = default)
+    {
+        options = options.ForSlangInput();
+        var fx = SlangFrontend.ConvertToFx(slangSource, new SlangConvertOptions { SourceName = options.SourceName });
+        if (fx.IsFailure)
+            return Result<SkslConversion, ShaderError[]>.Fail(fx.Error);
+
+        // The frontend's own non-fatal findings ride along with the converter's, never dropped.
+        Result<SkslConversion, ShaderError[]> converted = Convert(fx.Value.FxText, options, cancellationToken);
+        return converted.IsSuccess && fx.Value.Warnings.Count > 0
+            ? Result<SkslConversion, ShaderError[]>.Ok(converted.Value with
+            {
+                Warnings = [.. fx.Value.Warnings, .. converted.Value.Warnings],
+            })
+            : converted;
     }
 
     private static Result<SkslConversion, ShaderError[]> Fail(string file, string code, string message) =>

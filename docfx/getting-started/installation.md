@@ -68,7 +68,7 @@ Unsupported constructs fail loudly with a located (line/column) diagnostic rathe
 
 ShadowDusk accepts `.slang` source in two tiers. The **free default**, built into `ShadowDusk.Compiler` (no extra package, no native toolchain, works on every host including the browser), accepts the **HLSL-compatible subset** of Slang: entry points via `[shader("vertex")]`/`[shader("fragment")]`, a synthesized technique, and a body compiled by the same faithful pipeline as any `.fx`. Slang-only features (`import`, generics, `interface`s) are rejected with a named `SD0600` rather than approximated — see the [CLI Reference](../cli/index.md) for `--input-format`.
 
-For genuine Slang — `import`, generics, `interface` conformances, everything real Slang accepts — install the optional `ShadowDusk.Slang` package. It bundles the real `slangc` compiler for win-x64, win-arm64, linux-x64, osx-x64, osx-arm64 (Linux needs a GCC 11+ `libstdc++`, i.e. Ubuntu 22.04 or later; macOS needs macOS 26 or later, the upstream build's own floor; on Windows on Arm every target but DirectX 11 and FNA, which need a vkd3d-shader build ShadowDusk does not have for win-arm64 and return `SD0211`; ARM64 Linux is not bundled, because ShadowDusk's own pipeline has no DXC there) and routes its HLSL emission to the same unchanged, faithful DXC pipeline:
+For genuine Slang — `import`, generics, `interface` conformances, everything real Slang accepts — install the optional `ShadowDusk.Slang` package. It bundles the real `slangc` compiler for win-x64, linux-x64, osx-x64, osx-arm64 (Linux needs a GCC 11+ `libstdc++`, i.e. Ubuntu 22.04 or later; macOS needs macOS 26 or later, the upstream build's own floor; ARM64 Linux is not bundled, because ShadowDusk's own pipeline has no DXC there; ARM64 Windows is not bundled to keep the package small, although the core pipeline is measured there, so a native Windows on Arm process gets `SD0620`: open an issue if you need it) and routes its HLSL emission to the same unchanged, faithful DXC pipeline:
 
 ```sh
 dotnet add package ShadowDusk.Slang
@@ -79,6 +79,8 @@ var compiler = new ShadowDusk.Slang.SlangCompiler();
 var result = compiler.Compile(slangSource, new CompilerOptions { Target = PlatformTarget.OpenGL });
 // result.Value.Data is .mgfx bytes, same as EffectCompiler.CompileAsync's output
 ```
+
+The same route feeds the SkiaSharp and raylib converters (fragment-only, with their own limits): `compiler.ConvertToSksl(slangSource, new SkslConvertOptions { SourceName = "Fx.slang" })` and `compiler.ConvertToRaylib(slangSource, new RaylibConvertOptions { SourceName = "Fx.slang" })`. For the HLSL-compatible subset without this package, use `SkslConverter.ConvertSlang` / `RaylibConverter.ConvertSlang`.
 
 **In the browser:** a browser cannot start slangc as a process, so the same pinned slangc is compiled to WebAssembly and run inside the page (`ShadowDusk.Slang.Wasm`'s `WasmSlangCompiler`). It gets the identical command line, its output is measured byte-identical to native slangc's, and its HLSL goes through the same in-browser DXC pipeline. It is not published as a NuGet package yet; the ShaderFiddle sample uses it from source.
 

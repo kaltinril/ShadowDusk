@@ -260,16 +260,7 @@ public sealed class SkslConverterTests
         result.Value.ChildShaders.ShouldBeEmpty();
     }
 
-    /// <summary>Left↔right lerp between two uniform colors — used by the render test too.</summary>
-    internal const string GradientFx = """
-        float4 LeftColor;
-        float4 RightColor;
-        float4 MainPS(float4 pos : SV_Position, float2 uv : TEXCOORD0) : SV_Target
-        {
-            return lerp(LeftColor, RightColor, uv.x);
-        }
-        technique T { pass P { PixelShader = compile ps_3_0 MainPS(); } }
-        """;
+    internal const string GradientFx = SkslTwinHarness.GradientFx;
 
     [Fact]
     public void InjectedBackends_AreUsed_AndProduceTheSameSkslAsTheDefaults()

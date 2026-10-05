@@ -45,7 +45,6 @@ public sealed class SlangToolPathTests : IDisposable
 
     [Theory]
     [InlineData(true, false, false, Architecture.X64, "win-x64")]
-    [InlineData(true, false, false, Architecture.Arm64, "win-arm64")]   // issue #286
     [InlineData(false, true, false, Architecture.X64, "linux-x64")]
     [InlineData(false, false, true, Architecture.X64, "osx-x64")]
     [InlineData(false, false, true, Architecture.Arm64, "osx-arm64")]
@@ -53,6 +52,7 @@ public sealed class SlangToolPathTests : IDisposable
         SlangToolPath.RidFor(win, linux, mac, arch).ShouldBe(expected);
 
     [Theory]
+    [InlineData(true, false, false, Architecture.Arm64)]   // win-arm64: not bundled
     [InlineData(true, false, false, Architecture.X86)]
     [InlineData(false, true, false, Architecture.Arm64)]   // linux-arm64: not bundled (no vkd3d/DXC either)
     [InlineData(false, false, false, Architecture.Arm64)]  // Android/iOS/browser: IsLinux() is false on Android
@@ -69,6 +69,20 @@ public sealed class SlangToolPathTests : IDisposable
         reason.ShouldContain("linux-arm64", Case.Sensitive);
         foreach (string rid in SlangToolPath.SupportedRids)
             reason.ShouldContain(rid, Case.Sensitive);
+    }
+
+    [Fact]
+    public void UnsupportedReason_WinArm64_NamesTheRidAndAsksForAnIssue()
+    {
+        // Issue #286: the core pipeline is measured on win-arm64, but its slangc is not bundled
+        // (size). A win-arm64 consumer must get a reason naming its RID and the way to ask.
+        string? reason = SlangToolPath.GetUnsupportedReason(null, isMacOS: false, new Version(10, 0), "win-arm64");
+
+        reason.ShouldNotBeNull();
+        reason.ShouldContain("this host (win-arm64) is not one of them", Case.Sensitive);
+        reason.ShouldContain("If you need ShadowDusk.Slang on win-arm64", Case.Sensitive);
+        reason.ShouldContain("https://github.com/kaltinril/ShadowDusk/issues", Case.Sensitive);
+        SlangToolPath.SupportedRids.ShouldNotContain("win-arm64");
     }
 
     [Theory]
@@ -89,7 +103,6 @@ public sealed class SlangToolPathTests : IDisposable
     [InlineData("osx-arm64", true, 26, 0)]
     [InlineData("osx-x64", true, 27, 1)]
     [InlineData("win-x64", false, 10, 0)]   // Windows/Linux kernel versions are never compared to the macOS floor
-    [InlineData("win-arm64", false, 10, 0)]
     [InlineData("linux-x64", false, 5, 15)]
     public void UnsupportedReason_SupportedHost_IsNull(string rid, bool isMacOS, int major, int minor) =>
         SlangToolPath.GetUnsupportedReason(rid, isMacOS, new Version(major, minor), rid).ShouldBeNull();
@@ -110,7 +123,6 @@ public sealed class SlangToolPathTests : IDisposable
 
     [Theory]
     [InlineData("win-x64", "slangc.exe", "slang-compiler.dll")]
-    [InlineData("win-arm64", "slangc.exe", "slang-compiler.dll")]
     [InlineData("linux-x64", "slangc", "libslang-compiler.so.0." + SlangToolPath.SlangVersion)]
     [InlineData("osx-x64", "slangc", "libslang-compiler.0." + SlangToolPath.SlangVersion + ".dylib")]
     [InlineData("osx-arm64", "slangc", "libslang-compiler.0." + SlangToolPath.SlangVersion + ".dylib")]

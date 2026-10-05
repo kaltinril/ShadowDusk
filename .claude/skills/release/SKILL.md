@@ -43,7 +43,7 @@ history, not just SemVer's letter):
    divergence.
 
    ```powershell
-   ./validation/run-windows-render-gates.ps1              # DX corpus + DX-modern (VTF) + DX Apos gallery + DX ShaderToy route + DX12 corpus + DX12 VS-driven/Apos gallery + KNI-DX + KNI-GL desktop + KNI-GL VS-driven + GL Apos + GL Apos gallery + ANGLE-D3D11 derivative probe (issue #136) + MGCB plugin (real dotnet mgcb 3.8.4.1 AND 3.8.5, decoy-PATH DXC guard) + XNB direct writer Content.Load on MonoGame WindowsDX, MonoGame DesktopGL and KNI 4.2.9001+4.3.9001 + MonoGame 3.8.5 Content Builder + Slang corpus + Slang full corpus (DX11, DX12 and Vulkan real-Effect arms, issue #230) + Slang textured GL (issue #252) + BOTH Vulkan gates
+   ./validation/run-windows-render-gates.ps1              # DX corpus + DX-modern (VTF) + DX Apos gallery + DX resource arrays (issues #339/#340: texture-array table + render, sampler-array SD0224 refusal) + DX ShaderToy route + DX12 corpus + DX12 VS-driven/Apos gallery + DX12 texture-array row (issue #324) + KNI-DX + KNI-GL desktop + KNI-GL VS-driven + GL Apos + GL Apos gallery + ANGLE-D3D11 derivative probe (issue #136) + MGCB plugin (real dotnet mgcb 3.8.4.1 AND 3.8.5, decoy-PATH DXC guard) + XNB direct writer Content.Load on MonoGame WindowsDX, MonoGame DesktopGL and KNI 4.2.9001+4.3.9001 + MonoGame 3.8.5 Content Builder (ShadowDusk.ContentPipeline, real ContentBuilder + Content.Load<Effect>) + Slang corpus + Slang full corpus (ShadowDusk.Slang real-slangc route; DX11, DX12 and Vulkan real-Effect arms, issue #230) + Slang textured GL (issue #252) + BOTH Vulkan gates (incl. the texture-array SD0221 row), vs mgfxc/fxc
    ./validation/run-windows-render-gates.ps1 -IncludeFna  # add FNA fx_2_0 + its Slang arm; include it when in doubt
    ./validation/run-windows-render-gates.ps1 -SkipVulkan  # ONLY on a box with no Vulkan-capable GPU
    ```
@@ -154,13 +154,18 @@ history, not just SemVer's letter):
   only cold-consumer proof for every package, and its `tools/verify-slang-packaging.sh` step is
   the only place `ShadowDusk.Slang`'s slangc runs from an installed package on all three OSes
   (its macOS `verify-slang-osx-x64-rosetta.sh` step is the only run of the osx-x64 slangc).
-- **The `win-arm64` workflow must be green on the release commit before dispatch** (issue #286).
-  It is the only native win-arm64 run: core pipeline byte identity with win-x64, and the packaged
-  win-arm64 slangc through the cold consumer. Dispatch it on the branch or tag that points at the
-  release commit (`gh workflow run win-arm64.yml --ref main`, or `--ref v<version>` once tagged;
-  `--ref` takes a branch or tag, not a SHA) and confirm the run's head SHA is the release commit.
   It has no push trigger, so dispatch it (`gh workflow run pack-consume.yml --ref main`) if the
   last run predates the release commit.
+- **The `win-arm64` workflow must be green on the release commit before dispatch** (issue #286).
+  It is the only native win-arm64 run of the core pipeline (byte identity with win-x64) and of
+  `ShadowDusk.Slang`'s `SD0620` there. Dispatch it on the branch or tag that points at the
+  release commit (`gh workflow run win-arm64.yml --ref main`; `--ref` takes a branch or tag, not
+  a SHA) and confirm the run's head SHA is the release commit.
+- **`Android emulator` must be green on the release commit before dispatch** (issue #304). It is
+  the only run of the on-device compile + `Effect` load and of the Android DXC / SPIRV-Cross
+  identity checks (`validation/AndroidGl/run-dxc-identity-checks.ps1`). It runs on a push to
+  main only when the loaders, the harness or `tools/restore.sh` changed, so dispatch it
+  (`gh workflow run android-emulator.yml --ref main`) if the last run predates the release commit.
 - **Commit directly, no `/commit` skill, no co-author / tool-attribution trailer of any
   kind** (CLAUDE.md Git Commit Conventions).
 - **Tests pass `--settings ShadowDusk.runsettings`** (the Phase 21 suite-timeout guardrail),

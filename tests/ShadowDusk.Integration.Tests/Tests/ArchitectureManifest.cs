@@ -19,9 +19,6 @@ namespace ShadowDusk.Tests.Shared;
 /// <para>Each entry is <c>sha256:&lt;hex&gt;</c> for a successful compile, or
 /// <c>error:</c> plus the diagnostics for a refused one, so an arm64 host that refuses a shader
 /// x64 compiles (or the reverse) is a mismatch too, never a silently shorter corpus.</para>
-///
-/// <para>Source-linked into <c>ShadowDusk.Slang.Tests</c> (the <c>NativeRequirement</c>
-/// pattern), so the Slang route uses the same write/compare rules.</para>
 /// </summary>
 internal static class ArchitectureManifest
 {

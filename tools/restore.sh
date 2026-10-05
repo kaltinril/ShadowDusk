@@ -135,14 +135,14 @@ DXC_RELEASE_URL="https://github.com/kaltinril/ShadowDusk/releases/download/nativ
 DXC_OSX_X64_SHA256="9e61d5c1993d2cd5a5ea6701011d0a86e8c8dd89c995ef0c4d03ff3b83dbbc17"
 DXC_OSX_ARM64_SHA256="4f29ef90af61426a39037a2e9d7215a48c7c746328a38a20028e456c1ee3d811"
 
-# restore_dxc_file <asset-name> <dest-relative-to-tools/dxc> <sha256>
+# restore_dxc_file <asset-name> <dest-relative-to-tools/dxc> <sha256> [release-url]
 restore_dxc_file() {
-    local asset="$1" dest_rel="$2" sha="$3"
+    local asset="$1" dest_rel="$2" sha="$3" url="${4:-$DXC_RELEASE_URL}"
     local dxc_dir="$REPO_ROOT/tools/dxc"
     local dest="$dxc_dir/$dest_rel"
 
     if [ "$sha" = "PENDING-FIRST-HOSTED-BUILD" ]; then
-        echo "restore.sh: NOTICE — DXC macOS native ($dest_rel) pin is a placeholder (no hosted build yet); skipping. macOS DXC remains unavailable until Phase 37 A's hosted artifacts land."
+        echo "restore.sh: NOTICE — DXC native ($dest_rel) pin is a placeholder (no hosted build yet); skipping. That DXC stays unavailable until its hosted build is pinned."
         return 0   # non-fatal by design while the pins are placeholders
     fi
 
@@ -151,17 +151,17 @@ restore_dxc_file() {
         local have
         have="$(vkd3d_sha256 "$dest")"
         if [ "$have" = "$sha" ]; then
-            echo "restore.sh: DXC macOS native ($dest_rel) present, hash OK"
+            echo "restore.sh: DXC native ($dest_rel) present, hash OK"
             return 0
         fi
         # Delete-on-mismatch (see restore_vkd3d_file): never leave an unverified file
         # in place for existence-only downstream checks if the re-download fails.
-        echo "restore.sh: DXC macOS native ($dest_rel) hash mismatch — deleting and re-downloading (had $have)"
+        echo "restore.sh: DXC native ($dest_rel) hash mismatch — deleting and re-downloading (had $have)"
         rm -f "$dest"
     fi
 
-    if ! curl -fsSLo "$dest.tmp" "$DXC_RELEASE_URL/$asset"; then
-        echo "restore.sh: WARNING — could not download $asset from $DXC_RELEASE_URL (offline?); DXC (the OpenGL pipeline frontend) will be unavailable on macOS." >&2
+    if ! curl -fsSLo "$dest.tmp" "$url/$asset"; then
+        echo "restore.sh: WARNING — could not download $asset from $url (offline?); DXC (the OpenGL pipeline frontend) will be unavailable there." >&2
         rm -f "$dest.tmp"
         return 0   # non-fatal by design
     fi
@@ -173,7 +173,7 @@ restore_dxc_file() {
         return 0   # non-fatal, but the file is NOT placed
     fi
     mv -f "$dest.tmp" "$dest"
-    echo "restore.sh: DXC macOS native ($dest_rel) downloaded, hash OK"
+    echo "restore.sh: DXC native ($dest_rel) downloaded, hash OK"
 }
 
 restore_dxc_macos() {
@@ -198,15 +198,37 @@ restore_dxc_macos
 # vkd3d is NOT needed (DirectX/FNA are desktop-only). DxcLoader/SpvcLoader resolve them by
 # bare SONAME from the APK's lib/arm64-v8a/ (Android W^X-safe).
 #
-# Pins enforced since 2026-06-28 (Phase 50 hosting): the android-arm64 DXC + SPIRV-Cross
-# .so are hosted on the native-dxc-1.7.2212.40 tag (the DXC is the same e043f4a1 / 1.7.2212.40
-# family) and SHA-256-verified below. restore_android provisions them so ShadowDusk.HLSL packs
+# Pins: the Android DXC + SPIRV-Cross .so are hosted on their own release tags
+# (native-dxc-android-1.7.2212.40-16k and native-spirv-cross-android-d8e3e2b1, below) and
+# SHA-256-verified below. restore_android provisions them so ShadowDusk.HLSL packs
 # runtimes/android-arm64/native/libdxcompiler.so and ShadowDusk.GLSL packs the spirv-cross .so —
 # an on-device Android compile is then self-contained. Same pin-discipline as the macOS dylibs:
 # hash mismatch -> re-download; offline -> non-fatal warning. Re-running dxc-android-build.yml /
 # spirv-cross-android-build.yml re-pins the SHA-256s here.
-DXC_ANDROID_ARM64_SHA256="b3a25ca724f71155ba3ccc8d32f94bce11375a5f44dac9d5cb6e4636271cfe67"
-SPVC_ANDROID_ARM64_SHA256="7b1e5e366080b6ea9652debd1126b1a52d2d5779d7f8a1e06f0a7c6a9ce9870f"
+# DXC for Android (both ABIs) since the 16 KB fix: built by .github/workflows/dxc-android-build.yml
+# (tools/build-dxc-android.sh: DXC e043f4a1, NDK r27c, API 24, 16 KB pages, -g0, stripped;
+# byte-reproducible, two independent builds compared, and required to equal these pins) and hosted
+# on their own tag below. Their GNU build ids are DxcNativeIdentity.AndroidArm64CompilerBuildId /
+# AndroidX64CompilerBuildId. The earlier hand-built Android DXC assets on native-dxc-1.7.2212.40
+# (not 16 KB aligned, XA0141) stay on that tag, unused.
+DXC_ANDROID_RELEASE_URL="https://github.com/kaltinril/ShadowDusk/releases/download/native-dxc-android-1.7.2212.40-16k"
+DXC_ANDROID_ARM64_SHA256="fa8c9515cf97ea6274cb6d4098f55df84914bea99b65eed7b153f481eb578b6a"
+# SPIRV-Cross for Android (both ABIs) since the issue #304 follow-up: built by
+# .github/workflows/spirv-cross-android-build.yml (tools/build-spirv-cross-android.sh: SPIRV-Cross
+# d8e3e2b1, the commit the desktop Silk.NET.SPIRV.Cross.Native 2.23.0 natives are built from;
+# NDK r27c; API 21; byte-reproducible) and hosted on their own tag below. Their GNU build ids are
+# SpvcLoader.AndroidBuildIdByRid. The earlier android SPIRV-Cross assets on native-dxc-1.7.2212.40
+# (a dirty local build of a newer SPIRV-Cross, 146679f+) stay on that tag, unused.
+SPVC_ANDROID_RELEASE_URL="https://github.com/kaltinril/ShadowDusk/releases/download/native-spirv-cross-android-d8e3e2b1"
+SPVC_ANDROID_ARM64_SHA256="0e0f1b9ba6cb47881109bbffe87b1dcac2a53142b81dd16fa63ff1ee1c1d3509"
+# android-x64 (issue #304): the x86_64 pair the Android EMULATOR runs (validation/AndroidGl and
+# its CI lane, .github/workflows/android-emulator.yml). No package ships them; they are hosted
+# on the same tag and pinned the same way so the emulator lane restores them instead of needing
+# a local NDK build. Both are the reproducible CI builds described above (their own tags).
+# Their GNU
+# build ids are the android-x64 pins in DxcNativeIdentity / SpvcLoader.
+DXC_ANDROID_X64_SHA256="eb2fda8a4c48ce0c0b6cc8fe8325e5850fe6f92f3764ce12e342b2f37af1e249"
+SPVC_ANDROID_X64_SHA256="dc0397473bfab0f0e6f1e0b6cdda37a932726bf58aad2603e3b119eef2920233"
 
 # restore_spvc_android_file <asset-name> <dest-relative-to-tools/spirv-cross> <sha256>
 restore_spvc_android_file() {
@@ -230,7 +252,7 @@ restore_spvc_android_file() {
         rm -f "$dest"
     fi
 
-    if ! curl -fsSLo "$dest.tmp" "$DXC_RELEASE_URL/$asset"; then
+    if ! curl -fsSLo "$dest.tmp" "$SPVC_ANDROID_RELEASE_URL/$asset"; then
         echo "restore.sh: WARNING — could not download $asset (offline?); on-device Android compile (Phase 50) will be unavailable." >&2
         rm -f "$dest.tmp"
         return 0   # non-fatal by design
@@ -249,9 +271,13 @@ restore_spvc_android_file() {
 restore_android() {
     # DXC reuses restore_dxc_file (it already handles the PENDING placeholder + tools/dxc layout).
     restore_dxc_file "libdxcompiler.android-arm64.so" "android-arm64/libdxcompiler.so" \
-        "$DXC_ANDROID_ARM64_SHA256"
+        "$DXC_ANDROID_ARM64_SHA256" "$DXC_ANDROID_RELEASE_URL"
     restore_spvc_android_file "libspirv-cross.android-arm64.so" "android-arm64/libspirv-cross.so" \
         "$SPVC_ANDROID_ARM64_SHA256"
+    restore_dxc_file "libdxcompiler.android-x64.so" "android-x64/libdxcompiler.so" \
+        "$DXC_ANDROID_X64_SHA256" "$DXC_ANDROID_RELEASE_URL"
+    restore_spvc_android_file "libspirv-cross.android-x64.so" "android-x64/libspirv-cross.so" \
+        "$SPVC_ANDROID_X64_SHA256"
 }
 
 restore_android
@@ -447,14 +473,14 @@ restore_vkd3d_wasm() {
 restore_vkd3d_wasm
 
 # ---------------------------------------------------------------------------
-# Slang compiler (real slangc, all five desktop RIDs — Phase 66 A2, issues #227/#286)
+# Slang compiler (real slangc, all four desktop RIDs — Phase 66 A2, issue #227)
 # ---------------------------------------------------------------------------
 # ShadowDusk.Slang (a separate, opt-in package — plan/PHASE-66) ships REAL slangc so a
 # consumer who adds it gets genuine Slang input, compiled via slangc -target hlsl and
 # handed to the existing, unchanged, faithful DXC pipeline. A consumer who does NOT add
 # ShadowDusk.Slang pays zero size/dependency cost. Every host restores every RID (like
 # restore_vkd3d_shader / restore_dxc_macos above), so any machine is pack-ready: the
-# ShadowDusk.Slang nupkg must carry all five, and release.yml / pack-consume.yml gate on it.
+# ShadowDusk.Slang nupkg must carry all four, and release.yml / pack-consume.yml gate on it.
 #
 # Pin: the official shader-slang v2026.14.1 release for every RID (the SAME version
 # validation/SlangCorpus/Program.cs downloads as a test-time oracle, and the version
@@ -476,11 +502,10 @@ restore_vkd3d_wasm
 # and the -dist variants too), so they run on macOS 26+ only; SlangToolPath reports older
 # macOS as unsupported (SD0620) instead of letting dyld kill the process.
 #
-# win-arm64 (issue #286): the core pipeline's OpenGL, Vulkan and DirectX 12 output was measured
-# byte-identical to win-x64 on a native windows-11-arm runner (.github/workflows/win-arm64.yml),
-# so slangc rides for it too; DirectX 11 and FNA there are SD0211 (no vkd3d-shader build).
-# linux-arm64 is NOT restored although upstream publishes it: the core pipeline has no DXC or
-# vkd3d native there (project_decisions.md, issue #227). Add it when the core pipeline does.
+# linux-arm64 and win-arm64 are NOT restored although upstream publishes them
+# (project_decisions.md): linux-arm64 has no DXC native, so the core pipeline cannot run there
+# (issue #227); win-arm64 works in the core pipeline but its slangc is left out of the package
+# for size until someone asks (issue #286; the pins are in PR #390 to re-add).
 SLANG_VERSION="2026.14.1"
 SLANG_RELEASE_URL="https://github.com/shader-slang/slang/releases/download/v${SLANG_VERSION}"
 
@@ -556,10 +581,6 @@ restore_slang() {
         2976c3a9a6f4d77b5734d00b5d841d1ff087d9965d9006b9b4d73edd0062cb7d \
         bin/slangc a1c5ecae0d2425b13fe7f616686f2df7cc7028d3f6a85fb717497cf98bee3d0a \
         "lib/libslang-compiler.0.${SLANG_VERSION}.dylib" 4fadae0d56d4538dc2a0099086de3d2a5350e12da4591679ee8cbb571c5db7de
-    restore_slang_rid win-arm64 windows-aarch64 \
-        5067047bb35ae5675b06a3467d0b302d9816727450a803cb3770660bef684f37 \
-        bin/slangc.exe fa689dd4c308621bfb82559a863554babd5921863cc4ff9473056b500524f433 \
-        bin/slang-compiler.dll 066d048df8f9c73eb1cfd77e64dd285e1b1e9766eda6c170a29350bfb76fdb9a
 }
 
 restore_slang

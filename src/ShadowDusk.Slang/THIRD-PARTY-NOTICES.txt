@@ -7,7 +7,6 @@ This package redistributes the following third-party native binaries
 Slang compiler, version 2026.14.1
 ---------------------------------
   win-x64    slangc.exe, slang-compiler.dll
-  win-arm64  slangc.exe, slang-compiler.dll
   linux-x64  slangc, libslang-compiler.so.0.2026.14.1
   osx-x64    slangc, libslang-compiler.0.2026.14.1.dylib
   osx-arm64  slangc, libslang-compiler.0.2026.14.1.dylib

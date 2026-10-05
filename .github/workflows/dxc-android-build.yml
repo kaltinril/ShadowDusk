@@ -1,0 +1,156 @@
+# .github/workflows/dxc-android-build.yml
+# Builds ShadowDusk's Android DXC (libdxcompiler.so for android-arm64 and android-x64) with the
+# ONE recipe, tools/build-dxc-android.sh, which pins everything that decides the bytes:
+#
+#   DXC        e043f4a1 (1.7.2212.40, the commit Vortice.Dxc 3.3.4's Windows dxcompiler.dll reports;
+#              the macOS and WASM builds use it too; Vortice's linux-x64 .so is an earlier commit,
+#              see project_facts.md) + its three gitlinked submodules, each checked.
+#   NDK        r27c (27.2.12479018), installed here with CMake 3.31.6 + Ninja by sdkmanager.
+#   API level  24.
+#   CMake      Release, PredefinedParams.cmake, SPIR-V codegen ON, tests/docs OFF,
+#              LLVM_TARGETS_TO_BUILD=None, host tablegen (stage 0), the two CMake-only
+#              cross-compile patches of the WASM recipe.
+#   16 KB      -Wl,-z,max-page-size=16384 -Wl,-z,common-page-size=16384 and
+#              ANDROID_SUPPORT_FLEXIBLE_PAGE_SIZES=ON: Google Play requires 16 KB page support
+#              for apps targeting Android 15+ (since November 2025).
+#   Bytes      -g0, -ffile-prefix-map, SOURCE_DATE_EPOCH = the commit time,
+#              llvm-strip --strip-unneeded.
+#
+# Reproducibility is checked, not assumed: every ABI is built twice by two independent jobs
+# (fresh clone, different directory), and the verify job fails unless both give the same bytes.
+# It also checks the ABI, the DxcCreateInstance export, the 16 KB LOAD alignment and prints the
+# GNU build ids. The files are uploaded as a run artifact; a maintainer attaches them to a NEW
+# release tag (never replacing an asset) and pins their SHA-256 in tools/restore.* and their
+# build ids in DxcNativeIdentity.
+name: Build DXC Android natives
+
+on:
+  workflow_dispatch:
+  pull_request:
+    branches: [ main ]
+    paths:
+      - 'tools/build-dxc-android.sh'
+      - '.github/workflows/dxc-android-build.yml'
+      - 'tools/restore.sh'
+      - 'tools/restore.ps1'
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: Build ${{ matrix.rid }} (${{ matrix.copy }})
+    runs-on: ubuntu-latest
+    # An LLVM-fork build on a 4-core runner; measured 12 to 17 minutes per ABI.
+    timeout-minutes: 300
+    strategy:
+      fail-fast: false
+      matrix:
+        abi: [ arm64-v8a, x86_64 ]
+        copy: [ a, b ]
+        include:
+          - abi: arm64-v8a
+            rid: android-arm64
+          - abi: x86_64
+            rid: android-x64
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Install NDK r27c, CMake 3.31.6 and Ninja
+        run: |
+          yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --install 'ndk;27.2.12479018' 'cmake;3.31.6' > /dev/null
+          cat "$ANDROID_HOME/ndk/27.2.12479018/source.properties"
+
+      - name: Build (copy ${{ matrix.copy }})
+        run: |
+          export CMAKE_EXE="$ANDROID_HOME/cmake/3.31.6/bin/cmake"
+          export NINJA_EXE="$ANDROID_HOME/cmake/3.31.6/bin/ninja"
+          chmod +x tools/build-dxc-android.sh
+          # copy b builds in a differently named directory, so a path that leaks into the bytes fails the compare.
+          work="$RUNNER_TEMP/dxc-work-${{ matrix.copy }}${{ matrix.copy == 'b' && '-second-copy' || '' }}"
+          tools/build-dxc-android.sh "$ANDROID_HOME/ndk/27.2.12479018" out "$work" "${{ matrix.abi }}"
+
+      - name: Upload logs on failure
+        if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: dxc-android-logs-${{ matrix.rid }}-${{ matrix.copy }}
+          path: ${{ runner.temp }}/dxc-work-*/*.log
+          retention-days: 7
+
+      - name: Upload
+        uses: actions/upload-artifact@v7
+        with:
+          name: dxc-android-${{ matrix.rid }}-${{ matrix.copy }}
+          path: out/
+          if-no-files-found: error
+          retention-days: 30
+
+  verify:
+    name: Verify (byte-identical copies, ABI, exports, 16 KB pages)
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Download all copies
+        uses: actions/download-artifact@v7
+        with:
+          path: copies
+
+      - name: Checkout (for the pins in tools/restore.sh)
+        uses: actions/checkout@v6
+        with:
+          path: repo
+
+      - name: Install NDK r27c (llvm-readelf)
+        run: yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --install 'ndk;27.2.12479018' > /dev/null
+
+      - name: Require byte-identical copies
+        run: |
+          for rid in android-arm64 android-x64; do
+            a=$(sha256sum "copies/dxc-android-$rid-a/$rid/libdxcompiler.so" | cut -d' ' -f1)
+            b=$(sha256sum "copies/dxc-android-$rid-b/$rid/libdxcompiler.so" | cut -d' ' -f1)
+            echo "$rid $a $b"
+            [ "$a" = "$b" ] || { echo "::error::$rid: two independent builds of the same recipe differ"; exit 1; }
+          done
+
+      - name: Require the build to equal the shipped, pinned natives
+        # A script, flag, NDK or DXC_COMMIT change must re-host and re-pin in the same PR, or the
+        # committed recipe would silently stop producing the bytes ShadowDusk ships.
+        run: |
+          for pair in android-arm64:DXC_ANDROID_ARM64_SHA256 android-x64:DXC_ANDROID_X64_SHA256; do
+            rid="${pair%%:*}"; var="${pair##*:}"
+            pin=$(grep "^${var}=" repo/tools/restore.sh | cut -d'"' -f2)
+            got=$(sha256sum "copies/dxc-android-$rid-a/$rid/libdxcompiler.so" | cut -d' ' -f1)
+            echo "$rid built $got pinned $pin"
+            [ -n "$pin" ] || { echo "::error::$var not found in tools/restore.sh"; exit 1; }
+            [ "$got" = "$pin" ] || { echo "::error::$rid: the recipe no longer produces the pinned native; re-host and re-pin"; exit 1; }
+          done
+
+      - name: Verify ABI, exports, 16 KB alignment, build ids
+        run: |
+          readelf="$ANDROID_HOME/ndk/27.2.12479018/toolchains/llvm/prebuilt/linux-x86_64/bin/llvm-readelf"
+          mkdir -p out
+          for pair in android-arm64:AArch64 android-x64:X86-64; do
+            rid="${pair%%:*}"; machine="${pair##*:}"
+            so="copies/dxc-android-$rid-a/$rid/libdxcompiler.so"
+            "$readelf" -h "$so" | grep -q "Machine:.*$machine" || { echo "::error::$rid is not $machine"; exit 1; }
+            "$readelf" -W --dyn-syms "$so" | grep -q ' DxcCreateInstance$' \
+              || { echo "::error::$rid does not export DxcCreateInstance"; exit 1; }
+            if "$readelf" -W -l "$so" | awk '$1=="LOAD" {print $NF}' | grep -qv '0x4000'; then
+              echo "::error::$rid has a LOAD segment not aligned to 16 KB"; "$readelf" -W -l "$so"; exit 1
+            fi
+            if "$readelf" -W -S "$so" | grep -q '\.debug_'; then echo "::error::$rid carries debug info"; exit 1; fi
+            echo "$rid build id: $("$readelf" -n "$so" | sed -n 's/.*Build ID: //p')"
+            mkdir -p "out/$rid" && cp "$so" "out/$rid/"
+          done
+          (cd out && sha256sum */libdxcompiler.so | tee SHA256SUMS)
+
+      - name: Upload
+        uses: actions/upload-artifact@v7
+        with:
+          name: dxc-android
+          path: out/
+          if-no-files-found: error
+          retention-days: 30

@@ -13,7 +13,7 @@ to nuget.org, and attaches self-contained CLI binaries for each RID to a GitHub 
 | `ShadowDusk.HLSL` | FX9 pre-parser, DXC integration, vkd3d-shader / `d3dcompiler_47` DXBC backends |
 | `ShadowDusk.GLSL` | SPIR-V → GLSL via SPIRV-Cross + MojoShader-dialect rewriter |
 | `ShadowDusk.ShaderToy` | Standalone pure-managed ShaderToy/GLSL → `.fx` converter (optional; not in the `Compiler` graph) |
-| `ShadowDusk.Slang` | Optional real-slangc Slang front-end (Phase 66). Depends on `ShadowDusk.Compiler`; carries slangc for win-x64, win-arm64, linux-x64, osx-x64, osx-arm64 under `runtimes/<rid>/native/` (~65 MB nupkg), gated by `release.yml`. |
+| `ShadowDusk.Slang` | Optional real-slangc Slang front-end (Phase 66). Depends on `ShadowDusk.Compiler`; carries slangc for win-x64, linux-x64, osx-x64, osx-arm64 under `runtimes/<rid>/native/` (~53 MB nupkg), gated by `release.yml`. |
 | `ShadowDusk.Compiler` | The consumer-facing product library (`EffectCompiler : IShaderCompiler`) |
 | `ShadowDusk.Cli` | The `ShadowDuskCLI` `dotnet tool` |
 | `ShadowDusk.Wasm` | The `net8.0-browser` in-browser compiler |
@@ -60,21 +60,24 @@ to nuget.org, and attaches self-contained CLI binaries for each RID to a GitHub 
    is "command not found", not a render divergence — a red that means nothing about the product.
    Check for `9009` before investigating any gate failure.
 
-5. **A green Windows render gate — RUN IT FIRST (CI structurally cannot run this).** The
-   DirectX / DirectX 12 / FNA / KNI-DirectX / real-KNI-desktop-GL / **Vulkan** / browser-ANGLE
-   rung-4 render proofs ("renders like `mgfxc`/`fxc` in the real engine") have no headless CI driver — Mesa
-   covers the in-process OpenGL gates on the Linux lane, but there is no verified headless
-   D3D/WARP path on the runners, the real-KNI SDL2.GL rigs are not wired there, DesktopVK needs
-   a real Vulkan GPU, and CI's browser smoke renders on SwiftShader (blind to ANGLE-D3D11
-   behavior like the issue-#136 gradient poisoning). **`release.yml` does not check any of this
-   either**, so this gate is the only thing between a render regression and nuget.org. Run it on
+5. **A green Windows render gate — RUN IT FIRST (CI covers only part of it).** `validation-render.yml`
+   runs some of the rung-4 render proofs ("renders like `mgfxc`/`fxc` in the real engine") on
+   software rasterizers: the in-process OpenGL gates and the GL corpus on Mesa llvmpipe; a
+   `windows-latest` job pinned to **WARP** with `DxModernFeatures`, `KniWinFormsDX`, the DX11 and
+   DX12 corpora (issues #204/#209) and `SlangFullCorpus` gates 1 + 3 (issue #254); and both Vulkan
+   gates on Mesa lavapipe. Everything else still has no CI driver: the DX/DX12 Apos.Shapes gallery,
+   the ShaderToy DX route, FNA, real-KNI-desktop-GL, the MGCB plugin / XNB / Content Builder gates,
+   the Slang DX12/Vulkan/FNA arms, and browser-ANGLE (CI's browser smoke renders on SwiftShader,
+   blind to ANGLE-D3D11 behavior like the issue-#136 gradient poisoning). No GPU driver is ever
+   exercised in CI. **`release.yml` does not check any of this either**, so this gate is the only
+   thing between a render regression and nuget.org. Run it on
    a Windows box with a **DX12-capable GPU** (the DirectX 12 gates are default-ON; Vulkan-capable
    too, unless `-SkipVulkan`) **before** bumping the version — it is the longest and most likely step
    to fail, so a divergence should stop the release before any version churn, commit, PR, or CI
    time is spent:
 
    ```powershell
-   ./validation/run-windows-render-gates.ps1              # DX corpus + DX-modern (VTF) + DX Apos gallery + DX ShaderToy route + DX12 corpus + DX12 VS-driven/Apos gallery + KNI-DX + KNI-GL desktop + KNI-GL VS-driven + GL Apos + GL Apos gallery + ANGLE-D3D11 derivative probe (issue #136) + MGCB plugin (real dotnet mgcb 3.8.4.1 AND 3.8.5, decoy-PATH DXC guard) + XNB direct writer Content.Load on MonoGame WindowsDX, MonoGame DesktopGL and KNI 4.2.9001+4.3.9001 + MonoGame 3.8.5 Content Builder + Slang corpus + Slang full corpus (DX11, DX12 and Vulkan real-Effect arms, issue #230) + Slang textured GL (issue #252) + BOTH Vulkan gates
+   ./validation/run-windows-render-gates.ps1              # DX corpus + DX-modern (VTF) + DX Apos gallery + DX resource arrays (issues #339/#340: texture-array table + render, sampler-array SD0224 refusal) + DX ShaderToy route + DX12 corpus + DX12 VS-driven/Apos gallery + DX12 texture-array row (issue #324) + KNI-DX + KNI-GL desktop + KNI-GL VS-driven + GL Apos + GL Apos gallery + ANGLE-D3D11 derivative probe (issue #136) + MGCB plugin (real dotnet mgcb 3.8.4.1 AND 3.8.5, decoy-PATH DXC guard) + XNB direct writer Content.Load on MonoGame WindowsDX, MonoGame DesktopGL and KNI 4.2.9001+4.3.9001 + MonoGame 3.8.5 Content Builder (ShadowDusk.ContentPipeline, real ContentBuilder + Content.Load<Effect>) + Slang corpus + Slang full corpus (ShadowDusk.Slang real-slangc route; DX11, DX12 and Vulkan real-Effect arms, issue #230) + Slang textured GL (issue #252) + BOTH Vulkan gates (incl. the texture-array SD0221 row), vs mgfxc/fxc
    ./validation/run-windows-render-gates.ps1 -IncludeFna  # also FNA fx_2_0 + its Slang arm, for an FNA-affecting release (include it when in doubt)
    ```
 
@@ -239,12 +242,30 @@ first (the `/release` skill does this for you).
 > broken for any consumer RID. If the gate trips, check that the `native-vkd3d-2.1`
 > release assets are intact and the restore-step log shows four "hash OK" lines.
 
+> **Android natives (Phase 50, issue #304):** `tools/restore.{ps1,sh}` also restore four Android
+> `.so` files, SHA-256 pinned, all reproducible CI builds with 16 KB pages (Google Play's
+> requirement for Android 15+ targets; the emulator lane fails on `XA0141`): DXC from
+> `native-dxc-android-1.7.2212.40-16k` (built by `dxc-android-build.yml` with
+> `tools/build-dxc-android.sh` at the pinned DXC commit), SPIRV-Cross from
+> `native-spirv-cross-android-d8e3e2b1` (built by `spirv-cross-android-build.yml` with
+> `tools/build-spirv-cross-android.sh` at the desktop's SPIRV-Cross commit; a SPIRV-Cross bump on
+> the desktop, i.e. a Silk.NET bump, must move that script's commit and re-host both files). The `android-arm64`
+> DXC + SPIRV-Cross pack into `ShadowDusk.HLSL` / `ShadowDusk.GLSL` under
+> `runtimes/android-arm64/native/` (gated by `release.yml` and `pack-consume.yml`); the
+> `android-x64` pair is restored only for the emulator lane (`android-emulator.yml`) and is never
+> packed. **Before dispatching**, confirm the `Android emulator` workflow is green on the release
+> commit (`gh workflow run android-emulator.yml --ref main` if the last run is older): it is the
+> only run of the on-device compile and the Android identity checks. If any Android native is
+> rebuilt, upload it as a NEW asset (never replace one), re-pin its SHA-256 in both restore
+> scripts AND its GNU build id in `DxcNativeIdentity` / `SpvcLoader.AndroidBuildIdByRid`
+> (`DxcPinnedNativeIdentityTests` and `SpvcLoaderAndroidIdentityTests` fail when they drift).
+
 > **slangc packing (`ShadowDusk.Slang` — Phase 66, issues #226/#227):** `ShadowDusk.Slang.csproj`
 > packs each **restored** `tools/slang/<rid>/` pair (the slangc executable + its slang-compiler
-> library) for win-x64, win-arm64, linux-x64, osx-x64 and osx-arm64. `tools/restore.{ps1,sh}` download the
+> library) for win-x64, linux-x64, osx-x64 and osx-arm64. `tools/restore.{ps1,sh}` download the
 > official shader-slang v2026.14.1 release zips, verify each zip's SHA-256 before extracting, and
 > verify each extracted file against its own pin. `release.yml`'s `pack-desktop` job hard-gates
-> the restored files and then fails red if the packed nupkg is missing any of the ten natives
+> the restored files and then fails red if the packed nupkg is missing any of the eight natives
 > or `THIRD-PARTY-NOTICES.txt` (exact entry names). The list lives in ONE script,
 > `tools/verify-slang-nupkg.sh`, which `tools/verify-slang-packaging.sh` (pack-consume.yml) runs
 > too; to check a locally packed nupkg, `bash tools/verify-slang-nupkg.sh <path/to/nupkg>` (exits
@@ -256,11 +277,11 @@ first (the `/release` skill does this for you).
 > (under Rosetta 2, output byte-identical to osx-arm64; issue #352). Host floors are upstream's:
 > Linux Ubuntu 22.04+, macOS 26+ (issue #237).
 
-> **win-arm64 (issue #286):** the packaged **win-arm64** slangc, and the core pipeline as a native
-> arm64 process, run only in the `win-arm64` workflow (`windows-11-arm`). Before dispatching, run it
-> on the branch or tag that points at the release commit (`gh workflow run win-arm64.yml --ref main`,
-> or `--ref v<version>`; `--ref` takes a branch or tag, not a SHA), check the run's head SHA is the
-> release commit, and wait for green.
+> **win-arm64 (issue #286):** the core pipeline as a native arm64 process (byte identity with
+> win-x64) and `ShadowDusk.Slang`'s `SD0620` there run only in the `win-arm64` workflow
+> (`windows-11-arm`). Before dispatching, run it on the branch or tag that points at the release
+> commit (`gh workflow run win-arm64.yml --ref main`; `--ref` takes a branch or tag, not a SHA),
+> check the run's head SHA is the release commit, and wait for green. No win-arm64 slangc is packed.
 
 ---
 

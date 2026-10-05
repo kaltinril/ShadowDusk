@@ -1,0 +1,192 @@
+# .github/workflows/android-emulator.yml
+# Issue #304: the Android on-device checks, on a real Android emulator in CI instead of only by
+# hand. validation/AndroidGl/run-dxc-identity-checks.ps1 builds the validation/AndroidGl app
+# (a real .NET-for-Android MonoGame app) five times, installs each APK on an API-34 x86_64
+# emulator, launches it and reads the verdict from logcat:
+#
+#   1. pinned        the restored pinned x86_64 DXC + SPIRV-Cross -> ON-DEVICE COMPILE OK
+#                    (HLSL text -> DXC -> SPIR-V -> SPIRV-Cross -> GLSL -> .mgfx, compiled ON
+#                    the device and loaded into a live MonoGame Effect: the Phase 50 proof, on
+#                    the MonoGame Android version validation/AndroidGl pins)
+#   2. foreign       a DXC whose GNU build id differs by one byte    -> SD0219 (issue #289)
+#   3. missing       no DXC in the APK                              -> SD0219, never a raw
+#                                                                       DllNotFoundException
+#   4. spvc-foreign  a SPIRV-Cross with one build-id byte flipped    -> SD0103 (issue #350)
+#   5. spvc-missing  no SPIRV-Cross in the APK                       -> SD0103
+#
+# Scenario 1 also compiles the OpenGL fixture corpus ON the device (CorpusCheck.cs) and requires
+# its SPIR-V (DXC), GLSL (SPIRV-Cross) and .mgfx to be byte-identical to the committed desktop
+# manifests; a positive control (one manifest hash changed) must be reported as a mismatch.
+#
+# The script exits non-zero on any wrong or missing verdict, so a mismatch fails the job.
+#
+# The x86_64 natives the emulator needs are restored by tools/restore.sh (SHA-256 pinned): DXC
+# from the native-dxc-android-1.7.2212.40-16k release, SPIRV-Cross from native-spirv-cross-android-d8e3e2b1; their GNU build ids are the android-x64 pins
+# in DxcNativeIdentity / SpvcLoader, so scenario 1 also proves the hosted files ARE the pinned
+# builds.
+#
+# Cadence: an emulator boot plus five APK builds is too slow and too environment-sensitive to
+# block every PR, so on a PR it is opt-in via the `run-android` label (project_rules.md); it
+# always runs on a push to main that touches the loaders, the harness or the restore pins,
+# weekly on a schedule, and on manual dispatch.
+name: Android emulator
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: '17 5 * * 1'   # Mondays 05:17 UTC
+  push:
+    branches: [ main ]
+    paths:
+      - 'src/ShadowDusk.Core/**'
+      - 'src/ShadowDusk.HLSL/**'
+      - 'src/ShadowDusk.GLSL/**'
+      - 'src/ShadowDusk.Compiler/**'
+      - 'validation/AndroidGl/**'
+      - 'tests/fixtures/shaders/**'
+      - 'tests/fixtures/golden/byte-identity/**'
+      - 'tools/restore.sh'
+      - 'Directory.Build.props'
+      - 'Directory.Build.targets'
+      - 'Directory.Packages.props'
+      - 'global.json'
+      - '.github/workflows/android-emulator.yml'
+  pull_request:
+    branches: [ main ]
+    # `labeled` so that adding run-android to an open PR starts the lane at once.
+    types: [ opened, synchronize, reopened, labeled ]
+
+# Least privilege: check out, build, run on an emulator, upload logs. Nothing needs a write scope.
+permissions:
+  contents: read
+
+env:
+  DOTNET_SKIP_FIRST_TIME_EXPERIENCE: '1'
+  DOTNET_NOLOGO: '1'
+  DOTNET_CLI_TELEMETRY_OPTOUT: '1'
+
+jobs:
+  android-identity:
+    name: Android emulator (DXC/SPIRV-Cross identity)
+    runs-on: ubuntu-latest
+    # On a PR: only with the run-android label, and a `labeled` event only for that label (any
+    # other label added to the PR must not start, or restart, the lane).
+    if: |
+      github.event_name != 'pull_request' ||
+      (contains(github.event.pull_request.labels.*.name, 'run-android') &&
+       (github.event.action != 'labeled' || github.event.label.name == 'run-android'))
+    # Job-level, so a run whose job is skipped (another label added) never cancels a live one.
+    concurrency:
+      group: ${{ github.workflow }}-${{ github.ref }}
+      cancel-in-progress: true
+    timeout-minutes: 60
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      # ubuntu runners expose /dev/kvm, but only root can open it until a udev rule says
+      # otherwise; without KVM the x86_64 emulator falls back to software and never boots in time.
+      - name: Enable KVM
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+
+      - name: Setup Java 17 (Android build tools)
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Setup .NET 8 + .NET 10
+        uses: actions/setup-dotnet@v5
+        with:
+          dotnet-version: |
+            8.0.x
+            10.0.x
+
+      - name: Install the .NET Android workload
+        run: dotnet workload install android
+
+      - name: Cache NuGet
+        uses: actions/cache@v5
+        with:
+          path: ~/.nuget/packages
+          key: nuget-android-${{ runner.os }}-${{ hashFiles('**/packages.lock.json', '**/Directory.Packages.props') }}
+          restore-keys: |
+            nuget-android-${{ runner.os }}-
+
+      - name: Cache the x86_64 Android natives
+        uses: actions/cache@v5
+        with:
+          path: |
+            tools/dxc/android-x64
+            tools/spirv-cross/android-x64
+          key: android-x64-natives-${{ runner.os }}-${{ hashFiles('tools/restore.sh') }}
+
+      # Restores (among the rest) tools/dxc/android-x64/libdxcompiler.so and
+      # tools/spirv-cross/android-x64/libspirv-cross.so, SHA-256 verified. A failed download only
+      # warns in restore.sh, so the next step makes a missing file the job's real failure.
+      - name: Restore native tools
+        run: |
+          chmod +x tools/restore.sh
+          ./tools/restore.sh
+
+      - name: Require the x86_64 Android natives
+        run: |
+          for f in tools/dxc/android-x64/libdxcompiler.so tools/spirv-cross/android-x64/libspirv-cross.so; do
+            if [ ! -f "$f" ]; then
+              echo "::error::restored native missing: $f (tools/restore.sh could not provision the hosted, pinned asset)"
+              exit 1
+            fi
+            sha256sum "$f"
+          done
+
+      # The SDK packages the app's TFM needs (platform 35, build tools) that the image may lack.
+      - name: Install Android SDK dependencies
+        run: |
+          dotnet build validation/AndroidGl/AndroidGl.csproj -t:InstallAndroidDependencies \
+            -p:AndroidSdkDirectory="$ANDROID_HOME" -p:AcceptAndroidSdkLicenses=True
+
+      # Build once before the emulator boots, so the five scenario builds are incremental and
+      # a compile error fails here with a clear log, not inside the emulator step.
+      # XA0141 is the Android SDK's warning that a bundled .so is not 16 KB page aligned. Google
+      # Play requires 16 KB page support for apps targeting Android 15+, so every native this app
+      # bundles (the same files ShadowDusk.HLSL / ShadowDusk.GLSL pack) must pass it.
+      - name: Build validation/AndroidGl (and require 16 KB aligned natives)
+        run: |
+          set -o pipefail
+          dotnet build validation/AndroidGl/AndroidGl.csproj -c Debug -p:AndroidSdkDirectory="$ANDROID_HOME" 2>&1 | tee androidgl-build.log
+          if grep -q 'XA0141' androidgl-build.log; then
+            grep 'XA0141' androidgl-build.log | sort -u
+            echo "::error::a native bundled into the APK is not 16 KB page aligned (XA0141)"
+            exit 1
+          fi
+
+      - name: Run the identity checks on an API-34 x86_64 emulator
+        uses: reactivecircus/android-emulator-runner@v2
+        env:
+          AndroidSdkDirectory: ${{ env.ANDROID_HOME }}
+        with:
+          api-level: 34
+          arch: x86_64
+          target: google_apis
+          profile: pixel_7
+          disk-size: 6000M
+          emulator-boot-timeout: 900
+          emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none -no-snapshot
+          disable-animations: true
+          # The action runs each script line in its own `sh -c`, hence the bash wrapper for pipefail.
+          script: |
+            adb devices
+            adb shell getprop ro.product.cpu.abi
+            bash -c 'set -o pipefail; pwsh -NoProfile -File ./validation/AndroidGl/run-dxc-identity-checks.ps1 -TimeoutSeconds 300 2>&1 | tee android-identity.log'
+
+      - name: Upload the log
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: android-identity-log
+          path: android-identity.log
+          if-no-files-found: ignore
+          retention-days: 14

@@ -1,0 +1,202 @@
+{
+  "OpenGL/AnnotatedTechnique.fx": {
+    "glsl": "3254d2575f98668666e1ef6521483af041d0f15f8841d89f40103c223b1097a3",
+    "spirv": "147deef42b54c0ee76a7b5136999df152820800e7ca09d7943754c32b061a648"
+  },
+  "OpenGL/ArrayUniform.fx": {
+    "glsl": "46fe3d0641eb5a6078e76f72fd28ba4b937ff926dc806b6800419588d6158b83",
+    "spirv": "f17b88b7ace3447f7159a8125921ad0f4bb5e4c06caf1d2d5f75cc5af52e02ff"
+  },
+  "OpenGL/ArrayUniformVs.fx": {
+    "glsl": "9f9df3050138a383245c7931c2dbd8668f37e3d33e6f045a4a750e1d181cd0e1",
+    "spirv": "42a695eaf76d5b1262016f2085112011789ceaa14f95f339ebca58cc565d23d7"
+  },
+  "OpenGL/BasicShader.fx": {
+    "glsl": "ac9e7d56d0ccb9c0bb4389252fa6e61f318f1dd268b4a7b77184c7137a1f3275",
+    "spirv": "d694a3b6cf7e6c0ff20d55f974b3deb9d71be1fa149dcde1f852ead08ea5ebfd"
+  },
+  "OpenGL/BlendShader.fx": {
+    "glsl": "67072cc5a746dde484e81b1b3f16478cf6439ea997133bdf3d6ec6faba7c961e",
+    "spirv": "19113462837555386ebdd260072c4bd0a3ec6238557f85b3b0301a716c51dc39"
+  },
+  "OpenGL/ClipShader.fx": {
+    "glsl": "4379805308d5880a55ca94ab36010b3f9200ea91493b0ad642e71d421cda04e4",
+    "spirv": "fde285c414f6afdd712e306a81e3f7b80a2674caaf31644f37c8f291e7b427b7"
+  },
+  "OpenGL/ClipShaderNew.fx": {
+    "glsl": "aa3adcc52023f763cb9c415fbe2774bcaae7669cb1eae9aafad8ec97835547d5",
+    "spirv": "bc304856875124feab5af69cf49ed7c191dbe9c59d7d14968bd17c9513f1a0be"
+  },
+  "OpenGL/ClipShaderSpriteTarget.fx": {
+    "glsl": "4379805308d5880a55ca94ab36010b3f9200ea91493b0ad642e71d421cda04e4",
+    "spirv": "fde285c414f6afdd712e306a81e3f7b80a2674caaf31644f37c8f291e7b427b7"
+  },
+  "OpenGL/Dissolve.fx": {
+    "glsl": "fb36ac5878437667c7707c0561bdc513ba3afb001db56a42cfc9a0d70217ec47",
+    "spirv": "7b10b27cb2dd3469a59aaf2de6e13b2680999886e7baf90c55c22998c3d18713"
+  },
+  "OpenGL/Dots.fx": {
+    "glsl": "36cf233eef3a92b66c017ed2d271e80b8a2fe4a7909abba1d3a99a19f5d2e448",
+    "spirv": "5fca23ebec0547f1128d074f0d7b5b064a448efaa0b29f58dabb5038a0ee4a0d"
+  },
+  "OpenGL/Fading.fx": {
+    "glsl": "dca04f92d7834443cce42726c26292cae6fbaf2cd95995ee14286541cfbaaae5",
+    "spirv": "a9ac8ab942cf0c418baca457f862b713ced580d0884ba8e3df0a960daa1e8f11"
+  },
+  "OpenGL/FnaMultiPassStates.fx": {
+    "glsl": "beb097a61bf90774e0992f87a91ba076ef93bc3997c711a5985b93e8ca05272f",
+    "spirv": "c8c29070f2857b2521e9bcf7f034d5556165cc4e79327de85889e0822f89fd97"
+  },
+  "OpenGL/Grayscale.fx": {
+    "glsl": "61e0745409c0376deef28a9f8c475e7ac0b8c26f7670c2646dc51a384c0fc85c",
+    "spirv": "16ab48d75f6b9d0386b64ff12479b29c06235b3dd4780bbce34b78dcc1b73eeb"
+  },
+  "OpenGL/ImplicitTruncationWarning.fx": {
+    "glsl": "ac9e7d56d0ccb9c0bb4389252fa6e61f318f1dd268b4a7b77184c7137a1f3275",
+    "spirv": "f56041297bbadf1f452020eb31f8433dbb0da0f1e48e297896e3c247e0ca06a6"
+  },
+  "OpenGL/Invert.fx": {
+    "glsl": "3e99c2609a999d9a9716c695430b74a8e2d1c0a3e8974aa5c1819fb4612e1697",
+    "spirv": "1fb059432816157c67dab29c5fb76828b707fb6685d5058602d0a670c48698df"
+  },
+  "OpenGL/Minimal.fx": {
+    "glsl": "57f2ca0ba1e493b9fd1d5c3435578e195c211c53aed5e26e1b2cc7f59b8f9a94",
+    "spirv": "53718e86b29a3769f440dc19b90217e680b08afcdb151efa72c2e53f80acaa6b"
+  },
+  "OpenGL/MultiCbuffer.fx": {
+    "glsl": "ac1e05d0ec91ec2fe9ff1bb9899525b5648cfe77da505fe95f50d815b084839c",
+    "spirv": "a04e0076a32f16d001d78116e5c92f80a4eab54b1dbaa0fc6ede2de5879cfe8a"
+  },
+  "OpenGL/MultiCbufferVs.fx": {
+    "glsl": "d338f024eb3478e8422b2fdf40cb37925797c7c6712ef96a82a6e99e9732e7c0",
+    "spirv": "79fa97ff7a8d6ff95229c664ff2279b5c316cf0ba6414a2f6a705c59ba6218b9"
+  },
+  "OpenGL/MultiTexture.fx": {
+    "glsl": "4fc25754a1122cf52455cc11442a4e95910498ae72f4aa936cad645adc6ab723",
+    "spirv": "be4837b14b7a9dd100df814e621d88a931ef24ef1a0b4918647fda8dc9d665c5"
+  },
+  "OpenGL/MultiTextureOverlay.fx": {
+    "glsl": "741fee802dd7e3249d31aa2afd996a68b16c6d3789f2cad264ecf3b8888d92e6",
+    "spirv": "2bb11845c5afdfdcbf7dfe85978eb4f38bc39e8fadcd2162a502da7c7c48f58f"
+  },
+  "OpenGL/Pixelated.fx": {
+    "glsl": "48bc82886a1e5d4daf4bb0b0f93971094920d80d3869e2971f3c4d7648ac20ee",
+    "spirv": "2842b77b3fe3cc50e15613abe239c2624947da2edaf82ae54f531668ef10d9d5"
+  },
+  "OpenGL/PolygonLight.fx": {
+    "glsl": "4de8082359d3438c18f6ae082286d29b1c823eb3f541f4880eecd77431557312",
+    "spirv": "6aff38c99e6dfd4e91e5ef3a276f27fdd1de164b669a4f161cf86da68318de37"
+  },
+  "OpenGL/SamplerStatesFull.fx": {
+    "glsl": "717ce6a41007c68ee3a5a742a45a7ece7111972d6478e8d2874a097b3effc256",
+    "spirv": "8e63c99935596cdd69af6e2da067809b8348cb8156d1a62962dfb4a984d34b95"
+  },
+  "OpenGL/Saturate.fx": {
+    "glsl": "30d97f98129a96f2c853b81e8376297b78ed14dc48c861fbc3ca7d5d5546fc66",
+    "spirv": "81923d9fd6b85a6168a2569d390f0e0a9885baa2b1dc2de9f347d01e15770161"
+  },
+  "OpenGL/Scanlines.fx": {
+    "glsl": "226ec9e8cf626363c8f203d30f1abd28d588c56da333e338a9ec72dbc736ee44",
+    "spirv": "0d2aac6036f9f184a739302ac72699c2bc12450890cd6096e66391487e027015"
+  },
+  "OpenGL/Sepia.fx": {
+    "glsl": "ad0dd9c308631e22a5c70f62bd71876943551df5aeba071b036623bb7b85cef4",
+    "spirv": "455121060aebd360b56cd0f4219a0eb63ea6c73299c7c0da612ce010dc36ce35"
+  },
+  "OpenGL/SharedCbuffer.fx": {
+    "glsl": "9216407f761fe1c0c3317b298de18800535ce383d9987302bd64918c77bd9d01",
+    "spirv": "a97998754b385a88c6629799b9fb09b22c196725e92c748e4e4478b682a78ef4"
+  },
+  "OpenGL/SimpleLightShader.fx": {
+    "glsl": "6615219d3d2b1b35872806651e2552b1f92331e1c7ef39079fdabe2ceffc1c3a",
+    "spirv": "82ae7bf9ea91ba4faa3761e94d1de1a4abb3943cb408a940eeafd76804ea8d44"
+  },
+  "OpenGL/Sm3SemanticStructs.fx": {
+    "glsl": "2464bb300894d79329498ea0b5eec2364190ab1820f4f5aad7160f16f1acea7b",
+    "spirv": "85d1ec9010c598b182dc3f380e6e1ddedc6572566f54fceca77ea2b02ac5f70d"
+  },
+  "OpenGL/SpriteAlphaTest.fx": {
+    "glsl": "6688cd2f00b19abce9a5c70489571a311d9b89f821b0804335009f07305c6964",
+    "spirv": "aa4fe8a5cf2d06f4788e168ce6fe4a9bc65c8316dac1abb5c0659d7e374e4ec0"
+  },
+  "OpenGL/StateBlendAdditive.fx": {
+    "glsl": "46a14a621a901cf25a2ff65f01c254321871cd3b87b12bcbb862e935558c50af",
+    "spirv": "ea941598663343702c83324e4f9cee73a08af39af171545c81ff117b216fe216"
+  },
+  "OpenGL/StateDepthStencil.fx": {
+    "glsl": "ac9e7d56d0ccb9c0bb4389252fa6e61f318f1dd268b4a7b77184c7137a1f3275",
+    "spirv": "d694a3b6cf7e6c0ff20d55f974b3deb9d71be1fa149dcde1f852ead08ea5ebfd"
+  },
+  "OpenGL/StateRasterizer.fx": {
+    "glsl": "ac9e7d56d0ccb9c0bb4389252fa6e61f318f1dd268b4a7b77184c7137a1f3275",
+    "spirv": "d694a3b6cf7e6c0ff20d55f974b3deb9d71be1fa149dcde1f852ead08ea5ebfd"
+  },
+  "OpenGL/Teleport.fx": {
+    "glsl": "085bc9dc944b00d8148e6908ac8cb07c7f9a958fdf0d272f2d5c7ff62b5b486e",
+    "spirv": "d09576490c0e12098cb6737fc2af5dc785112c5e42acc7d72a79527b08f60d35"
+  },
+  "OpenGL/TintShader.fx": {
+    "glsl": "4f1e1d5d4f214edebabcffcb676722e9920a543a2a2c53c6f5deac81d76a88db",
+    "spirv": "e9eaa1f09c01cdf1a59f8ee4a3a3d76a2f7fb9304097c2597e40f8a4da5e76f7"
+  },
+  "OpenGL/VertexAndPixel.fx": {
+    "glsl": "426e2b78c198e6c4f6ca5c3c692065c6cf315770f90bfeec8f53055e8b04e965",
+    "spirv": "5b925bb859d4ab6784248d8a9a3486236614c3d60fb6a621b863d599e4fec85b"
+  },
+  "OpenGL/VsTransformColorTexture.fx": {
+    "glsl": "094b18347e276c5513f84afa33054346cd569af463888a2b74ba6a6f7d45361b",
+    "spirv": "53364ab7cdefb2f80eb3a8ba15708bc1436d7bc0a340166a3cf9c5063085b3c9"
+  },
+  "OpenGL/annotations.fx": {
+    "glsl": "2a36663902739b45bea96c268c54234e2f3fcea67d85c38eeb5357ccd938b88b",
+    "spirv": "18f6c0b327637e5dfd01a9e97812ba05ec50d9c9acf8a4f2b3076a5979e5a6b4"
+  },
+  "OpenGL/basiceffect-mini.fx": {
+    "glsl": "55fbc478ddabcd68a79791201e36610861be61f79914d07e16aca81417fcf68c",
+    "spirv": "981e860873d9bbe508df6bb824bbb0fb7ec00fbd7f6effc32ec60c00fe404a42"
+  },
+  "OpenGL/cbuffer.fx": {
+    "glsl": "7a0953d9e276976d22a33117c486601746bbcf2633e0f5144550cc8c609de870",
+    "spirv": "02ef898a4feb202c30c8ea33190951d803a741bfe58c57c292ceeb744fcd9b75"
+  },
+  "OpenGL/examples/ExBareSamplerTex2D.fx": {
+    "glsl": "98739a9fada8364f15a6a441d5ee04a6cbc89c3a1ccfdc2d46d0846e9d5b4e23",
+    "spirv": "34eeac929beec7de8b3c9bdeb29cd59ba9bad7f238ec6760d53404186d1e0bb1"
+  },
+  "OpenGL/examples/ExDualTexture.fx": {
+    "glsl": "cf10fec800b48c821d677e37147da0cc04d36370dc4e16ada401dada1388d3a3",
+    "spirv": "51d171db524f6c9a019f72c314f35523e3d15f06b63ccdb18ce7979d3439ba94"
+  },
+  "OpenGL/examples/ExLegacyTextureDiscard.fx": {
+    "glsl": "0962ae6b0ff957a52ec0e873d56ebe1c0dd76f0240817102d34379bd751d43f8",
+    "spirv": "6d24b7671c78e97d3e95f8d446cdcc5a26d582a60d9f93ef28d75718a90f760d"
+  },
+  "OpenGL/examples/ExReservedWordUniform.fx": {
+    "glsl": "400438432faf8df75751592b3030fc943ed290a8e3c584be2185fbe2dc72e53b",
+    "spirv": "f55bc826d2dc1be4f804564d2773c2156d56c7e3d6e40fa0ba82e4f4703cc6b8"
+  },
+  "OpenGL/examples/ExSamplerStateUniform.fx": {
+    "glsl": "4f1e1d5d4f214edebabcffcb676722e9920a543a2a2c53c6f5deac81d76a88db",
+    "spirv": "e9eaa1f09c01cdf1a59f8ee4a3a3d76a2f7fb9304097c2597e40f8a4da5e76f7"
+  },
+  "OpenGL/multipass.fx": {
+    "glsl": "16e4246704c25d0a10f63eb347f934fd0b09fed685af525230e6845cd038d1fe",
+    "spirv": "81e9a312f6e18fbfff01f74b54d6c4337e635011e3364bcfecec77699f7c04cc"
+  },
+  "OpenGL/multitechnique.fx": {
+    "glsl": "a2d87522caf8264ad900973f8c753081943cabc0c63e5db295dac79157cca2b6",
+    "spirv": "c0b3ab58ee9e6379b4937d2a0bc1cdc67b5f8e2381dee985f2ae2055bfb0937c"
+  },
+  "OpenGL/platform-macros.fx": {
+    "glsl": "d6f7498165d370f624fb5e2e3d432c0afc62b9bc0783888cdfda41f86365a665",
+    "spirv": "993eb083c4c58de0eb6b728a3e24230720981c972519fe80ed59013f8bfc82d6"
+  },
+  "OpenGL/render-states.fx": {
+    "glsl": "8c898aa7c0e42100eec434c9e81f59c562484d7d93e97a262d0dad124726ce7a",
+    "spirv": "08563f2efcb619c7e70b4f6b5a2829f1be1aad5612560d93eb680d693da88ad3"
+  },
+  "OpenGL/textured.fx": {
+    "glsl": "4cef497ddda68b59bb3ed963cf9768b11e2c7b5cd280e18dd2d5989cc6d6798a",
+    "spirv": "e7982fc351fe05732e474d4cdac5f015e95b01aa13b992f5bc0c50750602b896"
+  }
+}

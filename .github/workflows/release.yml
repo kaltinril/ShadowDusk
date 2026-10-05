@@ -193,13 +193,24 @@ jobs:
         uses: actions/cache@v5
         with:
           path: tools/dxc
-          key: dxc-1.7.2212.40-${{ runner.os }}
+          key: dxc-${{ runner.os }}-${{ hashFiles('tools/restore.sh', 'tools/restore.ps1') }}
+
+      # The Android SPIRV-Cross natives (android-arm64 packed, android-x64 for the emulator lane;
+      # about 9 MB together), keyed on restore.sh so a re-pin invalidates it. restore.* re-verifies
+      # the SHA-256 of a cached file and re-downloads on a mismatch.
+      - name: Cache Android SPIRV-Cross natives
+        uses: actions/cache@v5
+        with:
+          path: |
+            tools/spirv-cross/android-arm64
+            tools/spirv-cross/android-x64
+          key: spirv-cross-android-${{ runner.os }}-${{ hashFiles('tools/restore.sh', 'tools/restore.ps1') }}
 
       - name: Cache slangc natives
         uses: actions/cache@v5
         with:
           path: tools/slang
-          key: slang-2026.14.1-5rid-${{ runner.os }}
+          key: slang-2026.14.1-${{ runner.os }}
 
       # No `|| true`: a genuine restore failure must fail the release, not surface
       # later as a broken package.
@@ -225,8 +236,6 @@ jobs:
             'tools/spirv-cross/android-arm64/libspirv-cross.so' \
             'tools/slang/win-x64/slangc.exe' \
             'tools/slang/win-x64/slang-compiler.dll' \
-            'tools/slang/win-arm64/slangc.exe' \
-            'tools/slang/win-arm64/slang-compiler.dll' \
             'tools/slang/linux-x64/slangc' \
             'tools/slang/linux-x64/libslang-compiler.so.0.2026.14.1' \
             'tools/slang/osx-x64/slangc' \
@@ -251,7 +260,7 @@ jobs:
       # front-end (zero natives, no ProjectReferences): it is NOT in the
       # ShadowDusk.Compiler dependency graph, so pack-consume.yml does not pull it.
       # ShadowDusk.Slang is the opt-in real-slangc Slang front-end (Phase 66): it depends on
-      # ShadowDusk.Compiler and carries slangc for five RIDs, gated below.
+      # ShadowDusk.Compiler and carries slangc for four RIDs, gated below.
       - name: Pack desktop packages
         run: |
           for proj in \
@@ -325,14 +334,14 @@ jobs:
           done
           exit $missing
 
-      # ShadowDusk.Slang (issues #226, #286): the real slangc for all five desktop RIDs plus its
+      # ShadowDusk.Slang (issue #226): the real slangc for all four desktop RIDs plus its
       # Apache-2.0 notice. Its csproj entries are Exists()-conditioned like HLSL's, so a pack
       # without the restored natives SILENTLY ships a package whose every compile fails SD0621
       # on that RID. Fail the release red instead (project_decisions.md: a missing native fails
       # the release, it does not warn). The exact-name list lives in ONE place,
       # tools/verify-slang-nupkg.sh, which tools/verify-slang-packaging.sh (pack-consume.yml)
       # also runs, and which a release driver can run locally against a packed nupkg.
-      - name: Verify ShadowDusk.Slang contains slangc for all five RIDs + Apache-2.0 notice
+      - name: Verify ShadowDusk.Slang contains slangc for all four RIDs + Apache-2.0 notice
         run: |
           pkg=$(find nupkg -maxdepth 1 -name 'ShadowDusk.Slang.[0-9]*.nupkg' ! -name '*.snupkg' | head -1)
           chmod +x tools/verify-slang-nupkg.sh

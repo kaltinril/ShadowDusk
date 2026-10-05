@@ -116,7 +116,18 @@ jobs:
         uses: actions/cache@v5
         with:
           path: tools/dxc
-          key: dxc-1.7.2212.40-${{ runner.os }}
+          key: dxc-${{ runner.os }}-${{ hashFiles('tools/restore.sh', 'tools/restore.ps1') }}
+
+      # The Android SPIRV-Cross natives (android-arm64 packed, android-x64 for the emulator lane;
+      # ~80 MB together), keyed on restore.sh so a re-pin invalidates it. restore.* re-verifies
+      # the SHA-256 of a cached file and re-downloads on a mismatch.
+      - name: Cache Android SPIRV-Cross natives
+        uses: actions/cache@v5
+        with:
+          path: |
+            tools/spirv-cross/android-arm64
+            tools/spirv-cross/android-x64
+          key: spirv-cross-android-${{ runner.os }}-${{ hashFiles('tools/restore.sh', 'tools/restore.ps1') }}
 
       # Restore the vkd3d-shader natives (DirectX DXBC backend + the FNA target's
       # engine) and the macOS DXC dylibs (OpenGL frontend on macOS, Phase 37 A).
@@ -312,16 +323,27 @@ jobs:
         uses: actions/cache@v5
         with:
           path: tools/dxc
-          key: dxc-1.7.2212.40-${{ runner.os }}
+          key: dxc-${{ runner.os }}-${{ hashFiles('tools/restore.sh', 'tools/restore.ps1') }}
 
-      # slangc for all five RIDs (ShadowDusk.Slang, issues #227, #286): ~170 MB of release zips to
+      # The Android SPIRV-Cross natives (android-arm64 packed, android-x64 for the emulator lane;
+      # ~80 MB together), keyed on restore.sh so a re-pin invalidates it. restore.* re-verifies
+      # the SHA-256 of a cached file and re-downloads on a mismatch.
+      - name: Cache Android SPIRV-Cross natives
+        uses: actions/cache@v5
+        with:
+          path: |
+            tools/spirv-cross/android-arm64
+            tools/spirv-cross/android-x64
+          key: spirv-cross-android-${{ runner.os }}-${{ hashFiles('tools/restore.sh', 'tools/restore.ps1') }}
+
+      # slangc for all four RIDs (ShadowDusk.Slang, issue #227): ~170 MB of release zips to
       # download otherwise. The restore scripts hash-verify every file, so a stale or corrupt
       # cache entry self-heals.
       - name: Cache slangc natives
         uses: actions/cache@v5
         with:
           path: tools/slang
-          key: slang-2026.14.1-5rid-${{ runner.os }}
+          key: slang-2026.14.1-${{ runner.os }}
 
       - name: Restore native tools (Linux / macOS)
         if: runner.os != 'Windows'
@@ -351,6 +373,10 @@ jobs:
             'tools/vkd3d/osx-arm64/libvkd3d-shader.1.dylib' \
             'tools/dxc/osx-x64/libdxcompiler.dylib' \
             'tools/dxc/osx-arm64/libdxcompiler.dylib' \
+            'tools/dxc/android-arm64/libdxcompiler.so' \
+            'tools/dxc/android-x64/libdxcompiler.so' \
+            'tools/spirv-cross/android-arm64/libspirv-cross.so' \
+            'tools/spirv-cross/android-x64/libspirv-cross.so' \
             'tools/slang/win-x64/slangc.exe' \
             'tools/slang/win-x64/slang-compiler.dll' \
             'tools/slang/linux-x64/slangc' \
@@ -475,6 +501,10 @@ jobs:
           SHADOWDUSK_REQUIRE_VKD3D: "1"
           SHADOWDUSK_REQUIRE_DXC: "1"
           SHADOWDUSK_HANG_DUMP_DIR: ${{ github.workspace }}/TestResults/probe-hangs
+          # DxcTargetsCrossHostByteIdentityTests writes each fixture's SPIR-V / DXIL (and its
+          # disassembly) here, uploaded below on failure, so a cross-host mismatch can be diffed
+          # against the win-x64 dump instead of guessed at.
+          SHADOWDUSK_BYTE_IDENTITY_DUMP: ${{ github.workspace }}/TestResults/dxc-identity
         run: >
           dotnet test ShadowDusk.slnx --no-build -c Release -m:2
           --filter "Category=Integration"
@@ -572,6 +602,15 @@ jobs:
           name: integration-results-${{ matrix.os }}
           path: TestResults/*.trx
           retention-days: 14
+
+      - name: Upload DXC cross-host identity dumps
+        if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: dxc-identity-dumps-${{ matrix.os }}
+          path: TestResults/dxc-identity/**
+          retention-days: 14
+          if-no-files-found: ignore
 
       # cancelled() too: if the job timeout ever does fire, the dumps taken so far still upload.
       # TestResults/hang-dumps is the sidecar's output (stacks, sample, createdump, its log);

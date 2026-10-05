@@ -104,13 +104,12 @@ public sealed class VerifySlangNupkgScriptTests : IDisposable
         var result = await RunScriptAsync([.. ScriptEntries()]);
 
         result.ExitCode.ShouldBe(0, result.Output);
-        result.Stdout.ShouldContain("all 10 slangc natives", Case.Sensitive);
+        result.Stdout.ShouldContain("all 8 slangc natives", Case.Sensitive);
     }
 
     [BashTheory]
     [InlineData("runtimes/osx-x64/native/slangc")]
     [InlineData("runtimes/win-x64/native/slang-compiler.dll")]
-    [InlineData("runtimes/win-arm64/native/slangc.exe")]
     [InlineData("runtimes/linux-x64/native/slangc")]
     public async Task PackageMissingANative_ExitsOne_NamingIt(string missing)
     {
@@ -166,7 +165,7 @@ public sealed class VerifySlangNupkgScriptTests : IDisposable
                 expected.Add(NoticesEntry);
         }
         expected.ShouldContain(NoticesEntry);
-        expected.Count(e => e.StartsWith("runtimes/", StringComparison.Ordinal)).ShouldBe(10, "5 RIDs x (slangc + slang-compiler library)");
+        expected.Count(e => e.StartsWith("runtimes/", StringComparison.Ordinal)).ShouldBe(8, "4 RIDs x (slangc + slang-compiler library)");
 
         ScriptEntries().ShouldBe(expected, ignoreOrder: true,
             "tools/verify-slang-nupkg.sh and ShadowDusk.Slang.csproj disagree on what the package must contain");

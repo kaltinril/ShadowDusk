@@ -15,15 +15,26 @@ var result = await new SlangCompiler().CompileAsync(
 byte[] mgfx = result.Value.Data;
 ```
 
-Nothing to install: `slangc` rides inside this package for **win-x64, win-arm64, linux-x64, osx-x64
-and osx-arm64** and resolves from your app's own output, whether you `dotnet run` or publish
+The same route also feeds ShadowDusk's source-text converters, for SkiaSharp and raylib
+(fragment-only, with the converters' own limits and `SD06xx` refusals):
+
+```csharp
+var sksl = new SlangCompiler().ConvertToSksl(slangSource, new SkslConvertOptions { SourceName = "Fx.slang" });
+var raylib = new SlangCompiler().ConvertToRaylib(slangSource, new RaylibConvertOptions { SourceName = "Fx.slang" });
+```
+
+Nothing to install: `slangc` rides inside this package for **win-x64, linux-x64, osx-x64 and
+osx-arm64** and resolves from your app's own output, whether you `dotnet run` or publish
 self-contained. Two host floors come from the upstream binaries themselves:
 
 - **Linux** needs a GCC 11+ `libstdc++` (Ubuntu 22.04 or later).
-- **Windows on Arm** (win-arm64): OpenGL, Vulkan and DirectX 12 compile, byte-identical to win-x64. DirectX 11 and FNA return `SD0211`, because ShadowDusk has no vkd3d-shader build for win-arm64.
 - **macOS** needs **macOS 26 or later**: the upstream macOS build declares that minimum. ShadowDusk does not build its own slangc for older macOS; open an issue if you need one.
 
-On any other host, `SlangCompiler` returns `SD0620` naming the reason instead of crashing.
+On any other host, `SlangCompiler` returns `SD0620` naming the reason instead of crashing. That
+includes Windows on Arm (win-arm64): upstream publishes a slangc for it, but it is not bundled, to
+keep the package small for everyone else. Open an issue at
+https://github.com/kaltinril/ShadowDusk/issues if you need it. (An x64 process on Windows on Arm
+is a win-x64 host and works.)
 
 Parameter names are the ones you wrote: cbuffer members, `Texture2D`/`SamplerState` globals,
 and a combined `Sampler2D Comb;`, whose texture reflects as `Comb`

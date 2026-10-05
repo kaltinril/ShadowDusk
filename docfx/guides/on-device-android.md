@@ -60,24 +60,21 @@ Effect effect = new Effect(GraphicsDevice, mgfx);   // a live Effect, compiled o
 
 If you are building ShadowDusk from source rather than from a published package, the Android native binaries are produced by the NDK build scripts and staged under `tools/`:
 
-- **SPIRV-Cross** — a stock NDK CMake cross-compile of the pinned source:
+- **SPIRV-Cross** — an NDK CMake cross-compile of the **same SPIRV-Cross commit the desktop runs** (`d8e3e2b1`, what Silk.NET.SPIRV.Cross.Native 2.23.0 is built from), so the GLSL an Android device produces is the desktop's. One script pins the commit, the NDK (r27c), the API level and every flag, and its output is byte-reproducible:
 
   ```
-  cmake -S SPIRV-Cross -B build -G Ninja \
-    -DCMAKE_TOOLCHAIN_FILE=<NDK>/build/cmake/android.toolchain.cmake \
-    -DANDROID_ABI=arm64-v8a -DANDROID_PLATFORM=android-24 \
-    -DSPIRV_CROSS_SHARED=ON -DSPIRV_CROSS_CLI=OFF -DSPIRV_CROSS_ENABLE_TESTS=OFF
+  tools/build-spirv-cross-android.sh <NDK r27c dir> <out dir>
   ```
 
-  Stage `libspirv-cross-c-shared.so` as `tools/spirv-cross/<rid>/libspirv-cross.so`.
+  It writes `<out>/android-arm64/libspirv-cross.so` and `<out>/android-x64/libspirv-cross.so`; stage them under `tools/spirv-cross/<rid>/`. (`tools/restore.*` downloads the CI-built, SHA-256-pinned copies instead.)
 
 - **DXC** — the pinned DirectXShaderCompiler cross-compiled for the NDK (a port of the WebAssembly recipe; it reuses the same host tablegen tools and CMake cross-compile patches):
 
   ```
-  ./.wasm-build/build-dxc-android.ps1 -Abi arm64-v8a   # and -Abi x86_64 for emulators
+  tools/build-dxc-android.sh <NDK r27c dir> <out dir> <work dir>   # Linux host
   ```
 
-  This stages a stripped `libdxcompiler.so` as `tools/dxc/<rid>/libdxcompiler.so`.
+  It pins the DXC commit, the NDK, the API level and every flag, links with 16 KB pages (Google Play requires 16 KB page support for apps targeting Android 15+), and is byte-reproducible; it writes `<out>/android-arm64/libdxcompiler.so` and `<out>/android-x64/libdxcompiler.so`. (`tools/restore.*` downloads the CI-built, SHA-256-pinned copies instead.)
 
 Bundle the per-ABI `.so` into your APK with `<AndroidNativeLibrary Include="..." Abi="arm64-v8a">` items (the published package does this for you). A worked, end-to-end harness — compile a shader on the device and render with it — lives in `validation/AndroidGl`.
 

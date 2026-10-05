@@ -25,7 +25,7 @@ assembled `.fx`, 21/21 each, max delta 0/1/1) and the FNA texture-object fix the
 upstream's macOS 26 floor (issue #237).
 
 **Depends on:** [Phase 61](DONE/PHASE-61-slang-support.md) (the shipped HLSL-compatible-subset
-frontend and its groundwork §6/§7/OQ2/OQ3) and [Phase 65](PHASE-65-full-slang-input-spike.md) (the
+frontend and its groundwork §6/§7/OQ2/OQ3) and [Phase 65](DONE/PHASE-65-full-slang-input-spike.md) (the
 spike that re-measured Phase 61's open questions against real slangc v2026.14.1 and is this
 phase's evidence base — **read it before writing any code**). This phase does not re-derive either;
 it acts on them.

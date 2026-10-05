@@ -1,0 +1,56 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    Issue #369 (Phase 62 Area D, D2): the Skia vs KNI render harness. The same XnaFiddle .fx goes
+    through SkslConverter into REAL SkiaSharp (SKRuntimeEffect, CPU raster) and through
+    EffectCompiler (OpenGL, MGFX v10) into a REAL KNI v4.2.9001 Effect on SDL2.GL, both over the
+    same source texels at the same size, and the two images are diffed at 2/255. Single process:
+    Skia's CPU raster needs no window, so it shares the process with KNI's SDL2 window.
+
+    SkiaSharp and KNI are driver-only dependencies: this project is not in ShadowDusk.slnx and is
+    never packed; NoMonoGameInProductLibrariesTests pins that no src/ project references either.
+
+    Central Package Management is ON: SkiaSharp comes from Directory.Packages.props (the same pin
+    the Compiler tests use). The nkast packages carry VersionOverride, so KNI stays out of the
+    core's central versions exactly as validation/KniDesktopGL keeps it out (that harness opts out
+    of CPM; this one only overrides the KNI lines). Same KNI version and wiring as KniDesktopGL.
+  -->
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net8.0</TargetFramework>
+    <RollForward>Major</RollForward>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <IsPackable>false</IsPackable>
+    <!-- KNI/SDL analyzers trip the repo-wide warnings-as-errors, as in every KNI harness. -->
+    <TreatWarningsAsErrors>false</TreatWarningsAsErrors>
+    <RootNamespace>ShadowDusk.Validation.SkiaVsKni</RootNamespace>
+    <DefineConstants>$(DefineConstants);DESKTOPGL</DefineConstants>
+    <KniPlatform>DesktopGL</KniPlatform>
+  </PropertyGroup>
+
+  <ItemGroup Label="KNI (nkast) - SDL2 desktop OpenGL runtime, v4.2.9001 (KNI v4.02 line)">
+    <PackageReference Include="nkast.Xna.Framework" VersionOverride="4.2.9001" />
+    <PackageReference Include="nkast.Xna.Framework.Content" VersionOverride="4.2.9001" />
+    <PackageReference Include="nkast.Xna.Framework.Graphics" VersionOverride="4.2.9001" />
+    <PackageReference Include="nkast.Xna.Framework.Audio" VersionOverride="4.2.9001" />
+    <PackageReference Include="nkast.Xna.Framework.Media" VersionOverride="4.2.9001" />
+    <PackageReference Include="nkast.Xna.Framework.Input" VersionOverride="4.2.9001" />
+    <PackageReference Include="nkast.Xna.Framework.Game" VersionOverride="4.2.9001" />
+    <PackageReference Include="nkast.Kni.Platform.SDL2.GL" VersionOverride="4.2.9001.1" />
+  </ItemGroup>
+
+  <ItemGroup Label="SkiaSharp (central pin; the Linux native keeps the ubuntu llvmpipe lane loading libSkiaSharp)">
+    <PackageReference Include="SkiaSharp" />
+    <PackageReference Include="SkiaSharp.NativeAssets.Linux.NoDependencies" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\ShadowDusk.Compiler\ShadowDusk.Compiler.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Compile Include="..\Shared\ShaderInputs.cs" />
+  </ItemGroup>
+
+</Project>

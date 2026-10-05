@@ -6,6 +6,19 @@
 
 ```
 ShadowDusk/
+├── .github/workflows/             # CI: ci.yml (build + unit + integration on ubuntu/macos/windows),
+│                                  #   validation-render.yml (the render gates CI can run: GL llvmpipe,
+│                                  #   DX on WARP, Vulkan on lavapipe), wasm.yml (WASM & browser gates),
+│                                  #   pack-consume.yml (cold consumers of the packed feed), docs.yml
+│                                  #   (DocFX site), release.yml (NuGet publish), android-emulator.yml
+│                                  #   (on-device Android checks, issue #304), win-arm64.yml (native win-arm64
+│                                  #   vs win-x64 byte identity, issue #286). Native builds (manual dispatch;
+│                                  #   the two Android ones also on PRs touching their recipe or the restore
+│                                  #   scripts), artifacts uploaded by hand to fixed native-* release tags:
+│                                  #   dxc-build.yml (macOS DXC), dxc-android-build.yml
+│                                  #   (tools/build-dxc-android.sh), spirv-cross-android-build.yml
+│                                  #   (tools/build-spirv-cross-android.sh), build-vkd3d-natives.yml
+│                                  #   (desktop vkd3d), vkd3d-wasm-build.yml (browser vkd3d)
 ├── src/
 │   ├── ShadowDusk.Core/          # Core types & contracts: IShaderCompiler, Result<T,E>, ShaderError,
 │   │                             #   CompilerOptions, CompiledShader, ShaderIR, MGFX writer, reflection
@@ -25,7 +38,7 @@ ShadowDusk/
 │   ├── ShadowDusk.ShaderToy/     # Pure-managed ShaderToy/GLSL → .fx front-end (ShaderToyConverter.Convert); ZERO
 │   │                             #   native + ZERO MonoGame dep; additive, upstream of the pipeline. PUBLISHED standalone NuGet (0.9.0).
 │   ├── ShadowDusk.Slang/         # SlangCompiler: REAL slangc-backed Slang front-end (import/generics/interfaces,
-│   │                             #   Phase 66) — bundles real slangc (win x64/arm64, linux x64, macOS x64/arm64), hands its HLSL emission to
+│   │                             #   Phase 66) — bundles real slangc (win/linux x64 + macOS x64/arm64), hands its HLSL emission to
 │   │                             #   the unchanged EffectCompiler pipeline. Opt-in, additive; the HLSL-compatible
 │   │                             #   .slang SUBSET (ShadowDusk.Compiler.Slang.SlangFrontend) stays the free default.
 │                                 # tools/setup-local-testing.ps1 is the one-command contributor setup:
@@ -54,7 +67,7 @@ ShadowDusk/
 │   ├── ShadowDusk.Compiler.Tests/
 │   ├── ShadowDusk.ShaderToy.Tests/     # ShaderToy→.fx converter unit/trap/golden/reject suite (pure managed)
 │   ├── ShadowDusk.Slang.Tests/         # SlangCompiler (real-slangc route) unit + [Category=Integration] suite —
-│   │                                   #   spawns the restored tools/slang/<rid>/ slangc (Phase 66; all five RIDs, issues #227/#286)
+│   │                                   #   spawns the restored tools/slang/<rid>/ slangc (Phase 66; all four RIDs, issue #227)
 │   ├── ShadowDusk.Integration.Tests/   # Compile real .fx files end-to-end (+ CLI .glsl-input integration)
 │   ├── ShadowDusk.ImageTests/          # Offscreen-render image regression
 │   ├── ShadowDusk.BrowserTests/        # Headless KNI WebGL render validation (Playwright)
@@ -67,7 +80,9 @@ ShadowDusk/
 │       │                               #   Gum (3), Apos.Shapes (3) + raylib/ (2, Phase 59's CRT and handheld-LCD effects)
 │       │                               #   + texture-arrays/ (3, issues #324/#339/#340: Texture2D Tex[N] with mgfxc 3.8.5
 │       │                               #   DirectX_12 + Vulkan goldens only; OpenGL fails in mgfxc, DX11 is tracked apart)
-│       │                               #   plus slang/ (17 .slang, the Phase 61 Slang input corpus — a separate
+│       │                               #   plus slang-sksl/ (7 pixel-only .slang twins of .fx fixtures, the SkSL and raylib
+│       │                               #   converter evidence for both Slang routes, issue #253)
+│       │                               #   and slang/ (17 .slang, the Phase 61 Slang input corpus — a separate
 │       │                               #   input language, not .fx; see docs/test-shader-corpus.md §5)
 │       ├── issues/                     # Issue-reproduction fixtures by issue number (202/: the reporter's
 │       │                               #   3235-line Apos.Shapes, MIT, for FnaDiagnosticLocationTests). NOT under
@@ -90,19 +105,19 @@ ShadowDusk/
 │                                  #   desktop/Android native reaches a net8.0-browser build or publish (issue #273)
 ├── tools/                         # Vendored / downloaded native binaries (restored, not committed)
 │   ├── dxc/<rid>/                 # OUR pinned DXC builds for osx-x64/osx-arm64 (dylib) and android-arm64
-│   │                              #   (restored + hash-pinned; android-x64 is a local emulator build only).
+│   │                              #   (restored + hash-pinned; android-x64 is the emulator lane's pair, never packed).
 │   │                              #   Windows/Linux DXC comes from the Vortice.Dxc 3.3.4 NuGet.
 │   ├── spirv-cross/               # libspirv-cross-c-shared (.dll/.so/.dylib)
 │   ├── vkd3d/                     # vkd3d-shader native (cross-platform DXBC backend)
 │   ├── vkd3d-wasm/                # vkd3d-shader compiled to WASM (browser DXBC + FNA export)
 │   ├── plantuml/                  # PlantUML jar for regenerating docs/*.puml diagrams
-│   ├── slang/<rid>/               # real slangc + its slang-compiler library for win-x64, win-arm64, linux-x64,
-│   │                              #   osx-x64, osx-arm64 (ShadowDusk.Slang packs all five; restored + hash-pinned)
+│   ├── slang/<rid>/               # real slangc + its slang-compiler library for win-x64, linux-x64, osx-x64,
+│   │                              #   osx-arm64 (ShadowDusk.Slang packs all four; restored + hash-pinned)
 │   ├── slang-consumer/            # The scratch ShadowDusk.Slang consumer (Program.cs + csproj) that
 │   │                              #   tools/verify-slang-packaging.sh (run by pack-consume.yml) COPIES out of
 │   │                              #   tree and consumes cold, framework-dependent + self-contained (issue #225).
 │   │                              #   Never built in place. Its pack gate is tools/verify-slang-nupkg.sh <nupkg>,
-│   │                              #   the ONE exact-name list of the ten slangc natives + notice, also run by
+│   │                              #   the ONE exact-name list of the eight slangc natives + notice, also run by
 │   │                              #   release.yml (issue #226) and runnable locally against any packed nupkg.
 │   │                              #   tools/verify-slang-osx-x64-rosetta.sh <nupkg> (pack-consume.yml, macOS)
 │   │                              #   runs the packaged osx-x64 slangc under Rosetta 2 vs osx-arm64 (issue #352).
@@ -138,7 +153,9 @@ ShadowDusk/
 │                                  #     DeferredSpriteMrtGl (the only driver that binds 2 render targets),
 │                                  #     ShaderToyRouteGl (the `.glsl` frontend route),
 │                                  #     RaylibRoute (Phase 59: the raylib converter in REAL Raylib-cs vs the
-│                                  #       same .fx on real MonoGame GL, two arm processes), …), DX (VsDrivenDx,
+│                                  #       same .fx on real MonoGame GL, two arm processes),
+│                                  #     SkiaVsKni (issue #369: the SkSL converter in REAL SkiaSharp vs the same
+│                                  #       .fx on real KNI SDL2.GL, one process), …), DX (VsDrivenDx,
 │                                  #   DxModernFeatures, ShaderToyRouteDx (that route's DirectX arm), …),
 │                                  #   DX12 (BaselineDx12, CandidateDx12, VsDrivenDx12
 │                                  #     + compare_dx12.py), FNA (FnaValidation), KNI (KniDesktopGL, KniWinFormsDX, KniVsDriven),
@@ -175,6 +192,19 @@ ShadowDusk/
 │                                  #     mgfxc 3.8.5 DirectX_12/Vulkan or fxc fx_2_0 on the same assembled .fx,
 │                                  #     real Effect load + render, positive controls; SharedSlang/ holds the
 │                                  #     corpus/capture/parameter/control code they share - issue #230)
+│                                  #   10-shader PS corpus, three steps per backend (Baseline* renders the
+│                                  #     mgfxc golden, Candidate* renders ShadowDusk's build, compare*.py diffs):
+│                                  #     GL (Baseline, Candidate + compare.py), DX11 (BaselineDx, CandidateDx
+│                                  #     + compare_dx.py; CandidateVkd3d = the same arm through the vkd3d DXBC
+│                                  #     backend, run on its own, not in the gate script),
+│                                  #   GL texture breadth (TextureBreadthValidation: cube + 3D texture render,
+│                                  #     in-process assert, Linux GL CI lane),
+│                                  #   forward compat (ForwardCompat: the SAME v10 bytes rendered on seven
+│                                  #     MonoGame releases, 3.8.1.263 (the measured floor) to 3.8.5
+│                                  #     + compare_forwardcompat.py, run-forwardcompat.ps1),
+│                                  #   shared source linked into the drivers (not projects): Shared/ (GL
+│                                  #     renderers + shader inputs), SharedDx/ (DX renderers, headless
+│                                  #     rasterizer, Apos.Shapes gallery renderer)
 │                                  #   + the compare_*.py oracles. See docs/validation-matrix.md §6.
 │                                  #   Two entries here are NOT render proofs:
 │                                  #     MgcbPlugin runs a real `dotnet mgcb` content build through the MGCB

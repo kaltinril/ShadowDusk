@@ -14,14 +14,78 @@ that loads and renders identically to `mgfxc`'s in the real MonoGame/KNI runtime
 
 ### Added
 
-- **Windows on Arm (win-arm64) is measured, and `ShadowDusk.Slang` bundles slangc for it (issue #286).** A new CI lane
-  (`.github/workflows/win-arm64.yml`, PR label `run-win-arm64`, manual dispatch, weekly) compiles every fixture `.fx`
-  for OpenGL, Vulkan and DirectX 12 as a native arm64 process on GitHub's `windows-11-arm` runner and requires win-x64's
-  exact result: all 174 match (441 outputs byte-identical, 81 identical refusals), on net8.0 and net10.0. DirectX 11 and
-  FNA on win-arm64 return the registered `SD0211` (ShadowDusk has no vkd3d-shader build for it), never a crash.
-  `ShadowDusk.Slang` now packs upstream's `slang-2026.14.1-windows-aarch64` slangc (pinned and SHA-256-verified in
-  `tools/restore.*`), and its corpus also matches win-x64 there. The `ShadowDusk.Slang` nupkg grows from about 53 MB to
-  about 65 MB (25.5 MB more unpacked, under `runtimes/win-arm64/native/`).
+- **Windows on Arm (win-arm64) is measured (issue #286).** A new CI lane (`.github/workflows/win-arm64.yml`, PR label
+  `run-win-arm64`, manual dispatch, weekly) compiles every fixture `.fx` for OpenGL, Vulkan and DirectX 12 as a native
+  arm64 process on GitHub's `windows-11-arm` runner and requires win-x64's exact result: all 174 match (441 outputs
+  byte-identical, 81 identical refusals), on net8.0 and net10.0. DirectX 11 and FNA on win-arm64 return the registered
+  `SD0211` (ShadowDusk has no vkd3d-shader build for it), never a crash. `ShadowDusk.Slang` still bundles no win-arm64
+  slangc (left out for its size on every consumer until someone asks); its `SD0620` on any unbundled host, win-arm64
+  included, now names the host's RID and asks for an issue.
+
+- **`.slang` input for the SkSL and raylib converters, through both Slang routes (issue #253).**
+  `SkslConverter.ConvertSlang` and `RaylibConverter.ConvertSlang` take HLSL-compatible Slang through
+  the built-in frontend; `SlangCompiler.ConvertToSksl` / `ConvertToRaylib` (and `Async` variants) in
+  `ShadowDusk.Slang` take genuine Slang (`interface`, generics) through real slangc. The real-slangc
+  converters run the same front half as `SlangCompiler.Compile` for OpenGL (the `.fx` guard `SD0626`,
+  the register pass, the per-entry merge and its `SD0625`, the global-collision check, hoisted-texture
+  naming), and the raylib converter receives the same author declaration order and combined-sampler
+  units as the OpenGL target, so `texture0` is the texture `Compile` puts on unit 0. Every
+  `SD0610`-`SD0615` / `SD0630`-`SD0636` refusal applies unchanged. Proven in real SkiaSharp: 7 Slang
+  twins of existing `.fx` fixtures (Gum's Grayscale, Sepia, Bloom, Scanlines, Dots, Overlay, Gradient)
+  render at maxd 0 against the `.fx`-sourced SkSL on both routes, each with a mutated-twin control.
+  Proven in real Raylib-cs: `validation/RaylibRoute` gains 12 `.slang` arms (6 twins, both routes)
+  that match the `.fx` on real MonoGame DesktopGL (maxd 0, Dots maxd 1 like its `.fx`) plus a
+  mutated-twin control. One twin (and its new `.fx` case, `TwoTextureOrder`) samples its
+  second-declared texture first, and every non-draw sampler is now bound to a mirrored,
+  channel-rotated copy of the source, so a wrong `texture0` changes the picture: with the
+  declaration order withheld, the real-slangc arm diverged at maxd 233. A combined sampler's own
+  register (`Sampler2D X : register(s1)`) pins its unit in the raylib allocator as on OpenGL. An
+  unset `SourceName` names a `.slang` input `<memory>.slang` in diagnostics, and the subset
+  frontend's warnings are passed through. No `.mgfx` output changes: `Compile` is the same code, split at the point
+  where the assembled `.fx` meets the downstream compiler.
+
+- **Skia vs KNI render harness for the SkSL converter (issue #369, Phase 62 Area D).**
+  `validation/SkiaVsKni` takes XnaFiddle's texture-only example shaders (Fading, Grayscale,
+  Invert, Pixelated, Tint, and Mask with a second texture) and renders each one twice: through
+  `SkslConverter` in real SkiaSharp, set up the way Gum's Skia renderer will use it (the texture
+  as the child shader, `ShadowDusk_Color` set to the tint, `ShadowDusk_Resolution` set to the
+  texture size), and through the OpenGL backend in real KNI SDL2.GL via `SpriteBatch`. Same
+  texels, untinted and tinted: 12/12 match within 2/255 (max delta 0-1). Three positive controls
+  must diverge or the gate fails. It runs in the Linux GL CI lane and in
+  `run-windows-render-gates.ps1`. SkiaSharp and KNI stay driver and test dependencies only; a
+  new test pins that no shipped project references either. No converter change was needed.
+- **The real-slangc `ShadowDusk.Slang` route's real WindowsDX `Effect` load runs in CI (issue #254).**
+  `validation/SlangFullCorpus` gates 1 and 3 now run in `validation-render.yml`'s DX job on
+  `windows-latest`, pinned to WARP: all 21 corpus shaders compile on four targets through the
+  win-x64 slangc and load into a real MonoGame WindowsDX `Effect`. Gate 3 gained a positive control
+  that runs every time: a real `.mgfx` truncated to half, with its effect-cache key changed, must
+  be rejected by the `Effect` loader. The driver honours `SHADOWDUSK_DX_WARP=1` and takes
+  `--skip-gl-gate`, which prints gate 2 as NOT RUN on a host with no OpenGL 3.3 driver (gate 2
+  still runs on the ubuntu lane and in the Windows gate script).
+- **Vulkan and DirectX 12 output is now pinned across hosts, over the whole fixture corpus.**
+  `DxcTargetsCrossHostByteIdentityTests` compiles all 174 corpus fixtures for both targets, release
+  and `Debug`, on every CI OS against one win-x64 manifest (`dxc-targets-manifest.json`): Vulkan
+  byte for byte, DirectX 12 byte for byte on Windows and, elsewhere, with only the signature,
+  DXC's own identity string and the disassembler's locale-dependent non-ASCII escaping removed. It closes a measurement gap: Vortice.Dxc 3.3.4's Linux DXC is
+  28 commits older than the Windows/macOS one. Measured: Linux matches Windows everywhere, and the gap shows only in the text of DXC's unsigned-DXIL warning; macOS matches everywhere but one `Debug` DXIL whose debug records come in a different order (instruction-identical, pinned as a macOS expected value).
+  The integration lane uploads every fixture's SPIR-V/DXIL when it fails.
+- **The Android emulator lane checks the OpenGL corpus on the device, stage by stage (issue #304
+  follow-up).** Every OpenGL fixture of the byte-identity manifest is compiled on the device and its
+  SPIR-V (DXC), GLSL (SPIRV-Cross) and `.mgfx` must equal the desktop's, with a positive control.
+  The desktop half, `OpenGlIntermediatesByteIdentityTests`, pins the new
+  `intermediates-manifest.json` on every OS.
+- **The Android on-device checks run in CI (issue #304).** The new `android-emulator.yml` boots an
+  API-34 x86_64 emulator on ubuntu and runs `validation/AndroidGl/run-dxc-identity-checks.ps1`: an
+  HLSL string compiled on the device and loaded into a live MonoGame `Effect` (now on MonoGame
+  Android 3.8.5), a foreign and a missing DXC refused with `SD0219`, and a foreign and a missing
+  SPIRV-Cross refused with `SD0103`. Any wrong or missing verdict fails the job. It runs on PRs
+  labelled `run-android`, weekly, on manual dispatch and on pushes to main that touch the loaders,
+  the harness or the restore pins. The x86_64 emulator natives it needs are now hosted on the
+  `native-dxc-1.7.2212.40` release (`libdxcompiler.android-x64.so`,
+  `libspirv-cross.android-x64.so`) and restored with SHA-256 verification by `tools/restore.*`,
+  like the android-arm64 pair; no package ships them. Integration tests now tie the Android DXC
+  and SPIRV-Cross build-id pins to the restored files, and CI's integration job requires all four
+  Android natives. The identity script runs under `pwsh` on Linux and macOS too.
 - **`SkslConverter` can run in the browser (issue #349).** `SkslConverter.Convert` has an overload taking
   DXC / SPIRV-Cross factories (like `EffectCompiler`), and `WasmShaderCompiler.ConvertToSksl` is the
   synchronous entry point after `InitializeAsync()`. The default desktop path is unchanged.
@@ -124,8 +188,9 @@ that loads and renders identically to `mgfxc`'s in the real MonoGame/KNI runtime
   frontend with no raylib-specific code. **Evidence model: rendered-image fidelity, not
   `mgfxc`-equivalence** (raylib has no reference compiler): the new `validation/RaylibRoute`
   gate renders each conversion in real Raylib-cs 8.1.0 (raylib 6.0) and pixel-diffs it against
-  the same `.fx` built for OpenGL in real MonoGame DesktopGL; 13/13 shaders (the 10-shader GL
-  corpus, a CRT and a handheld-LCD effect, Gum's Grayscale) at maxd 0, with three positive
+  the same `.fx` built for OpenGL in real MonoGame DesktopGL; 15/15 shaders (the 10-shader GL
+  corpus, a CRT and a handheld-LCD effect, Gum's Grayscale, and since issue #327 the two
+  legacy-sampler fixtures whose samplers an `#include` or a macro supplies) at maxd 0, with three positive
   controls that must diverge. Runs in the Linux GL CI lane. `glsl100` (web) is not emitted yet.
 
 - **New package: `ShadowDusk.Slang`, a real-slangc compile route for genuine Slang (Phase 66,
@@ -192,6 +257,38 @@ that loads and renders identically to `mgfxc`'s in the real MonoGame/KNI runtime
   from it (issue #226).**
 
 ### Changed
+
+- **Documentation drift corrected (2026-10-04 audit).** No code or output change. The
+  `ShadowDusk.Compiler` package README now lists the `DirectX12` target, the measured MGFX v10
+  floor (MonoGame 3.8.1.263) and the SkSL and raylib converters; its package description and tags
+  mention raylib; the CLI README covers `.slang` input. The raylib gate count is 15/15 everywhere,
+  the shader-corpus counts are re-measured (174 `.fx`) with the XnaFiddle and cross-host fixtures
+  documented, `the-purpose.md` gains SkSL/raylib rows, the Stage 0 pipeline reference covers the
+  real-slangc and browser slangc routes, and the repository layout, release skill, gate-script
+  help and validation matrix are brought in line with the gates and recipes that actually run.
+  Phase 65's closed doc moved to `plan/DONE/`.
+
+- **Android DXC is now 16 KB page aligned, built reproducibly in CI.** Google Play has required 16 KB
+  page support for new apps and updates targeting Android 15+ since November 2025; the
+  `libdxcompiler.so` ShadowDusk.HLSL packed for android-arm64 used 4 KB pages (the Android SDK's
+  `XA0141` warning), so an app compiling shaders on-device could be rejected. It is rebuilt at the same
+  pinned DXC commit (e043f4a1) by `tools/build-dxc-android.sh` (run by `dxc-android-build.yml`: NDK
+  r27c, API 24, 16 KB pages, no debug info, stripped; two independent builds per ABI must be
+  byte-identical and equal the shipped pins), hosted on the new `native-dxc-android-1.7.2212.40-16k`
+  release, with the SHA-256 pins in `tools/restore.*` and the build-id pins in `DxcNativeIdentity`
+  updated. No output changed: on an emulator, the 50-shader OpenGL corpus compiled on the device is
+  byte-identical to the desktop at every stage (SPIR-V, GLSL, `.mgfx`) with the new DXC. The package's
+  arm64 DXC shrinks from 33.4 MB to 25.1 MB. The Android emulator lane now fails on any `XA0141`.
+- **Android SPIRV-Cross is now the desktop's SPIRV-Cross (issue #304 follow-up).** The
+  `libspirv-cross.so` ShadowDusk.GLSL packs for android-arm64 (and the emulator's android-x64 copy)
+  is rebuilt at SPIRV-Cross `d8e3e2b1`, the commit the desktop natives (Silk.NET.SPIRV.Cross.Native
+  2.23.0) contain, by a byte-reproducible recipe (`tools/build-spirv-cross-android.sh`, run in CI by
+  `spirv-cross-android-build.yml`: NDK r27c, API 21, 16 KB page aligned). The previous file was a
+  local build of a newer, modified SPIRV-Cross. Hosted on the new `native-spirv-cross-android-d8e3e2b1`
+  release, SHA-256 pinned in `tools/restore.*`, build ids pinned in `SpvcLoader`. No GLSL changed on
+  the fixture corpus (measured on an emulator, before and after), so this is a guarantee by
+  construction rather than a fix of an observed difference. The new file carries no debug info, so
+  the android-arm64 SPIRV-Cross in the ShadowDusk.GLSL package shrinks from about 41.6 MB to 4.6 MB.
 
 - **BREAKING (output names): a legacy sampler with no texture of its own now gets `mgfxc`'s
   parameter name, `X`, instead of `X_SDTexture`.** For `sampler2D X;`, `sampler X;`,

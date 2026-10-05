@@ -99,13 +99,24 @@ jobs:
         uses: actions/cache@v5
         with:
           path: tools/dxc
-          key: dxc-1.7.2212.40-${{ runner.os }}
+          key: dxc-${{ runner.os }}-${{ hashFiles('tools/restore.sh', 'tools/restore.ps1') }}
+
+      # The Android SPIRV-Cross natives (android-arm64 packed, android-x64 for the emulator lane;
+      # ~80 MB together), keyed on restore.sh so a re-pin invalidates it. restore.* re-verifies
+      # the SHA-256 of a cached file and re-downloads on a mismatch.
+      - name: Cache Android SPIRV-Cross natives
+        uses: actions/cache@v5
+        with:
+          path: |
+            tools/spirv-cross/android-arm64
+            tools/spirv-cross/android-x64
+          key: spirv-cross-android-${{ runner.os }}-${{ hashFiles('tools/restore.sh', 'tools/restore.ps1') }}
 
       - name: Cache slangc natives
         uses: actions/cache@v5
         with:
           path: tools/slang
-          key: slang-2026.14.1-5rid-${{ runner.os }}
+          key: slang-2026.14.1-${{ runner.os }}
 
       # Download failures only warn inside the script (offline tolerance) — the PACK
       # GATE below is the loud assertion: a package without natives must fail this job
@@ -409,7 +420,7 @@ jobs:
 
       # ── ShadowDusk.Slang consumed cold (issue #225) ──────────────────────────────────────
       # Packs Core/HLSL/GLSL/Compiler/Slang into its own feed, gates the Slang nupkg for all
-      # ten slangc natives by EXACT entry name, then runs tools/slang-consumer from a scratch
+      # eight slangc natives by EXACT entry name, then runs tools/slang-consumer from a scratch
       # directory outside the repo in both shapes a consumer builds: a framework-dependent
       # `dotnet run` (natives under bin/.../runtimes/<rid>/native/) and a RID-specific
       # self-contained publish (natives flattened next to the app). The consumer asserts slangc

@@ -45,7 +45,13 @@
 #                              against the same .fx built for OpenGL in real MonoGame DesktopGL.
 #                              The evidence model is rendered-image fidelity (raylib has no
 #                              reference compiler), with three positive controls that must
-#                              diverge. The only gate that drives a non-MonoGame GL runtime.
+#                              diverge.
+#   * SkiaVsKni              — issue #369 (Phase 62 Area D2) the SkSL converter: XnaFiddle's
+#                              texture-only shaders through SkslConverter in REAL SkiaSharp (CPU
+#                              raster) vs the same .fx built for OpenGL in REAL KNI v4.2.9001
+#                              SDL2.GL, untinted and tinted, tol 2/255, three positive controls
+#                              that must diverge. Single process; the KNI arm needs the GL context.
+#                              With RaylibRoute, the only gates that drive a non-MonoGame runtime.
 #   * Baseline+Candidate+compare.py — the 10-shader GL corpus, ShadowDusk vs the
 #                              committed mgfxc OpenGL goldens, real MonoGame DesktopGL. The
 #                              GL twin of the DX job's BaselineDx pair. Its distinct value is a
@@ -83,6 +89,19 @@
 #                              dlopen finds it. WARP still does the actual D3D12 rendering;
 #                              Vulkan here is load-bearing only for SDL's window-creation
 #                              probe, never for a pixel.
+#   * SlangFullCorpus -f net8.0-windows -- --skip-gl-gate (issue #254) — the real-slangc
+#                              ShadowDusk.Slang route: gate 1 (21 shaders x OpenGL/DirectX_11/
+#                              DirectX12/Vulkan compile through the win-x64 slangc restore.ps1
+#                              fetches) and gate 3 (all 21 DirectX_11 outputs load into a REAL
+#                              MonoGame WindowsDX Effect on WARP and draw one frame). Gate 3
+#                              carries its own positive control: a real .mgfx truncated to half
+#                              (cache key inverted) must be REJECTED by the Effect loader, or
+#                              the gate fails (that failure branch measured locally, when the
+#                              first draft of the control loaded). The STEP was proven red once
+#                              in real CI by a throwaway commit corrupting every gate-3 row
+#                              (run 37254580107), then green with it reverted. No reference
+#                              compiler needed (a load gate, not an mgfxc diff). Gate 2 needs
+#                              an OpenGL 3.3 context the runner lacks; it runs in the GL job.
 #
 # Vulkan render gates wired here (vulkan-render-gates job, ubuntu-latest, 2026-10-01): real
 # MonoGame DesktopVK (MonoGame.Runtime.Linux.Vulkan) on Mesa lavapipe (CPU Vulkan) under xvfb.
@@ -128,6 +147,7 @@ on:
       - 'validation/**'
       - 'tests/fixtures/**'
       - 'tools/restore.sh'
+      - 'tools/restore.ps1'
       - '.github/workflows/validation-render.yml'
   pull_request:
     branches: [ main ]
@@ -213,6 +233,7 @@ jobs:
           dotnet build validation/DeferredSpriteMrtGl/DeferredSpriteMrtGl.csproj -c Release
           dotnet build validation/ShaderToyRouteGl/ShaderToyRouteGl.csproj -c Release
           dotnet build validation/RaylibRoute/RaylibRoute.csproj -c Release
+          dotnet build validation/SkiaVsKni/SkiaVsKni.csproj -c Release
 
       # Each driver self-asserts (exit 0 iff every row loaded + matched its reference
       # within tolerance). Run all of them even if an earlier one fails, then fail the job
@@ -224,13 +245,13 @@ jobs:
           # No GL context => hard FAIL, never a pass-by-skip. StateFidelity/CbufferModel/
           # ReservedWordGl throw on a missing device (MonoGame NoSuitableGraphicsDevice ->
           # natural red); TextureBreadthValidation, SamplerPairsGl, SamplerRegisterOrderGl,
-          # DeferredSpriteMrtGl, ShaderToyRouteGl and RaylibRoute catch+skip, so this flag turns
-          # their skip into a failure too (all six read SHADOWDUSK_REQUIRE_GL).
+          # DeferredSpriteMrtGl, ShaderToyRouteGl, RaylibRoute and SkiaVsKni catch+skip, so this flag
+          # turns their skip into a failure too (all seven read SHADOWDUSK_REQUIRE_GL).
           SHADOWDUSK_REQUIRE_GL: "1"
         run: |
           set +e
           rc=0
-          for proj in StateFidelity CbufferModel TextureBreadthValidation ReservedWordGl SamplerPairsGl SamplerRegisterOrderGl DeferredSpriteMrtGl ShaderToyRouteGl RaylibRoute; do
+          for proj in StateFidelity CbufferModel TextureBreadthValidation ReservedWordGl SamplerPairsGl SamplerRegisterOrderGl DeferredSpriteMrtGl ShaderToyRouteGl RaylibRoute SkiaVsKni; do
             echo "::group::$proj"
             xvfb-run -a dotnet run --project "validation/$proj" -c Release --no-build
             this=$?
@@ -311,6 +332,7 @@ jobs:
             validation/output-mrt/**
             validation/output-shadertoy/**
             validation/output-raylib/**
+            validation/output-skia-kni/**
             validation/output/baseline/**
             validation/output/candidate/**
             validation/output/diff/**
@@ -385,6 +407,7 @@ jobs:
           dotnet build validation/CandidateDx/CandidateDx.csproj -c Release
           dotnet build validation/BaselineDx12/BaselineDx12.csproj -c Release
           dotnet build validation/CandidateDx12/CandidateDx12.csproj -c Release
+          dotnet build validation/SlangFullCorpus/SlangFullCorpus.csproj -c Release -f net8.0-windows
 
       # Issue #204: pin every gate to WARP (Windows' bundled software D3D rasterizer)
       # instead of a hardware adapter — windows-latest has no GPU. SHADOWDUSK_DX_WARP is
@@ -416,6 +439,20 @@ jobs:
           dotnet run --project validation/CandidateDx12 -c Release --no-build
           python validation/compare_dx12.py
 
+      # Issue #254: the real-slangc ShadowDusk.Slang route, gate 3 (the last unverified piece
+      # of that package outside a dev box): every corpus shader's DirectX_11 output loads into a
+      # REAL MonoGame WindowsDX Effect on WARP, plus the in-driver positive control (truncated
+      # real bytes must be rejected). Gate 1 (the 84-cell compile sweep on win-x64 slangc) runs
+      # too; --skip-gl-gate prints gate 2 as NOT RUN because this runner has no OpenGL 3.3
+      # driver (gate 2 runs in the GL job above, on llvmpipe). slangc comes from restore.ps1; a
+      # missing one is a hard FAIL. Runs even if an earlier DX gate failed, so one regression
+      # cannot hide another.
+      - name: Run Slang full corpus gates 1 + 3 (real slangc, real MonoGame WindowsDX Effect)
+        if: ${{ !cancelled() }}
+        env:
+          SHADOWDUSK_DX_WARP: "1"
+        run: dotnet run --project validation/SlangFullCorpus -c Release -f net8.0-windows --no-build -- --skip-gl-gate
+
       - name: Upload render outputs (debug)
         if: always()
         uses: actions/upload-artifact@v7
@@ -426,6 +463,7 @@ jobs:
             validation/output/baseline-dx12/**
             validation/output/candidate-dx12/**
             validation/output/diff-dx12/**
+            validation/output-slang-full-corpus/**
           if-no-files-found: ignore
           retention-days: 7
 

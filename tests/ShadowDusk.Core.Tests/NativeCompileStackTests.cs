@@ -16,6 +16,7 @@ namespace ShadowDusk.Core.Tests;
 /// exceptions come back to the caller, the caller's context flows, nested calls run inline,
 /// workers are reused and never serialize concurrent callers.
 /// </summary>
+[Collection(NativeCompileStackCollection.Name)]
 public sealed class NativeCompileStackTests
 {
     [Fact]

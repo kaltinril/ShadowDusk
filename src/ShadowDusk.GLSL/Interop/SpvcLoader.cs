@@ -65,18 +65,20 @@ internal static class SpvcLoader
 
     /// <summary>
     /// GNU build ids of ShadowDusk's own Android <see cref="AndroidLibFileName"/>, by RID, checked
-    /// against the image the linker mapped from the APK. <c>android-arm64</c> is the one
-    /// ShadowDusk.GLSL packs (SHA-256 pinned in <c>tools/restore.*</c>; <c>SpvcLoaderPinTests</c>
-    /// fails if the restored file's build id differs). <c>android-x64</c> is the copy the x86_64
-    /// emulator lane of <c>validation/AndroidGl</c> bundles: no package ships it, it is pinned only
-    /// so the emulator harness keeps running with the check on (the same rule as DXC's
-    /// <c>AndroidX64CompilerBuildId</c>); a rebuild gets a new build id and an <c>SD0103</c> naming
-    /// both, which is the cue to update this line.
+    /// against the image the linker mapped from the APK. Both are built by
+    /// <c>.github/workflows/spirv-cross-android-build.yml</c> (<c>tools/build-spirv-cross-android.sh</c>:
+    /// SPIRV-Cross <c>d8e3e2b1</c>, the commit the desktop Silk.NET natives are built from, NDK
+    /// r27c, API 21, reproducible) and hosted on release tag
+    /// <c>native-spirv-cross-android-d8e3e2b1</c>, SHA-256 pinned in <c>tools/restore.*</c>.
+    /// <c>android-arm64</c> is the one ShadowDusk.GLSL packs; <c>android-x64</c> is the copy the
+    /// x86_64 emulator lane of <c>validation/AndroidGl</c> bundles (no package ships it).
+    /// <c>SpvcLoaderAndroidIdentityTests</c> fails if a restored file's build id differs; a rebuild
+    /// gets a new build id and an <c>SD0103</c> naming both, which is the cue to update this line.
     /// </summary>
     internal static readonly IReadOnlyDictionary<string, string> AndroidBuildIdByRid = new Dictionary<string, string>
     {
-        ["android-arm64"] = "1de174019500207664624d82a66990021dd0f329",
-        ["android-x64"] = "8d426179db1d42462bfc8dd3db6cdd2222efccdd",
+        ["android-arm64"] = "3170e0721411e96d4740df67209edeb66c116e57",
+        ["android-x64"] = "abb21bcca51f8d770ff82191e0891591eb476dd6",
     };
 
     private static readonly object RegisterGate = new();

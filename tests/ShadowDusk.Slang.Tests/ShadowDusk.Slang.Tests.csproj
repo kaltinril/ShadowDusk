@@ -34,9 +34,9 @@
          a minute after the host has been up for three minutes. BCL-only; reads the gate by
          reflection. -->
     <Compile Include="..\ShadowDusk.Integration.Tests\HostStallHint.cs" Link="HostStallHint.cs" />
-    <!-- Issue #286: the cross-architecture (win-x64 vs win-arm64) manifest write/compare rules,
-         shared with Integration.Tests' ArchitectureByteIdentityTests. BCL-only. -->
-    <Compile Include="..\ShadowDusk.Integration.Tests\Tests\ArchitectureManifest.cs" Link="ArchitectureManifest.cs" />
+    <!-- The Slang-to-SkSL render evidence is the same harness the subset route's tests use, so
+         both routes are judged by one comparison, not two copies that could drift apart. -->
+    <Compile Include="..\ShadowDusk.Compiler.Tests\Sksl\SkslTwinHarness.cs" Link="SkslTwinHarness.cs" />
   </ItemGroup>
 
   <ItemGroup>
@@ -51,6 +51,9 @@
     <PackageReference Include="xunit.runner.visualstudio" />
     <PackageReference Include="Microsoft.NET.Test.Sdk" />
     <PackageReference Include="Shouldly" />
+    <!-- Test-only, as in ShadowDusk.Compiler.Tests: real Skia is the SkSL evidence. -->
+    <PackageReference Include="SkiaSharp" />
+    <PackageReference Include="SkiaSharp.NativeAssets.Linux.NoDependencies" />
     <PackageReference Include="coverlet.collector">
       <IncludeAssets>runtime; build; native; contentfiles; analyzers</IncludeAssets>
       <PrivateAssets>all</PrivateAssets>

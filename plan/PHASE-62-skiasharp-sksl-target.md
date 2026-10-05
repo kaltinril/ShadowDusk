@@ -2,8 +2,9 @@
 
 **Track:** Backend breadth (purpose-gated). Additive; **no existing output byte changes**.
 
-**Status:** 🚧 **CONVERTER SHIPPED v1 (2026-08-13); the GL-vs-Skia image comparison is the open
-evidence remainder.** The two premise corrections in §2 were put to the requester and both were
+**Status:** 🚧 **CONVERTER SHIPPED v1 (2026-08-13); the GL-vs-Skia image comparison landed
+2026-10-04 (issue #369, `validation/SkiaVsKni`, 12/12 within ±2/255); a real Gum/SkiaGum consumer
+trial is the open remainder.** The two premise corrections in §2 were put to the requester and both were
 accepted (vchelaru, 2026-08-12, [PR #201](https://github.com/kaltinril/ShadowDusk/pull/201)) —
 see §2.5 — and **the §3 gate was resolved by owner decision on 2026-08-13** (recorded in
 `project_decisions.md`): rendered-image fidelity is accepted as this target's evidence model,
@@ -35,11 +36,17 @@ original HLSL's math** at ±2/255 (`half` precision, the decision's stated toler
 positive control asserting the render does NOT match the untinted math (i.e. the hand-port's
 silent loss is measurably absent). 10 tests, `SkslConverterTests` + `SkslSkiaEvidenceTests`.
 
-**Open:** C1's cross-renderer comparison (same shader through the proven GL backend vs through
-Skia, image-diffed) — the analytic-expectation tests cover the shipped conversions but a GL-side
-comparison is the stronger general harness; a real Gum/SkiaGum consumer trial (OQ1's "is
-Grayscale representative" question); and a `docs/validation-matrix.md` §8-style row is in place
-while a dedicated render driver is not.
+**Slang input (issue #253):** `.slang` converts to SkSL through both Slang routes
+(`SkslConverter.ConvertSlang` for the built-in subset; `SlangCompiler.ConvertToSksl` for real
+slangc, through `SlangCompiler.Compile`'s own OpenGL front half). Seven `.slang` twins of existing
+fixtures (Gum's Grayscale, Gradient, Sepia, Bloom, Scanlines, Dots, Overlay) render in real
+SkiaSharp at maxd 0 against the `.fx`-sourced SkSL on both routes, each with a mutated-twin
+positive control.
+
+**Open:** a real Gum/SkiaGum consumer trial (OQ1's "is Grayscale representative" question). C1's
+cross-renderer comparison is done since 2026-10-04 (issue #369, Area D2): `validation/SkiaVsKni`
+renders XnaFiddle's texture-only shaders through the proven GL backend in real KNI and through
+Skia, 12/12 within ±2/255.
 
 **Depends on:** **the [Phase 57](PHASE-57-universal-compiler-auto-detection.md) §3 PURPOSE
 decision** (not its code) — the identical hard gate [Phase 59](PHASE-59-raylib-cs-backend.md)
@@ -360,10 +367,21 @@ per-container, pixel-stage only, no vertex stage. Phase 1 is shaders whose only 
       (HLSL `round`) gets an exact `_sd_roundEven` helper since SkSL has none. `SD0612` now
       covers only a sampling bias or extra argument, an unknown sampler, or an unbalanced call.
       Supersedes the "computed-UV sampling is refused" wording above, kept as history.
-- [ ] **D2 (issue #369):** the Gum shader-parity render harness (same `.fx` on KNI vs through
-      Skia with `ShadowDusk_Color` set to the tint). Not started.
-- [ ] **Open (Area D, issues #368 and #369):** C1's cross-renderer harness (proven-GL render vs Skia render, image-diffed) as a
-      standing driver, and a real Gum/SkiaGum consumer trial (OQ1's representativeness half).
+- [x] **D2 / C1 (issue #369, 2026-10-04): the Gum shader-parity render harness.**
+      `validation/SkiaVsKni` renders XnaFiddle's Fading, Grayscale, Invert, Pixelated and Tint
+      (plus the stretch case Mask, its second texture a second child / the `MaskTexture`
+      parameter) through the converter in real SkiaSharp (container texture as the child shader,
+      `ShadowDusk_Color` = the tint, `ShadowDusk_Resolution` = the child size) and through the
+      OpenGL backend in real KNI v4.2.9001 SDL2.GL (`SpriteBatch`, tint as the vertex color), same
+      procedural texels at 128x128, untinted and tinted. Measured 2026-10-04 on Windows (GPU GL):
+      **12/12 within ±2/255, maxd 0-1**; three positive controls caught (tint left white on Skia
+      only maxd 53, V flipped maxd 255, resolution halved maxd 249). Same day in CI on ubuntu/Mesa
+      llvmpipe: 12/12, maxd 0 except Pixelated 1, controls caught. No converter change was
+      needed. None of the corpus is time-dependent (Fading fades by texture V); Tint's
+      `TintColor` is fixed at (1, 0.5, 0.5, 1) on both sides. Wired into the `validation-render.yml`
+      llvmpipe lane and the Windows gate script; `docs/validation-matrix.md` §6 row.
+- [ ] **Open (Area D):** a real Gum/SkiaGum consumer trial (OQ1's representativeness half), which
+      checks the harness's setup against what Gum's Skia renderer actually does.
 
 ## 6. Non-goals
 

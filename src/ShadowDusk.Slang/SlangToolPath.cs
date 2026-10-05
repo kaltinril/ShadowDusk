@@ -6,7 +6,7 @@ namespace ShadowDusk.Slang;
 
 /// <summary>
 /// Resolves the packaged <c>slangc</c> executable this package bundles for <c>win-x64</c>,
-/// <c>win-arm64</c>, <c>linux-x64</c>, <c>osx-x64</c> and <c>osx-arm64</c> (issues #227, #286).
+/// <c>linux-x64</c>, <c>osx-x64</c> and <c>osx-arm64</c> (issue #227).
 ///
 /// <para>Adapted from <c>ShadowDusk.HLSL.Vkd3d.Vkd3dLoader</c>'s probe order for a
 /// subprocess tool rather than a P/Invoked library: <c>Process.Start</c> needs a file
@@ -46,14 +46,14 @@ public static class SlangToolPath
     internal static readonly Version MinimumMacOSVersion = new(26, 0);
 
     /// <summary>
-    /// The RIDs this package bundles slangc for: the core pipeline's desktop RIDs. win-arm64
-    /// joined in issue #286, once its OpenGL, Vulkan and DirectX 12 output was measured
-    /// byte-identical to win-x64 on a native arm64 runner (DirectX 11 and FNA are
-    /// <c>SD0211</c> there: ShadowDusk ships no vkd3d-shader for it). Upstream also publishes
-    /// linux-arm64, deliberately not bundled because the core pipeline has no DXC or vkd3d
-    /// native there (issue #227).
+    /// The RIDs this package bundles slangc for. Upstream also publishes linux-arm64 and
+    /// win-arm64 builds, deliberately not bundled: linux-arm64 because the core pipeline has
+    /// no DXC there (issue #227); win-arm64 because every framework-dependent consumer would
+    /// carry its ~25 MB of natives although the core pipeline is measured working there
+    /// (issue #286, not bundled until someone asks). An unbundled host gets <c>SD0620</c>
+    /// naming its RID and asking for an issue.
     /// </summary>
-    internal static readonly IReadOnlyList<string> SupportedRids = ["win-x64", "win-arm64", "linux-x64", "osx-x64", "osx-arm64"];
+    internal static readonly IReadOnlyList<string> SupportedRids = ["win-x64", "linux-x64", "osx-x64", "osx-arm64"];
 
     /// <summary>
     /// <see langword="true"/> when this host can run the bundled slangc: a supported RID
@@ -76,7 +76,6 @@ public static class SlangToolPath
         (isWindows, isLinux, isMacOS, architecture) switch
         {
             (true, _, _, Architecture.X64) => "win-x64",
-            (true, _, _, Architecture.Arm64) => "win-arm64",
             (_, true, _, Architecture.X64) => "linux-x64",
             (_, _, true, Architecture.X64) => "osx-x64",
             (_, _, true, Architecture.Arm64) => "osx-arm64",
@@ -96,7 +95,8 @@ public static class SlangToolPath
         if (rid is null)
         {
             return $"ShadowDusk.Slang bundles slangc for {string.Join(", ", SupportedRids)}; " +
-                   $"this host ({hostRid}) is not one of them.";
+                   $"this host ({hostRid}) is not one of them. If you need ShadowDusk.Slang on {hostRid}, " +
+                   "please open an issue at https://github.com/kaltinril/ShadowDusk/issues naming it.";
         }
 
         if (isMacOS && osVersion < MinimumMacOSVersion)
@@ -121,7 +121,7 @@ public static class SlangToolPath
     /// </summary>
     internal static string CompilerLibraryFileName(string rid) => rid switch
     {
-        "win-x64" or "win-arm64" => "slang-compiler.dll",
+        "win-x64" => "slang-compiler.dll",
         "linux-x64" => $"libslang-compiler.so.0.{SlangVersion}",
         "osx-x64" or "osx-arm64" => $"libslang-compiler.0.{SlangVersion}.dylib",
         _ => throw new ArgumentOutOfRangeException(nameof(rid), rid, "not a bundled slangc RID"),

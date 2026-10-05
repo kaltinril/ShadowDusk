@@ -1,6 +1,6 @@
 # Phase 67: full Slang input where no process can be spawned (in-process slangc)
 
-**Status: 🟡 browser route built and proven in-repo (2026-10-01); packaging and Android open.**
+**Status: 🟡 browser route built and proven in-repo (2026-10-01); packaging open (issue #366); Android not planned (closed 2026-10-03: unsupported until someone asks, see `docs/validation-matrix.md` §7).**
 Issue [#257](https://github.com/kaltinril/ShadowDusk/issues/257). Follows
 [Phase 66](PHASE-66-full-slang-input-implementation.md) (`ShadowDusk.Slang`, real slangc as a
 child process).
