@@ -453,6 +453,53 @@ jobs:
           SHADOWDUSK_DX_WARP: "1"
         run: dotnet run --project validation/SlangFullCorpus -c Release -f net8.0-windows --no-build -- --skip-gl-gate
 
+      # Issue #254: validation/VsDrivenDx, every mode, real MonoGame WindowsDX on WARP. Each mode
+      # renders the committed mgfxc DirectX_11 golden (.mgfx) AND ShadowDusk's in-process build in
+      # the SAME process on the SAME WARP device, then diffs them in process, so no GPU-rendered
+      # PNG is involved and both sides of every diff see the same rasterizer.
+      #   vs      - VsTransformColorTexture (custom vertex buffer + float4x4), d3dcompiler_47 and
+      #             vkd3d arms vs the golden, tol 4.
+      #   apos    - the 30-cell Apos.Shapes ShapeBatch gallery through the real NuGet package:
+      #             d3dcompiler_47 arm vs the real mgfxc golden (tol 1), vkd3d arm vs the package's
+      #             embedded (itself vkd3d-compiled) effect (tol 0).
+      #   texarr  - issue #339: Texture2D Tex[2] table equals mgfxc's record for record, and
+      #             renders like the mgfxc 3.8.4.1 golden (tol 1), both DXBC backends.
+      #   samparr - issue #340: a SamplerState array must be refused with SD0224 (no device).
+      # Built here rather than in the shared build step so this step stands alone. All four run
+      # even if one fails; the step fails if any did. Runs even if an earlier DX gate failed.
+      - name: Run VsDrivenDx gates (VS rig, Apos.Shapes gallery, texture/sampler arrays vs mgfxc DirectX_11 golden)
+        if: ${{ !cancelled() }}
+        env:
+          SHADOWDUSK_DX_WARP: "1"
+        run: |
+          dotnet build validation/VsDrivenDx/VsDrivenDx.csproj -c Release
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          $failed = @()
+          foreach ($mode in 'vs', 'apos', 'texarr', 'samparr') {
+            Write-Host "::group::VsDrivenDx -- $mode"
+            dotnet run --project validation/VsDrivenDx -c Release --no-build -- $mode
+            $rc = $LASTEXITCODE
+            Write-Host "::endgroup::"
+            if ($rc -ne 0) {
+              Write-Host "::error::validation/VsDrivenDx -- $mode FAILED (exit $rc)"
+              $failed += $mode
+            }
+          }
+          if ($failed.Count -gt 0) { Write-Host "VsDrivenDx failed modes: $($failed -join ', ')"; exit 1 }
+          Write-Host "VsDrivenDx: all 4 modes passed (vs, apos, texarr, samparr)."
+
+      - name: Upload VsDrivenDx render outputs (debug)
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: validation-render-output-dx-vsdriven
+          path: |
+            validation/output-vs-dx/**
+            validation/output-apos-dx/**
+            validation/output/texarr-dx11/**
+          if-no-files-found: ignore
+          retention-days: 7
+
       - name: Upload render outputs (debug)
         if: always()
         uses: actions/upload-artifact@v7
