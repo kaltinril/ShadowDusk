@@ -76,12 +76,12 @@ VertexShaderOutput MainVS(VertexShaderInput input)
 #if SM6
 float4 MainPS(VertexShaderOutput input) : SV_Target0
 {
-    return SpriteTexture.Sample(SpriteTextureSampler, input.TexCoord) * input.Color * 0.5;
+    return SpriteTexture.Sample(SpriteTextureSampler, input.TexCoord) * input.Color;
 }
 #else
 float4 MainPS(VertexShaderOutput input) : SV_Target0
 {
-    return tex2D(SpriteTextureSampler, input.TexCoord) * input.Color * 0.5;
+    return tex2D(SpriteTextureSampler, input.TexCoord) * input.Color;
 }
 #endif
 

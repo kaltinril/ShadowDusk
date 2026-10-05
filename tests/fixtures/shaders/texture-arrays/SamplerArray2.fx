@@ -28,11 +28,11 @@
 
 Texture2D TexA : register(t0);
 Texture2D TexB : register(t1);
-SamplerState Samplers0; SamplerState Samplers1;
+SamplerState Samplers[2];
 
 float4 MainPS(float4 pos : SV_Position, float4 color : COLOR0, float2 uv : TEXCOORD0) : SV_Target0
 {
-    return (TexA.Sample(Samplers0, uv) + TexB.Sample(Samplers1, uv)) * color / 2.0;
+    return (TexA.Sample(Samplers[0], uv) + TexB.Sample(Samplers[1], uv)) * color / 2.0;
 }
 
 technique T { pass P { PixelShader = compile PS_SHADERMODEL MainPS(); } }

@@ -50,7 +50,7 @@ float4 MainPS(float4 pos : SV_Position, float4 color : COLOR0, float2 uv : TEXCO
     // Each element contributes half of the output, so an element the runtime never
     // binds shows as a half-dark picture rather than as nothing.
     float4 c = Tex[0].Sample(TexSampler, uv) + Tex[1].Sample(TexSampler, uv);
-    return c * color / 3.0;
+    return c * color / 2.0;
 }
 
 technique T { pass P { PixelShader = compile PS_SHADERMODEL MainPS(); } }
