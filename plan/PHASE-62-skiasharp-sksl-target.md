@@ -35,6 +35,13 @@ original HLSL's math** at ±2/255 (`half` precision, the decision's stated toler
 positive control asserting the render does NOT match the untinted math (i.e. the hand-port's
 silent loss is measurably absent). 10 tests, `SkslConverterTests` + `SkslSkiaEvidenceTests`.
 
+**Slang input (issue #253):** `.slang` converts to SkSL through both Slang routes
+(`SkslConverter.ConvertSlang` for the built-in subset; `SlangCompiler.ConvertToSksl` for real
+slangc, through `SlangCompiler.Compile`'s own OpenGL front half). Seven `.slang` twins of existing
+fixtures (Gum's Grayscale, Gradient, Sepia, Bloom, Scanlines, Dots, Overlay) render in real
+SkiaSharp at maxd 0 against the `.fx`-sourced SkSL on both routes, each with a mutated-twin
+positive control.
+
 **Open:** C1's cross-renderer comparison (same shader through the proven GL backend vs through
 Skia, image-diffed) — the analytic-expectation tests cover the shipped conversions but a GL-side
 comparison is the stronger general harness; a real Gum/SkiaGum consumer trial (OQ1's "is

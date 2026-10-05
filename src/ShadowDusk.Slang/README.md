@@ -15,6 +15,14 @@ var result = await new SlangCompiler().CompileAsync(
 byte[] mgfx = result.Value.Data;
 ```
 
+The same route also feeds ShadowDusk's source-text converters, for SkiaSharp and raylib
+(fragment-only, with the converters' own limits and `SD06xx` refusals):
+
+```csharp
+var sksl = new SlangCompiler().ConvertToSksl(slangSource, new SkslConvertOptions { SourceName = "Fx.slang" });
+var raylib = new SlangCompiler().ConvertToRaylib(slangSource, new RaylibConvertOptions { SourceName = "Fx.slang" });
+```
+
 Nothing to install: `slangc` rides inside this package for **win-x64, linux-x64, osx-x64 and
 osx-arm64** and resolves from your app's own output, whether you `dotnet run` or publish
 self-contained. Two host floors come from the upstream binaries themselves:

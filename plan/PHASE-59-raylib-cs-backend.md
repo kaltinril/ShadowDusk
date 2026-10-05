@@ -32,8 +32,12 @@ and a trial with the requester.
   and raylib flip render targets in opposite directions), MRT, non-2D textures, an extra texture
   read through two samplers, raylib-reserved or GLSL-keyword names, uniforms SPIRV-Cross renamed
   (`input` → `_input`), and matrix/struct uniforms. 24 `RaylibConverterTests`.
-- **Input languages:** the converter takes `.fx` text, so `.slang` already reaches it through
-  `SlangFrontend.ConvertToFx` (or `ShadowDusk.Slang`) with no raylib-specific code (pinned by a test).
+- **Input languages:** the converter takes `.fx` text. `.slang` has its own entry points (issue
+  #253): `RaylibConverter.ConvertSlang` (built-in subset frontend) and `ShadowDusk.Slang`'s
+  `SlangCompiler.ConvertToRaylib` (real slangc, through `SlangCompiler.Compile`'s own OpenGL front
+  half, which also hands the converter the author's texture declaration order and a combined
+  sampler's unit, so `texture0` matches the OpenGL build). `validation/RaylibRoute` renders 10
+  `.slang` arms (5 twins x both routes) in real Raylib-cs, 10/10 within tolerance.
 - **Versions (A3):** `glsl330` only. `glsl100` is deferred, not dropped: the ES 1.00 lowerings live
   inside `MonoGameGlslRewriter`'s 110 dialect rather than at this seam, and no harness here can render
   `#version 100` in raylib (Raylib-cs 8.1.0's desktop native is GL 3.3 with a `#version 330` built-in

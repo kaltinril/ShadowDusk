@@ -67,7 +67,9 @@ ShadowDusk/
 │       │                               #   Gum (3), Apos.Shapes (3) + raylib/ (2, Phase 59's CRT and handheld-LCD effects)
 │       │                               #   + texture-arrays/ (3, issues #324/#339/#340: Texture2D Tex[N] with mgfxc 3.8.5
 │       │                               #   DirectX_12 + Vulkan goldens only; OpenGL fails in mgfxc, DX11 is tracked apart)
-│       │                               #   plus slang/ (17 .slang, the Phase 61 Slang input corpus — a separate
+│       │                               #   plus slang-sksl/ (7 pixel-only .slang twins of .fx fixtures, the SkSL and raylib
+│       │                               #   converter evidence for both Slang routes, issue #253)
+│       │                               #   and slang/ (17 .slang, the Phase 61 Slang input corpus — a separate
 │       │                               #   input language, not .fx; see docs/test-shader-corpus.md §5)
 │       ├── issues/                     # Issue-reproduction fixtures by issue number (202/: the reporter's
 │       │                               #   3235-line Apos.Shapes, MIT, for FnaDiagnosticLocationTests). NOT under

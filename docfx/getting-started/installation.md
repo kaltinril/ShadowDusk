@@ -80,6 +80,8 @@ var result = compiler.Compile(slangSource, new CompilerOptions { Target = Platfo
 // result.Value.Data is .mgfx bytes, same as EffectCompiler.CompileAsync's output
 ```
 
+The same route feeds the SkiaSharp and raylib converters (fragment-only, with their own limits): `compiler.ConvertToSksl(slangSource, new SkslConvertOptions { SourceName = "Fx.slang" })` and `compiler.ConvertToRaylib(slangSource, new RaylibConvertOptions { SourceName = "Fx.slang" })`. For the HLSL-compatible subset without this package, use `SkslConverter.ConvertSlang` / `RaylibConverter.ConvertSlang`.
+
 **In the browser:** a browser cannot start slangc as a process, so the same pinned slangc is compiled to WebAssembly and run inside the page (`ShadowDusk.Slang.Wasm`'s `WasmSlangCompiler`). It gets the identical command line, its output is measured byte-identical to native slangc's, and its HLSL goes through the same in-browser DXC pipeline. It is not published as a NuGet package yet; the ShaderFiddle sample uses it from source.
 
 **Parameter names are the ones you wrote.** slangc's `-no-mangle` keeps cbuffer members and `Texture2D`/`SamplerState` globals at their source names, and a combined `Sampler2D Comb;` reflects its texture as `Comb` (`effect.Parameters["Comb"].SetValue(texture)`; slangc itself splits it into `Comb_texture_0` and `Comb_sampler_0`, and ShadowDusk gives the texture back the name you wrote, the same table a hand-written `Texture2D Comb; SamplerState ...` gets through the `.fx` route). A texture held in a struct global, inside a `cbuffer`/`ParameterBlock`, or taken as an entry-point `uniform` parameter has no name you wrote that could identify it, so it is rejected with `SD0640` naming the aggregate; declare such textures as globals of their own.
