@@ -47,6 +47,17 @@
 //   engineering this stage did not build - see the phase doc's A7 section for exactly what
 //   is proven here vs left open for a follow-up.
 //
+//   Gate 3 also runs a built-in POSITIVE CONTROL every time (issue #254): the first compiled
+//   corpus shader's real DirectX_11 bytes, truncated to half, must be REJECTED by the real
+//   Effect loader. If the loader accepts them, the load check cannot see a broken .mgfx and the
+//   gate fails. Gate 3 honours SHADOWDUSK_DX_WARP=1 (validation/SharedDx/DxHeadlessRasterizer.cs),
+//   so the GPU-less windows-latest CI lane renders on WARP; a developer's run stays on the GPU.
+//
+// Options:
+//   --skip-gl-gate  report gate 2 as NOT RUN instead of running it. For the windows-latest CI
+//                   lane only, which has no OpenGL 3.3 driver; gate 2 runs in CI on ubuntu
+//                   (llvmpipe) and in run-windows-render-gates.ps1 on a real GPU. Never a pass.
+//
 // Exits non-zero on any failure.
 
 using System.Diagnostics;
@@ -88,11 +99,11 @@ internal static class Program
         PlatformTarget.OpenGL, PlatformTarget.DirectX, PlatformTarget.DirectX12, PlatformTarget.Vulkan,
     ];
 
-    private static int Main()
+    private static int Main(string[] args)
     {
         try
         {
-            return Run();
+            return Run(skipGlGate: args.Contains("--skip-gl-gate"));
         }
         catch (Exception ex)
         {
@@ -101,7 +112,7 @@ internal static class Program
         }
     }
 
-    private static int Run()
+    private static int Run(bool skipGlGate)
     {
         string repoRoot = FindRepoRoot();
         string[] corpus = Corpus(repoRoot);
@@ -125,7 +136,18 @@ internal static class Program
         int failures = 0;
 
         failures += RunCompileSweep(corpus);
-        failures += RunPixelEquivalenceGate(corpus);
+        string gate2;
+        if (skipGlGate)
+        {
+            // Said loudly so a PASS from this mode is never read as covering gate 2.
+            Console.WriteLine("=== GATE 2: NOT RUN (--skip-gl-gate: no OpenGL 3.3 driver on this host; it runs on the ubuntu llvmpipe lane and in the Windows gate script) ===\n");
+            gate2 = "gate 2 NOT RUN: --skip-gl-gate";
+        }
+        else
+        {
+            failures += RunPixelEquivalenceGate(corpus);
+            gate2 = "gate 2 ran";
+        }
 #if WINDOWS
         failures += RunDirectX11LoadGate(corpus);
         const string gate3 = "gate 3 ran";
@@ -138,8 +160,8 @@ internal static class Program
 
         Console.WriteLine();
         Console.WriteLine(failures == 0
-            ? $"Slang full-corpus gate: PASSED ({corpus.Length} shaders across {CompileSweepTargets.Length} targets; {gate3})"
-            : $"Slang full-corpus gate: {failures} failure(s) ({gate3})");
+            ? $"Slang full-corpus gate: PASSED ({corpus.Length} shaders across {CompileSweepTargets.Length} targets; {gate2}; {gate3})"
+            : $"Slang full-corpus gate: {failures} failure(s) ({gate2}; {gate3})");
         return failures == 0 ? 0 : 1;
     }
 
@@ -364,6 +386,9 @@ internal static class Program
     private static int RunDirectX11LoadGate(string[] corpus)
     {
         Console.WriteLine("=== GATE 3: every corpus shader loads into a REAL MonoGame.Framework.WindowsDX Effect (DirectX_11) ===");
+        // WARP on the GPU-less CI lane (SHADOWDUSK_DX_WARP=1, issue #204); real GPU otherwise.
+        // Must run before DxEffectImageRenderer constructs its GraphicsDeviceManager.
+        DxHeadlessRasterizer.PinIfRequested();
 
         string repoRoot = FindRepoRoot();
         string catPath = DxShaderInputs.CatPath(repoRoot);
@@ -383,12 +408,53 @@ internal static class Program
                 : new ShaderJob(name, result.Value.Data, null));
         }
 
-        using var game = new DxEffectImageRenderer(catPath, outDir, jobs, DxShaderInputs.SetParams);
+        // Positive control (issue #254): a real .mgfx truncated to half its length must be
+        // rejected by the real Effect loader. Built from the first shader that compiled, so it
+        // is genuine ShadowDusk output with a missing tail, not an obviously foreign file.
+        // Its header's effect key (bytes 6-9, MonoGame's effect-cache key) is inverted: with the
+        // original key MonoGame returns the cached, already-loaded effect without parsing the
+        // body at all, so a merely truncated copy LOADS. Measured on the first run of this control.
+        const string ControlName = "~control-truncated";
+        ShaderJob? controlSource = jobs.FirstOrDefault(j => j.Bytes is not null);
+        var allJobs = new List<ShaderJob>(jobs);
+        if (controlSource is not null)
+        {
+            byte[] truncated = controlSource.Bytes![..(controlSource.Bytes!.Length / 2)];
+            for (int i = 6; i < 10; i++)
+                truncated[i] ^= 0xFF;
+            allJobs.Add(new ShaderJob(ControlName, truncated, null));
+        }
+
+        // Deliberately NOT disposed: the control's Effect registers with the device before its
+        // constructor throws, and MonoGame's Effect.Dispose then throws NullReferenceException on
+        // that half-built object during device teardown (measured). Gate 3 is the last thing the
+        // process does, so the OS reclaims the device on exit. Its finalizer is suppressed too,
+        // so a GC before exit cannot run teardown on that half-built Effect. (The control Effect
+        // itself is created inside DxEffectImageRenderer and is not reachable here; nothing
+        // allocates after gate 3, and .NET does not run finalizers at process exit.)
+        var game = new DxEffectImageRenderer(catPath, outDir, allJobs, DxShaderInputs.SetParams);
         game.Run();
+        GC.SuppressFinalize(game);
 
         int failures = 0;
+        bool controlCaught = false;
+        if (game.Outcomes.Count != allJobs.Count)
+        {
+            failures++;
+            Console.WriteLine($"  [FAIL] the renderer reported {game.Outcomes.Count} outcome(s) for {allJobs.Count} job(s); every job must produce exactly one");
+        }
+
         foreach (var outcome in game.Outcomes)
         {
+            if (outcome.Name == ControlName)
+            {
+                controlCaught = !outcome.Loaded;
+                Console.WriteLine(controlCaught
+                    ? $"  [OK  ] positive control {ControlName} ({controlSource!.Name}, first half): rejected as it must be ({outcome.Error})"
+                    : $"  [FAIL] positive control {ControlName} ({controlSource!.Name}, first half): the real Effect loader ACCEPTED truncated bytes, so this gate cannot see a broken .mgfx");
+                continue;
+            }
+
             // "Loaded" (a real Effect accepted the bytes) is this gate's actual bar - see the
             // class doc comment for why a render failure on the 3 VS+PS float4x4-cbuffer
             // shaders is tracked but does not fail the gate (SpriteBatch's own vertex format
@@ -403,7 +469,18 @@ internal static class Program
         }
 
         Console.WriteLine();
-        Console.WriteLine($"  {jobs.Count - failures}/{jobs.Count} loaded into a real DirectX_11 Effect.");
+        int loaded = game.Outcomes.Count(o => o.Name != ControlName && o.Loaded);
+        Console.WriteLine($"  {loaded}/{jobs.Count} loaded into a real DirectX_11 Effect.");
+        if (!controlCaught)
+        {
+            failures++;
+            Console.WriteLine("  Positive control FAILED: the truncated-bytes row was not rejected (or could not be built because nothing compiled).");
+        }
+        else
+        {
+            Console.WriteLine("  Positive control: 1/1 rejected.");
+        }
+
         Console.WriteLine();
         return failures;
     }

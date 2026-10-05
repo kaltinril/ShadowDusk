@@ -106,8 +106,8 @@ frontend. It runs *before* Stage 1 and is not one of the five backend tails: its
 is producing `.fx` text that the unchanged pipeline below then compiles exactly like any
 other `.fx`.
 
-**How it works.** It is a **pure managed text transform** — no Slang toolchain is shipped
-or invoked, anywhere. Entry points come from Slang's own `[shader("vertex")]` /
+**How it works.** It is a **pure managed text transform** — this free subset tier ships and
+invokes no Slang toolchain, anywhere. Entry points come from Slang's own `[shader("vertex")]` /
 `[shader("fragment")]` attributes (found by `SlangEntryScanner`); a technique/pass block is
 synthesized, since Slang has no technique/pass concept; the attributes are stripped; and the
 body — near-HLSL by Slang's own design — passes through untouched into the same DXC every
@@ -119,6 +119,20 @@ generics) are rejected by name (`SD0600`) rather than approximated; an unloadabl
 never an `mgfxc`-equivalence claim — it is reach: `.slang` becomes another accepted input to
 the same faithful pipeline, on every host the pipeline already runs on (browser included),
 with the supply chain unchanged.
+
+**The real-`slangc` tier (opt-in).** Genuine Slang (`import`, generics, `interface`
+conformances) takes a different Stage 0, never this frontend: the separate, opt-in
+**`ShadowDusk.Slang`** package (`SlangCompiler`, Phase 66)
+bundles the pinned real `slangc` for win-x64, linux-x64, osx-x64 and osx-arm64, runs it as
+`slangc -target hlsl` once per entry point, merges the HLSL, assembles an `.fx`, and hands it to
+the same unchanged pipeline below. slangc is an input-language front end only; it never
+replaces DXC. In the browser, where no process can be spawned, the same pinned slangc runs
+in the page as WebAssembly (**`src/ShadowDusk.Slang.Wasm`**, `WasmSlangCompiler`,
+Phase 67) through an in-process seam that reuses
+`SlangCompiler`'s own argument list and assembly code; that project lives in the repo and is
+proven in CI but is not a published package yet (packaging tracked in
+[issue #366](https://github.com/kaltinril/ShadowDusk/issues/366)). A consumer who adds neither
+gets exactly the subset tier above.
 
 ---
 
