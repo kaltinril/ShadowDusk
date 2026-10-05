@@ -20,5 +20,7 @@
   </ItemGroup>
   <ItemGroup>
     <Compile Include="..\Shared\ShaderInputs.cs" />
+    <!-- SHADOWDUSK_DX_WARP=1 pins the device to WARP on the GPU-less CI lane (issue #254). -->
+    <Compile Include="..\SharedDx\DxHeadlessRasterizer.cs" />
   </ItemGroup>
 </Project>
