@@ -133,8 +133,9 @@ that loads and renders identically to `mgfxc`'s in the real MonoGame/KNI runtime
   frontend with no raylib-specific code. **Evidence model: rendered-image fidelity, not
   `mgfxc`-equivalence** (raylib has no reference compiler): the new `validation/RaylibRoute`
   gate renders each conversion in real Raylib-cs 8.1.0 (raylib 6.0) and pixel-diffs it against
-  the same `.fx` built for OpenGL in real MonoGame DesktopGL; 13/13 shaders (the 10-shader GL
-  corpus, a CRT and a handheld-LCD effect, Gum's Grayscale) at maxd 0, with three positive
+  the same `.fx` built for OpenGL in real MonoGame DesktopGL; 15/15 shaders (the 10-shader GL
+  corpus, a CRT and a handheld-LCD effect, Gum's Grayscale, and since issue #327 the two
+  legacy-sampler fixtures whose samplers an `#include` or a macro supplies) at maxd 0, with three positive
   controls that must diverge. Runs in the Linux GL CI lane. `glsl100` (web) is not emitted yet.
 
 - **New package: `ShadowDusk.Slang`, a real-slangc compile route for genuine Slang (Phase 66,
@@ -201,6 +202,16 @@ that loads and renders identically to `mgfxc`'s in the real MonoGame/KNI runtime
   from it (issue #226).**
 
 ### Changed
+
+- **Documentation drift corrected (2026-10-04 audit).** No code or output change. The
+  `ShadowDusk.Compiler` package README now lists the `DirectX12` target, the measured MGFX v10
+  floor (MonoGame 3.8.1.263) and the SkSL and raylib converters; its package description and tags
+  mention raylib; the CLI README covers `.slang` input. The raylib gate count is 15/15 everywhere,
+  the shader-corpus counts are re-measured (174 `.fx`) with the XnaFiddle and cross-host fixtures
+  documented, `the-purpose.md` gains SkSL/raylib rows, the Stage 0 pipeline reference covers the
+  real-slangc and browser slangc routes, and the repository layout, release skill, gate-script
+  help and validation matrix are brought in line with the gates and recipes that actually run.
+  Phase 65's closed doc moved to `plan/DONE/`.
 
 - **Android DXC is now 16 KB page aligned, built reproducibly in CI.** Google Play has required 16 KB
   page support for new apps and updates targeting Android 15+ since November 2025; the
