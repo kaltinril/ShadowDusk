@@ -36,6 +36,13 @@ original HLSL's math** at ±2/255 (`half` precision, the decision's stated toler
 positive control asserting the render does NOT match the untinted math (i.e. the hand-port's
 silent loss is measurably absent). 10 tests, `SkslConverterTests` + `SkslSkiaEvidenceTests`.
 
+**Slang input (issue #253):** `.slang` converts to SkSL through both Slang routes
+(`SkslConverter.ConvertSlang` for the built-in subset; `SlangCompiler.ConvertToSksl` for real
+slangc, through `SlangCompiler.Compile`'s own OpenGL front half). Seven `.slang` twins of existing
+fixtures (Gum's Grayscale, Gradient, Sepia, Bloom, Scanlines, Dots, Overlay) render in real
+SkiaSharp at maxd 0 against the `.fx`-sourced SkSL on both routes, each with a mutated-twin
+positive control.
+
 **Open:** a real Gum/SkiaGum consumer trial (OQ1's "is Grayscale representative" question). C1's
 cross-renderer comparison is done since 2026-10-04 (issue #369, Area D2): `validation/SkiaVsKni`
 renders XnaFiddle's texture-only shaders through the proven GL backend in real KNI and through

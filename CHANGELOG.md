@@ -14,6 +14,28 @@ that loads and renders identically to `mgfxc`'s in the real MonoGame/KNI runtime
 
 ### Added
 
+- **`.slang` input for the SkSL and raylib converters, through both Slang routes (issue #253).**
+  `SkslConverter.ConvertSlang` and `RaylibConverter.ConvertSlang` take HLSL-compatible Slang through
+  the built-in frontend; `SlangCompiler.ConvertToSksl` / `ConvertToRaylib` (and `Async` variants) in
+  `ShadowDusk.Slang` take genuine Slang (`interface`, generics) through real slangc. The real-slangc
+  converters run the same front half as `SlangCompiler.Compile` for OpenGL (the `.fx` guard `SD0626`,
+  the register pass, the per-entry merge and its `SD0625`, the global-collision check, hoisted-texture
+  naming), and the raylib converter receives the same author declaration order and combined-sampler
+  units as the OpenGL target, so `texture0` is the texture `Compile` puts on unit 0. Every
+  `SD0610`-`SD0615` / `SD0630`-`SD0636` refusal applies unchanged. Proven in real SkiaSharp: 7 Slang
+  twins of existing `.fx` fixtures (Gum's Grayscale, Sepia, Bloom, Scanlines, Dots, Overlay, Gradient)
+  render at maxd 0 against the `.fx`-sourced SkSL on both routes, each with a mutated-twin control.
+  Proven in real Raylib-cs: `validation/RaylibRoute` gains 12 `.slang` arms (6 twins, both routes)
+  that match the `.fx` on real MonoGame DesktopGL (maxd 0, Dots maxd 1 like its `.fx`) plus a
+  mutated-twin control. One twin (and its new `.fx` case, `TwoTextureOrder`) samples its
+  second-declared texture first, and every non-draw sampler is now bound to a mirrored,
+  channel-rotated copy of the source, so a wrong `texture0` changes the picture: with the
+  declaration order withheld, the real-slangc arm diverged at maxd 233. A combined sampler's own
+  register (`Sampler2D X : register(s1)`) pins its unit in the raylib allocator as on OpenGL. An
+  unset `SourceName` names a `.slang` input `<memory>.slang` in diagnostics, and the subset
+  frontend's warnings are passed through. No `.mgfx` output changes: `Compile` is the same code, split at the point
+  where the assembled `.fx` meets the downstream compiler.
+
 - **Skia vs KNI render harness for the SkSL converter (issue #369, Phase 62 Area D).**
   `validation/SkiaVsKni` takes XnaFiddle's texture-only example shaders (Fading, Grayscale,
   Invert, Pixelated, Tint, and Mask with a second texture) and renders each one twice: through
