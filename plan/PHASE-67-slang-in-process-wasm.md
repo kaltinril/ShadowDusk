@@ -1,6 +1,6 @@
 # Phase 67: full Slang input where no process can be spawned (in-process slangc)
 
-**Status: 🟡 browser route built and proven in-repo (2026-10-01); packaging open (issue #366); Android not planned (closed 2026-10-03: unsupported until someone asks, see `docs/validation-matrix.md` §7).**
+**Status: 🟡 browser route built and proven in-repo (2026-10-01); packaging (issue #366, now needed for XnaFiddle) and Android in-process moved to [Phase 68](PHASE-68-slang-in-process-everywhere.md) by owner decision (2026-10-04), which supersedes the 2026-10-03 "Android not planned" closure.**
 Issue [#257](https://github.com/kaltinril/ShadowDusk/issues/257). Follows
 [Phase 66](PHASE-66-full-slang-input-implementation.md) (`ShadowDusk.Slang`, real slangc as a
 child process).
@@ -178,6 +178,11 @@ The sample (`ShaderFiddle.Web`) routes Slang-looking source (a `[shader(...)]` a
 
 ### 3.3 Android (designed, not built)
 
+> Planned as [Phase 68](PHASE-68-slang-in-process-everywhere.md) Area G. Phase 68's research found
+> that `slangc` reaches the library only through its exported C API, so Android (and the desktop)
+> can P/Invoke the library directly with no glue; the one open question is source delivery
+> without `stdin` (Phase 68 §4.3, §5).
+
 The in-process route generalizes: build slang's compiler library for Android with the NDK (the
 `build-dxc-android.ps1` precedent), expose the same glue as a C entry point
 (`runSlangc(source, args) -> exit/stdout/stderr`), and P/Invoke it behind the same
@@ -208,7 +213,7 @@ entry point), which the single-threaded browser gets for free.
 
 **Remaining (registered in `docs/validation-matrix.md` §7 and `plan/plan.md`):**
 
-- [ ] **Ship `ShadowDusk.Slang.Wasm` as the eleventh package.** A dispatch workflow that builds
+- [ ] **Ship `ShadowDusk.Slang.Wasm` as the eleventh package** (now [Phase 68](PHASE-68-slang-in-process-everywhere.md) Area E). A dispatch workflow that builds
   `shadowdusk-slangc.{js,wasm}` from the recipe; attach the artifact by hand to a fixed
   `native-slangc-wasm-2026.14.1` release tag (the `native-vkd3d-wasm-*` model, never republished);
   pin both hashes in `tools/restore.{ps1,sh}`; a `VerifySlangcWasmPresent` pack guard;
@@ -228,7 +233,7 @@ entry point), which the single-threaded browser gets for free.
   flow into every referencing project, so they landed in the browser sample's publish root. Every RID
   is now pack-only (repo runs find `tools/slang/<rid>/` by walking up, as the Unix RIDs already did).
 - [ ] **Stack size of the DXC / SPIRV-Cross / vkd3d wasm modules** (§2.4; validation-matrix §7; issue #271).
-- [ ] **Android in-process slangc** (§3.3): NDK build of slang's compiler library, the C entry
+- [ ] **Android in-process slangc** (§3.3; now [Phase 68](PHASE-68-slang-in-process-everywhere.md) Area G): NDK build of slang's compiler library, the C entry
   point, the P/Invoke transport, and an on-emulator proof (`validation/AndroidGl` precedent).
 - [ ] Optional: retire the sample's dead Phase 22 Slang-as-HLSL-compiler shim
   (`samples/ShaderFiddle.Web/wwwroot/shadowdusk-dxc.js` + `wwwroot/slang/`), which is never
