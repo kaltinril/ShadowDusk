@@ -14,12 +14,21 @@ that loads and renders identically to `mgfxc`'s in the real MonoGame/KNI runtime
 
 ### Added
 
+- **Windows on Arm (win-arm64) is measured (issue #286).** A new CI lane (`.github/workflows/win-arm64.yml`, PR label
+  `run-win-arm64`, manual dispatch, weekly) compiles every fixture `.fx` for OpenGL, Vulkan and DirectX 12 as a native
+  arm64 process on GitHub's `windows-11-arm` runner and requires win-x64's exact result: all 174 match (441 outputs
+  byte-identical, 81 identical refusals), on net8.0 and net10.0. DirectX 11 and FNA on win-arm64 return the registered
+  `SD0211` (ShadowDusk has no vkd3d-shader build for it), never a crash. `ShadowDusk.Slang` still bundles no win-arm64
+  slangc (left out for its size on every consumer until someone asks); its `SD0620` on any unbundled host, win-arm64
+  included, now names the host's RID and asks for an issue.
+
 - **The ShaderToy route's DirectX render gate runs in CI (issue #254).** `validation/ShaderToyRouteDx`
   now runs in `validation-render.yml`'s DX job on `windows-latest`, pinned to WARP: `GradientToy.glsl`
   is converted in process, pinned to the committed `.fx`, and ShadowDusk's `DirectX_11` build is
   pixel-diffed against the committed `mgfxc` `DirectX_11` golden in a real MonoGame WindowsDX `Effect`.
   The golden is `.mgfx` bytes, so both arms are drawn on the same WARP device and the comparison is
   like for like. The driver honours `SHADOWDUSK_DX_WARP=1`; a local run stays on the GPU.
+
 - **`.slang` input for the SkSL and raylib converters, through both Slang routes (issue #253).**
   `SkslConverter.ConvertSlang` and `RaylibConverter.ConvertSlang` take HLSL-compatible Slang through
   the built-in frontend; `SlangCompiler.ConvertToSksl` / `ConvertToRaylib` (and `Async` variants) in

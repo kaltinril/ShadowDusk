@@ -502,10 +502,10 @@ restore_vkd3d_wasm
 # and the -dist variants too), so they run on macOS 26+ only; SlangToolPath reports older
 # macOS as unsupported (SD0620) instead of letting dyld kill the process.
 #
-# linux-arm64 and win-arm64 are NOT restored although upstream publishes them: the core
-# pipeline is incomplete on both (linux-arm64 has no DXC or vkd3d native; win-arm64 has DXC
-# but no vkd3d, and is unproven) (project_decisions.md, issue #227). Add them when the core
-# pipeline does.
+# linux-arm64 and win-arm64 are NOT restored although upstream publishes them
+# (project_decisions.md): linux-arm64 has no DXC native, so the core pipeline cannot run there
+# (issue #227); win-arm64 works in the core pipeline but its slangc is left out of the package
+# for size until someone asks (issue #286; re-add the pins from commit 4af9715d).
 SLANG_VERSION="2026.14.1"
 SLANG_RELEASE_URL="https://github.com/shader-slang/slang/releases/download/v${SLANG_VERSION}"
 

@@ -46,10 +46,12 @@ public static class SlangToolPath
     internal static readonly Version MinimumMacOSVersion = new(26, 0);
 
     /// <summary>
-    /// The RIDs this package bundles slangc for: the core pipeline's desktop RIDs. Upstream
-    /// also publishes linux-arm64 and win-arm64 builds, deliberately not bundled because the
-    /// core pipeline is incomplete there (linux-arm64: no DXC or vkd3d native; win-arm64: no
-    /// vkd3d native, and unproven) (issue #227).
+    /// The RIDs this package bundles slangc for. Upstream also publishes linux-arm64 and
+    /// win-arm64 builds, deliberately not bundled: linux-arm64 because the core pipeline has
+    /// no DXC there (issue #227); win-arm64 because every framework-dependent consumer would
+    /// carry its ~25 MB of natives although the core pipeline is measured working there
+    /// (issue #286, not bundled until someone asks). An unbundled host gets <c>SD0620</c>
+    /// naming its RID and asking for an issue.
     /// </summary>
     internal static readonly IReadOnlyList<string> SupportedRids = ["win-x64", "linux-x64", "osx-x64", "osx-arm64"];
 
@@ -93,7 +95,8 @@ public static class SlangToolPath
         if (rid is null)
         {
             return $"ShadowDusk.Slang bundles slangc for {string.Join(", ", SupportedRids)}; " +
-                   $"this host ({hostRid}) is not one of them.";
+                   $"this host ({hostRid}) is not one of them. If you need ShadowDusk.Slang on {hostRid}, " +
+                   "please open an issue at https://github.com/kaltinril/ShadowDusk/issues naming it.";
         }
 
         if (isMacOS && osVersion < MinimumMacOSVersion)

@@ -156,6 +156,11 @@ history, not just SemVer's letter):
   (its macOS `verify-slang-osx-x64-rosetta.sh` step is the only run of the osx-x64 slangc).
   It has no push trigger, so dispatch it (`gh workflow run pack-consume.yml --ref main`) if the
   last run predates the release commit.
+- **The `win-arm64` workflow must be green on the release commit before dispatch** (issue #286).
+  It is the only native win-arm64 run of the core pipeline (byte identity with win-x64) and of
+  `ShadowDusk.Slang`'s `SD0620` there. Dispatch it on the branch or tag that points at the
+  release commit (`gh workflow run win-arm64.yml --ref main`; `--ref` takes a branch or tag, not
+  a SHA) and confirm the run's head SHA is the release commit.
 - **`Android emulator` must be green on the release commit before dispatch** (issue #304). It is
   the only run of the on-device compile + `Effect` load and of the Android DXC / SPIRV-Cross
   identity checks (`validation/AndroidGl/run-dxc-identity-checks.ps1`). It runs on a push to

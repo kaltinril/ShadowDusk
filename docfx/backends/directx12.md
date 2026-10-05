@@ -23,7 +23,7 @@ KNI does not ship a DirectX 12 platform, so this target is MonoGame-only, like V
 
 Same source, same ShadowDusk version, different build host, differently-broken artifact. ShadowDusk does not hide this: a non-Windows DX12 compile emits the **`SD0214`** warning ([`DxcShaderCompiler`](https://github.com/kaltinril/ShadowDusk/blob/main/src/ShadowDusk.HLSL/Dxc/DxcShaderCompiler.cs)) rather than shipping a silently host-dependent output.
 
-Practically: **build your DX12 content on Windows** until cross-platform signing ships. This is the one target where the usual "compile anywhere, get the same bytes" property does not hold; DX11, OpenGL, and FNA are unaffected and remain byte-identical across hosts.
+Practically: **build your DX12 content on Windows** until cross-platform signing ships. This is the one target where the usual "compile anywhere, get the same bytes" property does not hold; DX11, OpenGL, and FNA are unaffected and remain byte-identical across hosts. Windows on Arm is a Windows host: `dxil.dll` ships for win-arm64 too, and a native arm64 DX12 compile is measured byte-identical (signed) to win-x64's ([issue #286](https://github.com/kaltinril/ShadowDusk/issues/286)).
 
 ## Texture arrays reflect as one parameter (`SD0222`)
 

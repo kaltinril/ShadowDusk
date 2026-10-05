@@ -71,6 +71,20 @@ public sealed class SlangToolPathTests : IDisposable
             reason.ShouldContain(rid, Case.Sensitive);
     }
 
+    [Fact]
+    public void UnsupportedReason_WinArm64_NamesTheRidAndAsksForAnIssue()
+    {
+        // Issue #286: the core pipeline is measured on win-arm64, but its slangc is not bundled
+        // (size). A win-arm64 consumer must get a reason naming its RID and the way to ask.
+        string? reason = SlangToolPath.GetUnsupportedReason(null, isMacOS: false, new Version(10, 0), "win-arm64");
+
+        reason.ShouldNotBeNull();
+        reason.ShouldContain("this host (win-arm64) is not one of them", Case.Sensitive);
+        reason.ShouldContain("If you need ShadowDusk.Slang on win-arm64", Case.Sensitive);
+        reason.ShouldContain("https://github.com/kaltinril/ShadowDusk/issues", Case.Sensitive);
+        SlangToolPath.SupportedRids.ShouldNotContain("win-arm64");
+    }
+
     [Theory]
     [InlineData(12, 0)]
     [InlineData(15, 7)]

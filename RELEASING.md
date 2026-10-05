@@ -278,6 +278,12 @@ first (the `/release` skill does this for you).
 > (under Rosetta 2, output byte-identical to osx-arm64; issue #352). Host floors are upstream's:
 > Linux Ubuntu 22.04+, macOS 26+ (issue #237).
 
+> **win-arm64 (issue #286):** the core pipeline as a native arm64 process (byte identity with
+> win-x64) and `ShadowDusk.Slang`'s `SD0620` there run only in the `win-arm64` workflow
+> (`windows-11-arm`). Before dispatching, run it on the branch or tag that points at the release
+> commit (`gh workflow run win-arm64.yml --ref main`; `--ref` takes a branch or tag, not a SHA),
+> check the run's head SHA is the release commit, and wait for green. No win-arm64 slangc is packed.
+
 ---
 
 ## If something goes wrong

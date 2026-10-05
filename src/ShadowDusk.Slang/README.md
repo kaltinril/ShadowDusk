@@ -30,7 +30,11 @@ self-contained. Two host floors come from the upstream binaries themselves:
 - **Linux** needs a GCC 11+ `libstdc++` (Ubuntu 22.04 or later).
 - **macOS** needs **macOS 26 or later**: the upstream macOS build declares that minimum. ShadowDusk does not build its own slangc for older macOS; open an issue if you need one.
 
-On any other host, `SlangCompiler` returns `SD0620` naming the reason instead of crashing.
+On any other host, `SlangCompiler` returns `SD0620` naming the reason instead of crashing. That
+includes Windows on Arm (win-arm64): upstream publishes a slangc for it, but it is not bundled, to
+keep the package small for everyone else. Open an issue at
+https://github.com/kaltinril/ShadowDusk/issues if you need it. (An x64 process on Windows on Arm
+is a win-x64 host and works.)
 
 Parameter names are the ones you wrote: cbuffer members, `Texture2D`/`SamplerState` globals,
 and a combined `Sampler2D Comb;`, whose texture reflects as `Comb`

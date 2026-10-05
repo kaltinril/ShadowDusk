@@ -156,6 +156,13 @@ Where each host×target cell stands (updated 2026-07-27; proven cells carry thei
 | Metal MSL | parked — no validatable consumer runtime yet (Phase 31) | | | |
 | Build-time shapes (CLI / MGCB plugin / Content Builder library) | ✅ proven — `validation/MgcbPlugin` (real `dotnet-mgcb` 3.8.4.1 + 3.8.5) and `validation/ContentBuilder` (real MonoGame 3.8.5 `ContentBuilder`, rung 4, Phase 63) | ✅ the CLI and the packed `ShadowDusk.ContentPipeline` consumed cold by a scratch Builder in `pack-consume.yml`; MGCB/Builder render bars are Windows-only by nature | ✅ same as Linux | n/a — a browser has no content pipeline |
 
+> **Windows on Arm (win-arm64, a native arm64 process; [issue #286](https://github.com/kaltinril/ShadowDusk/issues/286), 2026-10-04):**
+> OpenGL, Vulkan and DirectX 12 compile there and produce **win-x64's exact bytes** (all 174 fixture `.fx`,
+> measured in CI on `windows-11-arm` by `win-arm64.yml`), so the Windows column's proofs carry over for
+> those rows. DirectX 11 and FNA are refused with the registered `SD0211`: ShadowDusk builds vkd3d-shader for
+> no win-arm64. `ShadowDusk.Slang` bundles no win-arm64 slangc (left out for size until someone asks), so it
+> returns `SD0620` there. An x64 process under emulation there is plain win-x64 and has every target.
+>
 > **The DXC-divergence carve-out (per-OS compile reach, open):** the Linux/macOS
 > "compiles green in CI" cells above hold for the normal corpus, but NOT for the
 > Phase 34 advanced-texture HiDef shaders — 3D-texture (`tex3D`), explicit-LOD

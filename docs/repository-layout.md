@@ -11,7 +11,8 @@ ShadowDusk/
 │                                  #   DX on WARP, Vulkan on lavapipe), wasm.yml (WASM & browser gates),
 │                                  #   pack-consume.yml (cold consumers of the packed feed), docs.yml
 │                                  #   (DocFX site), release.yml (NuGet publish), android-emulator.yml
-│                                  #   (on-device Android checks, issue #304). Native builds (manual dispatch;
+│                                  #   (on-device Android checks, issue #304), win-arm64.yml (native win-arm64
+│                                  #   vs win-x64 byte identity, issue #286). Native builds (manual dispatch;
 │                                  #   the two Android ones also on PRs touching their recipe or the restore
 │                                  #   scripts), artifacts uploaded by hand to fixed native-* release tags:
 │                                  #   dxc-build.yml (macOS DXC), dxc-android-build.yml
