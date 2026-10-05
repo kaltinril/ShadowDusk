@@ -5,7 +5,7 @@ using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
 
-namespace ShadowDusk.Tests.Shared;
+namespace ShadowDusk.Integration.Tests.Tests;
 
 /// <summary>
 /// The cross-ARCHITECTURE byte-identity harness (issue #286): one CI job compiles a corpus on

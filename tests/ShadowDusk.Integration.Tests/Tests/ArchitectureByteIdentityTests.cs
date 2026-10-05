@@ -4,7 +4,6 @@ using System.Runtime.InteropServices;
 using Shouldly;
 using ShadowDusk.Compiler;
 using ShadowDusk.Core;
-using ShadowDusk.Tests.Shared;
 using Xunit;
 using Xunit.Abstractions;
 
@@ -104,16 +103,15 @@ public sealed class ArchitectureByteIdentityTests(ITestOutputHelper output)
     /// <summary>
     /// The consumer-visible contract where vkd3d-shader has no build for the process RID
     /// (win-arm64 today): the default DirectX 11 backend and the FNA target fail with the
-    /// registered <c>SD0211</c>, never an exception. Runs only on such a host.
+    /// registered <c>SD0211</c>, never an exception. Runs only on such a host (skips elsewhere,
+    /// unless the run expects an Arm64 process, where it must run and fails on any other).
     /// </summary>
-    [Fact]
+    [WinArm64Fact]
     public async Task DirectX11AndFna_WithoutVkd3d_AreSd0211_NeverACrash()
     {
-        if (!(OperatingSystem.IsWindows() && RuntimeInformation.ProcessArchitecture == Architecture.Arm64))
-        {
-            output.WriteLine("not a win-arm64 process; vkd3d-shader ships for this host, nothing to measure");
-            return;
-        }
+        (OperatingSystem.IsWindows() && RuntimeInformation.ProcessArchitecture == Architecture.Arm64).ShouldBeTrue(
+            $"this measurement needs a native win-arm64 process, got {RuntimeInformation.RuntimeIdentifier} " +
+            $"({RuntimeInformation.ProcessArchitecture})");
 
         string source = (await File.ReadAllTextAsync(Path.Combine(FixturesRoot, "Grayscale.fx")))
             .Replace("\r\n", "\n", StringComparison.Ordinal);
@@ -170,6 +168,23 @@ public sealed class ArchitectureByteIdentityTests(ITestOutputHelper output)
             // one) makes the whole corpus's picture visible in one run.
             return $"exception:{ex.GetType().FullName}: {ex.Message}";
         }
+    }
+}
+
+/// <summary>
+/// Skips unless this is a native win-arm64 process. Never skips when the run sets
+/// <see cref="ArchitectureManifest.ExpectedArchitectureEnvVar"/> to <c>Arm64</c>: there a wrong
+/// process must fail the test, not hide it as a skip (issue #286).
+/// </summary>
+public sealed class WinArm64FactAttribute : FactAttribute
+{
+    public WinArm64FactAttribute()
+    {
+        bool winArm64 = OperatingSystem.IsWindows() && RuntimeInformation.ProcessArchitecture == Architecture.Arm64;
+        bool arm64Expected = string.Equals(
+            Environment.GetEnvironmentVariable(ArchitectureManifest.ExpectedArchitectureEnvVar), "Arm64", StringComparison.Ordinal);
+        if (!winArm64 && !arm64Expected)
+            Skip = $"not a win-arm64 process ({RuntimeInformation.RuntimeIdentifier}); vkd3d-shader ships here (issue #286)";
     }
 }
 

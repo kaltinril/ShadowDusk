@@ -590,7 +590,7 @@ function Restore-SlangRid([string]$Rid, [string]$ZipSuffix, [string]$ZipSha,
 # linux-arm64 and win-arm64 are NOT restored although upstream publishes them
 # (project_decisions.md): linux-arm64 has no DXC native, so the core pipeline cannot run there
 # (issue #227); win-arm64 works in the core pipeline but its slangc is left out of the package
-# for size until someone asks (issue #286; the pins are in PR #390 to re-add).
+# for size until someone asks (issue #286; re-add the pins from commit 4af9715d).
 function Restore-Slang {
     Restore-SlangRid 'win-x64' 'windows-x86_64' `
         '5ed0a59d650a0af0aca45d5db4e083b3d8fb5cea05748747dd95dfbe9c580658' `

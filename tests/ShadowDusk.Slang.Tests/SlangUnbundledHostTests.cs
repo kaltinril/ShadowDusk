@@ -30,6 +30,8 @@ public sealed class SlangUnbundledHostTests(ITestOutputHelper output)
         output.WriteLine($"ProcessArchitecture={RuntimeInformation.ProcessArchitecture} RuntimeIdentifier={hostRid}");
         if (Environment.GetEnvironmentVariable("SHADOWDUSK_EXPECT_PROCESS_ARCH") is { Length: > 0 } arch)
             RuntimeInformation.ProcessArchitecture.ToString().ShouldBe(arch);
+        SlangToolPath.CurrentRid.ShouldBeNull(
+            $"this host ({hostRid}) has a bundled slangc, so the unbundled-host path cannot be measured here");
 
         var options = new CompilerOptions { Target = PlatformTarget.OpenGL, SourceFileName = "p.slang" };
         var result = new SlangCompiler().Compile(ValidPixelShader, options);
@@ -46,11 +48,17 @@ public sealed class SlangUnbundledHostTests(ITestOutputHelper output)
     }
 }
 
-/// <summary>Skips unless this process is a host ShadowDusk.Slang bundles no slangc for.</summary>
+/// <summary>
+/// Skips unless this process is a host ShadowDusk.Slang bundles no slangc for. Never skips when
+/// <c>SHADOWDUSK_EXPECT_PROCESS_ARCH</c> is set (the win-arm64 lane): there an unexpected
+/// process must fail the architecture assertion, not pass vacuously as a skip.
+/// </summary>
 public sealed class UnbundledSlangHostFactAttribute : FactAttribute
 {
     public UnbundledSlangHostFactAttribute()
     {
+        if (Environment.GetEnvironmentVariable("SHADOWDUSK_EXPECT_PROCESS_ARCH") is { Length: > 0 })
+            return;
         if (SlangToolPath.CurrentRid is not null)
             Skip = $"this host ({RuntimeInformation.RuntimeIdentifier}) is a bundled slangc RID; " +
                    "the unbundled-host path runs on win-arm64 in .github/workflows/win-arm64.yml (issue #286)";
