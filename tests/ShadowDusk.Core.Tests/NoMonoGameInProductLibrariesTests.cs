@@ -74,6 +74,34 @@ public sealed class NoMonoGameInProductLibrariesTests
     }
 
     /// <summary>
+    /// The same rule for the two other consumer runtimes ShadowDusk validates against but must
+    /// never ship (Phase 62 B3, issue #369): <b>SkiaSharp</b> (the SkSL converter's evidence runs
+    /// in real Skia from the Compiler tests and <c>validation/SkiaVsKni</c>) and <b>KNI</b>
+    /// (<c>nkast.*</c>, the reference arm of that driver and every KNI harness). Both are test or
+    /// driver dependencies only; no exemption applies, not even to the delivery-shape projects.
+    /// Matched on the package reference itself, because the Compiler's description and tags name
+    /// SkiaSharp in prose.
+    /// </summary>
+    [Fact]
+    public void NoSrcProjectReferencesSkiaSharpOrKni()
+    {
+        string srcDir = Path.Combine(FindRepoRoot(), "src");
+        Directory.Exists(srcDir).ShouldBeTrue($"the product source tree must exist at {srcDir}");
+
+        var offenders = new List<string>();
+        foreach (string csproj in Directory.EnumerateFiles(srcDir, "*.csproj", SearchOption.AllDirectories))
+        {
+            string text = File.ReadAllText(csproj);
+            if (Regex.IsMatch(text, @"<PackageReference\s+Include=""(SkiaSharp|nkast\.)", RegexOptions.IgnoreCase))
+                offenders.Add(Path.GetFileName(csproj));
+        }
+
+        offenders.ShouldBeEmpty(
+            "no shipped ShadowDusk.* product library may reference SkiaSharp or KNI (nkast.*); they are " +
+            "validation-only dependencies. Offending projects: " + string.Join(", ", offenders));
+    }
+
+    /// <summary>
     /// The MGCB plugin's exemption is narrow, and this pins it: its MonoGame reference must stay
     /// <b>compile-only and private</b>. Drop either attribute and the plugin starts shipping
     /// MonoGame's content-pipeline assembly (plus its FreeImage/Assimp/mojoshader natives) beside
