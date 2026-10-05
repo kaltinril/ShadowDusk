@@ -150,7 +150,9 @@ ShadowDusk/
 │                                  #     DeferredSpriteMrtGl (the only driver that binds 2 render targets),
 │                                  #     ShaderToyRouteGl (the `.glsl` frontend route),
 │                                  #     RaylibRoute (Phase 59: the raylib converter in REAL Raylib-cs vs the
-│                                  #       same .fx on real MonoGame GL, two arm processes), …), DX (VsDrivenDx,
+│                                  #       same .fx on real MonoGame GL, two arm processes),
+│                                  #     SkiaVsKni (issue #369: the SkSL converter in REAL SkiaSharp vs the same
+│                                  #       .fx on real KNI SDL2.GL, one process), …), DX (VsDrivenDx,
 │                                  #   DxModernFeatures, ShaderToyRouteDx (that route's DirectX arm), …),
 │                                  #   DX12 (BaselineDx12, CandidateDx12, VsDrivenDx12
 │                                  #     + compare_dx12.py), FNA (FnaValidation), KNI (KniDesktopGL, KniWinFormsDX, KniVsDriven),
