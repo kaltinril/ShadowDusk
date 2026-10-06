@@ -60,6 +60,14 @@ to nuget.org, and attaches self-contained CLI binaries for each RID to a GitHub 
    is "command not found", not a render divergence — a red that means nothing about the product.
    Check for `9009` before investigating any gate failure.
 
+   Two more setup traps that look like product failures:
+   - **`dotnet-mgcb … is not in the NuGet cache`** (MGCB plugin + the XNB gates): the drivers
+     look under `NUGET_PACKAGES` when it is set, but `dotnet tool restore` reports success
+     without copying a tool already present in `~/.nuget/packages`. Copy
+     `~/.nuget/packages/dotnet-mgcb/<version>` into `$env:NUGET_PACKAGES/dotnet-mgcb/`.
+   - **`tools/check-lock-files.sh` and the other `.sh` scripts need Git Bash.** From
+     PowerShell, `bash` can resolve to WSL, which fails with "no installed distributions".
+
 5. **A green Windows render gate — RUN IT FIRST (CI covers only part of it).** `validation-render.yml`
    runs some of the rung-4 render proofs ("renders like `mgfxc`/`fxc` in the real engine") on
    software rasterizers: the in-process OpenGL gates and the GL corpus on Mesa llvmpipe; a
