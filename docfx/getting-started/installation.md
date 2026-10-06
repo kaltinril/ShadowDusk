@@ -107,7 +107,7 @@ The FNA path is cross-platform and self-contained: it uses the same `vkd3d-shade
 
 ## DirectX backend & native tools
 
-For **DirectX 11**, the default backend is the cross-platform `vkd3d-shader`. Its natives for all four desktop RIDs (win-x64, linux-x64, osx-x64, osx-arm64) ship inside the NuGet package, so DirectX compiles out of the box on Linux, macOS, and Windows, with the same bytes everywhere. On Windows you can opt into Microsoft's `d3dcompiler_47` (a system DLL already present, the most `fxc`-faithful option) via `CompilerOptions.DxbcBackend = DxbcBackend.D3DCompiler`. See the [DirectX DXBC (vkd3d) Path](../architecture/directx-dxbc-vkd3d.md) for details. (The [restore script](restore-native-tools.md) is only for building ShadowDusk itself from source.)
+For **DirectX 11**, the default backend is the cross-platform `vkd3d-shader`. Its natives for all four desktop RIDs (win-x64, linux-x64, osx-x64, osx-arm64) ship inside the NuGet package, so DirectX compiles out of the box on Linux, macOS, and Windows, with the same bytes everywhere. On Windows you can opt into Microsoft's `d3dcompiler_47` (a system DLL already present, the most `fxc`-faithful option) via `CompilerOptions.DxbcBackend = DxbcBackend.D3DCompiler`. See the [DirectX DXBC (vkd3d) Path](../architecture/directx-dxbc-vkd3d.md) for details. On Windows on Arm (win-arm64), OpenGL, Vulkan and DirectX 12 compile to the same bytes as win-x64; DirectX 11 and FNA return `SD0211`, because no vkd3d-shader build exists for win-arm64. (The [restore script](restore-native-tools.md) is only for building ShadowDusk itself from source.)
 
 ## Building from source
 

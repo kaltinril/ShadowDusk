@@ -104,7 +104,7 @@ FNA:
   HLSL (.fx, D3D9-style)  ->  vkd3d-shader  ->  D3D9 bytecode  ->  .fxb
 ```
 
-For **DirectX 11**, the default compiler is the cross-platform **vkd3d-shader**, whose native ships inside the package for all four desktop RIDs, so a DirectX compile produces the same bytes on Linux, macOS, and Windows. On Windows you can opt into Microsoft's `d3dcompiler_47` (a system DLL already present) as a reference-faithful alternative via `CompilerOptions.DxbcBackend`. DXC is not used for DX11 — it emits a newer bytecode (DXIL/SM6) the DX11 runtime can't load — that DXIL output is instead what the DirectX 12 target ships directly (`PlatformTarget.DirectX12`, auto-selected for consumers targeting `WindowsDX12`).
+For **DirectX 11**, the default compiler is the cross-platform **vkd3d-shader**, whose native ships inside the package for all four desktop RIDs, so a DirectX compile produces the same bytes on Linux, macOS, and Windows. On Windows you can opt into Microsoft's `d3dcompiler_47` (a system DLL already present) as a reference-faithful alternative via `CompilerOptions.DxbcBackend`. DXC is not used for DX11 — it emits a newer bytecode (DXIL/SM6) the DX11 runtime can't load — that DXIL output is instead what the DirectX 12 target ships directly (`PlatformTarget.DirectX12`, auto-selected for consumers targeting `WindowsDX12`). On Windows on Arm (win-arm64), OpenGL, Vulkan and DirectX 12 compile to the same bytes as win-x64; DirectX 11 and FNA return `SD0211`, because no vkd3d-shader build exists for win-arm64.
 </details>
 
 <details>
