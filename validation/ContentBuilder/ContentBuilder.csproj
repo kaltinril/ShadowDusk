@@ -31,6 +31,10 @@
   <ItemGroup Label="MonoGame 3.8.5 stable: the Content Builder API + the WindowsDX render host">
     <PackageReference Include="MonoGame.Framework.Content.Pipeline" Version="3.8.5" />
     <PackageReference Include="MonoGame.Framework.WindowsDX" Version="3.8.5.1" />
+    <!-- The stock DesktopVK/WindowsDX12 passes start `dxc`. This package's build/ targets copy
+         dxc.exe next to the harness only for a DIRECT reference; transitively it is never
+         copied and the stock arm fails unless some other dxc happens to be on PATH. -->
+    <PackageReference Include="MonoGame.Tool.Dxc" Version="1.8.2505.11" />
   </ItemGroup>
 
   <ItemGroup>

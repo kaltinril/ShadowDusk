@@ -181,7 +181,7 @@ O_MGFX10 --> R_ANDROID : "GL ES; one v10 .mgfx.\non-device compile (android DXC\
 SKSLCONV --> O_SKSL
 O_SKSL --> R_SKIA : "image-fidelity vs the original\nHLSL's math; NO mgfxc oracle\n(Skia has no reference compiler)"
 RAYLIBCONV --> O_RAYLIB
-O_RAYLIB --> R_RAYLIB : "image-fidelity vs the same .fx\non real MonoGame GL: 15/15 maxd 0;\nNO mgfxc oracle (raylib has none)"
+O_RAYLIB --> R_RAYLIB : "image-fidelity vs the same .fx\non real MonoGame GL: 15/15 maxd 0,\n+16th .fx case + 12/12 .slang arms;\nNO mgfxc oracle (raylib has none)"
 
 note as N1
 == Bundled native binaries (the blue boxes - ride inside the NuGet, no fxc / mgfxc / Wine / SDK)
@@ -189,12 +189,12 @@ note as N1
 
 == Delivery shapes (one and the same library)
 **Library** IShaderCompiler.CompileAsync(fx) -> bytes  *(the product)*   |   **CLI** ShadowDuskCLI   |   **MGCB plugin** (.mgcb)   |   **Content Builder library** (ShadowDusk.ContentPipeline: the same importer/processor as a lib for MonoGame 3.8.5's C# ContentBuilder)   |   **direct .xnb** (CompiledShader.ToXnb() / an .xnb CLI output path - Content.Load<Effect> ready, MGCB not involved)   |   **WASM** in-browser compile
-**OS:** self-contained on Linux / macOS / Windows  +  Browser (WASM)  +  **Android** (GL path; on-device DXC + SPIRV-Cross built for android-arm64/x86_64, loaded in-process from the APK lib/[abi]/ dir)
+**OS:** self-contained on Linux / macOS / Windows (win-arm64: GL/Vulkan/DX12 only, DX11+FNA refuse with SD0211)  +  Browser (WASM)  +  **Android** (GL path; on-device DXC + SPIRV-Cross built for android-arm64/x86_64, loaded in-process from the APK lib/[abi]/ dir)
 
 == Additive, distinct axes (not §1 targets)
 **Slang input, two tiers.** Free default (ShadowDusk.Compiler.Slang): .slang joins .fx/.glsl as an accepted INPUT; no Slang binary shipped or invoked, pure managed text transform. Opt-in (ShadowDusk.Slang, Phase 66): bundles real slangc (win-x64, linux-x64, osx-x64, osx-arm64) for genuine Slang - generics, interfaces - handed to the SAME unchanged faithful pipeline once slangc emits HLSL. No mgfxc oracle exists for Slang, so NEITHER tier's route is ever mgfxc-equivalent.
-**SkSL OUTPUT** (ShadowDusk.Compiler.Sksl) - converts a pixel-only .fx to SkSL text for SkiaSharp's SKRuntimeEffect; evidence is rendered-image fidelity against the original HLSL, never mgfxc-equivalence (Skia has no reference compiler).
-**raylib OUTPUT** (ShadowDusk.Compiler.Raylib, Phase 59) - converts a single-pass, pixel-only .fx to a glsl330 fragment shader for Raylib-cs; evidence is rendered-image fidelity against the same .fx on real MonoGame GL (validation/RaylibRoute), never mgfxc-equivalence (raylib has no reference compiler).
+**SkSL OUTPUT** (ShadowDusk.Compiler.Sksl) - converts a pixel-only .fx (or .slang, through either Slang tier) to SkSL text for SkiaSharp's SKRuntimeEffect; evidence is rendered-image fidelity against the original HLSL, never mgfxc-equivalence (Skia has no reference compiler).
+**raylib OUTPUT** (ShadowDusk.Compiler.Raylib, Phase 59) - converts a single-pass, pixel-only .fx (or .slang, through either Slang tier) to a glsl330 fragment shader for Raylib-cs; evidence is rendered-image fidelity against the same .fx on real MonoGame GL (validation/RaylibRoute), never mgfxc-equivalence (raylib has no reference compiler).
 end note
 
 legend right

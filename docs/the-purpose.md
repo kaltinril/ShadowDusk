@@ -64,7 +64,7 @@ The two source converters (items 8 and 9 above) share the same faithful front ha
 | Consumer runtime (converter) | Output | Route | How it is proven |
 |---|---|---|---|
 | SkiaSharp (`SkslConverter`) | SkSL runtime effect (fragment only) | DXC → SPIR-V → SPIRV-Cross → GLSL → convention mapper → SkSL | Image fidelity in real SkiaSharp (CPU raster) against the original HLSL's analytic math, ±2/255 (`SkslSkiaEvidenceTests`, validation matrix §8.0b) |
-| raylib / Raylib-cs (`RaylibConverter`) | `glsl330` fragment shader for `LoadShaderFromMemory(null, fs)` | DXC → SPIR-V → SPIRV-Cross → GLSL → convention mapper | Image fidelity in real Raylib-cs against the same `.fx` on real MonoGame DesktopGL, 15/15 maxd 0 (`validation/RaylibRoute`, validation matrix §8.0c) |
+| raylib / Raylib-cs (`RaylibConverter`) | `glsl330` fragment shader for `LoadShaderFromMemory(null, fs)` | DXC → SPIR-V → SPIRV-Cross → GLSL → convention mapper | Image fidelity in real Raylib-cs against the same `.fx` on real MonoGame DesktopGL, 15/15 maxd 0, plus a 16th `.fx` case and 12/12 `.slang` arms (`validation/RaylibRoute`, validation matrix §8.0c) |
 
 > **The feature ceiling is the *runtime's*, not the compiler's, and it differs by backend.** ShadowDusk's
 > frontend (DXC + SPIRV-Cross) is fully modern; the limits it enforces mirror what each consumer runtime can

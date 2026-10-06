@@ -24,7 +24,7 @@
     <PackageLicenseExpression>MIT</PackageLicenseExpression>
     <PackageReadmeFile>README.md</PackageReadmeFile>
     <Description>ShadowDusk full Slang front-end: bundles the real slangc compiler for win-x64, linux-x64, osx-x64 and osx-arm64 (Apache-2.0, see THIRD-PARTY-NOTICES.txt) so a consumer gets genuine Slang input (import, generics, interfaces) compiled via slangc -target hlsl and handed to ShadowDusk's existing, unchanged, faithful DXC pipeline. Linux needs a GCC 11+ libstdc++ (Ubuntu 22.04 or later); macOS needs macOS 26 or later (the upstream build's own floor). Optional and additive: ShadowDusk.Compiler's own .slang support (an HLSL-compatible subset, no extra package) is untouched.</Description>
-    <PackageTags>monogame kni fna slang shader compiler hlsl</PackageTags>
+    <PackageTags>monogame kni fna slang shader compiler hlsl sksl skiasharp raylib</PackageTags>
     <!-- Phase 26: emit the XML doc file for DocFX. CS1591 suppressed during the
          doc-comment transition so the TreatWarningsAsErrors build stays green. -->
     <GenerateDocumentationFile>true</GenerateDocumentationFile>
