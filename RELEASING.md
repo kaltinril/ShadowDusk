@@ -78,7 +78,7 @@ to nuget.org, and attaches self-contained CLI binaries for each RID to a GitHub 
    time is spent:
 
    ```powershell
-   ./validation/run-windows-render-gates.ps1              # DX corpus + DX-modern (VTF) + DX Apos gallery + DX resource arrays (issues #339/#340: texture-array table + render, sampler-array SD0224 refusal) + DX ShaderToy route + DX12 corpus + DX12 VS-driven/Apos gallery + DX12 texture-array row (issue #324) + KNI-DX + KNI-GL desktop + KNI-GL VS-driven + GL Apos + GL Apos gallery + ANGLE-D3D11 derivative probe (issue #136) + MGCB plugin (real dotnet mgcb 3.8.4.1 AND 3.8.5, decoy-PATH DXC guard) + XNB direct writer Content.Load on MonoGame WindowsDX, MonoGame DesktopGL and KNI 4.2.9001+4.3.9001 + MonoGame 3.8.5 Content Builder (ShadowDusk.ContentPipeline, real ContentBuilder + Content.Load<Effect>) + Slang corpus + Slang full corpus (ShadowDusk.Slang real-slangc route; DX11, DX12 and Vulkan real-Effect arms, issue #230) + Slang textured GL (issue #252) + BOTH Vulkan gates (incl. the texture-array SD0221 row), vs mgfxc/fxc
+   ./validation/run-windows-render-gates.ps1              # DX corpus + DX-modern (VTF) + DX Apos gallery + DX resource arrays (issues #339/#340: texture-array table + render, sampler-array SD0224 refusal) + DX ShaderToy route + DX12 corpus + DX12 VS-driven/Apos gallery + DX12 texture-array row (issue #324) + KNI-DX + KNI-GL desktop + KNI-GL VS-driven + Skia vs KNI (SkSL, issue #369) + GL Apos + GL Apos gallery + ANGLE-D3D11 derivative probe (issue #136) + MGCB plugin (real dotnet mgcb 3.8.4.1 AND 3.8.5, decoy-PATH DXC guard) + XNB direct writer Content.Load on MonoGame WindowsDX, MonoGame DesktopGL and KNI 4.2.9001+4.3.9001 + MonoGame 3.8.5 Content Builder (ShadowDusk.ContentPipeline, real ContentBuilder + Content.Load<Effect>) + Slang corpus + Slang full corpus (ShadowDusk.Slang real-slangc route; DX11, DX12 and Vulkan real-Effect arms, issue #230) + Slang textured GL (issue #252) + BOTH Vulkan gates (incl. the texture-array SD0221 row), vs mgfxc/fxc
    ./validation/run-windows-render-gates.ps1 -IncludeFna  # also FNA fx_2_0 + its Slang arm, for an FNA-affecting release (include it when in doubt)
    ```
 
@@ -103,7 +103,7 @@ ShadowDusk's package version lives in **exactly one place**:
 ```xml
 <!-- Directory.Build.props -->
 <PropertyGroup>
-  <Version>0.20.0</Version>
+  <Version>0.21.0</Version>
 </PropertyGroup>
 ```
 
@@ -116,8 +116,8 @@ ten packages (and their inter-package dependency ranges) at the same version.
 > those pin third-party dependency versions under Central Package Management. Leave them
 > alone.)
 
-To bump for a release, change that one line (e.g. `0.19.0` → `0.20.0`), update
-`CHANGELOG.md` (move `[Unreleased]` into a dated `[0.20.0]` section, leave a fresh empty
+To bump for a release, change that one line (e.g. `0.20.0` → `0.21.0`), update
+`CHANGELOG.md` (move `[Unreleased]` into a dated `[0.21.0]` section, leave a fresh empty
 `[Unreleased]`), update the version examples in this file, commit, and merge to `main` via PR.
 
 ---
@@ -163,7 +163,7 @@ marker; the workflow creates and pushes it itself on a successful release).
 ### Manual dispatch (the only trigger)
 
 After the version-bump PR is merged to `main`: **Actions → Release → Run workflow**, and
-enter the `version` input (e.g. `0.20.0`, no leading `v`). On dispatch the workflow also
+enter the `version` input (e.g. `0.21.0`, no leading `v`). On dispatch the workflow also
 creates and pushes the matching `v<version>` tag so the GitHub Release anchors to a tag.
 
 ### The `validate` guard (input ↔ version)
@@ -204,7 +204,7 @@ first (the `/release` skill does this for you).
 2. **The `ShadowDuskCLI` tool installs and runs:**
 
    ```bash
-   dotnet tool install -g ShadowDusk.Cli --version 0.20.0
+   dotnet tool install -g ShadowDusk.Cli --version 0.21.0
    ShadowDuskCLI --help
    ```
 
@@ -212,7 +212,7 @@ first (the `/release` skill does this for you).
 3. **The consumer (GL) self-contained path works on a clean machine:**
 
    ```bash
-   dotnet add package ShadowDusk.Compiler --version 0.20.0
+   dotnet add package ShadowDusk.Compiler --version 0.21.0
    ```
 
    then compile a `.fx` → GL `.mgfx` in memory. This restores `Core/HLSL/GLSL` plus

@@ -66,6 +66,8 @@ The same faithful front half (DXC, SPIRV-Cross) also feeds two source converters
 - **SkiaSharp (SkSL)**: `ShadowDusk.Compiler.Sksl.SkslConverter.Convert(fx, new SkslConvertOptions())` returns an `SkslConversion` whose SkSL text loads into `SKRuntimeEffect`.
 - **raylib (Raylib-cs)**: `ShadowDusk.Compiler.Raylib.RaylibConverter.Convert(fx, new RaylibConvertOptions())` returns a `RaylibShader`: a `#version 330` fragment shader for `Raylib.LoadShaderFromMemory(null, fs)` plus its uniform and sampler binding contract.
 
+Both also take `.slang` input (`SkslConverter.ConvertSlang`, `RaylibConverter.ConvertSlang`) through the built-in Slang subset; genuine Slang (generics, interfaces) goes through **ShadowDusk.Slang**'s `SlangCompiler.ConvertToSksl` / `ConvertToRaylib`.
+
 Anything outside what each runtime can hold is refused by name, never silently dropped.
 
 ## Links

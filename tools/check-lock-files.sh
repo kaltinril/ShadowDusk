@@ -37,7 +37,7 @@ while IFS= read -r lock; do
     extra=("-p:KniVersion=$v")
   fi
   # EnableWindowsTargeting lets a Linux/macOS host restore the net*-windows drivers.
-  if out=$(dotnet restore "$proj" --locked-mode -p:EnableWindowsTargeting=true "${extra[@]}" 2>&1); then
+  if out=$(dotnet restore "$proj" --locked-mode -p:EnableWindowsTargeting=true ${extra[@]+"${extra[@]}"} 2>&1); then
     echo "OK    $lock"
   else
     echo "FAIL  $lock"; echo "$out" | grep -E 'error' | head -5; fail=1

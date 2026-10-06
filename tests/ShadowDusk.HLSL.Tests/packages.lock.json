@@ -187,7 +187,7 @@
       "shadowdusk.hlsl": {
         "type": "Project",
         "dependencies": {
-          "ShadowDusk.Core": "[0.20.0, )",
+          "ShadowDusk.Core": "[0.21.0, )",
           "Vortice.D3DCompiler": "[3.3.4, )",
           "Vortice.Dxc": "[3.3.4, 3.3.4]"
         }
@@ -401,7 +401,7 @@
       "shadowdusk.hlsl": {
         "type": "Project",
         "dependencies": {
-          "ShadowDusk.Core": "[0.20.0, )",
+          "ShadowDusk.Core": "[0.21.0, )",
           "Vortice.D3DCompiler": "[3.3.4, )",
           "Vortice.Dxc": "[3.3.4, 3.3.4]"
         }

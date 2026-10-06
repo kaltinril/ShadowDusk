@@ -14,6 +14,14 @@ that loads and renders identically to `mgfxc`'s in the real MonoGame/KNI runtime
 
 ### Added
 
+### Changed
+
+### Fixed
+
+## [0.21.0] - 2026-10-05
+
+### Added
+
 - **Windows on Arm (win-arm64) is measured (issue #286).** A new CI lane (`.github/workflows/win-arm64.yml`, PR label
   `run-win-arm64`, manual dispatch, weekly) compiles every fixture `.fx` for OpenGL, Vulkan and DirectX 12 as a native
   arm64 process on GitHub's `windows-11-arm` runner and requires win-x64's exact result: all 174 match (441 outputs
@@ -149,7 +157,7 @@ that loads and renders identically to `mgfxc`'s in the real MonoGame/KNI runtime
 - **Android full-Slang measurement (issue #257).** On an API-34 emulator an app can spawn a packaged
   executable only when native libraries are extracted, which a default Release build does not do,
   and upstream ships no Android slangc, so full Slang on Android will take the in-process route
-  (designed in Phase 67, not built). `docs/validation-matrix.md` §7 tracks it.
+  (planned in Phase 68, not built). `docs/validation-matrix.md` §7 tracks it.
 
 - **Real-engine render gates for `ShadowDusk.Slang` on DirectX 12, Vulkan and FNA (issue #230).**
   The 21-shader real-slangc corpus goes through `SlangCompiler` and is rendered next to the
@@ -3520,7 +3528,8 @@ WASM-capable build — the same pipeline on every host, with no substitute compi
 - **The MGCB content-processor plugin** is a scaffold; the PATH-based `mgfxc` override is the
   shipping MGCB integration path.
 
-[Unreleased]: https://github.com/kaltinril/ShadowDusk/compare/v0.20.0...HEAD
+[Unreleased]: https://github.com/kaltinril/ShadowDusk/compare/v0.21.0...HEAD
+[0.21.0]: https://github.com/kaltinril/ShadowDusk/compare/v0.20.0...v0.21.0
 [0.20.0]: https://github.com/kaltinril/ShadowDusk/compare/v0.19.0...v0.20.0
 [0.19.0]: https://github.com/kaltinril/ShadowDusk/compare/v0.18.0...v0.19.0
 [0.18.0]: https://github.com/kaltinril/ShadowDusk/compare/v0.17.0...v0.18.0

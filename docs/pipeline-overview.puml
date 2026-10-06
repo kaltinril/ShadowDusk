@@ -181,7 +181,7 @@ O_MGFX10 --> R_ANDROID : "GL ES; one v10 .mgfx.\non-device compile (android DXC\
 SKSLCONV --> O_SKSL
 O_SKSL --> R_SKIA : "image-fidelity vs the original\nHLSL's math; NO mgfxc oracle\n(Skia has no reference compiler)"
 RAYLIBCONV --> O_RAYLIB
-O_RAYLIB --> R_RAYLIB : "image-fidelity vs the same .fx\non real MonoGame GL: 15/15 maxd 0;\nNO mgfxc oracle (raylib has none)"
+O_RAYLIB --> R_RAYLIB : "image-fidelity vs the same .fx\non real MonoGame GL: 15/15 maxd 0,\n+16th .fx case + 12/12 .slang arms;\nNO mgfxc oracle (raylib has none)"
 
 note as N1
 == Bundled native binaries (the blue boxes - ride inside the NuGet, no fxc / mgfxc / Wine / SDK)
