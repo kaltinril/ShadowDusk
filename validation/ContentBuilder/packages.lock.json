@@ -44,6 +44,12 @@
           "System.Security.Cryptography.X509Certificates": "4.3.2"
         }
       },
+      "MonoGame.Tool.Dxc": {
+        "type": "Direct",
+        "requested": "[1.8.2505.11, )",
+        "resolved": "1.8.2505.11",
+        "contentHash": "ORK843Xkm73RXnGWT6jVBJTs7CrjHpAxt2AO+WVARtwJrEc7vS3/UQ5ftxUmehZzSs4qh3weUzSkj3LHxTvY4Q=="
+      },
       "AssimpNetter": {
         "type": "Transitive",
         "resolved": "6.0.4",
@@ -138,11 +144,6 @@
         "type": "Transitive",
         "resolved": "1.0.4.7",
         "contentHash": "S0VT3JC/NQ/gNmYnAHYw5fR0d9cNZrN1LynjUurQdXSxeFFi2i/wixD+N/DD36n5oFfvMth2HAaH8xzSriqB7g=="
-      },
-      "MonoGame.Tool.Dxc": {
-        "type": "Transitive",
-        "resolved": "1.8.2505.11",
-        "contentHash": "ORK843Xkm73RXnGWT6jVBJTs7CrjHpAxt2AO+WVARtwJrEc7vS3/UQ5ftxUmehZzSs4qh3weUzSkj3LHxTvY4Q=="
       },
       "MonoGame.Tool.FFmpeg": {
         "type": "Transitive",
