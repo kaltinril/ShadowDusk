@@ -7,8 +7,7 @@ using ShadowDusk.Core;
 using ShadowDusk.Core.Preprocessor;
 using ShadowDusk.ImageTests.GlContext;
 using ShadowDusk.ImageTests.Rendering;
-using SixLabors.ImageSharp;
-using SixLabors.ImageSharp.PixelFormats;
+using ShadowDusk.TestPng;
 using Xunit;
 using Xunit.Abstractions;
 
@@ -158,15 +157,13 @@ public sealed class ImageRegressionTests
 
     private static byte[] LoadPngAsRgba(string path)
     {
-        using var image = Image.Load<Rgba32>(path);
+        PngImage image = PngDecoder.Load(path);
 
         if (image.Width != OffscreenRenderer.Width || image.Height != OffscreenRenderer.Height)
             throw new InvalidDataException(
                 $"Reference image '{path}' has dimensions {image.Width}x{image.Height}, " +
                 $"expected {OffscreenRenderer.Width}x{OffscreenRenderer.Height}.");
 
-        var buffer = new byte[image.Width * image.Height * 4];
-        image.CopyPixelDataTo(buffer);
-        return buffer;
+        return image.Rgba;
     }
 }

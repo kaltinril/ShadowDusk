@@ -7,9 +7,7 @@ using System.Globalization;
 using System.IO;
 using System.Linq;
 using ShadowDusk.ShaderToy;
-using SixLabors.ImageSharp;
-using SixLabors.ImageSharp.PixelFormats;
-using SixLabors.ImageSharp.Processing;
+using ShadowDusk.TestPng;
 
 namespace ShadowDusk.ShaderToy.RenderProof;
 
@@ -341,7 +339,8 @@ public static class FidelityRunner
         int montW = cols * cellW + pad;
         int montH = rendered.Count * rowH + pad;
 
-        using var montage = new Image<Rgba32>(montW, montH, new Rgba32(24, 24, 28, 255));
+        var montage = new byte[montW * montH * 4];
+        FillRect(montage, montW, 0, 0, montW, montH, (24, 24, 28));
 
         for (int r = 0; r < rendered.Count; r++)
         {
@@ -352,22 +351,20 @@ public static class FidelityRunner
 
             int oy = pad + r * rowH + labelH;
 
-            BlitInto(montage, reference, pad, oy);
-            BlitInto(montage, ours, pad + cellW, oy);
-            BlitInto(montage, diff, pad + 2 * cellW, oy);
+            BlitInto(montage, montW, reference, pad, oy);
+            BlitInto(montage, montW, ours, pad + cellW, oy);
+            BlitInto(montage, montW, diff, pad + 2 * cellW, oy);
 
             // Status bar above the row: green = match, amber = chaos/orientation, red = possible bug.
-            Rgba32 bar = row.Pass
-                ? new Rgba32(40, 160, 60, 255)
+            (byte R, byte G, byte B) bar = row.Pass
+                ? ((byte)40, (byte)160, (byte)60)
                 : row.Classification.StartsWith("POSSIBLE CONVERSION BUG", StringComparison.Ordinal)
-                    ? new Rgba32(190, 50, 50, 255)
-                    : new Rgba32(200, 150, 40, 255);
-            for (int y = 0; y < labelH - 3; y++)
-                for (int x = 0; x < montW - 2 * pad; x++)
-                    montage[pad + x, oy - labelH + y] = bar;
+                    ? ((byte)190, (byte)50, (byte)50)
+                    : ((byte)200, (byte)150, (byte)40);
+            FillRect(montage, montW, pad, oy - labelH, montW - 2 * pad, labelH - 3, bar);
         }
 
-        montage.Save(montagePng);
+        PngEncoder.Save(montagePng, montage, montW, montH);
     }
 
     /// <summary>Dump per-shader reference/ours/diff PNGs for divergent shaders (eyeball debugging).</summary>
@@ -388,29 +385,39 @@ public static class FidelityRunner
         }
     }
 
+    /// <summary>Save a Width x Height render as an opaque PNG (render alpha is not meaningful for eyeballing).</summary>
     private static void SaveRgba(byte[] rgba, string path)
     {
-        using var img = new Image<Rgba32>(Width, Height);
-        for (int y = 0; y < Height; y++)
-            for (int x = 0; x < Width; x++)
-            {
-                int b = (y * Width + x) * 4;
-                img[x, y] = new Rgba32(rgba[b], rgba[b + 1], rgba[b + 2], 255);
-            }
-        img.Save(path);
+        var opaque = new byte[Width * Height * 4];
+        BlitInto(opaque, Width, rgba, 0, 0);
+        PngEncoder.Save(path, opaque, Width, Height);
     }
 
-    private static void BlitInto(Image<Rgba32> dst, byte[] rgba, int ox, int oy)
+    /// <summary>Copy a Width x Height render into an RGBA canvas at (ox, oy), forcing alpha opaque.</summary>
+    private static void BlitInto(byte[] canvas, int canvasWidth, byte[] rgba, int ox, int oy)
     {
         for (int y = 0; y < Height; y++)
         {
-            int row = y * Width * 4;
-            for (int x = 0; x < Width; x++)
+            int src = y * Width * 4;
+            int dst = ((oy + y) * canvasWidth + ox) * 4;
+            for (int x = 0; x < Width; x++, src += 4, dst += 4)
             {
-                int b = row + x * 4;
-                dst[ox + x, oy + y] = new Rgba32(rgba[b], rgba[b + 1], rgba[b + 2], 255);
+                canvas[dst] = rgba[src];
+                canvas[dst + 1] = rgba[src + 1];
+                canvas[dst + 2] = rgba[src + 2];
+                canvas[dst + 3] = 255;
             }
         }
+    }
+
+    private static void FillRect(byte[] canvas, int canvasWidth, int x0, int y0, int w, int h, (byte R, byte G, byte B) colour)
+    {
+        for (int y = y0; y < y0 + h; y++)
+            for (int x = x0; x < x0 + w; x++)
+            {
+                int i = (y * canvasWidth + x) * 4;
+                (canvas[i], canvas[i + 1], canvas[i + 2], canvas[i + 3]) = (colour.R, colour.G, colour.B, (byte)255);
+            }
     }
 
     /// <summary>Per-channel |ref-ours| amplified 4x and clamped, on a dark field, for eyeball.</summary>

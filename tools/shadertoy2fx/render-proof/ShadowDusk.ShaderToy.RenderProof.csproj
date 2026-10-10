@@ -10,10 +10,9 @@
   </PropertyGroup>
   <ItemGroup>
     <PackageReference Include="MonoGame.Framework.DesktopGL" />
-    <!-- Phase 46 fidelity gate: raw Silk.NET GL ground-truth reference renderer + ImageSharp montage. -->
+    <!-- Phase 46 fidelity gate: raw Silk.NET GL ground-truth reference renderer. -->
     <PackageReference Include="Silk.NET.OpenGL" />
     <PackageReference Include="Silk.NET.Windowing.Glfw" />
-    <PackageReference Include="SixLabors.ImageSharp" />
   </ItemGroup>
   <PropertyGroup>
     <!-- Silk.NET unsafe blocks for the GL reference renderer (VBO upload, glReadPixels). -->
@@ -22,6 +21,8 @@
   <ItemGroup>
     <!-- Phase 47: converter library promoted to src/ShadowDusk.ShaderToy; render-proof stays out-of-band. -->
     <ProjectReference Include="..\..\..\src\ShadowDusk.ShaderToy\ShadowDusk.ShaderToy.csproj" />
+    <!-- Fidelity montage + divergence PNGs (replaced ImageSharp: project_decisions.md). -->
+    <ProjectReference Include="..\..\..\tests\ShadowDusk.TestPng\ShadowDusk.TestPng.csproj" />
   </ItemGroup>
   <ItemGroup>
     <!-- Phase 51 A4: the MonoGame `ShaderToyEffect` runtime helper folded into the migrated sample

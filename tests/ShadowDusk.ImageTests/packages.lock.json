@@ -48,12 +48,6 @@
           "Silk.NET.Windowing.Common": "2.23.0"
         }
       },
-      "SixLabors.ImageSharp": {
-        "type": "Direct",
-        "requested": "[3.1.12, )",
-        "resolved": "3.1.12",
-        "contentHash": "iAg6zifihXEFS/t7fiHhZBGAdCp3FavsF4i2ZIDp0JfeYeDVzvmlbY1CNhhIKimaIzrzSi5M/NBFcWvZT2rB/A=="
-      },
       "xunit": {
         "type": "Direct",
         "requested": "[2.9.3, )",
@@ -257,6 +251,9 @@
           "Vortice.Dxc": "[3.3.4, 3.3.4]"
         }
       },
+      "shadowdusk.testpng": {
+        "type": "Project"
+      },
       "Silk.NET.SPIRV.Cross.Native": {
         "type": "CentralTransitive",
         "requested": "[2.23.0, )",
@@ -332,12 +329,6 @@
           "Silk.NET.GLFW": "2.23.0",
           "Silk.NET.Windowing.Common": "2.23.0"
         }
-      },
-      "SixLabors.ImageSharp": {
-        "type": "Direct",
-        "requested": "[3.1.12, )",
-        "resolved": "3.1.12",
-        "contentHash": "iAg6zifihXEFS/t7fiHhZBGAdCp3FavsF4i2ZIDp0JfeYeDVzvmlbY1CNhhIKimaIzrzSi5M/NBFcWvZT2rB/A=="
       },
       "xunit": {
         "type": "Direct",
@@ -564,6 +555,9 @@
           "Vortice.D3DCompiler": "[3.3.4, )",
           "Vortice.Dxc": "[3.3.4, 3.3.4]"
         }
+      },
+      "shadowdusk.testpng": {
+        "type": "Project"
       },
       "Silk.NET.SPIRV.Cross.Native": {
         "type": "CentralTransitive",
