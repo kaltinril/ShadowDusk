@@ -14,7 +14,21 @@ that loads and renders identically to `mgfxc`'s in the real MonoGame/KNI runtime
 
 ### Added
 
+- `tests/ShadowDusk.TestPng`: a small, dependency-free PNG encoder/decoder for the test and
+  validation tooling, with its own unit suite (`tests/ShadowDusk.TestPng.Tests`). Not shipped:
+  no `ShadowDusk.*` package references it.
+
 ### Changed
+
+- **Removed `SixLabors.ImageSharp`** from the repository (it was only ever a test-tooling
+  dependency, never part of a shipped package, so consumers are unaffected). Five security
+  advisories were published against it on 2026-10-07, and every release that fixes them
+  (3.2.0, 4.1.2+) refuses to build without a paid Six Labors licence, while every release that
+  builds without one carries the advisories. With warnings-as-errors, the advisories also broke
+  `dotnet restore` of `ShadowDusk.ImageTests`. `ShadowDusk.ImageTests` and the ShaderToy
+  render-proof driver now read and write PNGs through `ShadowDusk.TestPng`, which decodes all
+  52 committed PNGs and re-encodes them pixel-identically to ImageSharp, and the render-proof
+  fidelity montage is byte-identical to the one the ImageSharp build produced.
 
 ### Fixed
 

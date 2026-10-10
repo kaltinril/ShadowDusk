@@ -126,7 +126,7 @@ public sealed class OffscreenRenderer : IDisposable
         _gl.ReadPixels<byte>(0, 0, Width, Height, PixelFormat.Rgba, PixelType.UnsignedByte, pixels);
 
         // OpenGL's framebuffer origin is bottom-left; PNG and most image
-        // libraries (including ImageSharp) use a top-left origin. Flip rows
+        // libraries use a top-left origin. Flip rows
         // here so callers can hand the buffer straight to an image encoder.
         Span<byte> rowA = stackalloc byte[Stride];
         for (int y = 0; y < Height / 2; y++)

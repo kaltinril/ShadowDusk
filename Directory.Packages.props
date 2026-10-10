@@ -27,17 +27,16 @@
   </ItemGroup>
 
   <!--
-    ImageSharp is deliberately capped at the 3.1.x line. 4.0.0 is not a technical upgrade
-    problem, it is a LICENCE gate: its build targets hard-fail with "No Six Labors license
-    found ... obtain a license from https://sixlabors.com/pricing/" unless a paid licence key
-    or `sixlabors.lic` is present. 3.1.12 is the newest release that builds without one, and
-    it is the current tip of 3.1.x. Same class of problem as the FluentAssertions relicensing
-    that drove the Shouldly migration below - a licence gate, not a technical one.
+    SixLabors.ImageSharp is GONE and must not come back (project_decisions.md, "Own PNG code
+    instead of ImageSharp"). Every release that fixes its October 2026 security advisories
+    (3.2.0, 4.1.2+) refuses to build without a paid Six Labors licence, and every release that
+    builds without one carries those advisories. PNG read/write for the tests and validation
+    tooling is tests/ShadowDusk.TestPng instead. Same class of problem as the FluentAssertions
+    relicensing that drove the Shouldly migration below - a licence gate, not a technical one.
   -->
   <ItemGroup Label="Rendering">
     <PackageVersion Include="Silk.NET.OpenGL"          Version="2.23.0" />
     <PackageVersion Include="Silk.NET.Windowing.Glfw"  Version="2.23.0" />
-    <PackageVersion Include="SixLabors.ImageSharp"     Version="3.1.12" />
     <!-- Phase 62 (issue #197): TEST-ONLY dependency, never a product one - the SkSL converter's
          evidence bar is "Skia's own compiler accepts the emission and it renders right", and
          SKRuntimeEffect is how a test asks Skia. The Linux native package keeps the CI ubuntu

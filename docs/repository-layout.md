@@ -70,6 +70,9 @@ ShadowDusk/
 │   │                                   #   spawns the restored tools/slang/<rid>/ slangc (Phase 66; all four RIDs, issue #227)
 │   ├── ShadowDusk.Integration.Tests/   # Compile real .fx files end-to-end (+ CLI .glsl-input integration)
 │   ├── ShadowDusk.ImageTests/          # Offscreen-render image regression
+│   ├── ShadowDusk.TestPng/             # Dependency-free PNG encode/decode for tests + validation tooling
+│   │                                   #   (replaced licence-gated ImageSharp; never shipped). Suite: ShadowDusk.TestPng.Tests/
+│   ├── ShadowDusk.TestPng.Tests/
 │   ├── ShadowDusk.BrowserTests/        # Headless KNI WebGL render validation (Playwright)
 │   │                                   #   (+ browser-slang-gate.mjs: full Slang in the browser, manifest bytes + render, issue #257)
 │   └── fixtures/
