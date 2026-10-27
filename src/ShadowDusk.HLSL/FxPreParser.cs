@@ -559,7 +559,12 @@ public sealed class FxPreParser
 
                 var tech = result.Value;
 
-                if (!techniqueNames.Add(tech.Name))
+                // On raw text the same name can legally appear once per #if branch
+                // (`#if SM4 technique T {…} #else technique T {…} #endif`), so a duplicate is
+                // only an error once the text is preprocessed. The compile reads its techniques
+                // from the preprocessed translation unit (ParseTechniquesPreprocessed, issue
+                // #407), which reports a real duplicate as FX0005.
+                if (!techniqueNames.Add(tech.Name) && _preprocessed)
                     return Fail<FxParseResult>(FxParseErrorCode.DuplicateTechniqueName,
                         $"Duplicate technique name '{tech.Name}'", tok);
 
@@ -2057,6 +2062,312 @@ public sealed class FxPreParser
                 ? null
                 : new CompilerPredefinedMacroTest(predefined.Name, predefined.File, predefined.Line),
         });
+    }
+
+    // -------------------------------------------------------------------------
+    // Techniques of the preprocessed translation unit (issue #407)
+    // -------------------------------------------------------------------------
+
+    /// <summary>
+    /// The techniques and passes of an effect, read off its PREPROCESSED translation unit, the
+    /// way <c>mgfxc</c> reads them (issue #407).
+    ///
+    /// <para>The ordinary pre-parse reads techniques from the raw tokens of the main file, so a
+    /// technique inside an inactive <c>#if</c> was still compiled, a technique in an
+    /// <c>#include</c>d file was never found, and a macro used as a <c>compile</c> target
+    /// (<c>compile VS_SHADERMODEL V()</c>) was recorded as its unexpanded name.
+    /// <paramref name="flattenedRawSource"/> is preprocessed here first by the managed
+    /// <see cref="Preprocessing.FxMacroPreprocessor"/> (conditionals evaluated with the compile's
+    /// macros, macros expanded, one output line per input line), and only the technique blocks
+    /// are then parsed from it. Every span is mapped back onto the author's lines.</para>
+    ///
+    /// <para>A conditional on a compiler-predefined macro (<c>__HLSL_VERSION</c> …) is evaluated
+    /// as undefined, which is what <c>mgfxc</c>'s own effect preprocessor does when it finds the
+    /// techniques: that preprocessor never defines the compiler's macros either.</para>
+    /// </summary>
+    /// <param name="flattenedRawSource">
+    /// The RAW effect source (before any pre-parse) with <c>#include</c>s inlined and the
+    /// compile's macros prepended (the output of
+    /// <c>ShadowDusk.Core.Preprocessor.Preprocessor.Flatten</c>).
+    /// </param>
+    /// <param name="sourceFile">Display name used in diagnostics.</param>
+    /// <returns>
+    /// The techniques, or an error: <c>SD0009</c> when the preprocessed text cannot be built, or
+    /// the pre-parser's own <c>FXnnnn</c> diagnostic for a technique block in it (a duplicate
+    /// technique name is <c>FX0005</c> here, where it is real).
+    /// </returns>
+    public static Result<FxPreprocessedTechniques, ShaderError> ParseTechniquesPreprocessed(
+        string flattenedRawSource, string sourceFile)
+    {
+        ArgumentNullException.ThrowIfNull(flattenedRawSource);
+
+        var view = Preprocessing.FxMacroPreprocessor.ProcessForCompiler(flattenedRawSource, sourceFile);
+        if (view.IsFailure)
+            return Result<FxPreprocessedTechniques, ShaderError>.Fail(view.Error);
+
+        string text = view.Value.Text;
+        var lineMap = new Preprocessing.SourceLineMap(text, sourceFile);
+
+        IReadOnlyList<Token> tokens = new FxLexer(text, sourceFile).Tokenize();
+        var parser = new FxPreParser(
+            text, sourceFile, tokens, ComputeCharacterOffsets(text, tokens), FxSourceMode.PreserveSm3, preprocessed: true);
+        Result<List<TechniqueInfo>, FxParseError> parsed = parser.ParseTechniqueBlocks();
+        if (parsed.IsFailure)
+        {
+            FxParseError error = parsed.Error;
+            (string file, int line) = lineMap.Resolve(error.Line);
+            return Result<FxPreprocessedTechniques, ShaderError>.Fail(new ShaderError(
+                File: file,
+                Line: line,
+                Column: error.Column,
+                Code: $"FX{(int)error.Code:D4}",
+                Message: error.Message));
+        }
+
+        // The view keeps one output line per input line, so a technique whose keyword is written
+        // on that line of the raw text is the author's; one whose line holds no such keyword came
+        // out of a macro (MonoGame's TECHNIQUE(name, vs, ps)).
+        // Both tests need the physical lines, so they run before the spans are remapped. A
+        // compile profile is the author's when its line in the raw text spells it; otherwise it
+        // came out of a macro (`compile VS_SHADERMODEL V()`).
+        IReadOnlyList<Token> rawTokens = new FxLexer(flattenedRawSource, sourceFile).Tokenize();
+        HashSet<int> literalLines = LiteralTechniqueLines(rawTokens);
+        var rawWordsByLine = new Dictionary<int, HashSet<string>>();
+        foreach (Token t in rawTokens)
+        {
+            if (t.Kind != TokenKind.Identifier)
+                continue;
+            if (!rawWordsByLine.TryGetValue(t.Line, out HashSet<string>? words))
+                rawWordsByLine[t.Line] = words = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            words.Add(t.Text);
+        }
+        bool FromMacro(string? profile, SourceSpan? span) =>
+            profile is not null && span is { } s &&
+            !(rawWordsByLine.TryGetValue(s.StartLine, out HashSet<string>? words) && words.Contains(profile));
+
+        // A line a macro touched does not keep its columns in the view, so a compile target's
+        // span is moved onto the token the author wrote there: the Nth compile target of the
+        // view line is the Nth of the raw line (SD0013/SD0014 point at the macro name, as
+        // they did when the raw text was parsed).
+        Dictionary<int, List<Token>> viewTargets = CompileTargetsByLine(tokens);
+        Dictionary<int, List<Token>> rawTargets = CompileTargetsByLine(rawTokens);
+        SourceSpan? AuthorSpan(SourceSpan? span)
+        {
+            if (span is not { } s ||
+                !viewTargets.TryGetValue(s.StartLine, out List<Token>? inView) ||
+                !rawTargets.TryGetValue(s.StartLine, out List<Token>? inRaw) ||
+                inView.Count != inRaw.Count)
+            {
+                return span;
+            }
+            int index = inView.FindIndex(t => t.Column == s.StartColumn);
+            if (index < 0)
+                return span;
+            Token written = inRaw[index];
+            return new SourceSpan(written.Line, written.Column, written.Line, written.Column + written.Text.Length);
+        }
+
+        List<TechniqueInfo> marked = parsed.Value.Select(t => t with
+        {
+            Passes = t.Passes.Select(p => p with
+            {
+                VertexProfileFromMacro = FromMacro(p.VertexProfile, p.VertexProfileSpan),
+                PixelProfileFromMacro = FromMacro(p.PixelProfile, p.PixelProfileSpan),
+                VertexProfileSpan = AuthorSpan(p.VertexProfileSpan),
+                PixelProfileSpan = AuthorSpan(p.PixelProfileSpan),
+            }).ToList(),
+        }).ToList();
+
+        IReadOnlyList<TechniqueInfo> remapped = lineMap.Remap(new FxParseResult
+        {
+            StrippedHlsl = string.Empty,
+            Techniques = marked,
+            Samplers = [],
+            ParameterAnnotations = [],
+        }).Techniques;
+        var remappedLiteral = new List<TechniqueInfo>();
+        for (int i = 0; i < parsed.Value.Count; i++)
+        {
+            if (literalLines.Contains(parsed.Value[i].Span.StartLine))
+                remappedLiteral.Add(remapped[i]);
+        }
+
+        return Result<FxPreprocessedTechniques, ShaderError>.Ok(new FxPreprocessedTechniques
+        {
+            Techniques = remapped,
+            LiteralTechniques = remappedLiteral,
+        });
+    }
+
+    /// <summary>
+    /// Blanks every technique block written literally in <paramref name="source"/> (a
+    /// <c>technique</c> / <c>technique10</c> / <c>technique11</c> keyword at global scope, an
+    /// optional name and annotation block, then a balanced brace body), keeping every line break
+    /// so no line number moves. Used on the compiler's input once techniques come from the
+    /// preprocessed translation unit (issue #407): the main file's blocks are already stripped by
+    /// the pre-parse, so what this removes is a technique in an <c>#include</c>d file, which the
+    /// compiler would otherwise be handed as effect syntax. A macro call (<c>TECHNIQUE(...)</c>)
+    /// and a block whose braces do not balance are left as they are.
+    /// </summary>
+    /// <param name="source">Any effect text, typically the flattened compiler input.</param>
+    /// <param name="sourceFile">Display name used by the lexer.</param>
+    /// <returns><paramref name="source"/> itself when it holds no such block.</returns>
+    public static string StripTechniqueBlocks(string source, string sourceFile)
+    {
+        ArgumentNullException.ThrowIfNull(source);
+
+        IReadOnlyList<Token> tokens = new FxLexer(source, sourceFile).Tokenize();
+        int[] offsets = ComputeCharacterOffsets(source, tokens);
+        List<(int Start, int End)>? blocks = null;
+
+        int depth = 0;
+        for (int i = 0; i < tokens.Count; i++)
+        {
+            Token t = tokens[i];
+            if (t.Kind == TokenKind.LBrace) { depth++; continue; }
+            if (t.Kind == TokenKind.RBrace) { depth = Math.Max(0, depth - 1); continue; }
+            if (depth != 0 || !IsTechniqueKeywordToken(tokens, i))
+                continue;
+
+            // keyword [name] [< ... >] {
+            int j = NextCode(tokens, i + 1);
+            if (j < tokens.Count && tokens[j].Kind == TokenKind.Identifier)
+                j = NextCode(tokens, j + 1);
+            if (j < tokens.Count && tokens[j].Kind == TokenKind.LAngle)
+            {
+                while (j < tokens.Count && tokens[j].Kind is not (TokenKind.RAngle or TokenKind.EOF))
+                    j++;
+                j = NextCode(tokens, j + 1);
+            }
+            if (j >= tokens.Count || tokens[j].Kind != TokenKind.LBrace)
+                continue;
+
+            int braces = 0, k = j;
+            for (; k < tokens.Count && tokens[k].Kind != TokenKind.EOF; k++)
+            {
+                if (tokens[k].Kind == TokenKind.LBrace) braces++;
+                else if (tokens[k].Kind == TokenKind.RBrace && --braces == 0) break;
+            }
+            if (braces != 0 || k >= tokens.Count || tokens[k].Kind != TokenKind.RBrace)
+                continue;
+
+            (blocks ??= []).Add((offsets[i], offsets[k] + 1));
+            i = k;
+        }
+
+        if (blocks is null)
+            return source;
+
+        var sb = new StringBuilder(source);
+        foreach ((int start, int end) in blocks)
+        {
+            for (int c = start; c < end && c < sb.Length; c++)
+            {
+                if (sb[c] is not ('\n' or '\r'))
+                    sb[c] = ' ';
+            }
+        }
+        return sb.ToString();
+    }
+
+    /// <summary>Per line, the tokens that directly follow a <c>compile</c> keyword, in order.</summary>
+    private static Dictionary<int, List<Token>> CompileTargetsByLine(IReadOnlyList<Token> tokens)
+    {
+        var byLine = new Dictionary<int, List<Token>>();
+        for (int i = 0; i < tokens.Count; i++)
+        {
+            if (tokens[i].Kind != TokenKind.Identifier ||
+                !string.Equals(tokens[i].Text, "compile", StringComparison.OrdinalIgnoreCase))
+            {
+                continue;
+            }
+            int next = NextCode(tokens, i + 1);
+            if (next >= tokens.Count || tokens[next].Kind != TokenKind.Identifier)
+                continue;
+            if (!byLine.TryGetValue(tokens[next].Line, out List<Token>? list))
+                byLine[tokens[next].Line] = list = [];
+            list.Add(tokens[next]);
+        }
+        return byLine;
+    }
+
+    /// <summary>The 1-based lines that hold a technique keyword written as one (not a macro call).</summary>
+    private static HashSet<int> LiteralTechniqueLines(IReadOnlyList<Token> tokens)
+    {
+        var lines = new HashSet<int>();
+        for (int i = 0; i < tokens.Count; i++)
+        {
+            if (IsTechniqueKeywordToken(tokens, i))
+                lines.Add(tokens[i].Line);
+        }
+        return lines;
+    }
+
+    /// <summary>
+    /// True when <paramref name="tokens"/>[<paramref name="index"/>] is a <c>technique</c>,
+    /// <c>technique10</c> or <c>technique11</c> keyword (any case, as fxc accepts) that is not a
+    /// macro call: the same test the main parse applies.
+    /// </summary>
+    private static bool IsTechniqueKeywordToken(IReadOnlyList<Token> tokens, int index)
+    {
+        Token t = tokens[index];
+        if (t.Kind != TokenKind.Identifier || !IsTechniqueKeyword(t.Text))
+            return false;
+        int next = NextCode(tokens, index + 1);
+        return next >= tokens.Count || tokens[next].Kind != TokenKind.LParen;
+    }
+
+    private static bool IsTechniqueKeyword(string text) =>
+        string.Equals(text, "technique", StringComparison.OrdinalIgnoreCase) ||
+        string.Equals(text, "technique10", StringComparison.OrdinalIgnoreCase) ||
+        string.Equals(text, "technique11", StringComparison.OrdinalIgnoreCase);
+
+    /// <summary>The index of the first token at or after <paramref name="index"/> that is not trivia.</summary>
+    private static int NextCode(IReadOnlyList<Token> tokens, int index)
+    {
+        while (index < tokens.Count &&
+               tokens[index].Kind is TokenKind.LineComment or TokenKind.BlockComment or TokenKind.Preprocessor)
+        {
+            index++;
+        }
+        return index;
+    }
+
+    /// <summary>
+    /// Parses only the technique blocks of an already preprocessed token stream (issue #407):
+    /// every other construct is skipped, tracking brace depth so a technique is only recognized
+    /// at global scope.
+    /// </summary>
+    private Result<List<TechniqueInfo>, FxParseError> ParseTechniqueBlocks()
+    {
+        var techniques = new List<TechniqueInfo>();
+        var names = new HashSet<string>(StringComparer.Ordinal);
+        int depth = 0;
+
+        while (Peek().Kind != TokenKind.EOF)
+        {
+            Token tok = Peek();
+            if (tok.Kind == TokenKind.LBrace) { depth++; Consume(); continue; }
+            if (tok.Kind == TokenKind.RBrace) { depth = Math.Max(0, depth - 1); Consume(); continue; }
+
+            if (depth == 0 && IsTechniqueKeywordToken(_tokens, _pos))
+            {
+                var result = ParseTechnique();
+                if (result.IsFailure)
+                    return Result<List<TechniqueInfo>, FxParseError>.Fail(result.Error);
+                if (!names.Add(result.Value.Name))
+                {
+                    return Fail<List<TechniqueInfo>>(FxParseErrorCode.DuplicateTechniqueName,
+                        $"Duplicate technique name '{result.Value.Name}'", tok);
+                }
+                techniques.Add(result.Value);
+                continue;
+            }
+
+            Consume();
+        }
+
+        return Result<List<TechniqueInfo>, FxParseError>.Ok(techniques);
     }
 
     /// <summary>

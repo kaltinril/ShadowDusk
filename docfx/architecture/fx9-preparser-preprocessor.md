@@ -36,6 +36,16 @@ So for an OpenGL compile (and the raylib converter) ShadowDusk builds a **prepro
 
 The one exception is a **recovery**. The pre-parser's own rewrite of legacy samplers works on the raw main file, so a legacy `sampler` / `sampler2D` declared in an `#include`d file, or declared or read (`tex2D`) through a macro (MonoGame's `DECLARE_TEXTURE` / `SAMPLE_TEXTURE`), reaches DXC unrewritten and DXC rejects it. When that happens on OpenGL, Vulkan or DirectX 12, or in the raylib and SkSL converters (which compile through the same DXC; issue #327), and the text DXC was given still holds legacy sampler syntax once preprocessed, ShadowDusk repeats the pre-parse on the preprocessed source (the same managed preprocessor, in a compiler-input form that keeps one output line per source line and passes `#line` / `#pragma` through, so diagnostics still point at the author's file and line) and compiles that text instead, which is how `mgfxc` itself works. Because it runs only after the raw compile has failed, an effect that compiles from its raw source is compiled from exactly that text. A shape the rewrite still cannot model, or a conditional on a compiler-predefined macro the managed view cannot evaluate, is the `SD0016` error after the compiler's own diagnostics. DirectX 11 compiles the legacy syntax natively and never recovers.
 
+## Techniques come from the preprocessed source
+
+`mgfxc` preprocesses first and finds techniques second, so ShadowDusk reads the technique list off the same managed preprocessed view, with the compile's platform and user macros, on every target (FNA, raylib and SkSL included):
+
+- a technique inside an inactive `#if` (or behind a `/Defines` value that is not set) does not exist;
+- a technique in an `#include`d file is compiled, beside the main file's own; its block is blanked from the compiler's input so the compiler is never handed effect syntax;
+- a `compile` target written through a macro (`compile VS_SHADERMODEL MainVS()`) is the profile the macro expands to. That is what a KNIFX container records as each shader's model: `#define VS_SHADERMODEL vs_4_0` records 4.0, the same as KNI's own content pipeline. On FNA an expansion to an SM 2–3 profile is honored as written; any other expansion (the `vs_4_0_level_9_1` arm of MonoGame's standard header) keeps the SM3 ceiling.
+
+Techniques that a macro produces (MonoGame's `TECHNIQUE(name, vs, ps)` in its stock effects) keep the zero-technique handling they had: recovered on DirectX, Vulkan, DirectX 12 and FNA, `SD0010` on OpenGL. A view that cannot be built is `SD0009`, raised only after the compiler has accepted the source.
+
 ## Where this sits in the pipeline
 
 These two passes are the first stages of [The Faithful Pipeline](the-faithful-pipeline.md): `.fx` → **FX9 pre-parser** → **preprocessor** → compiler (DXC for SPIR-V, or `vkd3d-shader` for DXBC).

@@ -157,8 +157,25 @@ public static class RaylibConverter
             ]);
         }
 
+        // Issue #407: the techniques come from the preprocessed translation unit (OpenGL macro
+        // set, the one this converter compiles with), as on every CompilationPipeline target.
+        Result<EffectTechniques.Resolution, ShaderError> techniques = EffectTechniques.Resolve(
+            fxSource,
+            file,
+            PlatformMacros.For(PlatformTarget.OpenGL),
+            options.IncludeResolver ?? new FileSystemIncludeResolver(),
+            options.AdditionalIncludePaths,
+            parse.Value);
+        if (techniques.IsFailure)
+            return Result<RaylibShader, ShaderError[]>.Fail([techniques.Error]);
+        FxParseResult rawParsed = parse.Value with { Techniques = techniques.Value.Techniques };
+
         Result<RaylibShader, ShaderError[]> first = ConvertCore(
-            fxSource, parse.Value, options, recovered: null, out bool shaderCompileFailed, cancellationToken);
+            fxSource, rawParsed, options, recovered: null, out bool shaderCompileFailed, cancellationToken);
+        // DXC accepted the source, so a technique view that could not be built is ShadowDusk's
+        // own preprocessor at fault: SD0009, as for the sampler-register view.
+        if (first.IsSuccess && techniques.Value.DeferredError is { } deferred)
+            return Result<RaylibShader, ShaderError[]>.Fail([deferred]);
         if (first.IsSuccess || !shaderCompileFailed)
             return first;
 
@@ -266,7 +283,9 @@ public static class RaylibConverter
                 parsed.StrippedHlsl, file, options.IncludeResolver, options.AdditionalIncludePaths);
             if (flattened.IsFailure)
                 return Result<RaylibShader, ShaderError[]>.Fail([flattened.Error]);
-            compilerInput = flattened.Value.Text;
+            // An #include'd technique block is effect syntax DXC does not take; its technique
+            // comes from the preprocessed view now (issue #407).
+            compilerInput = FxPreParser.StripTechniqueBlocks(flattened.Value.Text, file);
         }
 
         var seam = ModernGlslSeam.CompilePixel(compilerInput, pass.PixelEntryPoint, file, cancellationToken);
