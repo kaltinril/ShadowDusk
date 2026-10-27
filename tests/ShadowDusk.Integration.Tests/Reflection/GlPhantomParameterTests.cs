@@ -151,7 +151,14 @@ public sealed class GlPhantomParameterTests
         if (lastExtension >= 0)
             declIndex.ShouldBeGreaterThan(lastExtension);
         if (glsl.Contains("#ifdef GL_ES"))
-            declIndex.ShouldBeGreaterThan(glsl.IndexOf("#endif", StringComparison.Ordinal));
+        {
+            // The precision block nests a GL_FRAGMENT_PRECISION_HIGH #ifdef (issue
+            // #406), so the declaration must follow the OUTER #endif.
+            int glEsStart = glsl.IndexOf("#ifdef GL_ES", StringComparison.Ordinal);
+            int innerEnd = glsl.IndexOf("#endif", glEsStart, StringComparison.Ordinal);
+            int outerEnd = glsl.IndexOf("#endif", innerEnd + 1, StringComparison.Ordinal);
+            declIndex.ShouldBeGreaterThan(outerEnd);
+        }
         // The marker rows exist to pin a prologue interaction; assert the marker
         // UNCONDITIONALLY so the pin fails loudly (instead of passing vacuously) if a
         // rewriter or DXC-pin change ever stops emitting that prologue or stops folding

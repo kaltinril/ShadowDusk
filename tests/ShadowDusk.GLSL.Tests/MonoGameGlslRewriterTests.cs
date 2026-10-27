@@ -160,6 +160,27 @@ void main()
         result.Glsl.ShouldContain("precision mediump int;", Case.Sensitive);
     }
 
+    // Issue #406: real mobile GPUs run mediump as fp16, so the pixel stage asks for
+    // highp when GL_FRAGMENT_PRECISION_HIGH is defined, keeping mediump only as the
+    // GLES2 fallback. Desktop GL skips the whole block (no GL_ES).
+    [Fact]
+    public void PixelPrecisionHeaderPrefersHighpWithMediumpFallback()
+    {
+        var result = MonoGameGlslRewriter.Rewrite(ExampleA, ShaderStage.Pixel);
+
+        result.Glsl.ShouldStartWith(
+            "#ifdef GL_ES\n" +
+            "#ifdef GL_FRAGMENT_PRECISION_HIGH\n" +
+            "precision highp float;\n" +
+            "precision highp int;\n" +
+            "#else\n" +
+            "precision mediump float;\n" +
+            "precision mediump int;\n" +
+            "#endif\n" +
+            "#endif\n",
+            Case.Sensitive);
+    }
+
     // ---- roundEven/round → floor(x+0.5) lowering (WebGL1 reach fix). ----
     // SPIRV-Cross emits roundEven() for HLSL `round` (DXC maps it to OpRoundEven),
     // a GLSL ES 3.00 / GL 1.30 builtin WebGL1 (GLSL ES 1.00) lacks. The rewriter

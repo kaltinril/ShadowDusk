@@ -32,6 +32,13 @@ that loads and renders identically to `mgfxc`'s in the real MonoGame/KNI runtime
 
 ### Fixed
 
+- **OpenGL pixel shaders now ask for `highp` precision on GLES when the GPU supports it** (issue #406).
+  The precision header was `mgfxc`'s unconditional `precision mediump`, which real iOS GPUs run as
+  16-bit floats, so shaders working in pixel units (Apos.Shapes) drew nothing on an iPhone. The
+  header now selects `highp` under `#ifdef GL_FRAGMENT_PRECISION_HIGH` and keeps `mediump` as the
+  GLES2 fallback. Desktop GL ignores the block, and KNI's WebGL2 converter already promoted it to
+  `highp`, so neither changes behavior.
+
 ## [0.21.0] - 2026-10-05
 
 ### Added
