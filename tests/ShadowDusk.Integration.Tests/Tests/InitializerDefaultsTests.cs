@@ -153,6 +153,46 @@ public sealed class InitializerDefaultsTests
     }
 
     [Theory]
+    [InlineData(PlatformTarget.DirectX)]
+    [InlineData(PlatformTarget.DirectX12)]
+    [InlineData(PlatformTarget.Vulkan)]
+    public async Task G_NonSquare_HeaderIsTheHlslShape_AndTheBlobIsColumnByColumn(PlatformTarget target)
+    {
+        // Issue #423: Vulkan reflected these transposed (3x2 for a float2x3), so the default was
+        // dropped with SD0017. MonoGame uploads ColumnCount registers of RowCount floats from
+        // Data[c * Rows + r], so the header must be the HLSL shape for the blob to land right.
+        CompiledShader g = await CompileAsync("G_NonSquare.fx", target);
+        g.Warnings.ShouldNotContain(w => w.Code == "SD0017");
+
+        MgfxParameterRecord wide = Param(g, "Wide");
+        (wide.Rows, wide.Columns).ShouldBe(((byte)2, (byte)3));
+        Floats(wide.DefaultValue!).ShouldBe(new[] { 0.125f, 0.375f, 0.25f, 0.5f, 0.75f, 0.625f });
+
+        MgfxParameterRecord tall = Param(g, "Tall");
+        (tall.Rows, tall.Columns).ShouldBe(((byte)3, (byte)2));
+        Floats(tall.DefaultValue!).ShouldBe(new[] { 0.1f, 0.3f, 0.25f, 0.2f, 0.4f, 0.6f });
+    }
+
+    [Fact]
+    public async Task G_NonSquare_VulkanParameterTableEqualsDirectX12s()
+    {
+        // The SPIR-V reflection and the DXIL reflection describe one HLSL declaration, so the
+        // parameter records (shape and default) must be the same bytes.
+        MgfxBlobReader vulkan = MgfxBlobReader.Parse((await CompileAsync("G_NonSquare.fx", PlatformTarget.Vulkan)).Data);
+        MgfxBlobReader dx12 = MgfxBlobReader.Parse((await CompileAsync("G_NonSquare.fx", PlatformTarget.DirectX12)).Data);
+
+        vulkan.Parameters.Count.ShouldBe(dx12.Parameters.Count);
+        for (int i = 0; i < vulkan.Parameters.Count; i++)
+        {
+            MgfxParameterRecord v = vulkan.Parameters[i];
+            MgfxParameterRecord d = dx12.Parameters[i];
+            (v.Name, v.Class, v.Type, v.Rows, v.Columns).ShouldBe((d.Name, d.Class, d.Type, d.Rows, d.Columns));
+            v.DefaultValue.ShouldBe(d.DefaultValue, v.Name);
+        }
+        vulkan.ConstantBuffers.Single().ParameterOffsets.ShouldBe(dx12.ConstantBuffers.Single().ParameterOffsets);
+    }
+
+    [Theory]
     [InlineData(PlatformTarget.OpenGL)]
     [InlineData(PlatformTarget.DirectX)]
     [InlineData(PlatformTarget.DirectX12)]
@@ -191,7 +231,7 @@ public sealed class InitializerDefaultsTests
     [Fact]
     public async Task OpenGl_StillRefusesMat2_AndIntBool_WithSd0210()
     {
-        foreach (string fixture in new[] { "C_Vec2Mat2.fx", "D_IntBool.fx" })
+        foreach (string fixture in new[] { "C_Vec2Mat2.fx", "D_IntBool.fx", "G_NonSquare.fx" })
         {
             string path = Fixture(fixture);
             var result = await new EffectCompiler().CompileAsync(

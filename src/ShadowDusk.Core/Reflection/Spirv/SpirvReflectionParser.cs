@@ -355,8 +355,15 @@ internal sealed class SpirvReflectionParser
 
             case MatrixType m:
             {
-                int rows = m.Column.Count;          // each column vector spans 'rows' components
-                int cols = m.ColumnCount;
+                // DXC lowers an HLSL floatRxC to a SPIR-V matrix of R column vectors of C
+                // components: each HLSL ROW becomes a SPIR-V column (the RowMajor/ColMajor
+                // decoration is inverted to keep the memory layout). The HLSL shape, which the
+                // DXIL oracle and the MGFX header report and MonoGame's runtime sizes its upload
+                // by, is therefore rows = the SPIR-V column count, columns = the column vector's
+                // size (issue #423; reading them the other way round reported every non-square
+                // matrix transposed).
+                int rows = m.ColumnCount;
+                int cols = m.Column.Count;
                 int size = m.Column.Component.ByteSize * rows * cols;
                 return (EffectParameterClass.Matrix, m.Column.Component.ElementType, rows, cols, 0, size);
             }

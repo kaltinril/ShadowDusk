@@ -163,17 +163,12 @@ public sealed class Issue413ParameterDefaultsTests
 
         AssertCommonDefaults(shader);
         AssertIntBoolAndSquare(shader, target);
-        if (target == PlatformTarget.Vulkan)
-        {
-            // Vulkan reflects a non-square matrix transposed (#422): no default is preserved
-            // (SD0017, a zero blob) and so none is reported.
-            Find(shader, "Wide").DefaultValue.ShouldBeNull();
-            shader.Warnings.ShouldContain(w => w.Code == "SD0017" && w.Message.Contains("'Wide'", StringComparison.Ordinal));
-        }
-        else
-        {
-            Find(shader, "Wide").DefaultValue.ShouldBe(new[] { 1f, 2f, 3f, 4f, 5f, 6f });
-        }
+        // Issue #423: Vulkan used to reflect a non-square matrix transposed (3x2 for a float2x3), so
+        // the default was dropped with SD0017. It now reads the HLSL shape like the DXIL path.
+        ParameterReflection wide = Find(shader, "Wide");
+        (wide.Rows, wide.Columns).ShouldBe((2, 3));
+        wide.DefaultValue.ShouldBe(new[] { 1f, 2f, 3f, 4f, 5f, 6f });
+        shader.Warnings.ShouldNotContain(w => w.Code == "SD0017");
         AssertUnsigned(shader);
     }
 

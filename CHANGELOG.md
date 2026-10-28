@@ -83,6 +83,18 @@ that loads and renders identically to `mgfxc`'s in the real MonoGame/KNI runtime
 
 ### Fixed
 
+- **Vulkan now reports a non-square matrix in its declared shape, and keeps its initializer default** (issue #423).
+  DXC turns each HLSL row of a `floatRxC` into a SPIR-V column, and the SPIR-V reflection read that back as C x R,
+  so a `float2x3` was written to the `.mgfx` as 3x2. MonoGame uploads a matrix as `ColumnCount` registers of
+  `RowCount` floats, so the transposed header put the matrix in the wrong registers, and the initializer default
+  was dropped with `SD0017` and a zero blob. The header is now the HLSL shape (what the DXIL path, DirectX 11 and
+  DirectX 12 already wrote) and the default is the same column-by-column blob as on DirectX; the Vulkan parameter
+  table of the new `G_NonSquare.fx` fixture equals the DirectX 12 one byte for byte. This deliberately departs from
+  real `mgfxc` 3.8.5 `/Profile:Vulkan`, which writes the same transposed header ShadowDusk did (measured). Only the
+  row and column bytes and the default blob of non-square matrix parameters change, on Vulkan (and on the browser's
+  SPIR-V-reflected OpenGL path, where the OpenGL target refuses non-square matrices anyway). In the byte-identity
+  corpus only `SkinnedEffect.fx` (`float4x3 Bones[]`) moved, in its Vulkan `.mgfx` hash. The pure-managed
+  SPIR-V reflection now matches the DXIL oracle for every matrix shape (`SpirvMatrixShapeReflectionTests`).
 - **FNA (`fx_2_0` `.fxb`) now keeps matrix and array initializer defaults.** `float2x2 M = 0.5 * I` and
   `float4 Colors[2] = {red, green}` read as zero in real FNA 26.06 (both FNA3D drivers) where `fxc /T fx_2_0`'s
   build reads the initializers; only scalar and vector defaults survived. The CTAB default is now read for
