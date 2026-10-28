@@ -32,7 +32,9 @@ public sealed class Fx2ValidationException : Exception
 public sealed record Fx2ParsedSamplerState(int Operation, int? ObjectIndex, uint? DwordValue);
 
 /// <summary>One effect parameter. <see cref="Rows"/>/<see cref="Columns"/> are MojoShader's
-/// view of typedef dwords 6/5 (numeric classes only; 0 for object classes).</summary>
+/// view of typedef dwords 6/5 (numeric classes only; 0 for object classes).
+/// <see cref="NumericBytes"/> is the raw value blob (the parameter's default value) of a
+/// numeric-class parameter, <see langword="null"/> for every other class.</summary>
 public sealed record Fx2ParsedParameter(
     string Name,
     int Class,
@@ -40,7 +42,8 @@ public sealed record Fx2ParsedParameter(
     int Rows,
     int Columns,
     int Elements,
-    IReadOnlyList<Fx2ParsedSamplerState> SamplerStates);
+    IReadOnlyList<Fx2ParsedSamplerState> SamplerStates,
+    byte[]? NumericBytes = null);
 
 /// <summary>One pass state. Shader states (ops 146/147) carry <see cref="ObjectIndex"/>;
 /// FNA-honored render states carry the raw <see cref="DwordValue"/>.</summary>
@@ -245,7 +248,8 @@ public static class Fx2BinaryValidator
 
             _parameters.Add(new Fx2ParsedParameter(
                 td.Name, td.Class, td.Type, td.Rows, td.Columns, td.Elements,
-                value.SamplerStates ?? Array.Empty<Fx2ParsedSamplerState>()));
+                value.SamplerStates ?? Array.Empty<Fx2ParsedSamplerState>(),
+                value.NumericBytes));
         }
 
         private void ReadAnnotations(uint count, string owner)
@@ -354,7 +358,8 @@ public static class Fx2BinaryValidator
         private sealed record ParsedValue(
             IReadOnlyList<Fx2ParsedSamplerState>? SamplerStates,
             IReadOnlyList<int>? ObjectIndices,
-            uint? FirstDword);
+            uint? FirstDword,
+            byte[]? NumericBytes = null);
 
         private ParsedValue ParseValue(TypeDef td, uint valueOffset, int? samplerOwnerParam, string ctx)
         {
@@ -362,7 +367,8 @@ public static class Fx2BinaryValidator
             {
                 long size = 4L * td.Columns * td.Rows * Math.Max(1, td.Elements);
                 CheckPoolRange(valueOffset, size, $"{ctx} numeric value blob");
-                return new ParsedValue(null, null, PoolU32(valueOffset, ctx));
+                return new ParsedValue(null, null, PoolU32(valueOffset, ctx),
+                    _f.AsSpan((int)(Base + valueOffset), (int)size).ToArray());
             }
 
             if (td.Class == ClassStruct) // §7.4 — emitted zero-filled, sized, never interpreted

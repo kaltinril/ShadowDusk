@@ -32,6 +32,17 @@ that loads and renders identically to `mgfxc`'s in the real MonoGame/KNI runtime
 
 ### Fixed
 
+- **FNA (`fx_2_0` `.fxb`) now keeps matrix and array initializer defaults.** `float2x2 M = 0.5 * I` and
+  `float4 Colors[2] = {red, green}` read as zero in real FNA 26.06 (both FNA3D drivers) where `fxc /T fx_2_0`'s
+  build reads the initializers; only scalar and vector defaults survived. The CTAB default is now read for
+  every class and written as the dense declaration-order value blob `fxc` writes, for every matrix shape
+  (2x2, 3x3, 4x4, `row_major`), arrays of scalars, vectors, int, bool and matrices, and arrays of those.
+  Parameter blobs are byte-identical to `fxc`'s for eight fixtures (`tests/fixtures/golden/FNA/defaults`),
+  and `FnaValidation -- defaults` proves the getter values and the unset render equal `fxc`'s in real FNA on
+  the D3D11 and OpenGL drivers. A default for registers the shader never reads (a matrix column, array
+  element or row it ignores) stays 0: the CTAB drops those registers, so they carry no data. A non-symmetric
+  matrix default reads transposed in FNA for `fxc`'s own build too (MojoShader copies the blob into registers
+  as written); ShadowDusk matches `fxc`.
 - **OpenGL pixel shaders now ask for `highp` precision on GLES when the GPU supports it** (issue #406).
   The precision header was `mgfxc`'s unconditional `precision mediump`, which real iOS GPUs run as
   16-bit floats, so shaders working in pixel units (Apos.Shapes) drew nothing on an iPhone. The

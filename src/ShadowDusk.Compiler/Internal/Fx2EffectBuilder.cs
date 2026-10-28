@@ -122,7 +122,11 @@ internal static class Fx2EffectBuilder
                             $"global '{constant.Name}' has conflicting shapes across shader stages");
                     }
 
-                    if (existing.DefaultValue is null && constant.DefaultValue is not null)
+                    // Each stage's CTAB trims the default image to the registers THAT stage
+                    // reads (always a prefix), so keep the longest image. Equal lengths keep
+                    // the first stage's.
+                    if (constant.DefaultValue is not null &&
+                        (existing.DefaultValue is null || constant.DefaultValue.Count > existing.DefaultValue.Count))
                         byName[constant.Name] = existing with { DefaultValue = constant.DefaultValue };
                 }
                 else
@@ -164,7 +168,10 @@ internal static class Fx2EffectBuilder
                 Columns = c.Columns,
                 // CTAB writes 1 for non-arrays; on disk 0 means "not an array".
                 Elements = c.Elements > 1 ? c.Elements : 0,
-                DefaultValue = c.DefaultValue,
+                // The CTAB stores the default as a register image (matrices transposed,
+                // arrays one register per element); the effect parameter's value blob is
+                // the dense declaration-order form fxc writes.
+                DefaultValue = c.LogicalDefaultValue(),
             });
         }
 
