@@ -95,6 +95,13 @@ that loads and renders identically to `mgfxc`'s in the real MonoGame/KNI runtime
   SPIR-V-reflected OpenGL path, where the OpenGL target refuses non-square matrices anyway). In the byte-identity
   corpus only `SkinnedEffect.fx` (`float4x3 Bones[]`) moved, in its Vulkan `.mgfx` hash. The pure-managed
   SPIR-V reflection now matches the DXIL oracle for every matrix shape (`SpirvMatrixShapeReflectionTests`).
+- **Vulkan effects whose globals end in a `float2x2` (or a `float2x3`, `float2x4`) no longer throw at the first draw.**
+  The constant buffer was sized from the matrix's packed `rows*cols*4` bytes, but a column-major `float2x2` spans
+  24 bytes (two registers, the second half-used), so a buffer ending in one was a register short and MonoGame
+  DesktopVK's upload of the last register ran past its end. The size is now the matrix's real footprint, which is
+  what DirectX 12's DXIL reflection reports (`float2 Offset; float2x2 M;` is 48 bytes, not 32). Real `mgfxc` 3.8.5's
+  Vulkan build has the same short size, so its build of such a shader throws too. Only the constant-buffer size
+  bytes of those Vulkan effects change; the `InitializerDefaultsVulkan` driver no longer skips its `float2x2` case.
 - **FNA (`fx_2_0` `.fxb`) now keeps matrix and array initializer defaults.** `float2x2 M = 0.5 * I` and
   `float4 Colors[2] = {red, green}` read as zero in real FNA 26.06 (both FNA3D drivers) where `fxc /T fx_2_0`'s
   build reads the initializers; only scalar and vector defaults survived. The CTAB default is now read for

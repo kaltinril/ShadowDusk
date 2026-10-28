@@ -61,6 +61,42 @@ public sealed class SpirvMatrixShapeReflectionTests
         (fromSpirv.Rows, fromSpirv.Columns).ShouldBe((shape[5] - '0', shape[7] - '0'), label);
     }
 
+    public static TheoryData<string> TrailingMatrices => new()
+    {
+        "float2 Offset; float2x2 M;",            // C_Vec2Mat2's shape: 16 + 24 bytes, a 48-byte buffer
+        "float2x2 M;",
+        "float2x3 M;",
+        "float2x4 M;",
+        "float3x2 M;",
+        "float3x3 M;",
+        "float4x3 M;",
+        "row_major float2x2 M;",
+        "row_major float3x2 M;",
+        "float4 V; float2x3 M[2];",
+    };
+
+    /// <summary>
+    /// A buffer that ENDS in a matrix whose registers are not full used to be sized by the packed
+    /// <c>4 * rows * cols</c> bytes (16 for a <c>float2x2</c>, which spans 24), a register short, so
+    /// MonoGame DesktopVK wrote the matrix's last register past the end of the buffer and threw on the
+    /// first draw. The size must be the DXIL oracle's.
+    /// </summary>
+    [Theory]
+    [MemberData(nameof(TrailingMatrices))]
+    public async Task SpirvReflection_SizesABufferEndingInAMatrix_LikeTheDxilOracle(string declarations)
+    {
+        using var cts = new CancellationTokenSource(TestBudget.Compile);
+        string read = declarations.Contains("M[2]", StringComparison.Ordinal) ? "M[1][0].x + V" : "M[0][0]";
+        string hlsl = declarations + "\nfloat4 MainPS(float4 pos : SV_Position) : SV_Target0 { return " + read + "; }\n";
+
+        ReflectedEffect spirv = Reflect(new SpirvReflector().Reflect(
+            await CompileAsync(hlsl, PlatformTarget.Vulkan, cts.Token)));
+        ReflectedEffect dxil = Reflect(new DxilReflectionExtractor().Extract(
+            await CompileAsync(hlsl, PlatformTarget.DirectX12, cts.Token), cts.Token));
+
+        spirv.ConstantBuffers.Single().SizeBytes.ShouldBe(dxil.ConstantBuffers.Single().SizeBytes, declarations);
+    }
+
     private static ReflectedEffect Reflect(Result<ReflectedEffect, ShaderError> result)
     {
         result.IsSuccess.ShouldBeTrue(result.IsFailure ? result.Error.Message : "ok");

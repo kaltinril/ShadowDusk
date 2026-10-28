@@ -152,6 +152,21 @@ public sealed class InitializerDefaultsTests
         Ints(Param(d, "Flag").DefaultValue!).ShouldBe(new[] { -1 });   // D3D TRUE, as mgfxc stores it
     }
 
+    [Fact]
+    public async Task C_Vec2Mat2_VulkanBufferHoldsTheWholeFloat2x2()
+    {
+        // The float2x2 at offset 16 spans 24 bytes (two registers, the second half full), so the
+        // buffer is 48 bytes. Vulkan used to say 32 (the packed 16-byte matrix size), and MonoGame
+        // DesktopVK's upload of the second register then ran past the end and threw at the first draw
+        // (real mgfxc 3.8.5's Vulkan build has the same 32). DirectX 12 (DXIL) has always said 48.
+        MgfxBlobReader vulkan = MgfxBlobReader.Parse((await CompileAsync("C_Vec2Mat2.fx", PlatformTarget.Vulkan)).Data);
+        MgfxBlobReader dx12 = MgfxBlobReader.Parse((await CompileAsync("C_Vec2Mat2.fx", PlatformTarget.DirectX12)).Data);
+
+        vulkan.ConstantBuffers.Single().Size.ShouldBe(48);
+        vulkan.ConstantBuffers.Single().ParameterOffsets.ShouldBe(new[] { 0, 16 });
+        dx12.ConstantBuffers.Single().Size.ShouldBe(48);
+    }
+
     [Theory]
     [InlineData(PlatformTarget.DirectX)]
     [InlineData(PlatformTarget.DirectX12)]
@@ -190,6 +205,7 @@ public sealed class InitializerDefaultsTests
             v.DefaultValue.ShouldBe(d.DefaultValue, v.Name);
         }
         vulkan.ConstantBuffers.Single().ParameterOffsets.ShouldBe(dx12.ConstantBuffers.Single().ParameterOffsets);
+        vulkan.ConstantBuffers.Single().Size.ShouldBe(dx12.ConstantBuffers.Single().Size);
     }
 
     [Theory]

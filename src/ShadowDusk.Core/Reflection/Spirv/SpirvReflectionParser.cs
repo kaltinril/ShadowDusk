@@ -255,7 +255,7 @@ internal sealed class SpirvReflectionParser
 
         // Constant-buffer total size: the oracle reports cbDesc.Size, which HLSL rounds
         // up to a 16-byte boundary. Compute from the last member's offset + size.
-        int sizeBytes = ComputeStructSize(memberTypes, offsets);
+        int sizeBytes = ComputeStructSize(st.Id, memberTypes, offsets);
 
         return new ConstantBufferReflection
         {
@@ -441,7 +441,7 @@ internal sealed class SpirvReflectionParser
         _                 => 0,
     };
 
-    private int ComputeStructSize(uint[] memberTypes, Dictionary<int, int>? offsets)
+    private int ComputeStructSize(uint structId, uint[] memberTypes, Dictionary<int, int>? offsets)
     {
         if (memberTypes.Length == 0)
             return 0;
@@ -450,10 +450,39 @@ internal sealed class SpirvReflectionParser
         int lastOffset = offsets is not null && offsets.TryGetValue(lastIndex, out int o) ? o : 0;
         SpirvType? lastType = _types.GetValueOrDefault(memberTypes[lastIndex]);
         var (_, _, _, _, _, lastSize) = DescribeVariable(lastType);
+        if (lastType is MatrixType lastMatrix)
+            lastSize = MatrixFootprint(structId, lastIndex, lastMatrix, lastSize);
 
         int raw = lastOffset + lastSize;
         // HLSL constant buffers round the total up to a 16-byte boundary.
         return (raw + 15) & ~15;
+    }
+
+    /// <summary>
+    /// The bytes a matrix member really spans in the buffer: every register but the last is a
+    /// full <c>MatrixStride</c>, and the last holds only its own components. The packed
+    /// <c>4 * rows * cols</c> undercounts a matrix whose registers are not full (a column-major
+    /// <c>float2x2</c> spans 24 bytes, not 16), so a buffer that ENDS in one came out a register
+    /// short: MonoGame's runtime then wrote the matrix's last register past the end of the
+    /// buffer it allocated from this size and threw on the first draw (MonoGame DesktopVK, any
+    /// <c>float2x2</c>/<c>float2x3</c>/<c>float2x4</c> last in <c>$Globals</c>; real mgfxc's
+    /// Vulkan build has the same short size). The DXIL oracle reports the real size.
+    /// SPIR-V <c>RowMajor</c> (HLSL column-major, the Vulkan default) stores the SPIR-V rows
+    /// (<see cref="VectorType.Count"/> of them, each <see cref="MatrixType.ColumnCount"/> wide)
+    /// one per stride; <c>ColMajor</c> stores the column vectors.
+    /// </summary>
+    private int MatrixFootprint(uint structId, int memberIndex, MatrixType m, int packedSize)
+    {
+        if (!_memberMatrixStride.TryGetValue(structId, out Dictionary<int, int>? strides)
+            || !strides.TryGetValue(memberIndex, out int stride)
+            || !_memberColMajor.TryGetValue(structId, out Dictionary<int, bool>? majors)
+            || !majors.TryGetValue(memberIndex, out bool colMajor))
+            return packedSize;   // undecorated: nothing to say about padding
+
+        int componentBytes = m.Column.Component.ByteSize;
+        return colMajor
+            ? (m.ColumnCount - 1) * stride + m.Column.Count * componentBytes
+            : (m.Column.Count - 1) * stride + m.ColumnCount * componentBytes;
     }
 
     // ---- Naming helpers --------------------------------------------------------

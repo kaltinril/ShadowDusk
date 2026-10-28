@@ -48,11 +48,11 @@ public static class InitializerDefaultsProbe
 
     /// <summary>
     /// Runs the probe. <paramref name="mgfxcOpenGlControl"/> is true on the GL runtimes: the committed
-    /// mgfxc OpenGL build of RedDefault must render black. <paramref name="skipFloat2x2"/> skips C_Vec2Mat2 on
-    /// MonoGame DesktopVK, whose constant buffer throws on ANY float2x2 parameter (measured: the same throw with
-    /// the initializers removed), so it says nothing about defaults.
+    /// mgfxc OpenGL build of RedDefault must render black. C_Vec2Mat2 runs on DesktopVK too: it used to throw
+    /// there with or without initializers, because ShadowDusk (like mgfxc's Vulkan build) sized a buffer ending
+    /// in a float2x2 a register short and MonoGame's upload ran past its end; fixed in SpirvReflectionParser.
     /// </summary>
-    public static int Run(string label, PlatformTarget target, EffectContainer[] containers, bool mgfxcOpenGlControl, bool skipFloat2x2 = false)
+    public static int Run(string label, PlatformTarget target, EffectContainer[] containers, bool mgfxcOpenGlControl)
     {
         var watchdog = new Thread(() =>
         {
@@ -72,7 +72,6 @@ public static class InitializerDefaultsProbe
             foreach (DefaultCase c in Cases)
             {
                 if (!c.GlSupported && isGl) continue;
-                if (skipFloat2x2 && c.Fx == "C_Vec2Mat2.fx") continue;
                 string path = Path.Combine(dir, c.Fx);
                 jobs.Add(Compile(compiler, label, target, container, path, File.ReadAllText(path),
                     $"{Path.GetFileNameWithoutExtension(c.Fx)} [{container}]",
