@@ -188,8 +188,24 @@ internal sealed class FxMacroPreprocessor
         // that line was whitespace.
         bool atLineStart = true;
 
-        // Where in the logical line each spliced-in physical line starts (for '#line').
-        var joins = new List<int>();
+        // Where in the logical line each spliced-in physical line starts, and whether a
+        // backslash-newline (rather than a comment's line break) spliced it (for '#line').
+        var joins = new List<(int Offset, bool Backslash)>();
+        // The logical line being spliced. Built in place: a long comment inside a directive (all
+        // spaces in compiler-input mode) must not be re-copied once per line it spans.
+        var splice = new StringBuilder();
+
+        // Joins each following physical line onto 'splice' while it ends in a backslash.
+        void SpliceBackslashes(ref int i)
+        {
+            while (splice.Length > 0 && splice[^1] == '\\' && i + 1 < physical.Length)
+            {
+                splice.Length--;
+                joins.Add((splice.Length, true));
+                splice.Append(physical[++i]);
+                _line++;
+            }
+        }
 
         for (int i = 0; i < physical.Length; i++)
         {
@@ -198,35 +214,30 @@ internal sealed class FxMacroPreprocessor
             int physicalLine = i + 1;
             string logical = physical[i];
             joins.Clear();
-            while (logical.EndsWith('\\') && i + 1 < physical.Length)
+            if (logical.EndsWith('\\') && i + 1 < physical.Length)
             {
-                logical = logical[..^1];
-                joins.Add(logical.Length);
-                logical += physical[++i];
-                _line++;
+                splice.Clear().Append(logical);
+                SpliceBackslashes(ref i);
+                logical = splice.ToString();
             }
 
             string trimmed = logical.TrimStart(' ', '\t', '\f', '\v');
             bool isDirective = atLineStart && trimmed.StartsWith('#');
-            if (isDirective)
+            if (isDirective && commentLineBreaks.Contains(i) && i + 1 < physical.Length)
             {
                 // Issue #426: a block comment spanning lines is whitespace INSIDE the directive,
                 // so it does not end it. The comment's opening already left a space, and the lines
                 // it spans are consumed here (counted, like a backslash continuation, so every
                 // later line keeps its number; compiler input pads them back as empty lines).
+                splice.Clear().Append(logical);
                 while (commentLineBreaks.Contains(i) && i + 1 < physical.Length)
                 {
-                    joins.Add(logical.Length);
-                    logical += physical[++i];
+                    joins.Add((splice.Length, false));
+                    splice.Append(physical[++i]);
                     _line++;
-                    while (logical.EndsWith('\\') && i + 1 < physical.Length)
-                    {
-                        logical = logical[..^1];
-                        joins.Add(logical.Length);
-                        logical += physical[++i];
-                        _line++;
-                    }
+                    SpliceBackslashes(ref i);
                 }
+                logical = splice.ToString();
                 trimmed = logical.TrimStart(' ', '\t', '\f', '\v');
             }
             atLineStart = !commentLineBreaks.Contains(i) || (atLineStart && trimmed.Length == 0);
@@ -373,9 +384,12 @@ internal sealed class FxMacroPreprocessor
                             int digit = logical.IndexOf('#') + 1;
                             while (digit < logical.Length && !char.IsAsciiDigit(logical[digit]))
                                 digit++;
-                            foreach (int join in joins)
+                            foreach ((int offset, bool backslash) in joins)
                             {
-                                if (join <= digit)
+                                // A token that starts right after a backslash-newline takes the
+                                // backslash's line in clang; after a comment's line break it is
+                                // on its own line.
+                                if (backslash ? offset < digit : offset <= digit)
                                     numberLine++;
                             }
                             // The compiler needs the same line-to-file mapping the flattener

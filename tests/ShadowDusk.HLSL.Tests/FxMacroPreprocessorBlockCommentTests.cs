@@ -211,4 +211,40 @@ public sealed class FxMacroPreprocessorBlockCommentTests
         result.IsFailure.ShouldBeTrue();
         result.Error.Line.ShouldBe(2);
     }
+
+    [Theory]
+    // DXC -P (Issue426BlockCommentInDirectiveTests): a number straight after a backslash-newline
+    // is on the backslash's line, one after a space on the next line is on that line.
+    [InlineData("#line \\\n40 \"bar.fx\"\nfloat4 a;\n#else\n", 41)]
+    [InlineData("#line \\\n40 \\\n\"bar.fx\"\nfloat4 a;\n#else\n", 42)]
+    [InlineData("#line \\\n 40 \"bar.fx\"\nfloat4 a;\n#else\n", 40)]
+    public void ALineDirectiveAfterABackslashNewline_CountsFromTheLineItsNumberIsOn(string src, int declarationLine)
+    {
+        // 'float4 a;' is line declarationLine of bar.fx, so the stray #else after it is the next.
+        FxMacroPreprocessor.Process(src, "t.fx").Error.Line.ShouldBe(declarationLine + 1);
+        FxMacroPreprocessor.ProcessForCompiler(src, "t.fx").Error.Line.ShouldBe(declarationLine + 1);
+    }
+
+    [Fact]
+    public void AVeryLongCommentInsideADefine_IsSplicedInOnePass()
+    {
+        // The comment's lines are spliced into one logical line; in compiler-input mode every
+        // comment character is a space, so re-copying the line once per spliced line was
+        // quadratic: this input took 30 s that way and takes about 150 ms with the linear splice
+        // (measured 2026-10-28, both modes).
+        const int commentLines = 50_000;
+        var sb = new System.Text.StringBuilder("#define A 1 /*\n");
+        string filler = new('x', 75);
+        for (int i = 0; i < commentLines; i++)
+            sb.Append(filler).Append('\n');
+        sb.Append("*/ + 2\nfloat R = A;\n");
+        string src = sb.ToString();
+
+        string[] lines = Lines(Compiler(src));
+
+        lines.Length.ShouldBe(commentLines + 4);
+        lines[commentLines + 1].Trim().ShouldBe("", customMessage: "the comment's last line belongs to the #define");
+        Spaced(lines[commentLines + 2]).ShouldBe("float R = 1 + 2 ;");
+        Spaced(Plain(src)).ShouldBe("float R = 1 + 2 ;");
+    }
 }

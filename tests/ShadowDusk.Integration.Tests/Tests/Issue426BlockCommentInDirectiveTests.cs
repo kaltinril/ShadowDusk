@@ -66,6 +66,11 @@ public sealed class Issue426BlockCommentInDirectiveTests
     [InlineData("#line 10 \\\n \"main.fx\"\nfloat4 a = __LINE__;\n", "11")]
     [InlineData("#line 10 /* x\n y\n */ \"main.fx\"\nfloat4 a = __LINE__;\n", "12")]
     [InlineData("#line 10 \"main.fx\"\nfloat4 a = __LINE__;\n", "10")]
+    // A token straight after a backslash-newline takes the BACKSLASH's line; one after a space
+    // on the next line is on that next line.
+    [InlineData("#line \\\n40 \"bar.fx\"\nfloat4 a = __LINE__;\n", "41")]
+    [InlineData("#line \\\n40 \\\n\"bar.fx\"\nfloat4 a = __LINE__;\n", "42")]
+    [InlineData("#line \\\n 40 \"bar.fx\"\nfloat4 a = __LINE__;\n", "40")]
     public void ALineDirectiveSpanningLines_NumbersTheNextLineAsDxcDoes(string source, string expectedLine)
     {
         using var dxc = new DxcShaderCompiler();
