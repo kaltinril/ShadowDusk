@@ -33,6 +33,17 @@ that loads and renders identically to `mgfxc`'s in the real MonoGame/KNI runtime
   an `FX0005`; a real duplicate is still reported, on the preprocessed text. A view that cannot be built (`__has_include`, a conditional on `__HLSL_VERSION`) keeps the raw technique list and adds an `SD0009` warning; `#region`/`#endregion` are ignored by the view. MGFX v10 records no shader
   model; the committed byte-identity manifests (OpenGL, DirectX 11,
   DirectX 12, Vulkan, FNA) are unchanged.
+- **A block comment that spans lines inside a `#define` (or any directive) no longer ends it** (issue #426).
+  ShadowDusk's managed preprocessed view, which the initializer defaults and the OpenGL sampler-register
+  decisions are read from, ended the directive at the comment's first line break and spilled the rest of the
+  macro into the code. So `#define SCALE /* the scale,` / `in pixels */ 2` defined an empty `SCALE`, the
+  declaration after it lost its default (`null` in `CompiledShader.Parameters`, no default in the file), and a
+  `register(SLOT)` spelled through such a macro reserved no OpenGL unit (`ps_s0` instead of the `ps_s1` the
+  issue #283 reservation gives the same macro written on one line).
+  A comment is now whitespace, as in DXC and fxc: the directive runs on to its real end, and every later line
+  keeps its number. A `#line` that spans lines now numbers the next line as DXC does (from the line its number
+  is on). DXC always compiled such sources correctly; only what ShadowDusk reads off the view changes, and an
+  effect without a multi-line comment in a directive is unchanged byte for byte.
 
 ## [0.22.0] - 2026-10-28
 

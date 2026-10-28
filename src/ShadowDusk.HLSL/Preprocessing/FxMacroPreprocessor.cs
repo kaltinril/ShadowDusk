@@ -168,7 +168,9 @@ internal sealed class FxMacroPreprocessor
 
     private Result<string, ShaderError> Run(string source)
     {
-        string text = StripComments(source.Replace("\r\n", "\n").Replace('\r', '\n'), keepWidth: _compilerInput);
+        var commentLineBreaks = new HashSet<int>();
+        string text = StripComments(
+            source.Replace("\r\n", "\n").Replace('\r', '\n'), keepWidth: _compilerInput, commentLineBreaks);
         string[] physical = text.Split('\n');
 
         var output = new StringBuilder();
@@ -179,20 +181,59 @@ internal sealed class FxMacroPreprocessor
         int pendingLine = 0;
         string pendingFile = _file;
 
+        // Whether the next physical line starts a line as the preprocessor sees it, so a '#' first
+        // on it opens a directive. A block comment is one space (translation phase 3, before any
+        // directive is processed), so a line that begins inside a comment opened on an earlier
+        // line continues that earlier line, and starts one only when all that came before it on
+        // that line was whitespace.
+        bool atLineStart = true;
+
+        // Where in the logical line each spliced-in physical line starts (for '#line').
+        var joins = new List<int>();
+
         for (int i = 0; i < physical.Length; i++)
         {
             // Splice backslash-newline continuations into one logical line.
             int lineNo = ++_line;
             int physicalLine = i + 1;
             string logical = physical[i];
+            joins.Clear();
             while (logical.EndsWith('\\') && i + 1 < physical.Length)
             {
-                logical = logical[..^1] + physical[++i];
+                logical = logical[..^1];
+                joins.Add(logical.Length);
+                logical += physical[++i];
                 _line++;
             }
 
             string trimmed = logical.TrimStart(' ', '\t', '\f', '\v');
-            if (!trimmed.StartsWith('#'))
+            bool isDirective = atLineStart && trimmed.StartsWith('#');
+            if (isDirective)
+            {
+                // Issue #426: a block comment spanning lines is whitespace INSIDE the directive,
+                // so it does not end it. The comment's opening already left a space, and the lines
+                // it spans are consumed here (counted, like a backslash continuation, so every
+                // later line keeps its number; compiler input pads them back as empty lines).
+                while (commentLineBreaks.Contains(i) && i + 1 < physical.Length)
+                {
+                    joins.Add(logical.Length);
+                    logical += physical[++i];
+                    _line++;
+                    while (logical.EndsWith('\\') && i + 1 < physical.Length)
+                    {
+                        logical = logical[..^1];
+                        joins.Add(logical.Length);
+                        logical += physical[++i];
+                        _line++;
+                    }
+                }
+                trimmed = logical.TrimStart(' ', '\t', '\f', '\v');
+            }
+            atLineStart = !commentLineBreaks.Contains(i) || (atLineStart && trimmed.Length == 0);
+            // The physical line the logical line ends on.
+            int lastPhysicalLine = i + 1;
+
+            if (!isDirective)
             {
                 if (Active())
                 {
@@ -324,15 +365,28 @@ internal sealed class FxMacroPreprocessor
                         }
                         case "line":
                         {
-                            // The compiler needs the same line-to-file mapping the flattener wrote.
+                            // '#line N "file"' (or the GNU '# N "file"' form): the line after the
+                            // one N is written on is N. That is the physical line of the NUMBER,
+                            // not the directive's last line (DXC/clang, measured with -P): with a
+                            // comment or a continuation after N, later lines count on from there.
+                            int numberLine = physicalLine;
+                            int digit = logical.IndexOf('#') + 1;
+                            while (digit < logical.Length && !char.IsAsciiDigit(logical[digit]))
+                                digit++;
+                            foreach (int join in joins)
+                            {
+                                if (join <= digit)
+                                    numberLine++;
+                            }
+                            // The compiler needs the same line-to-file mapping the flattener
+                            // wrote, so the directive goes on the line its number was on.
                             if (_compilerInput)
-                                EmitDirectiveVerbatim(output, physicalLine, logical);
-                            // '#line N "file"' (or the GNU '# N "file"' form): the next line is N.
+                                EmitDirectiveVerbatim(output, numberLine, logical);
                             int n = SkipWs(rest, 0);
                             if (n < rest.Count && rest[n].Kind == TokKind.Number &&
                                 int.TryParse(rest[n].Text, NumberStyles.None, CultureInfo.InvariantCulture, out int newLine))
                             {
-                                _line = newLine - 1;
+                                _line = newLine - 1 + (lastPhysicalLine - numberLine);
                                 int f = SkipWs(rest, n + 1);
                                 if (f < rest.Count && rest[f].Kind == TokKind.String)
                                     _file = Unquote(rest[f].Text);
@@ -1134,11 +1188,15 @@ internal sealed class FxMacroPreprocessor
 
     /// <summary>
     /// Replaces every comment with a space (a block comment keeps its newlines so line numbers
-    /// survive), leaving string and character literals intact.
+    /// survive), leaving string and character literals intact. <paramref name="commentLineBreaks"/>
+    /// receives the 0-based index of every output line whose line break is one of those kept
+    /// newlines: a break inside a comment, which is whitespace to the preprocessor and so does not
+    /// end a directive (issue #426).
     /// </summary>
-    private static string StripComments(string text, bool keepWidth = false)
+    private static string StripComments(string text, bool keepWidth, HashSet<int> commentLineBreaks)
     {
         var sb = new StringBuilder(text.Length);
+        int line = 0;
         int i = 0;
         while (i < text.Length)
         {
@@ -1151,6 +1209,7 @@ internal sealed class FxMacroPreprocessor
                     if (text[i] == '\\' && i + 1 < text.Length && text[i + 1] == '\n')
                     {
                         sb.Append('\\').Append('\n');
+                        line++;
                         i += 2;
                         continue;
                     }
@@ -1168,7 +1227,11 @@ internal sealed class FxMacroPreprocessor
                 if (keepWidth) sb.Append(' ');
                 while (i < text.Length && !(text[i] == '*' && i + 1 < text.Length && text[i + 1] == '/'))
                 {
-                    if (text[i] == '\n') sb.Append('\n');
+                    if (text[i] == '\n')
+                    {
+                        sb.Append('\n');
+                        commentLineBreaks.Add(line++);
+                    }
                     else if (keepWidth) sb.Append(' ');
                     i++;
                 }
@@ -1190,11 +1253,14 @@ internal sealed class FxMacroPreprocessor
                 if (end < text.Length && text[end] == c)
                 {
                     sb.Append(text, i, end - i + 1);
+                    // An escaped newline ('\' at the end of a line) can sit inside the literal.
+                    line += text.AsSpan(i, end - i + 1).Count('\n');
                     i = end + 1;
                     continue;
                 }
             }
             sb.Append(c);
+            if (c == '\n') line++;
             i++;
         }
         return sb.ToString();
