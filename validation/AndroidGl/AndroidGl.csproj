@@ -48,6 +48,10 @@
          supply our own Android-native .so below. Versions match the transitive resolve. -->
     <PackageReference Include="Vortice.Dxc" Version="3.3.4" ExcludeAssets="native" />
     <PackageReference Include="Silk.NET.SPIRV.Cross.Native" Version="2.23.0" ExcludeAssets="native" />
+    <!-- Pinned so the lock file does not follow the installed SDK: the .NET Android workload adds this
+         package implicitly at the latest 9.0 patch the SDK bundles (9.0.16 on SDK 10.0.300, 9.0.22 on
+         10.0.403), and locked-mode restore fails with NU1004 whenever the runner's SDK moves. -->
+    <PackageReference Include="Microsoft.NET.ILLink.Tasks" Version="9.0.20" PrivateAssets="all" />
   </ItemGroup>
 
   <ItemGroup>
