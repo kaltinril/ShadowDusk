@@ -18,6 +18,22 @@ that loads and renders identically to `mgfxc`'s in the real MonoGame/KNI runtime
 
 ### Fixed
 
+- **Techniques are read from the preprocessed source, like `mgfxc` (issue #407).** A technique
+  inside a false `#if` (or behind an unset `/Defines` value) was still compiled, a technique in an
+  `#include`d file was not found (`SD0010`, or dropped beside the main file's own), and a macro
+  `compile` target (`compile VS_SM V()`) was recorded as shader model 3.0 in a KNIFX container.
+  All targets (MGFX OpenGL/DirectX/DirectX 12/Vulkan, KNIFX, FNA, raylib, SkSL) now take the
+  technique list from the managed preprocessed view. **KNIFX output changes** for the common
+  `#define VS_SHADERMODEL vs_4_0` pattern: it now records 4.0 (version byte `08`), as KNI's own
+  content pipeline does (measured on KNI 4.2.9001). KNI's GL backends refuse SM 4.0 on the
+  HiDef profile, so an effect such as Apos.Shapes that names `vs_4_0` behind `#if __KNIFX__`
+  loads there only with a 3.0 profile, exactly as when KNI's pipeline builds it. On FNA a macro
+  that expands to an SM 2-3 profile is now honored (it was compiled at SM3); any other expansion
+  keeps the SM3 ceiling. On raw text the same technique name in each `#if` branch is no longer
+  an `FX0005`; a real duplicate is still reported, on the preprocessed text. A view that cannot be built (`__has_include`, a conditional on `__HLSL_VERSION`) keeps the raw technique list and adds an `SD0009` warning; `#region`/`#endregion` are ignored by the view. MGFX v10 records no shader
+  model; the committed byte-identity manifests (OpenGL, DirectX 11,
+  DirectX 12, Vulkan, FNA) are unchanged.
+
 ## [0.22.0] - 2026-10-28
 
 ### Added

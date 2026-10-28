@@ -228,6 +228,25 @@ internal sealed class CompilationPipeline
             preprocessed = preprocessResult.Value;
         }
 
+        // Issue #407: the techniques (and so the passes, entry points and compile profiles) come
+        // from the PREPROCESSED translation unit, like mgfxc: a technique in an inactive #if does
+        // not exist, one in an #include'd file does, and `compile VS_SHADERMODEL V()` records the
+        // profile the macro expands to. A recovery pass's pre-parse already ran on the
+        // preprocessed text, so its techniques are that list already.
+        ShaderError? techniqueViewWarning = null;
+        bool techniquesFromView = false;
+        if (recovered is null)
+        {
+            Result<EffectTechniques.Resolution, ShaderError> resolvedTechniques = EffectTechniques.Resolve(
+                hlslSource, sourceFileName, macros, includeResolver, options.AdditionalIncludePaths, fxParsed);
+            if (resolvedTechniques.IsFailure)
+                return Fail(resolvedTechniques.Error);
+
+            fxParsed = fxParsed with { Techniques = resolvedTechniques.Value.Techniques };
+            techniqueViewWarning = resolvedTechniques.Value.ViewWarning;
+            techniquesFromView = techniqueViewWarning is null;
+        }
+
         // A sampler_state texture the main file never declares (`Texture = <T>` and no `T`): mgfxc
         // reads the name off the block and emits a `T` parameter. Declare it beside the rewritten
         // sampler, but only when the PREPROCESSED source declares no `T` either: a header or a
@@ -330,6 +349,13 @@ internal sealed class CompilationPipeline
                 Column: 0,
                 Code: "SD0010",
                 Message: "Effect source contains no techniques"));
+
+        // The pre-parse stripped the main file's technique blocks; one in an #include'd file is
+        // still in the compiler's input, where it is effect syntax the compiler does not take
+        // (DXC warns, -Weffects-syntax). Its techniques now come from the preprocessed view
+        // (issue #407), so blank the block. A no-op for an effect with no such block.
+        if (techniquesFromView)
+            preprocessed = preprocessed with { Text = FxPreParser.StripTechniqueBlocks(preprocessed.Text, sourceFileName) };
 
         // MonoGame-compatible GLSL emission (MojoShader dialect) applies to EVERY GL
         // stage — pixel (ps_uniforms_vec4, gl_FragColor, ps_s{k}) AND vertex
@@ -506,6 +532,11 @@ internal sealed class CompilationPipeline
         // Content Pipeline build. DirectX only — see DirectX11FloorCheck's remarks for why
         // the OpenGL/Vulkan/DX12 equivalents are deliberately not enforced here.
         bool enforceDx11Floor = directX;
+        // A profile a macro produced is validated through the macro name the author wrote, so DXC
+        // expands it with -P as before issue #407. (The Android emulator hangs the first SPIR-V
+        // compile after the corpus' effects stop making those -P calls: a DXC-spawned thread is
+        // blocked on a pipe read before IDxcResult.GetStatus returns. The cause is unexplained;
+        // this restores the old call pattern.)
         var profileExpansionCache = new Dictionary<string, string?>(StringComparer.Ordinal);
         foreach (TechniqueInfo technique in fxParsed.Techniques)
         {
@@ -514,7 +545,8 @@ internal sealed class CompilationPipeline
                 if (pass.VertexEntryPoint is not null)
                 {
                     var v = ValidateCompileProfile(
-                        pass.VertexProfile, pass.VertexProfileToken, pass.VertexProfileSpan, ShaderStage.Vertex,
+                        pass.VertexProfileMacroName?.ToLowerInvariant() ?? pass.VertexProfile,
+                        pass.VertexProfileMacroName ?? pass.VertexProfileToken, pass.VertexProfileSpan, ShaderStage.Vertex,
                         dxcCompiler, macros, preprocessed, sourceFileName,
                         profileExpansionCache, enforceStagePrefix: true, cancellationToken,
                         enforceDirectX11Floor: enforceDx11Floor, entryPoint: pass.VertexEntryPoint);
@@ -524,7 +556,8 @@ internal sealed class CompilationPipeline
                 if (pass.PixelEntryPoint is not null)
                 {
                     var p = ValidateCompileProfile(
-                        pass.PixelProfile, pass.PixelProfileToken, pass.PixelProfileSpan, ShaderStage.Pixel,
+                        pass.PixelProfileMacroName?.ToLowerInvariant() ?? pass.PixelProfile,
+                        pass.PixelProfileMacroName ?? pass.PixelProfileToken, pass.PixelProfileSpan, ShaderStage.Pixel,
                         dxcCompiler, macros, preprocessed, sourceFileName,
                         profileExpansionCache, enforceStagePrefix: true, cancellationToken,
                         enforceDirectX11Floor: enforceDx11Floor, entryPoint: pass.PixelEntryPoint);
@@ -1542,7 +1575,7 @@ internal sealed class CompilationPipeline
             if (knifxResult.IsFailure)
                 return Fail(knifxResult.Error, runWarnings);
             return Result<CompiledShader, ShaderError[]>.Ok(
-                new CompiledShader(options.Target, knifxResult.Value) { Warnings = runWarnings, Parameters = reflectedParameters });
+                new CompiledShader(options.Target, knifxResult.Value) { Warnings = WithViewWarning(runWarnings, techniqueViewWarning), Parameters = reflectedParameters });
         }
 
         // Stage 6: MGFX binary writer.
@@ -1584,7 +1617,7 @@ internal sealed class CompilationPipeline
         byte[] mgfxBytes = writeResult.Value;
 
         return Result<CompiledShader, ShaderError[]>.Ok(
-            new CompiledShader(options.Target, mgfxBytes) { Warnings = runWarnings, Parameters = reflectedParameters });
+            new CompiledShader(options.Target, mgfxBytes) { Warnings = WithViewWarning(runWarnings, techniqueViewWarning), Parameters = reflectedParameters });
         }
         finally
         {
@@ -2020,6 +2053,15 @@ internal sealed class CompilationPipeline
             fnaPlatformMacros = fnaPlatformMacros with { UserDefines = options.Defines };
         }
 
+        // Issue #407: techniques from the preprocessed translation unit, as on the other targets
+        // (and as fxc's own effect compiler reads them for fx_2_0).
+        Result<EffectTechniques.Resolution, ShaderError> fnaTechniques = EffectTechniques.Resolve(
+            hlslSource, sourceFileName, fnaPlatformMacros, includeResolver, options.AdditionalIncludePaths, fxParsed);
+        if (fnaTechniques.IsFailure)
+            return Fail(fnaTechniques.Error);
+        fxParsed = fxParsed with { Techniques = fnaTechniques.Value.Techniques };
+        ShaderError? fnaTechniqueViewWarning = fnaTechniques.Value.ViewWarning;
+
         // Zero-technique FNA macro fallback (Phase 41 GAP-1, extended to FNA). Mirrors the
         // GL/DX recovery in Run(): an effect whose techniques come ONLY from a TECHNIQUE(...)
         // macro — the MonoGame stock effects (BasicEffect.fx etc., via Macros.fxh) and the
@@ -2098,6 +2140,11 @@ internal sealed class CompilationPipeline
 
             preprocessed = preprocessResult.Value;
             fnaPreprocessWarnings = preprocessed.Warnings;
+
+            // An #include'd technique block is still in vkd3d's input; its technique comes from
+            // the preprocessed view now (issue #407), so blank it, as on the other targets.
+            if (fnaTechniqueViewWarning is null)
+                preprocessed = preprocessed with { Text = FxPreParser.StripTechniqueBlocks(preprocessed.Text, sourceFileName) };
         }
 
         // Per-stage source: vkd3d 2.1 rejects D3D9 stage-scoped register reservations
@@ -2183,7 +2230,7 @@ internal sealed class CompilationPipeline
                     var compiled = CompileFnaStage(
                         fnaCompiler, vsSource, preprocessed.OriginalFilePath,
                         pass.VertexEntryPoint, pass.VertexProfile, ShaderStage.Vertex,
-                        cancellationToken);
+                        cancellationToken, pass.VertexProfileFromMacro);
                     if (compiled.IsFailure)
                         return Fail(compiled.Error, fnaWarnings);
 
@@ -2199,7 +2246,7 @@ internal sealed class CompilationPipeline
                     var compiled = CompileFnaStage(
                         fnaCompiler, psSource, preprocessed.OriginalFilePath,
                         pass.PixelEntryPoint, pass.PixelProfile, ShaderStage.Pixel,
-                        cancellationToken);
+                        cancellationToken, pass.PixelProfileFromMacro);
                     if (compiled.IsFailure)
                         return Fail(compiled.Error, fnaWarnings);
 
@@ -2241,7 +2288,7 @@ internal sealed class CompilationPipeline
         return Result<CompiledShader, ShaderError[]>.Ok(
             new CompiledShader(PlatformTarget.Fna, writeResult.Value)
             {
-                Warnings   = fnaWarnings,
+                Warnings   = WithViewWarning(fnaWarnings, fnaTechniqueViewWarning),
                 Parameters = Fx2ParameterReflection.From(buildResult.Value.Parameters, preprocessed.Text, sourceFileName),
             });
     }
@@ -2254,10 +2301,11 @@ internal sealed class CompilationPipeline
             string entryPoint,
             string? declaredProfile,
             ShaderStage stage,
-            CancellationToken ct)
+            CancellationToken ct,
+            bool profileFromMacro = false)
     {
         Result<string, ShaderError> profileResult =
-            ResolveFnaProfile(declaredProfile, stage, sourceFileName);
+            ResolveFnaProfile(declaredProfile, stage, sourceFileName, profileFromMacro);
         if (profileResult.IsFailure)
             return Result<(Fx2Shader, CtabTable, IReadOnlyList<ShaderError>), ShaderError>.Fail(profileResult.Error);
 
@@ -2307,16 +2355,28 @@ internal sealed class CompilationPipeline
     /// vs_3_0/ps_3_0); a literal SM1 profile fails loudly too (vkd3d 2.1's ps_1_x
     /// backend has known instruction gaps and MojoShader's ps_1_x rules differ wholesale
     /// from SM2+ — never validated here, so refuse rather than risk silently-wrong
-    /// output); anything else — no profile, or an unexpanded macro name like
-    /// <c>PS_SHADERMODEL</c> (the pre-parser runs before macro expansion, and our
-    /// preprocessor does not evaluate conditionals, so the macro's value is unknowable
-    /// here) — defaults to the SM3 ceiling for the stage. Write a literal profile
-    /// (<c>compile ps_2_0 …</c>) to pin codegen to a specific fxc baseline.
+    /// output); anything else (no profile, or a token that is not a profile) defaults to
+    /// the SM3 ceiling for the stage.
+    ///
+    /// <para>A profile a macro expands to (<paramref name="fromMacro"/>: the techniques come
+    /// from the preprocessed source since issue #407, so <c>compile PS_SHADERMODEL P()</c>
+    /// arrives expanded) is honored like a literal one when it is an SM 2–3 profile of the
+    /// right stage. Any other expansion keeps the SM3 ceiling, as it did when the macro was
+    /// never expanded: MonoGame's standard header defines <c>vs_4_0_level_9_1</c> in the arm
+    /// every non-OpenGL target takes, FNA included, and refusing it would break that header
+    /// on FNA for no output the author asked for.</para>
     /// </summary>
     internal static Result<string, ShaderError> ResolveFnaProfile(
-        string? declaredProfile, ShaderStage stage, string sourceFileName)
+        string? declaredProfile, ShaderStage stage, string sourceFileName, bool fromMacro = false)
     {
         string fallback = stage == ShaderStage.Vertex ? "vs_3_0" : "ps_3_0";
+
+        if (fromMacro && declaredProfile is { Length: >= 4 } expanded &&
+            !(expanded.StartsWith(stage == ShaderStage.Vertex ? "vs_" : "ps_", StringComparison.Ordinal) &&
+              expanded[3] is '2' or '3'))
+        {
+            return Result<string, ShaderError>.Ok(fallback);
+        }
 
         // Anything that does not LOOK like a literal profile (vs_/ps_ + SM major digit) is
         // an unexpanded macro name (e.g. PS_SHADERMODEL) — default to the SM3 ceiling.
@@ -2703,8 +2763,24 @@ internal sealed class CompilationPipeline
     /// (<c>ShaderProfile.Vulkan.cs</c>). Matches only <c>&lt;whitespace&gt;entryPoint(</c>
     /// (a function definition or call), never a substring inside another identifier.
     /// </summary>
-    private static string RenameEntryPointToMain(string hlsl, string entryPoint) =>
-        Regex.Replace(hlsl, $@"(?<=\s){Regex.Escape(entryPoint)}(?=\s*\()", "main");
+    private static string RenameEntryPointToMain(string hlsl, string entryPoint)
+    {
+        if (string.Equals(entryPoint, "main", StringComparison.Ordinal))
+            return hlsl;
+
+        string renamed = Regex.Replace(hlsl, $@"(?<=\s){Regex.Escape(entryPoint)}(?=\s*\()", "main");
+        if (!string.Equals(renamed, hlsl, StringComparison.Ordinal))
+            return renamed;
+
+        // No definition spelled with this name: the compile target is a macro's expansion
+        // (`#define PF Pmain` / `float4 PF(...)` / `compile ps_4_0 PF()`), and the technique
+        // list (issue #407) names the expanded function. Let the preprocessor do the rename: a
+        // `#define Pmain main` ahead of the macro's own definition. It goes before the
+        // flattener's `#line 1` directive, which restarts the numbering, so no line moves.
+        int firstLine = hlsl.IndexOf("#line 1", StringComparison.Ordinal);
+        string define = $"#define {entryPoint} main\n";
+        return firstLine >= 0 ? hlsl.Insert(firstLine, define) : define + hlsl;
+    }
 
     /// <summary>
     /// mgfxc's <c>ConstantBufferData.SameAs</c> equivalence for the GL per-shader
@@ -3133,6 +3209,14 @@ internal sealed class CompilationPipeline
         }
         return null;
     }
+
+    /// <summary>
+    /// The warnings of a SUCCESSFUL compile, led by the technique-view warning (issue #407) when the
+    /// preprocessed view could not be built and the raw technique list was used. A failed compile
+    /// does not carry it: its own error is the news.
+    /// </summary>
+    private static IReadOnlyList<ShaderError> WithViewWarning(List<ShaderError> warnings, ShaderError? viewWarning) =>
+        viewWarning is null ? warnings : [viewWarning, .. warnings];
 
     private static ShaderError DefaultNotPreserved(string file, int line, int column, string name, string reason) =>
         new(File: file,

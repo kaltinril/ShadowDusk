@@ -137,9 +137,24 @@ public static class SkslConverter
             ]);
         }
 
+        // Issue #407: the techniques come from the preprocessed translation unit (OpenGL macro
+        // set, the one this converter compiles with), as on every CompilationPipeline target.
+        Result<EffectTechniques.Resolution, ShaderError> techniques = EffectTechniques.Resolve(
+            fxSource,
+            options.SourceName,
+            PlatformMacros.For(PlatformTarget.OpenGL),
+            options.IncludeResolver ?? new FileSystemIncludeResolver(),
+            options.AdditionalIncludePaths,
+            parse.Value);
+        if (techniques.IsFailure)
+            return Result<SkslConversion, ShaderError[]>.Fail([techniques.Error]);
+        FxParseResult rawParsed = parse.Value with { Techniques = techniques.Value.Techniques };
+
         Result<SkslConversion, ShaderError[]> first = ConvertCore(
-            parse.Value, options, recovered: null, out bool shaderCompileFailed, cancellationToken,
+            rawParsed, options, recovered: null, out bool shaderCompileFailed, cancellationToken,
             dxcCompilerFactory, glslTranspilerFactory);
+        // A technique view that could not be built leaves the conversion on the raw technique
+        // list (issue #407), as it was before.
         if (first.IsSuccess || !shaderCompileFailed)
             return first;
 
@@ -228,7 +243,9 @@ public static class SkslConverter
                 parsed.StrippedHlsl, options.SourceName, options.IncludeResolver, options.AdditionalIncludePaths);
             if (flattened.IsFailure)
                 return Result<SkslConversion, ShaderError[]>.Fail([flattened.Error]);
-            compilerInput = flattened.Value.Text;
+            // An #include'd technique block is effect syntax DXC does not take; its technique
+            // comes from the preprocessed view now (issue #407).
+            compilerInput = FxPreParser.StripTechniqueBlocks(flattened.Value.Text, options.SourceName);
         }
 
         var seam = ModernGlslSeam.CompilePixel(compilerInput, pass.PixelEntryPoint, options.SourceName, cancellationToken,

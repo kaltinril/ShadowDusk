@@ -398,8 +398,9 @@ public sealed class FxPreParserTests
     // -------------------------------------------------------------------------
 
     [Fact]
-    public void Parse_DuplicateTechniqueName_ReturnsFX0005()
+    public void ParseTechniquesPreprocessed_DuplicateTechniqueName_ReturnsFX0005()
     {
+        // A duplicate is decided on the preprocessed text (issue #407), where it is real.
         const string source = """
             technique Foo
             {
@@ -411,10 +412,30 @@ public sealed class FxPreParserTests
             }
             """;
 
-        var result = FxPreParser.Parse(source, sourceFile: "test.fx");
+        var result = FxPreParser.ParseTechniquesPreprocessed(source, sourceFile: "test.fx");
 
         result.IsFailure.ShouldBeTrue();
-        result.Error.Code.ShouldBe(FxParseErrorCode.DuplicateTechniqueName);
+        result.Error.Code.ShouldBe("FX0005");
+    }
+
+    [Fact]
+    public void Parse_SameTechniqueNameInEachIfBranch_IsNotAnError()
+    {
+        // On raw text one name per #if branch is legal; only the preprocessed text says which
+        // one exists (issue #407).
+        const string source = """
+            #if SM4
+            technique Foo { pass { PixelShader = compile ps_4_0 PS(); } }
+            #else
+            technique Foo { pass { PixelShader = compile ps_3_0 PS(); } }
+            #endif
+            """;
+
+        FxPreParser.Parse(source, sourceFile: "test.fx").IsSuccess.ShouldBeTrue();
+
+        var techniques = FxPreParser.ParseTechniquesPreprocessed("#define SM4 1\n" + source, "test.fx");
+        techniques.IsSuccess.ShouldBeTrue();
+        techniques.Value.Techniques.ShouldHaveSingleItem().Passes[0].PixelProfile.ShouldBe("ps_4_0");
     }
 
     // -------------------------------------------------------------------------
