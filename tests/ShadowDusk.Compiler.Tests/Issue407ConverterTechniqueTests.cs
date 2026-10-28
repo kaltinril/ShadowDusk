@@ -86,4 +86,15 @@ public sealed class Issue407ConverterTechniqueTests
     {
         Sksl(fx).SkslText.ShouldBe(Sksl(Direct).SkslText);
     }
+
+    [Fact]
+    public void Sksl_ViewThatCannotBeBuilt_KeepsTheRawTechniqueList_Silently()
+    {
+        // A directive the managed view does not model: SkSL has no warning channel, so it keeps the
+        // raw technique list as before issue #407 and converts like the direct form. (The raylib
+        // converter fails on the same view with SD0009 already, for its sampler-register reservation.)
+        const string fx = "#if defined(__has_include) && __has_include(\"tech.fxh\")\n#define HAS_TECH 1\n#endif\n" + Direct;
+
+        Sksl(fx).SkslText.ShouldBe(Sksl(Direct).SkslText);
+    }
 }

@@ -2763,8 +2763,24 @@ internal sealed class CompilationPipeline
     /// (<c>ShaderProfile.Vulkan.cs</c>). Matches only <c>&lt;whitespace&gt;entryPoint(</c>
     /// (a function definition or call), never a substring inside another identifier.
     /// </summary>
-    private static string RenameEntryPointToMain(string hlsl, string entryPoint) =>
-        Regex.Replace(hlsl, $@"(?<=\s){Regex.Escape(entryPoint)}(?=\s*\()", "main");
+    private static string RenameEntryPointToMain(string hlsl, string entryPoint)
+    {
+        if (string.Equals(entryPoint, "main", StringComparison.Ordinal))
+            return hlsl;
+
+        string renamed = Regex.Replace(hlsl, $@"(?<=\s){Regex.Escape(entryPoint)}(?=\s*\()", "main");
+        if (!string.Equals(renamed, hlsl, StringComparison.Ordinal))
+            return renamed;
+
+        // No definition spelled with this name: the compile target is a macro's expansion
+        // (`#define PF Pmain` / `float4 PF(...)` / `compile ps_4_0 PF()`), and the technique
+        // list (issue #407) names the expanded function. Let the preprocessor do the rename: a
+        // `#define Pmain main` ahead of the macro's own definition. It goes before the
+        // flattener's `#line 1` directive, which restarts the numbering, so no line moves.
+        int firstLine = hlsl.IndexOf("#line 1", StringComparison.Ordinal);
+        string define = $"#define {entryPoint} main\n";
+        return firstLine >= 0 ? hlsl.Insert(firstLine, define) : define + hlsl;
+    }
 
     /// <summary>
     /// mgfxc's <c>ConstantBufferData.SameAs</c> equivalence for the GL per-shader

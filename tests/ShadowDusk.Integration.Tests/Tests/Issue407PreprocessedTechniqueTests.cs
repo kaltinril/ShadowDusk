@@ -163,6 +163,8 @@ public sealed class Issue407PreprocessedTechniqueTests
         CompiledShader shader = await CompileOk(Region(sm3), target, sm3);
 
         TechniqueNames(shader, target).ShouldBe(["B"]);
+        // The view ignores #region itself; it does not lean on the SD0009 fallback.
+        shader.Warnings.ShouldNotContain(w => w.Code == "SD0009" || w.Code == "SD0017");
     }
 
     [Fact]
@@ -171,6 +173,7 @@ public sealed class Issue407PreprocessedTechniqueTests
         CompiledShader shader = await CompileOk(Region(sm3: false), PlatformTarget.DirectX, container: EffectContainer.Knifx);
 
         shader.Data.ShouldNotBeEmpty();
+        shader.Warnings.ShouldNotContain(w => w.Code == "SD0009" || w.Code == "SD0017");
     }
 
     [Theory]
@@ -205,6 +208,22 @@ public sealed class Issue407PreprocessedTechniqueTests
 
         TechniqueNames(shader, PlatformTarget.DirectX).ShouldBe(["B"]);
         shader.Warnings.ShouldContain(w => w.Code == "SD0009" && w.Severity == ShaderErrorSeverity.Warning);
+    }
+
+    [Fact]
+    public async Task Vulkan_EntryPointSpelledThroughAMacro_IsRenamedToMain()
+    {
+        // The technique list names the expanded function (Pmain); the Vulkan rename-to-main has to
+        // find it through the macro that spells it.
+        const string source = """
+            #define PF Pmain
+            float4 PF(float4 c : COLOR0) : SV_TARGET { return c; }
+            technique T { pass { PixelShader = compile ps_4_0 PF(); } }
+            """;
+
+        CompiledShader shader = await CompileOk(source, PlatformTarget.Vulkan);
+
+        TechniqueNames(shader, PlatformTarget.Vulkan).ShouldBe(["T"]);
     }
 
     [Theory]

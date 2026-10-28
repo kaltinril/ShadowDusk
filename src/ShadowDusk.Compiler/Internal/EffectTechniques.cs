@@ -65,7 +65,7 @@ internal static class EffectTechniques
                 ? Result<Resolution, ShaderError>.Ok(new Resolution(rawParsed.Techniques, view.Error with
                 {
                     Severity = ShaderErrorSeverity.Warning,
-                    Message = view.Error.Message + " The techniques were read from the raw source instead, " +
+                    Message = view.Error.Message.TrimEnd().TrimEnd('.') + ". The techniques were read from the raw source instead, " +
                               "so a technique inside an inactive #if, or one an #include brings in, is not accounted for.",
                 }))
                 : Result<Resolution, ShaderError>.Fail(view.Error);

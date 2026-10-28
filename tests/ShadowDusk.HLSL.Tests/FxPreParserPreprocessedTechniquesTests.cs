@@ -34,6 +34,34 @@ public sealed class FxPreParserPreprocessedTechniquesTests
         techniques.Techniques.Select(t => t.Name).ToArray();
 
     [Fact]
+    public void RegionDirectives_AreIgnored()
+    {
+        var techniques = Parse(Functions + """
+            #region Techniques
+            technique B { pass { PixelShader = compile ps_4_0 Q(); } }
+            #endregion
+            """);
+
+        Names(techniques).ShouldBe(["B"]);
+    }
+
+    [Fact]
+    public void ConditionalOnACompilerPredefinedMacro_CannotBeTrusted_AndSaysWhich()
+    {
+        // DXC defines __HLSL_VERSION and the managed view does not, so the technique list read
+        // off the view may differ from DXC's: the caller falls back to the raw list.
+        var result = FxPreParser.ParseTechniquesPreprocessed(Functions + """
+            #if __HLSL_VERSION >= 2016
+            technique B { pass { PixelShader = compile ps_4_0 Q(); } }
+            #endif
+            """, "main.fx");
+
+        result.IsFailure.ShouldBeTrue();
+        result.Error.Code.ShouldBe("SD0009");
+        result.Error.Message.ShouldContain("__HLSL_VERSION", Case.Sensitive);
+    }
+
+    [Fact]
     public void TechniqueInsideIfZero_DoesNotExist()
     {
         var techniques = Parse(Functions + """
