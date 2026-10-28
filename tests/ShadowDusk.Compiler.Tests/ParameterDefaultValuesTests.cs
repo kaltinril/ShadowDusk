@@ -4,6 +4,7 @@ using Shouldly;
 using ShadowDusk.Compiler.Internal;
 using ShadowDusk.Core;
 using ShadowDusk.Core.Reflection;
+using ShadowDusk.HLSL;
 using Xunit;
 
 namespace ShadowDusk.Compiler.Tests;
@@ -135,6 +136,66 @@ public sealed class ParameterDefaultValuesTests
         IReadOnlyList<float> defaults = result[0].DefaultValue.ShouldNotBeNull();
         (defaults is float[]).ShouldBeFalse();
         ((IList<float>)defaults).IsReadOnly.ShouldBeTrue();
+    }
+
+    // ---- issue #427: the declared kind decides how an Int32 word reads ---------------------
+
+    private static GlobalInitializerDefault Declared(GlobalInitializerKind kind, byte mgfxType) =>
+        new("p", 0, mgfxType, 1, 1, 0, [new byte[4]], "f.fx", 1, 1) { Kind = kind };
+
+    private static IReadOnlyList<float>? DefaultDeclared(
+        ParameterReflection p, EffectParameterInfo i, GlobalInitializerDefault declared) =>
+        ParameterDefaultValues.Attach([p], [i], new Dictionary<string, GlobalInitializerDefault> { ["p"] = declared })[0].DefaultValue;
+
+    [Fact]
+    public void BoolReflectedAsInt32_ReadsAsOne_NotMinusOne()
+    {
+        // Vulkan: SPIR-V has no bool in a uniform block, so `bool Flag = true;` is an Int32
+        // parameter (as in real mgfxc's Vulkan build) carrying the D3D true word 0xFFFFFFFF.
+        Default(Param(EffectParameterClass.Scalar, EffectParameterType.Int32, 1, 1),
+                Info(EffectParameterClass.Scalar, EffectParameterType.Int32, 1, 1, IntBlob(-1)))
+            .ShouldBe(new[] { -1f }, "without the declaration it is indistinguishable from `int X = -1;`");
+        DefaultDeclared(Param(EffectParameterClass.Scalar, EffectParameterType.Int32, 1, 1),
+                Info(EffectParameterClass.Scalar, EffectParameterType.Int32, 1, 1, IntBlob(-1)),
+                Declared(GlobalInitializerKind.Bool, 1))
+            .ShouldBe(new[] { 1f });
+        DefaultDeclared(Param(EffectParameterClass.Vector, EffectParameterType.Int32, 1, 2),
+                Info(EffectParameterClass.Vector, EffectParameterType.Int32, 1, 2, IntBlob(0, -1)),
+                Declared(GlobalInitializerKind.Bool, 1))
+            .ShouldBe(new[] { 0f, 1f });
+    }
+
+    [Fact]
+    public void IntDeclared_KeepsItsSign()
+    {
+        DefaultDeclared(Param(EffectParameterClass.Scalar, EffectParameterType.Int32, 1, 1),
+                Info(EffectParameterClass.Scalar, EffectParameterType.Int32, 1, 1, IntBlob(-1)),
+                Declared(GlobalInitializerKind.Int, 2))
+            .ShouldBe(new[] { -1f });
+    }
+
+    [Fact]
+    public void UintAboveTwoToThe31_ReadsUnsigned()
+    {
+        byte[] word = BitConverter.GetBytes(3000000000u);   // 0xB2D05E00, -1294967296 as an int
+        DefaultDeclared(Param(EffectParameterClass.Scalar, EffectParameterType.Int32, 1, 1),
+                Info(EffectParameterClass.Scalar, EffectParameterType.Int32, 1, 1, word),
+                Declared(GlobalInitializerKind.UInt, 2))
+            .ShouldBe(new[] { 3000000000f });
+        DefaultDeclared(Param(EffectParameterClass.Scalar, EffectParameterType.Int32, 1, 1),
+                Info(EffectParameterClass.Scalar, EffectParameterType.Int32, 1, 1, IntBlob(-1)),
+                Declared(GlobalInitializerKind.UInt, 2))
+            .ShouldBe(new[] { 4294967295f });
+    }
+
+    [Fact]
+    public void ADeclarationForAnotherName_ChangesNothing()
+    {
+        IReadOnlyList<ParameterReflection> result = ParameterDefaultValues.Attach(
+            [Param(EffectParameterClass.Scalar, EffectParameterType.Int32, 1, 1)],
+            [Info(EffectParameterClass.Scalar, EffectParameterType.Int32, 1, 1, IntBlob(-1))],
+            new Dictionary<string, GlobalInitializerDefault> { ["other"] = Declared(GlobalInitializerKind.Bool, 1) });
+        result[0].DefaultValue.ShouldBe(new[] { -1f });
     }
 
     [Fact]

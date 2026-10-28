@@ -77,6 +77,12 @@ that loads and renders identically to `mgfxc`'s in the real MonoGame/KNI runtime
 
 ### Fixed
 
+- **`ParameterReflection.DefaultValue` reads a `bool` as 0 or 1 on Vulkan and a `uint` above 2^31 as its unsigned value**
+  (issue #427). On Vulkan a `bool` parameter is `Int32` (SPIR-V has no bool in a uniform block, and real `mgfxc`'s
+  Vulkan build says `Int32` too), so `bool Flag = true;` reflected -1, indistinguishable from `int Flag = -1;`; and
+  every target reflects a `uint` as `Int32`, so `uint U = 3000000000;` reflected -1294967296. The value is now read by
+  the HLSL declaration's kind (exposed as the new `GlobalInitializerDefault.Kind` / `GlobalInitializerKind` in
+  `ShadowDusk.HLSL`). `ParameterReflection.Type` stays `Int32` on Vulkan, and no emitted byte changes.
 - **FNA (`fx_2_0` `.fxb`) now keeps matrix and array initializer defaults.** `float2x2 M = 0.5 * I` and
   `float4 Colors[2] = {red, green}` read as zero in real FNA 26.06 (both FNA3D drivers) where `fxc /T fx_2_0`'s
   build reads the initializers; only scalar and vector defaults survived. The CTAB default is now read for

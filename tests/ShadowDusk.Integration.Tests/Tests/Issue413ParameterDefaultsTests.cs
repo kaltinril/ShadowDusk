@@ -45,6 +45,9 @@ public sealed class Issue413ParameterDefaultsTests
     private const string SquareUse = "+ Rot[1][0]";
     private const string Wide = "float2x3 Wide = float2x3(1, 2, 3, 4, 5, 6);";
     private const string WideUse = "+ Wide[1][2]";
+    // Issue #427: a uint above 2^31 (0xB2D05E00 in the blob), reflected as Int32 like every integer.
+    private const string Unsigned = "uint Big = 3000000000;";
+    private const string UnsignedUse = "+ (Big > 2147483648u ? 1 : 0)";
 
     private enum Shape { OpenGl, Modern, Fna }
 
@@ -59,8 +62,8 @@ public sealed class Issue413ParameterDefaultsTests
         }
         if (shape == Shape.Modern)
         {
-            declarations += "\n" + Wide;
-            use += " " + WideUse;
+            declarations += "\n" + Wide + "\n" + Unsigned;
+            use += " " + WideUse + " " + UnsignedUse;
         }
 
         string text = shape == Shape.Fna
@@ -78,6 +81,7 @@ public sealed class Issue413ParameterDefaultsTests
         string.Join('\n', source.Split('\n').Select(line =>
             (line.StartsWith("float", StringComparison.Ordinal)
                 || line.StartsWith("int ", StringComparison.Ordinal)
+                || line.StartsWith("uint ", StringComparison.Ordinal)
                 || line.StartsWith("bool ", StringComparison.Ordinal))
             && line.Contains(" = ", StringComparison.Ordinal) && line.TrimEnd().EndsWith(';')
                 ? line[..line.IndexOf(" = ", StringComparison.Ordinal)] + ";"
@@ -124,9 +128,12 @@ public sealed class Issue413ParameterDefaultsTests
     private static void AssertIntBoolAndSquare(CompiledShader shader, PlatformTarget target)
     {
         Find(shader, "Count").DefaultValue.ShouldBe(new[] { 3f });
-        // SPIR-V has no bool in a uniform block, so Vulkan reports Flag as an Int32 and its true
-        // (0xFFFFFFFF) reads as that int, -1; every other target reports the bool.
-        Find(shader, "Flag").DefaultValue.ShouldBe(new[] { target == PlatformTarget.Vulkan ? -1f : 1f });
+        // Issue #427: SPIR-V has no bool in a uniform block, so Vulkan reports Flag as an Int32 (as
+        // real mgfxc's Vulkan build does), but the declaration says bool, so its true (0xFFFFFFFF in
+        // the blob) reads as 1 on every target, never as the int -1.
+        ParameterReflection flag = Find(shader, "Flag");
+        flag.Type.ShouldBe(target == PlatformTarget.Vulkan ? EffectParameterType.Int32 : EffectParameterType.Bool);
+        flag.DefaultValue.ShouldBe(new[] { 1f });
         Find(shader, "Rot").DefaultValue.ShouldBe(new[] { 1.5f, 2.5f, 3.5f, 4.5f });
     }
 
@@ -167,6 +174,7 @@ public sealed class Issue413ParameterDefaultsTests
         {
             Find(shader, "Wide").DefaultValue.ShouldBe(new[] { 1f, 2f, 3f, 4f, 5f, 6f });
         }
+        AssertUnsigned(shader);
     }
 
     [FnaFact]
@@ -177,12 +185,34 @@ public sealed class Issue413ParameterDefaultsTests
         AssertCommonDefaults(shader);
         AssertIntBoolAndSquare(shader, PlatformTarget.DirectX);
         Find(shader, "Wide").DefaultValue.ShouldBe(new[] { 1f, 2f, 3f, 4f, 5f, 6f });
+        AssertUnsigned(shader);
+    }
+
+    /// <summary>
+    /// Issue #427: the uint 3000000000 is the blob word 0xB2D05E00 and reflected Int32, which used to
+    /// read as -1294967296. The declaration says uint, so it reads as the unsigned value (exactly
+    /// representable as a float; a uint beyond 2^24 generally is not). The blob is unchanged.
+    /// </summary>
+    private static void AssertUnsigned(CompiledShader shader)
+    {
+        ParameterReflection big = Find(shader, "Big");
+        big.Type.ShouldBe(EffectParameterType.Int32);
+        big.DefaultValue.ShouldBe(new[] { 3000000000f });
+        MgfxBlobReader.Parse(shader.Data).Parameters.Single(p => p.Name == "Big").DefaultValue
+            .ShouldBe(BitConverter.GetBytes(3000000000u));
     }
 
     // ---- the reflection default IS the blob #422 writes ------------------------------------
 
     private static float[] Logical(MgfxParameterRecord record)
     {
+        // The two declarations whose blob word the file's type alone does not say how to read
+        // (issue #427): Flag is a bool even where Vulkan types it Int32, Big a uint typed Int32.
+        if (record.Name == "Flag")
+            return [BitConverter.ToInt32(record.DefaultValue!, 0) != 0 ? 1f : 0f];
+        if (record.Name == "Big")
+            return [BitConverter.ToUInt32(record.DefaultValue!, 0)];
+
         IReadOnlyList<MgfxParameterRecord> leaves = record.Elements.Count > 0 ? record.Elements : [record];
         var values = new List<float>();
         foreach (MgfxParameterRecord leaf in leaves)

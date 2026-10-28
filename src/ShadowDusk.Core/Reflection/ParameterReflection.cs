@@ -36,8 +36,11 @@ public sealed record ParameterReflection
     /// column <c>c</c> is at index <c>r * Columns + c</c>; a <c>float2x3</c> is
     /// <c>m00 m01 m02 m10 m11 m12</c>, the order its constructor takes). No register padding,
     /// whatever the matrix packing, and not the column-by-column order of the blob in a
-    /// <c>.mgfx</c>. <c>int</c> and <c>uint</c> values are converted to floats (an integer beyond
-    /// 2^24 is not exactly representable) and <c>bool</c> is 0 or 1.</para>
+    /// <c>.mgfx</c>. <c>int</c> values are converted to floats, <c>uint</c> values by their unsigned
+    /// value (so <c>uint U = 3000000000;</c> is 3000000000, not negative), and an integer beyond 2^24
+    /// is not exactly representable. <c>bool</c> is 0 or 1 on every target. How a 32-bit word reads
+    /// follows the HLSL declaration, not <see cref="Type"/>: reflection reports both <c>int</c> and
+    /// <c>uint</c> as <c>Int32</c>, and on Vulkan a <c>bool</c> too.</para>
     /// <para><b>MGFX and KNIFX.</b> It is exactly the default blob the file carries for the
     /// parameter (the initializer, read off the preprocessed source and evaluated, so constructors,
     /// brace lists, folding of constants and the like all count). It is <see langword="null"/>
@@ -48,8 +51,11 @@ public sealed record ParameterReflection
     /// takes the compiled constant table's; a matrix or array it cannot evaluate is
     /// <see langword="null"/>, because the compiler trims that table to the registers the shader
     /// reads.</para>
-    /// <para><b>Vulkan.</b> SPIR-V has no bool in a uniform block, so a <c>bool</c> there is
-    /// reflected as <c>Int32</c> and a true default reads as -1.</para>
+    /// <para><b>Vulkan.</b> SPIR-V has no bool in a uniform block, so a <c>bool</c> there has
+    /// <see cref="Type"/> <c>Int32</c>, exactly as in real <c>mgfxc</c>'s Vulkan build (and in the
+    /// <c>.mgfx</c>). Its default still reads as 0 or 1, because the value is read by the
+    /// declaration's kind; a tool that needs to tell <c>bool</c> from <c>int</c> on Vulkan has only
+    /// the source to go by.</para>
     /// <para><b>Why from the source.</b> The compilers do not keep the initializer in a form
     /// reflection reads: DXC's DXIL reflection reports no default (and warns that the initializer
     /// is ignored) and DXC drops it from the SPIR-V.</para>
