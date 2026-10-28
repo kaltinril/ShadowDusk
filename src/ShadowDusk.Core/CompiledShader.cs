@@ -1,5 +1,7 @@
 #nullable enable
 
+using ShadowDusk.Core.Reflection;
+
 namespace ShadowDusk.Core;
 
 /// <summary>
@@ -31,6 +33,19 @@ public sealed record CompiledShader(
     /// valid regardless — warnings never gate output.
     /// </summary>
     public IReadOnlyList<ShaderError> Warnings { get; init; } = [];
+
+    /// <summary>
+    /// The effect's parameters as the compiled file exposes them to the runtime
+    /// (<c>Effect.Parameters</c>), in file order: name, shape, type, annotations, and the default
+    /// value the HLSL declares (<see cref="ParameterReflection.DefaultValue"/>, null when
+    /// unknown), so a tool can show <c>float Scale = 2.0;</c> without loading the effect into a
+    /// runtime.
+    /// </summary>
+    /// <remarks>
+    /// Reflection only: the same defaults are what the effect bytes in <see cref="Data"/> carry
+    /// (MGFX, KNIFX) or what the constant table holds (FNA).
+    /// </remarks>
+    public IReadOnlyList<ParameterReflection> Parameters { get; init; } = [];
 
     /// <summary>
     /// Returns <see cref="Data"/> wrapped in an XNB content container, ready to drop into a

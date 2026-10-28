@@ -1163,6 +1163,11 @@ internal sealed class CompilationPipeline
         IReadOnlyList<EffectParameterInfo> effectParameterInfoList =
             BuildEffectParameterInfoList(allParameters, parameterDefaults, runWarnings);
 
+        // Issue #413: the reflection result carries the very default blobs the writers are about to
+        // write, so the two cannot disagree.
+        IReadOnlyList<ParameterReflection> reflectedParameters =
+            ParameterDefaultValues.Attach(allParameters, effectParameterInfoList);
+
         // Phase 43, F9: bake parsed sampler_state members (MinFilter/AddressU/…)
         // into per-sampler MGFX states, keyed by the .fx sampler name — the
         // declaration survives the SM4 rewrite verbatim ('SamplerState <name>;'),
@@ -1537,7 +1542,7 @@ internal sealed class CompilationPipeline
             if (knifxResult.IsFailure)
                 return Fail(knifxResult.Error, runWarnings);
             return Result<CompiledShader, ShaderError[]>.Ok(
-                new CompiledShader(options.Target, knifxResult.Value) { Warnings = runWarnings });
+                new CompiledShader(options.Target, knifxResult.Value) { Warnings = runWarnings, Parameters = reflectedParameters });
         }
 
         // Stage 6: MGFX binary writer.
@@ -1579,7 +1584,7 @@ internal sealed class CompilationPipeline
         byte[] mgfxBytes = writeResult.Value;
 
         return Result<CompiledShader, ShaderError[]>.Ok(
-            new CompiledShader(options.Target, mgfxBytes) { Warnings = runWarnings });
+            new CompiledShader(options.Target, mgfxBytes) { Warnings = runWarnings, Parameters = reflectedParameters });
         }
         finally
         {
@@ -2234,7 +2239,11 @@ internal sealed class CompilationPipeline
             return Fail(writeResult.Error, fnaWarnings);
 
         return Result<CompiledShader, ShaderError[]>.Ok(
-            new CompiledShader(PlatformTarget.Fna, writeResult.Value) { Warnings = fnaWarnings });
+            new CompiledShader(PlatformTarget.Fna, writeResult.Value)
+            {
+                Warnings   = fnaWarnings,
+                Parameters = Fx2ParameterReflection.From(buildResult.Value.Parameters, preprocessed.Text, sourceFileName),
+            });
     }
 
     private static Result<(Fx2Shader Shader, CtabTable Ctab, IReadOnlyList<ShaderError> Warnings), ShaderError>
@@ -3106,7 +3115,7 @@ internal sealed class CompilationPipeline
     /// Why the default read off the source cannot be attached to the reflected parameter, or null
     /// when the shapes agree (the declared type, and the array length, are what reflection reports).
     /// </summary>
-    private static string? DefaultShapeMismatch(ParameterReflection param, GlobalInitializerDefault def)
+    internal static string? DefaultShapeMismatch(ParameterReflection param, GlobalInitializerDefault def)
     {
         int declaredElements = Math.Max(1, def.ArrayLength);
 
@@ -3141,7 +3150,7 @@ internal sealed class CompilationPipeline
     /// DXC's own "initializer ignored" warning for a declaration whose default IS preserved is
     /// dropped, since it would now be untrue.
     /// </summary>
-    private static IReadOnlyDictionary<string, GlobalInitializerDefault> ResolveParameterDefaults(
+    internal static IReadOnlyDictionary<string, GlobalInitializerDefault> ResolveParameterDefaults(
         string preprocessedText,
         string sourceFileName,
         IReadOnlyList<ParameterReflection> parameters,

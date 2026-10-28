@@ -23,6 +23,14 @@ that loads and renders identically to `mgfxc`'s in the real MonoGame/KNI runtime
   was. DXC's now-untrue `initializer ignored` warning is dropped for every default that was preserved. Proven in real MonoGame
   DesktopGL, WindowsDX, WindowsDX12 and DesktopVK and real KNI SDL2.GL and WinForms.DX11 (MGFX and KNIFX) by the new
   `validation/InitializerDefaults*` drivers, each with a no-initializer control. The raylib and SkSL routes are unchanged; FNA keeps its own defaults (entry below).
+- **`CompiledShader.Parameters` and `ParameterReflection.DefaultValue`** (issue #413): a successful
+  compile now lists the effect's parameters (name, shape, type, annotations) and, for each, the
+  default its HLSL declares (`float Scale = 2.0;`, `float4 Tint = float4(1, 0, 0, 1);`), so a
+  tool can show real defaults without loading the effect into a runtime. On the MGFX and KNIFX
+  targets it is exactly the default blob the file carries (the initializer reading above), `null`
+  where the blob is zeros because there is no initializer or it could not be evaluated (`SD0017`);
+  on FNA it comes from the same reader (the constant table for a scalar or vector it cannot read). Matrices and arrays are logical row-major
+  (not the column-by-column blob order), array element after array element. No emitted byte changes.
 - `tests/ShadowDusk.TestPng`: a small, dependency-free PNG encoder/decoder for the test and
   validation tooling, with its own unit suite (`tests/ShadowDusk.TestPng.Tests`). Not shipped:
   no `ShadowDusk.*` package references it.

@@ -361,6 +361,15 @@ so all three reflectors report the same layout. (SPIR-V discards HLSL semantic s
 input/output signatures are intentionally empty, which is why it only serves the PS-only browser
 corpus.)
 
+**Parameter defaults (issue #413).** None of the three reflectors carries a global's initializer
+(`float Scale = 2.0;`): DXC's DXIL reflection reports a null default value and DXC drops the
+initializer from the SPIR-V. `GlobalInitializerReader` evaluates it from the preprocessed source
+and the pipeline writes it into each parameter's default blob (see below). The same blobs are then
+read back into `ParameterReflection.DefaultValue` (logical row-major; `null` where the blob is
+zeros the author did not write) and returned as `CompiledShader.Parameters`, so the reflection
+result equals the bytes written. On FNA the list is projected from the fx_2_0 parameters, with
+the value from the same reader and a scalar or vector default falling back to the CTAB.
+
 **Why pure-managed reflectors matter.** Removing the Windows-only `D3DReflect` dependency lets
 DirectX `.mgfx` compiles run on Linux, macOS, and in the browser. Only the *source* of the
 `ReflectedEffect` changes per host; the `.mgfx` bytes do not.
