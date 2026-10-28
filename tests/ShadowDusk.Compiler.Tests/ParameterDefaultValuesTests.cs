@@ -122,4 +122,27 @@ public sealed class ParameterDefaultValuesTests
                 Info(EffectParameterClass.Vector, EffectParameterType.Single, 1, 3, Blob(1, 2)))
             .ShouldBeNull();
     }
+
+    [Fact]
+    public void ResultAndDefaults_CannotBeCastAndMutated()
+    {
+        IReadOnlyList<ParameterReflection> result = ParameterDefaultValues.Attach(
+            [Param(EffectParameterClass.Vector, EffectParameterType.Single, 1, 2)],
+            [Info(EffectParameterClass.Vector, EffectParameterType.Single, 1, 2, Blob(1, 2))]);
+
+        (result is ParameterReflection[]).ShouldBeFalse();
+        ((IList<ParameterReflection>)result).IsReadOnly.ShouldBeTrue();
+        IReadOnlyList<float> defaults = result[0].DefaultValue.ShouldNotBeNull();
+        (defaults is float[]).ShouldBeFalse();
+        ((IList<float>)defaults).IsReadOnly.ShouldBeTrue();
+    }
+
+    [Fact]
+    public void ZeroBlob_IsAZeroDefault_NotUnknown()
+    {
+        // `float X = 0;` writes a blob of zeros; no initializer writes no blob at all.
+        Default(Param(EffectParameterClass.Scalar, EffectParameterType.Single, 1, 1),
+                Info(EffectParameterClass.Scalar, EffectParameterType.Single, 1, 1, Blob(0)))
+            .ShouldBe(new[] { 0f });
+    }
 }

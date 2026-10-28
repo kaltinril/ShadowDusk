@@ -27,11 +27,12 @@ public sealed class Issue413ParameterDefaultsTests
         float4 Tint = float4(1.5, 0.5, 0.25, 0.125);
         float4x4 World = float4x4(1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16);
         float Computed = 1.0 / 4.0;
+        float Zero = 0;
         float NoInit;
         float Weights[3] = { 0.75, 1.75, 2.75 };
         """;
 
-    private const string CommonUse = "Tint * Scale + float4(Dir, 0) + World[1][0] + Weights[1] + Computed + NoInit";
+    private const string CommonUse = "Tint * Scale + float4(Dir, 0) + World[1][0] + Weights[1] + Computed + Zero + NoInit";
 
     // Not every target takes these: OpenGL models neither int/bool uniforms (SD0210) nor a matrix
     // other than float4x4 (SD0210), and the fx_2_0 writer refuses a non-square matrix.
@@ -115,7 +116,8 @@ public sealed class Issue413ParameterDefaultsTests
         // Constant folding is the initializer reader's (#422), so the folded value is known.
         Find(shader, "Computed").DefaultValue.ShouldBe(new[] { 0.25f });
 
-        // No initializer: unknown, never zero.
+        // An explicit zero is a known default; no initializer is unknown, never zero.
+        Find(shader, "Zero").DefaultValue.ShouldBe(new[] { 0f });
         Find(shader, "NoInit").DefaultValue.ShouldBeNull();
     }
 
@@ -209,11 +211,18 @@ public sealed class Issue413ParameterDefaultsTests
         shader.Parameters.Select(p => p.Name).ShouldBe(file.Parameters.Select(p => p.Name));
 
         int withDefault = 0;
+        int zeroDefaults = 0;
         foreach (MgfxParameterRecord record in file.Parameters.Where(r => r.Class <= (byte)EffectParameterClass.Matrix))
         {
             ParameterReflection reflected = Find(shader, record.Name);
             IReadOnlyList<MgfxParameterRecord> leaves = record.Elements.Count > 0 ? record.Elements : [record];
-            if (leaves.All(l => l.DefaultValue!.Any(b => b != 0)))
+            if (reflected.DefaultValue is { } known && known.All(v => v == 0f))
+            {
+                // A genuine zero default (`float Zero = 0;`): known, and the file's blob is zeros too.
+                leaves.All(l => l.DefaultValue!.All(b => b == 0)).ShouldBeTrue(record.Name);
+                zeroDefaults++;
+            }
+            else if (leaves.All(l => l.DefaultValue!.Any(b => b != 0)))
             {
                 reflected.DefaultValue.ShouldBe(Logical(record), $"'{record.Name}': reflection vs the blob in the file");
                 withDefault++;
@@ -225,6 +234,7 @@ public sealed class Issue413ParameterDefaultsTests
             }
         }
         withDefault.ShouldBeGreaterThan(4);
+        zeroDefaults.ShouldBe(1, "exactly Zero is a known all-zero default");
     }
 
     [Theory]
@@ -282,5 +292,6 @@ public sealed class Issue413ParameterDefaultsTests
 
         AssertCommonDefaults(shader);
         AssertIntBoolAndSquare(shader, PlatformTarget.Fna);
+        shader.Parameters.ShouldAllBe(p => p.Annotations == null);
     }
 }

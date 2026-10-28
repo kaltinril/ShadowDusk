@@ -18,7 +18,10 @@ internal static class Fx2ParameterReflection
     /// reader has no value for takes the constant table's (one whole register, so never partly
     /// trimmed). A matrix or array the reader cannot evaluate has no default: the compiler trims
     /// the table to the registers the shader reads, so its value would be partly zeros the author
-    /// never wrote.
+    /// never wrote. Because of that trimming the reported default can be larger than what the
+    /// <c>.fxb</c> file carries: <c>float Weights[3]</c> read only as <c>Weights[1]</c> reflects as
+    /// 0.75, 1.75, 2.75 while the file holds 0.75, 1.75, 0. Annotations are not projected (the fx_2_0
+    /// writer takes none), so FNA parameters list none.
     /// </summary>
     public static IReadOnlyList<ParameterReflection> From(
         IReadOnlyList<Fx2Parameter> parameters, string flattenedSource, string sourceFile)
@@ -47,7 +50,7 @@ internal static class Fx2ParameterReflection
                 Columns  = isObject ? 0 : p.Columns,
                 Elements = isObject ? 0 : p.Elements,
                 DefaultValue = !isObject && p.Rows == 1 && p.Elements == 0 && p.DefaultValue is { } d && d.Count == expected
-                    ? d : null,
+                    ? Array.AsReadOnly(d.ToArray()) : null,
             });
         }
 
@@ -62,8 +65,8 @@ internal static class Fx2ParameterReflection
                 || CompilationPipeline.DefaultShapeMismatch(p, def) is not null
                 || ParameterDefaultValues.ToLogical(p.Class, p.Type, def.Rows, def.Columns, def.ElementBlobs) is not { } values)
                 continue;
-            result[i] = p with { DefaultValue = values };
+            result[i] = p with { DefaultValue = Array.AsReadOnly(values) };
         }
-        return result;
+        return result.AsReadOnly();
     }
 }

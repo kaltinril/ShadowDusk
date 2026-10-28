@@ -16,7 +16,8 @@ internal static class ParameterDefaultValues
     /// Returns <paramref name="parameters"/> with <see cref="ParameterReflection.DefaultValue"/> set
     /// from <paramref name="infos"/> (the same list, index for index, that the writers receive). A
     /// parameter whose blob is absent (no initializer, or one that could not be evaluated) keeps a
-    /// null default, since its written default is zeros the author never asked for.
+    /// null default, since its written default is zeros the author never asked for. The returned list
+    /// and each default are read-only wrappers, so a consumer cannot cast and mutate them.
     /// </summary>
     public static IReadOnlyList<ParameterReflection> Attach(
         IReadOnlyList<ParameterReflection> parameters, IReadOnlyList<EffectParameterInfo> infos)
@@ -26,10 +27,10 @@ internal static class ParameterDefaultValues
         {
             ParameterReflection p = parameters[i];
             result[i] = i < infos.Count && ToLogical(p, infos[i]) is { } values
-                ? p with { DefaultValue = values }
+                ? p with { DefaultValue = Array.AsReadOnly(values) }
                 : p;
         }
-        return result;
+        return Array.AsReadOnly(result);
     }
 
     private static float[]? ToLogical(ParameterReflection p, EffectParameterInfo info)
