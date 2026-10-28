@@ -8,16 +8,25 @@
 	#define VS_SHADERMODEL vs_3_0
 	#define PS_SHADERMODEL ps_3_0
 #else
-	#define VS_SHADERMODEL vs_4_0_level_9_1
-	#define PS_SHADERMODEL ps_4_0_level_9_1
+	#if SM6
+		#define VS_SHADERMODEL vs_6_0
+		#define PS_SHADERMODEL ps_6_0
+	#else
+		#define VS_SHADERMODEL vs_4_0_level_9_1
+		#define PS_SHADERMODEL ps_4_0_level_9_1
+	#endif
 #endif
 
 Texture2D SpriteTexture;
 
+#if SM6
+Texture2D SpriteTextureSampler_SDTexture; SamplerState SpriteTextureSampler;
+#else
 SamplerState SpriteTextureSampler;
 
 
 
+#endif
 
 
 
@@ -30,6 +39,7 @@ struct VertexShaderOutput
 
 
 
+#if SM6
 float4 MainPS(VertexShaderOutput input) : SV_Target
 {
     float4 col = SpriteTexture.Sample(SpriteTextureSampler, input.TextureCoordinates) * input.Color;
@@ -37,6 +47,15 @@ float4 MainPS(VertexShaderOutput input) : SV_Target
     return col;
 
 }
+#else
+float4 MainPS(VertexShaderOutput input) : SV_Target
+{
+    float4 col = SpriteTexture.Sample(SpriteTextureSampler, input.TextureCoordinates) * input.Color;
+    col.rgba = col.rgba * (input.TextureCoordinates.y * 2 - 0.4f);
+    return col;
+
+}
+#endif
 
                            
  
