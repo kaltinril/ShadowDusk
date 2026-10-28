@@ -97,6 +97,10 @@ internal static partial class DxcDiagnosticReformatter
         return errors;
     }
 
+    // The SPIR-V validator's wording for a Uniform block that breaks std140 (only the OpenGL
+    // target asks DXC for std140; Vulkan keeps the HLSL packing).
+    private const string Std140LayoutViolation = "must follow standard uniform buffer layout rules";
+
     /// <summary>
     /// Selects the single primary <see cref="ShaderError"/> for a FAILED compile from
     /// the complete diagnostic text: the first
@@ -129,7 +133,30 @@ internal static partial class DxcDiagnosticReformatter
         primary ??= errors.Count > 0 ? errors[0] : null;
 
         if (primary is not null)
-            return primary with { RawDiagnostics = raw ?? primary.RawDiagnostics };
+        {
+            primary = primary with { RawDiagnostics = raw ?? primary.RawDiagnostics };
+
+            // Issue #425: OpenGL's SPIR-V is laid out std140, so an explicit packoffset that
+            // puts a vector mid-register (`float3 b : packoffset(c0.y)`) makes DXC's own SPIR-V
+            // validator fail with "generated SPIR-V is invalid ... must follow standard
+            // uniform buffer layout rules" and a request to file a DXC bug. It is not a DXC
+            // bug: say what the shape is, and keep DXC's text verbatim after it.
+            if (primary.Message.Contains(Std140LayoutViolation, StringComparison.Ordinal))
+            {
+                return primary with
+                {
+                    Code = "SD0210",
+                    Message = "A uniform-block member is placed where the std140 layout of the " +
+                              "MonoGame OpenGL target cannot hold it, almost always an explicit " +
+                              "packoffset that puts a vector mid-register (`float3 b : packoffset(c0.y)`). " +
+                              "OpenGL gives every uniform its own register, so remove the packoffset " +
+                              "or start the member on a register of its own (`packoffset(cN)`). DXC: " +
+                              primary.Message,
+                };
+            }
+
+            return primary;
+        }
 
         return new ShaderError(
             File: sourceFileName,
