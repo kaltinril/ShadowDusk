@@ -211,7 +211,7 @@ registers** (`register_count × 16` bytes starting at the CTAB `register_index`;
 > `column_major` matrix packing each register holds a matrix *column* — i.e. the blob must hold
 > the matrix transposed, column after column (this matches FNA's `EffectParameter.SetValue(Matrix)`,
 > which writes M11,M21,M31,M41,M12,… — column-major — into the same memory, `EffectParameter.cs:835–861`).
-> See finding F2 — verify against an fxc golden before shipping non-trivial matrix defaults.
+> See finding F2 (resolved): the *default value* blob is NOT the register image; fxc writes the logical row-major matrix.
 
 `value_count` is also what FNA exposes as the parameter's data size (`value_count × 4` bytes).
 
@@ -638,11 +638,14 @@ and correct `usage` values (which we emit).
   `rows,columns` for SCALAR/MATRIX classes. Square matrices are safe. Before emitting any
   non-square matrix parameter, dump an fxc-compiled effect containing `float4x3`/`float3x4` and
   decide which order (and which value-blob stride) actually renders correctly under FNA.
-- **F2 — Matrix default-value majority** (§7.1): the blob must be the *register image* for
-  MojoShader (one file row = one register), which for fxc-default `column_major` means transposed
-  data; whether fxc itself bakes defaults row-major (with native d3dx9 transposing at upload) or
-  register-shaped needs one golden with a known non-symmetric default. Runtime `SetValue` is
-  unaffected (FNA writes column-major into the same memory).
+- **F2 — Matrix default-value majority** (§7.1) — **RESOLVED 2026-10-28.** Measured against
+  `D3DCompile fx_2_0` for non-symmetric float2x2/3x3/4x4, `row_major` and arrays of matrices:
+  fxc writes the *logical, row-major declaration-order* matrix (R rows of C values, arrays element
+  after element), NOT the register image, even though the shader's CTAB holds the transposed
+  column-register image. MojoShader copies the blob into registers as written, so a non-symmetric
+  default of an ordinary (column-major) matrix renders as its transpose in real FNA, for fxc's own
+  build too; ShadowDusk reproduces fxc's bytes (`CtabConstant.LogicalDefaultValue`). Runtime
+  `SetValue` is unaffected (FNA writes column-major into the same memory).
 - **F3 — `texture` vs `texture2D` typedef type for the sampler's Texture state**: we emit
   TEXTURE(5); fxc may emit the dimensioned type. Both satisfy MojoShader (5–9) and FNA's range
   check; cosmetic only.

@@ -129,22 +129,36 @@ public static class CtabReader
 
             int normalizedElements = Math.Max(1, (int)elements);
 
-            // Default values: propagate only the unambiguous single-register-row shapes
-            // (scalar/vector, non-array). The CTAB layout of matrix/array defaults is the
-            // unverified F2 ambiguity — leaving them null keeps defaults at zero, the same
-            // behavior as the MGFX writer, instead of risking a silent wrong-major bake.
+            // Default values: the RAW REGISTER IMAGE, RegisterCount x 4 floats, for every
+            // class (scalar, vector, matrix, array alike). The reader does not reinterpret
+            // it; CtabConstant.LogicalDefaultValue maps it to the declaration-order values
+            // using the constant's Class. A default offset that cannot hold the whole image
+            // is a malformed table: fail loudly rather than silently dropping the default
+            // (that silent drop is how matrix and array initializers were once lost).
             IReadOnlyList<float>? defaultValue = null;
-            if (defaultOfs != 0 && rows == 1 && elements <= 1 && cls <= 1 /* scalar/vector */)
+            // Only numeric classes (scalar, vector, matrix) carry a default image; samplers,
+            // objects and structs never did and must not start failing here (structs get their
+            // own clear error from the effect builder).
+            if (defaultOfs != 0 && cls <= 3)
             {
-                long defEnd = defaultOfs + (long)columns * 4;
-                if (defEnd <= region.Length)
+                long imageFloats = (long)registerCount * 4;
+                if (defaultOfs + imageFloats * 4 > region.Length)
+                    return Fail(sourceFile,
+                        $"CTAB constant '{name}' default value ({registerCount} registers) runs past the region end");
+
+                // The bool and int register sets (b#, i#) store raw integer dwords; the float
+                // set stores floats. Normalize to float VALUES either way (measured: fxc puts
+                // `int N = 3` in the i# set as dword 3).
+                bool integerRegisters = registerSet is (ushort)CtabRegisterSet.Bool or (ushort)CtabRegisterSet.Int4;
+                var values = new float[imageFloats];
+                for (int f = 0; f < values.Length; f++)
                 {
-                    var values = new float[columns];
-                    for (int c = 0; c < columns; c++)
-                        values[c] = BinaryPrimitives.ReadSingleLittleEndian(
-                            region.Slice((int)defaultOfs + c * 4, 4));
-                    defaultValue = values;
+                    ReadOnlySpan<byte> dword = region.Slice((int)defaultOfs + f * 4, 4);
+                    values[f] = integerRegisters
+                        ? BinaryPrimitives.ReadInt32LittleEndian(dword)
+                        : BinaryPrimitives.ReadSingleLittleEndian(dword);
                 }
+                defaultValue = values;
             }
 
             constants.Add(new CtabConstant(

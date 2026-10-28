@@ -64,6 +64,27 @@ FNALoggerEXT.LogError = msg => fna3dErrors.Add(msg);
 if (args.Length > 0 && args[0].Equals("slang", StringComparison.OrdinalIgnoreCase))
     return await SlangFnaGate.RunAsync(fna3dErrors);
 
+// Owner directive 2026-10-28: `-- defaults [D3D11|OpenGL]` runs the initializer-defaults gate
+// (InitializerDefaultsGate.cs): matrix and array defaults read back and rendered unset in real
+// FNA vs fxc /T fx_2_0. One process per FNA3D driver (FNA allows one Game per process), so this
+// is the only mode that overrides the D3D11 pin above, and only with an explicit driver argument.
+if (args.Length > 0 && args[0].Equals("defaults", StringComparison.OrdinalIgnoreCase))
+{
+    string driver = args.Length > 1 ? args[1] : "D3D11";
+    if (driver is not ("D3D11" or "OpenGL"))
+    {
+        Console.Error.WriteLine($"[fna-defaults] unknown FNA3D driver '{driver}' (expected D3D11 or OpenGL)");
+        return 2;
+    }
+    Environment.SetEnvironmentVariable("FNA3D_FORCE_DRIVER", driver);
+    // The gate must prove the REQUESTED driver actually ran (a late env change the native
+    // layer ignored would turn the OpenGL run into a second D3D11 run): FNA3D logs
+    // "FNA3D Driver: <name>" at device creation, so capture it (and still print it).
+    var fna3dInfo = new List<string>();
+    FNALoggerEXT.LogInfo = msg => { fna3dInfo.Add(msg); Console.WriteLine(msg); };
+    return await InitializerDefaultsGate.RunAsync(driver, fna3dErrors, fna3dInfo);
+}
+
 string repoRoot = FnaShaderInputs.FindRepoRoot();
 string catPath = FnaShaderInputs.CatPath(repoRoot);
 string outRoot = Path.Combine(repoRoot, "validation", "output-fna");

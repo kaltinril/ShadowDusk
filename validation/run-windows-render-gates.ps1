@@ -96,6 +96,10 @@
                                    because its restore-fna.ps1 clones the FNA source tree (heavy) and
                                    needs an authenticated gh for the fnalibs natives. Run it for any
                                    release that could affect the FNA target or the .xnb writer.
+    * FNA initializer defaults   - FnaValidation -- defaults D3D11 / OpenGL (-IncludeFna), owner
+                                   directive 2026-10-28: matrix and array initializer defaults
+                                   survive to real FNA (getters + unset render equal fxc fx_2_0),
+                                   on both FNA3D drivers, with stripped-initializer controls.
     * Slang DX12 / Vulkan / FNA  - validation/SlangFullCorpusDx12, validation/SlangFullCorpusVulkan
                                    (Vulkan block) and FnaValidation -- slang (-IncludeFna), issue
                                    #230: the 21-shader real-slangc corpus through SlangCompiler vs
@@ -486,6 +490,18 @@ if ($IncludeFna) {
     $gates.Add(@{
         Name   = 'Slang FNA (issue #230: real-slangc route vs fxc /T fx_2_0, 21 shaders, real FNA Effect + .xnb arm)'
         Action = { Invoke-Checked 'dotnet' @('run', '--project', 'validation/FnaValidation', '-c', 'Release', '--', 'slang') }
+    })
+    # Owner directive 2026-10-28: initializer defaults (matrix and array included) survive to the
+    # FNA runtime. Every numeric parameter read back before any Set, and the unset render, must
+    # equal fxc /T fx_2_0's build, on BOTH FNA3D drivers (one process per driver: FNA allows one
+    # Game per process). Four stripped-initializer positive controls must diverge.
+    $gates.Add(@{
+        Name   = 'FNA initializer defaults, D3D11 driver (8 fixtures incl. float2x2/3x3/4x4/row_major and float/vector/int/bool/matrix arrays, vs fxc /T fx_2_0, real FNA getters + unset render, 4 positive controls)'
+        Action = { Invoke-Checked 'dotnet' @('run', '--project', 'validation/FnaValidation', '-c', 'Release', '--', 'defaults', 'D3D11') }
+    })
+    $gates.Add(@{
+        Name   = 'FNA initializer defaults, OpenGL driver (same fixtures and controls as the D3D11 run)'
+        Action = { Invoke-Checked 'dotnet' @('run', '--project', 'validation/FnaValidation', '-c', 'Release', '--', 'defaults', 'OpenGL') }
     })
 } else {
     Write-Host "NOTE: FNA gate not run (pass -IncludeFna). Required before an FNA-affecting release.`n" -ForegroundColor Yellow
