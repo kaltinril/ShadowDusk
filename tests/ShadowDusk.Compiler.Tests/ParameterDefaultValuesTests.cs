@@ -40,7 +40,7 @@ public sealed class ParameterDefaultValuesTests
         new() { Name = "p", Class = cls, Type = type, Rows = rows, Columns = cols, Elements = elements };
 
     private static IReadOnlyList<float>? Default(ParameterReflection p, EffectParameterInfo i) =>
-        ParameterDefaultValues.Attach([p], [i])[0].DefaultValue;
+        ParameterDefaultValues.Attach([p], [i], declared: null)[0].DefaultValue;
 
     [Fact]
     public void Scalar_AndVector_AreTheirComponents()
@@ -129,7 +129,7 @@ public sealed class ParameterDefaultValuesTests
     {
         IReadOnlyList<ParameterReflection> result = ParameterDefaultValues.Attach(
             [Param(EffectParameterClass.Vector, EffectParameterType.Single, 1, 2)],
-            [Info(EffectParameterClass.Vector, EffectParameterType.Single, 1, 2, Blob(1, 2))]);
+            [Info(EffectParameterClass.Vector, EffectParameterType.Single, 1, 2, Blob(1, 2))], declared: null);
 
         (result is ParameterReflection[]).ShouldBeFalse();
         ((IList<ParameterReflection>)result).IsReadOnly.ShouldBeTrue();

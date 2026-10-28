@@ -55,7 +55,9 @@ public sealed record ParameterReflection
     /// <see cref="Type"/> <c>Int32</c>, exactly as in real <c>mgfxc</c>'s Vulkan build (and in the
     /// <c>.mgfx</c>). Its default still reads as 0 or 1, because the value is read by the
     /// declaration's kind; a tool that needs to tell <c>bool</c> from <c>int</c> on Vulkan has only
-    /// the source to go by.</para>
+    /// the source to go by. The file still carries the word <c>0xFFFFFFFF</c> for <c>true</c>, so
+    /// the real engine's <c>EffectParameter.GetValueInt32()</c> on that parameter returns -1
+    /// where this value is 1.</para>
     /// <para><b>Why from the source.</b> The compilers do not keep the initializer in a form
     /// reflection reads: DXC's DXIL reflection reports no default (and warns that the initializer
     /// is ignored) and DXC drops it from the SPIR-V.</para>

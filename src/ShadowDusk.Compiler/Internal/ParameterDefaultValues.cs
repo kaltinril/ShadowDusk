@@ -26,7 +26,7 @@ internal static class ParameterDefaultValues
     /// </summary>
     public static IReadOnlyList<ParameterReflection> Attach(
         IReadOnlyList<ParameterReflection> parameters, IReadOnlyList<EffectParameterInfo> infos,
-        IReadOnlyDictionary<string, GlobalInitializerDefault>? declared = null)
+        IReadOnlyDictionary<string, GlobalInitializerDefault>? declared)
     {
         var result = new ParameterReflection[parameters.Count];
         for (int i = 0; i < result.Length; i++)
@@ -65,7 +65,7 @@ internal static class ParameterDefaultValues
     /// </summary>
     public static float[]? ToLogical(
         EffectParameterClass cls, EffectParameterType type, int rows, int columns, IReadOnlyList<byte[]> blobs,
-        GlobalInitializerKind? declared = null)
+        GlobalInitializerKind? declared)
     {
         var values = new float[rows * columns * blobs.Count];
         int at = 0;
