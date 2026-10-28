@@ -191,7 +191,7 @@ finding; the emitted bytes are unchanged.
    what a real game would do: a shader that takes a second texture should bind that
    sampler's state rather than rely on an undefined default.
 
-2. **Do NOT change the precision qualifier to `highp` (kept at `mediump`).** It is a
+2. **(Superseded by issue #406: the pixel header now emits `highp` under `GL_FRAGMENT_PRECISION_HIGH`, on real-iPhone evidence. The text below is the 2026-06 reasoning.) Do NOT change the precision qualifier to `highp` (kept at `mediump`).** It is a
    **no-op in the SwiftShader harness** (proven) and would make our GLSL diverge from
    mgfxc's for no *verified* gain. The ~380-px residual (Δ128, 0.145%, at the band
    edge) is within the harness budget and is the kind of localized edge drift already

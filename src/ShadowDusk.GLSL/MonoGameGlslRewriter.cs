@@ -126,22 +126,23 @@ public sealed record MonoGameGlslResult(
 /// </summary>
 public static class MonoGameGlslRewriter
 {
-    // Matches mgfxc/MojoShader's emitted precision header byte-for-byte. Guarded
-    // by `#ifdef GL_ES`, so desktop GLSL skips it entirely and runs at highp.
-    //
-    // NOTE (Phase 24 Dissolve investigation): mediump CAN flip data-dependent
-    // `discard`/tint decisions on boundary texels under real WebGL hardware, where
-    // `highp` would be the safer choice for precision-sensitive shaders. The
-    // Phase 24 headless harness (ANGLE/SwiftShader) could NOT confirm this — its
-    // software GL evaluates mediump and highp identically, so toggling this had
-    // zero observed effect. The Dissolve divergence found there was instead the
-    // unset slot-1 sampler state (see DISSOLVE-INVESTIGATION.md). Left at mediump
-    // to stay faithful to mgfxc; revisit (→ highp) only with real-WebGL-hardware
-    // evidence that a precision-sensitive shader needs it.
+    // Pixel-stage precision header. Desktop GLSL skips it (no GL_ES) and runs at
+    // highp. On GLES it asks for highp whenever the fragment stage supports it:
+    // real mobile GPUs (iOS especially) compute mediump as fp16, which cannot hold
+    // pixel-unit distances on a large screen (issue #406, Apos.Shapes drew nothing).
+    // GLES2 hardware without fragment highp falls back to mgfxc's mediump. This is
+    // a deliberate divergence from mgfxc (see project_decisions.md). KNI's WebGL2
+    // converter rewrites any "precision mediump" line to highp, so both branches
+    // survive its ES 3.00 conversion.
     private const string PrecisionHeader =
         "#ifdef GL_ES\n" +
+        "#ifdef GL_FRAGMENT_PRECISION_HIGH\n" +
+        "precision highp float;\n" +
+        "precision highp int;\n" +
+        "#else\n" +
         "precision mediump float;\n" +
         "precision mediump int;\n" +
+        "#endif\n" +
         "#endif\n";
 
     // uniform sampler{2D|Cube|3D} <id>;  — captures the dimension keyword (group 1)
@@ -610,7 +611,7 @@ public static class MonoGameGlslRewriter
         // those are pixel-stage rules — but the stage-agnostic body lowerings DO run
         // here (below). The precision header for a VS uses highp float (matching the
         // mgfxc VS golden, which needs full precision for the position transform)
-        // rather than the mediump the PS uses.
+        // unconditionally (the PS guards highp on GL_FRAGMENT_PRECISION_HIGH).
         if (isVertex)
         {
             // Issue #137: the stage-agnostic body lowerings must run for the vertex
@@ -1146,8 +1147,8 @@ public static class MonoGameGlslRewriter
     }
 
     // The vertex stage uses highp float (the position transform needs full precision);
-    // the mgfxc VS golden does exactly this. The pixel stage stays at mediump
-    // (PrecisionHeader) to match mgfxc's PS output.
+    // the mgfxc VS golden does exactly this. Vertex highp is mandatory in GLSL ES,
+    // so it needs no GL_FRAGMENT_PRECISION_HIGH guard (see PrecisionHeader).
     private const string VertexPrecisionHeader =
         "#ifdef GL_ES\n" +
         "precision highp float;\n" +
