@@ -64,6 +64,9 @@ public sealed class KnifxWriter
     /// <returns>The KNIFX bytes on success, or a <see cref="ShaderError"/> on failure.</returns>
     public Result<byte[], ShaderError> Write(ShaderIR ir, KnifxWriterOptions options)
     {
+        if (MgfxWriter.DefaultBlobLengthError(ir.Parameters) is { } defaultError)
+            return Result<byte[], ShaderError>.Fail(defaultError);
+
         // KNIFX writes a leading bool the runtime uses to decode integer-typed parameter
         // defaults as floats; KNI sets it true for the OpenGL (MojoShader) profile.
         bool integersAsFloats = options.Backend is
@@ -359,14 +362,8 @@ public sealed class KnifxWriter
         WriteParameterList(bw, p.Members);
 
         // A value-typed leaf carries a raw default-value blob of rows*cols*4 bytes (no
-        // length prefix). ShadowDusk has no defaults; emit zeros (runtime sets by name).
-        bool isValueType = p.Class <= 2;                      // Scalar=0, Vector=1, Matrix=2
-        if (isValueType && p.Members.Count == 0 && p.Elements.Count == 0)
-        {
-            int dataLen = p.RowCount * p.ColumnCount * 4;
-            for (int b = 0; b < dataLen; b++)
-                bw.Write((byte)0);
-        }
+        // length prefix): the HLSL initializer's value, or zeros (see MgfxWriter.WriteDefaultBlob).
+        MgfxWriter.WriteDefaultBlob(bw, p);
     }
 
     private static void WriteTechniques(BinaryWriter bw, ShaderIR ir)

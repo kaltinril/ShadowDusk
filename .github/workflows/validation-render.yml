@@ -252,6 +252,8 @@ jobs:
           dotnet build validation/ShaderToyRouteGl/ShaderToyRouteGl.csproj -c Release
           dotnet build validation/RaylibRoute/RaylibRoute.csproj -c Release
           dotnet build validation/SkiaVsKni/SkiaVsKni.csproj -c Release
+          dotnet build validation/InitializerDefaultsGl/InitializerDefaultsGl.csproj -c Release
+          dotnet build validation/InitializerDefaultsKniGl/InitializerDefaultsKniGl.csproj -c Release
 
       # Each driver self-asserts (exit 0 iff every row loaded + matched its reference
       # within tolerance). Run all of them even if an earlier one fails, then fail the job
@@ -269,7 +271,7 @@ jobs:
         run: |
           set +e
           rc=0
-          for proj in StateFidelity CbufferModel TextureBreadthValidation ReservedWordGl SamplerPairsGl SamplerRegisterOrderGl DeferredSpriteMrtGl ShaderToyRouteGl RaylibRoute SkiaVsKni; do
+          for proj in StateFidelity CbufferModel TextureBreadthValidation ReservedWordGl SamplerPairsGl SamplerRegisterOrderGl DeferredSpriteMrtGl ShaderToyRouteGl RaylibRoute SkiaVsKni InitializerDefaultsGl InitializerDefaultsKniGl; do
             echo "::group::$proj"
             xvfb-run -a dotnet run --project "validation/$proj" -c Release --no-build
             this=$?
@@ -425,6 +427,9 @@ jobs:
           dotnet build validation/CandidateDx/CandidateDx.csproj -c Release
           dotnet build validation/BaselineDx12/BaselineDx12.csproj -c Release
           dotnet build validation/CandidateDx12/CandidateDx12.csproj -c Release
+          dotnet build validation/InitializerDefaultsDx/InitializerDefaultsDx.csproj -c Release
+          dotnet build validation/InitializerDefaultsKniDx/InitializerDefaultsKniDx.csproj -c Release
+          dotnet build validation/InitializerDefaultsDx12/InitializerDefaultsDx12.csproj -c Release
           dotnet build validation/SlangFullCorpus/SlangFullCorpus.csproj -c Release -f net8.0-windows
 
       # Issue #204: pin every gate to WARP (Windows' bundled software D3D rasterizer)
@@ -448,6 +453,18 @@ jobs:
           dotnet run --project validation/BaselineDx -c Release --no-build
           dotnet run --project validation/CandidateDx -c Release --no-build
           python validation/compare_dx.py
+
+      # Global-initializer defaults (owner directive 2026-10-28): `float R = 1;` is the default in the
+      # real engine with no Set call, for MonoGame WindowsDX, KNI WinForms.DX11 (MGFX and KNIFX) and
+      # MonoGame WindowsDX12, each with a no-initializer control that must render black.
+      - name: Run initializer-default gates (real MonoGame WindowsDX, KNI DX11, MonoGame DX12 on WARP)
+        if: ${{ !cancelled() }}
+        env:
+          SHADOWDUSK_DX_WARP: "1"
+        run: |
+          dotnet run --project validation/InitializerDefaultsDx -c Release --no-build
+          dotnet run --project validation/InitializerDefaultsKniDx -c Release --no-build
+          dotnet run --project validation/InitializerDefaultsDx12 -c Release --no-build
 
       - name: Run MonoGame WindowsDX12 corpus (ShadowDusk vs mgfxc DirectX_12 golden)
         env:
@@ -621,6 +638,7 @@ jobs:
           dotnet build validation/VsDrivenVulkan/VsDrivenVulkan.csproj -c Release
           dotnet build validation/CandidateVulkan/CandidateVulkan.csproj -c Release
           dotnet build validation/BaselineVulkan/BaselineVulkan.csproj -c Release
+          dotnet build validation/InitializerDefaultsVulkan/InitializerDefaultsVulkan.csproj -c Release
 
       # Every gate runs under validation/run-with-vk-validation.sh: the Khronos validation
       # layer is forced on, and any layer ERROR fails the step even when the pixels match.
@@ -659,6 +677,12 @@ jobs:
           validation/run-with-vk-validation.sh candidate -- xvfb-run -a dotnet run --project validation/CandidateVulkan -c Release --no-build
           xvfb-run -a dotnet run --project validation/BaselineVulkan -c Release --no-build || echo "BaselineVulkan best-effort (upstream mgfxc bug), not scored"
           python validation/compare_vulkan.py
+
+      # Global-initializer defaults (owner directive 2026-10-28) on real DesktopVK, with the
+      # no-initializer control; under the validation layer like every gate here.
+      - name: Vulkan initializer defaults (real DesktopVK)
+        if: ${{ !cancelled() }}
+        run: validation/run-with-vk-validation.sh initializer-defaults -- xvfb-run -a dotnet run --project validation/InitializerDefaultsVulkan -c Release --no-build
 
       # POSITIVE CONTROLS: each plants a known defect in the candidate and the step passes
       # only if the gate turned RED for that reason. Without these, a lane that silently

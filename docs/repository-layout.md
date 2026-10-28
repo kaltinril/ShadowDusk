@@ -160,6 +160,8 @@ ShadowDusk/
 │                                  #     SkiaVsKni (issue #369: the SkSL converter in REAL SkiaSharp vs the same
 │                                  #       .fx on real KNI SDL2.GL, one process), …), DX (VsDrivenDx,
 │                                  #   DxModernFeatures, ShaderToyRouteDx (that route's DirectX arm), …),
+│                                  #   InitializerDefaults{Gl,Dx,KniGl,KniDx,Dx12,Vulkan} (+ SharedInitializerDefaults): a global
+│                                  #   initializer is the default with no Set call, per real runtime (owner directive 2026-10-28),
 │                                  #   DX12 (BaselineDx12, CandidateDx12, VsDrivenDx12
 │                                  #     + compare_dx12.py), FNA (FnaValidation), KNI (KniDesktopGL, KniWinFormsDX, KniVsDriven),
 │                                  #   Vulkan (BaselineVulkan, CandidateVulkan, VsDrivenVulkan

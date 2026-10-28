@@ -72,6 +72,13 @@
                                    tol 2/255, three positive controls. Image fidelity, not an
                                    mgfxc diff (Skia has no reference compiler). CI runs it on
                                    llvmpipe too; this run is its GPU-GL-driver KNI arm.
+    * Initializer defaults       - validation/InitializerDefaults{Gl,Dx,KniGl,KniDx,Dx12,Vulkan}
+                                   (owner directive 2026-10-28): `float R = 1;` (and a float4, a
+                                   float4x4, a float4[2], plus float2x2 / int / bool off GL) is the
+                                   default in the real engine with NO Set call, for every MGFX and
+                                   KNIFX output. Each driver has a no-initializer control that must
+                                   render black, and the GL ones render the real mgfxc OpenGL build
+                                   (zeros) as a second control. Dx12 and Vulkan are MonoGame 3.8.5.
     * Apos.Shapes GL render-proof - validation/VsDriven -- apos: a single shape plus a needle-thin
                                    ellipse vs the mgfxc OpenGL golden, tol 2/255. Uses the older
                                    apos-shapes.fx pin - the current revision's mgfxc GL compile is
@@ -311,6 +318,23 @@ $gates.Add(@{
         finally { Remove-Item Env:SHADOWDUSK_REQUIRE_GL -ErrorAction SilentlyContinue }
     }
 })
+# Global-initializer defaults (`float R = 1;`), owner directive 2026-10-28: the value is the default
+# in EVERY MGFX/KNIFX output, proven in the real engine with no Set call. Five runtimes here (the
+# Vulkan one is in the Vulkan block); each has a no-initializer control and the GL ones also render
+# the real mgfxc OpenGL build, which stores zeros.
+foreach ($drv in @(
+    @('InitializerDefaultsGl',    'MonoGame DesktopGL'),
+    @('InitializerDefaultsDx',    'MonoGame WindowsDX'),
+    @('InitializerDefaultsKniGl', 'KNI SDL2.GL, MGFX v10 and KNIFX'),
+    @('InitializerDefaultsKniDx', 'KNI WinForms.DX11, MGFX v10 and KNIFX'),
+    @('InitializerDefaultsDx12',  'MonoGame 3.8.5 WindowsDX12'))) {
+    $project = "validation/$($drv[0])"
+    $gates.Add(@{
+        Name   = "Initializer defaults ($($drv[1]): a global initializer is the parameter's default with no Set call, vs no-initializer and mgfxc-GL controls)"
+        # [scriptblock]::Create, not GetNewClosure(): a closure runs in a module scope that cannot see Invoke-Checked.
+        Action = [scriptblock]::Create("Invoke-Checked 'dotnet' @('run', '--project', '$project', '-c', 'Release')")
+    })
+}
 $gates.Add(@{
     Name   = 'Apos.Shapes GL render-proof (Phase 51 A3, real MonoGame DesktopGL vs mgfxc OpenGL golden)'
     Action = { Invoke-Checked 'dotnet' @('run', '--project', 'validation/VsDriven', '-c', 'Release', '--', 'apos') }
@@ -495,6 +519,10 @@ if (-not $SkipVulkan) {
             & dotnet run --project validation/BaselineVulkan -c Release
             Invoke-Checked 'python' @('validation/compare_vulkan.py')
         }
+    })
+    $gates.Add(@{
+        Name   = 'Initializer defaults (MonoGame 3.8.5 DesktopVK: a global initializer is the parameter default with no Set call, vs no-initializer control)'
+        Action = { Invoke-Checked 'dotnet' @('run', '--project', 'validation/InitializerDefaultsVulkan', '-c', 'Release') }
     })
     $gates.Add(@{
         Name   = 'Vulkan VS-driven + Apos.Shapes #145 reproducer (ShadowDusk vs mgfxc 3.8.5 goldens, real MonoGame DesktopVK)'
