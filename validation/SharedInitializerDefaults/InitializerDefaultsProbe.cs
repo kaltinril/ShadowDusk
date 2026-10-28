@@ -179,7 +179,6 @@ public static class InitializerDefaultsProbe
             using var sb = new SpriteBatch(GraphicsDevice);
             using var white = new Texture2D(GraphicsDevice, 1, 1);
             white.SetData([Color.White]);
-            using var rt = new RenderTarget2D(GraphicsDevice, Size, Size, false, SurfaceFormat.Color, DepthFormat.None);
 
             foreach (Job job in _jobs)
             {
@@ -203,6 +202,10 @@ public static class InitializerDefaultsProbe
                     if (job.SetR is { } r)
                         effect.Parameters["R"]!.SetValue(r);
 
+                    // A fresh target per job: after GetData, MonoGame DesktopVK leaves the image in a transfer
+                    // layout, and reusing it as a render-pass attachment is a validation-layer error
+                    // (VUID-vkCmdBeginRenderPass-initialLayout-00900); EffectImageRenderer avoids it the same way.
+                    using var rt = new RenderTarget2D(GraphicsDevice, Size, Size, false, SurfaceFormat.Color, DepthFormat.None);
                     GraphicsDevice.SetRenderTarget(rt);
                     GraphicsDevice.Clear(Color.Transparent);
                     // Prime SpriteBatch's sprite vertex shader (the effects are pixel-only), as EffectImageRenderer does.

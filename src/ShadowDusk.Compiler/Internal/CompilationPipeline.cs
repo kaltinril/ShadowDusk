@@ -3175,7 +3175,10 @@ internal sealed class CompilationPipeline
             return new Dictionary<string, GlobalInitializerDefault>();
         }
 
-        if (read.Value.CompilerPredefinedMacro is { } predefined)
+        // Only worth saying when there is an initializer whose branch could be the wrong one: generated
+        // HLSL (the Slang route) tests __DXC_VERSION_MAJOR in every file.
+        if (read.Value.CompilerPredefinedMacro is { } predefined
+            && (read.Value.Defaults.Count > 0 || read.Value.Failures.Count > 0))
             warnings.Add(DefaultNotPreserved(sourceFileName, 0, 0, "<any global>",
                 $"a conditional tests {predefined}, a macro only the compiler defines, so the branch the " +
                 "initializers were read from may not be the one that was compiled"));
