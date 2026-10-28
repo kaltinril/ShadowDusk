@@ -33,6 +33,18 @@ that loads and renders identically to `mgfxc`'s in the real MonoGame/KNI runtime
   an `FX0005`; a real duplicate is still reported, on the preprocessed text. A view that cannot be built (`__has_include`, a conditional on `__HLSL_VERSION`) keeps the raw technique list and adds an `SD0009` warning; `#region`/`#endregion` are ignored by the view. MGFX v10 records no shader
   model; the committed byte-identity manifests (OpenGL, DirectX 11,
   DirectX 12, Vulkan, FNA) are unchanged.
+- **OpenGL no longer fails with `SD0100` when HLSL packing puts a uniform mid-register** (issue #425).
+  A `float3` or `float2` declared after a `float` (`float Gain; float3 Axis;`, loose or in a
+  `cbuffer`, in either stage, such as the `float3` ahead of a `float4x4` the issue was reported with)
+  failed the OpenGL, KNIFX, raylib and SkSL compiles: DXC laid the uniform block out with HLSL cbuffer
+  packing, which puts the `float3` at byte 4, and SPIRV-Cross's GLSL can only express std140, so it
+  refused the block ("cannot be expressed as any of std430, std140, scalar"). A member packed into an
+  array's last register (`float W[2]; float B;`) failed the same way as `SD0210`. The OpenGL compile
+  now asks DXC for the std140 layout (`-fvk-use-gl-layout`). Each uniform gets its own
+  `ps_uniforms_vec4[]` register in declaration order, as before and as in `mgfxc`'s build. Every
+  shader that compiled before is byte-identical (all 579 OpenGL v10, v11 and KNIFX outputs of the
+  fixture corpus, checked before and after), and the vendored Nez `Reflection.fx` now compiles for
+  OpenGL. Vulkan keeps the HLSL packing, since it ships the SPIR-V.
 
 ## [0.22.0] - 2026-10-28
 

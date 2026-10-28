@@ -25,14 +25,30 @@ internal static class DxcFlagBuilder
 
         switch ((platform, stage))
         {
+            // OpenGL lays the uniform block out std140 (-fvk-use-gl-layout), NOT with the HLSL
+            // cbuffer packing (-fvk-use-dx-layout) the SPIR-V-shipping Vulkan target needs
+            // (issue #425). The SPIR-V here only feeds SPIRV-Cross's #version 140 GLSL, which can
+            // express nothing but std140. An HLSL-packed block whose offsets break a std140 rule
+            // failed: a float/float2/float3 packed behind a float at byte 4 made SPIRV-Cross
+            // refuse the whole block with SD0100 ("cannot be expressed as any of std430, std140,
+            // scalar"), and a member packed into an array's last register came out as an
+            // enhanced-layouts `layout(offset = N)` member the rewriter refuses with SD0210.
+            // The byte offsets themselves never reach the output: MonoGameGlslRewriter replaces
+            // the block with MojoShader's {vs,ps}_uniforms_vec4[] (one register per member, in
+            // declaration order, the allocation mgfxc's D3D9 constant table gives), and the GL
+            // cbuffer record is built from that register layout. Every block that compiled
+            // before was already exact std140 (SPIRV-Cross emits a plain std140 block only when
+            // every offset equals the std140 one), so its SPIR-V offsets and GLSL are
+            // unchanged. The desktop parameter table comes from the DXIL reflection, which this
+            // flag does not touch.
             case (PlatformTarget.OpenGL, ShaderStage.Vertex):
                 profile = ShaderProfiles.Sm5Vertex;
-                platformFlags = new[] { "-spirv", "-fvk-use-dx-layout", "-fvk-use-dx-position-w" };
+                platformFlags = new[] { "-spirv", "-fvk-use-gl-layout", "-fvk-use-dx-position-w" };
                 break;
 
             case (PlatformTarget.OpenGL, ShaderStage.Pixel):
                 profile = ShaderProfiles.Sm5Pixel;
-                platformFlags = new[] { "-spirv", "-fvk-use-dx-layout", "-auto-binding-space", "1" };
+                platformFlags = new[] { "-spirv", "-fvk-use-gl-layout", "-auto-binding-space", "1" };
                 break;
 
             // -fvk-bind-globals pins the implicit "$Globals" cbuffer (DXC's auto-generated

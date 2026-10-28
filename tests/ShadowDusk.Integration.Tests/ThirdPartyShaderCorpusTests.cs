@@ -69,7 +69,9 @@ public sealed class ThirdPartyShaderCorpusTests
     /// <summary>
     /// Shaders that compile on the MonoGame-GL target. The all-runtime subset PLUS
     /// Noise (Phase 45 B10 fixed the reserved-word <c>noise</c>→<c>_noise</c> GL
-    /// join). Crosshatch/PaletteCycler/Reflection still have legitimate GL SM limits.
+    /// join) and Reflection (issue #425: its <c>float3 _sparkleColor</c> packed behind a
+    /// <c>float</c> was a std140 layout bug, not a shader limit). Crosshatch/PaletteCycler still
+    /// have legitimate GL SM limits.
     /// </summary>
     public static TheoryData<string> OpenGLShaders() => new()
     {
@@ -81,6 +83,7 @@ public sealed class ThirdPartyShaderCorpusTests
         Root + "Letterbox.fx",          // VPOS (compiles; render-equivalence not claimed)
         Root + "Noise.fx",              // B10: uniform 'noise' (GLSL reserved word) — fixed on GL
         Root + "PixelGlitch.fx",        // helper fn hash11()
+        Root + "Reflection.fx",         // issue #425: float3 packed behind a float (was SD0100); VS+PS, two techniques
         Root + "SpriteBlinkEffect.fx",
         Root + "SpriteLines.fx",        // VPOS + float % (compiles; render-equivalence not claimed)
         Root + "Twist.fx",              // relational if(dist<radius) + sin/cos

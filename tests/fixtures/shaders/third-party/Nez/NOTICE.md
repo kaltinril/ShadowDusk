@@ -45,7 +45,8 @@ from the same commit, unchanged.)
 (OpenGL = MonoGame-GL / KNI, DirectX_11 = MonoGame-DX, FNA = D3D9 fx_2_0),
 verified 2026-06-17, **re-verified and revised 2026-07-31**. A target NOT listed fails by a
 **legitimate** shader-model limitation (noted), not a ShadowDusk parser defect. (`Noise.fx`
-was the one ShadowDusk-bug exception; Phase 45 B10 fixed it, so it now compiles on GL too.)
+was a ShadowDusk-bug exception; Phase 45 B10 fixed it, so it now compiles on GL too. `Reflection.fx`
+was the other one; issue #425 fixed it, 2026-10-28.)
 
 > **2026-07-31 — the DirectX column collapsed (Phase 51 A10), and it is correct.** These
 > shaders name a legacy `ps_2_0`/`ps_3_0` (or `vs_2_0`) compile target with no
@@ -71,7 +72,7 @@ was the one ShadowDusk-bug exception; Phase 45 B10 fixed it, so it now compiles 
 | `Vignette.fx` | MIT | GL + FNA | DX: the pass names a legacy `ps_2_0`/`ps_3_0` compile target, below MonoGame's `DirectX_11` floor (`SD0015`; mgfxc refuses it too) |
 | `Crosshatch.fx` | MIT | FNA only | GL: `int crossHatchSize;` integer uniform is not modelled on the MonoGame-GL target (loud `SD0210`, by design — MojoShader puts ints in a separate register set ShadowDusk does not emit). DX: `compile ps_3_0`, below the `DirectX_11` floor (`SD0015`). |
 | `PaletteCycler.fx` | MIT | FNA only | GL + DX: `tex1D` has no 1:1 modern `Texture` method, so it is rejected with a targeted `FX0012` that explicitly directs the user to the FNA target (which compiles it natively). A documented SM limitation, not a defect. |
-| `Reflection.fx` | MIT | **FNA** | GL: the multi-`TEXCOORD` interpolant cbuffer cannot be expressed in std140/std430 by SPIRV-Cross (`SD0100`). FNA: **compiles as of vkd3d 2.1** — its if/else branches flatten, so the earlier `E5017` was a compiler gap, not a shader-model limit. DX (since 2026-07-31): `compile vs_2_0`, below the `DirectX_11` floor (`SD0015`). The GL and DX limits are real limits on this shader, not parser defects; it stays a GL/DX reject-set fixture. |
+| `Reflection.fx` | MIT | **GL + FNA** | GL: **compiles since issue #425** (2026-10-28). It used to fail with `SD0100` because HLSL packing put `float3 _sparkleColor` behind a `float` at byte 4, which SPIRV-Cross cannot express in std140; that was a ShadowDusk layout bug, not a limit of the shader (GL now takes DXC's std140 layout). Compile-proven only, no `mgfxc` golden or render. FNA: **compiles as of vkd3d 2.1** — its if/else branches flatten, so the earlier `E5017` was a compiler gap, not a shader-model limit. DX (since 2026-07-31): `compile vs_2_0`, below the `DirectX_11` floor (`SD0015`), a real limit (mgfxc refuses it too); it stays a DX reject-set fixture. |
 | `Noise.fx` | MIT | GL + FNA | A uniform literally named `noise` is renamed to `_noise` by SPIRV-Cross (GLSL reserved word). This used to break the GL cbuffer/parameter join (`SD0012`), so the shader was wired DX + FNA only. **Phase 45 B10 fixed it** (the join now falls back to an offset bridge that recovers the parameter by byte offset, keeping it named `noise`), so `Noise.fx` compiles on GL too. DX: `compile ps_3_0`, below the `DirectX_11` floor (`SD0015`). |
 
 ## How these are exercised
