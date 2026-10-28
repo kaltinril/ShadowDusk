@@ -14,8 +14,10 @@ namespace ShadowDusk.Core.Reflection.Spirv;
 /// packing. OpenGL's is produced with <c>-fvk-use-gl-layout</c> (std140, issue #425), which
 /// equals the HLSL packing for every block that is already std140-legal and moves a member
 /// HLSL would pack mid-register (a <c>float3</c> behind a <c>float</c>) to its own register.
-/// The OpenGL effect's cbuffer records come from the GLSL rewriter's register layout, not
-/// from these offsets.</para>
+/// The OpenGL effect's cbuffer records come from the GLSL rewriter's register layout, and the
+/// one place the GL pipeline reads reflected variables for it (the reserved-word rename bridge)
+/// matches them by declaration order, never by offset, so the OpenGL output does not depend on
+/// which layout reflection saw.</para>
 /// </summary>
 internal sealed class SpirvReflectionParser
 {

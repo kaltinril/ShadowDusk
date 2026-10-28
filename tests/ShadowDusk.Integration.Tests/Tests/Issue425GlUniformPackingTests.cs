@@ -73,6 +73,124 @@ public sealed class Issue425GlUniformPackingTests
 
     public static TheoryData<string> PixelShapes() => new(s_pixelShapes.Keys);
 
+    /// <summary>
+    /// A uniform named after a GLSL reserved word, which SPIRV-Cross renames (<c>noise</c> to
+    /// <c>_noise</c>), so the GL layout's name misses the parameter and the B10 bridge has to find
+    /// it. The bridge used to match the reflected byte offset to <c>register * 16</c>; packing makes
+    /// that wrong. Desktop (DXIL, HLSL packing) put <c>c</c> in noise's register for the first two,
+    /// all hosts did for the last two, and the browser's std140 reflection disagreed with the
+    /// desktop. The bridge now maps by declaration order on every host.
+    /// </summary>
+    private static readonly Dictionary<string, Shape> s_reservedWordShapes = new()
+    {
+        ["Float3NoiseAfterFloat"] = new(
+            "float g;\nfloat3 noise;\nfloat4 c;\nfloat4 d;",
+            "float4(noise * g, 1) + c + d",
+            [("g", 0), ("noise", 1), ("c", 2), ("d", 3)],
+            ["ps_uniforms_vec4[1].xyz"]),
+        ["Float3FilterAfterFloat"] = new(
+            "float g;\nfloat3 filter;\nfloat4 c;",
+            "float4(filter * g, 1) + c",
+            [("g", 0), ("filter", 1), ("c", 2)],
+            ["ps_uniforms_vec4[1].xyz"]),
+        ["Float2NoiseAfterFloat"] = new(
+            "float g;\nfloat2 noise;\nfloat4 c;",
+            "float4(noise * g, 0, 1) + c",
+            [("g", 0), ("noise", 1), ("c", 2)],
+            ["ps_uniforms_vec4[1].xy"]),
+        // Pre-existing on main: scalars pack into one register on every reflection source.
+        ["ScalarNoiseAfterScalars"] = new(
+            "float a;\nfloat b;\nfloat noise;\nfloat4 c;\nfloat4 d;",
+            "float4(a, b, noise, 1) + c + d",
+            [("a", 0), ("b", 1), ("noise", 2), ("c", 3), ("d", 4)],
+            ["ps_uniforms_vec4[2].x"]),
+        ["Float3OutputAfterFloat"] = new(
+            "float g;\nfloat3 output;\nfloat4 c;",
+            "float4(output * g, 1) + c",
+            [("g", 0), ("output", 1), ("c", 2)],
+            ["ps_uniforms_vec4[1].xyz"]),
+    };
+
+    public static TheoryData<string> ReservedWordShapes() => new(s_reservedWordShapes.Keys);
+
+    [Theory]
+    [MemberData(nameof(ReservedWordShapes))]
+    public async Task ReservedWordUniform_MapsByDeclarationOrder_OnBothReflectionSources(string name)
+    {
+        Shape shape = s_reservedWordShapes[name];
+        string source = PixelSource(shape);
+
+        byte[] desktop = await CompileAsync(source);
+        byte[] spirvReflected = await CompileAsync(source, reflectorFactory: () => new SpirvReflector());
+
+        foreach (byte[] bytes in new[] { desktop, spirvReflected })
+        {
+            MgfxBlobReader reader = MgfxBlobReader.Parse(bytes);
+            AssertRegisters(reader, "ps_uniforms_vec4", shape.Registers);
+            string glsl = Encoding.UTF8.GetString(reader.Shaders.Single(s => !s.IsVertex).Bytecode);
+            glsl.ShouldContain($"uniform vec4 ps_uniforms_vec4[{shape.Registers.Length}];", Case.Sensitive);
+            foreach (string read in shape.GlslReads)
+                glsl.ShouldContain(read, Case.Sensitive);
+        }
+
+        spirvReflected.ShouldBe(desktop);
+    }
+
+    /// <summary>
+    /// An explicit packoffset that puts a vector mid-register cannot be std140, so DXC's own SPIR-V
+    /// validator refuses it (it used to be SPIRV-Cross's SD0100). It must surface as SD0210 naming
+    /// the packoffset, not as DXC's "file a bug report" internal error.
+    /// </summary>
+    [Fact]
+    public async Task PackoffsetMidRegister_IsRefusedWithSd0210()
+    {
+        string source = PixelSource(new Shape(
+            "cbuffer C { float a : packoffset(c0.x); float3 b : packoffset(c0.y); };",
+            "float4(b * a, 1)", [], []));
+
+        using var cts = new CancellationTokenSource(TestBudget.Compile);
+        var result = await new EffectCompiler().CompileAsync(source, new CompilerOptions
+        {
+            Target = PlatformTarget.OpenGL,
+            SourceFileName = "Issue425.fx",
+        }, cts.Token);
+
+        result.IsFailure.ShouldBeTrue();
+        ShaderError error = result.Error.Single(e => e.Severity == ShaderErrorSeverity.Error);
+        error.Code.ShouldBe("SD0210");
+        error.Message.ShouldContain("packoffset", Case.Sensitive);
+        error.Message.ShouldContain("standard uniform buffer layout rules", Case.Sensitive);
+    }
+
+    /// <summary>
+    /// With two cbuffers the rewriter's merged register order is not reconstructed, so a renamed
+    /// uniform there cannot be proven to map to one parameter: the compile fails loudly with SD0012
+    /// on both reflection sources rather than guessing.
+    /// </summary>
+    [Fact]
+    public async Task ReservedWordUniform_InATwoCbufferStage_FailsLoudlyWithSd0012()
+    {
+        string source = PixelSource(new Shape(
+            "cbuffer A { float g; float3 noise; };\ncbuffer B { float4 c; };",
+            "float4(noise * g, 1) + c", [], []));
+
+        foreach (Func<IShaderReflector>? factory in new Func<IShaderReflector>?[] { null, () => new SpirvReflector() })
+        {
+            using var cts = new CancellationTokenSource(TestBudget.Compile);
+            var result = await new EffectCompiler(reflectorFactory: factory).CompileAsync(source, new CompilerOptions
+            {
+                Target = PlatformTarget.OpenGL,
+                SourceFileName = "Issue425.fx",
+            }, cts.Token);
+
+            result.IsFailure.ShouldBeTrue();
+            ShaderError error = result.Error.Single(e => e.Severity == ShaderErrorSeverity.Error);
+            error.Code.ShouldBe("SD0012");
+            error.Message.ShouldContain("'_noise'", Case.Sensitive);
+            error.Message.ShouldContain("reserved word", Case.Sensitive);
+        }
+    }
+
     private static string PixelSource(Shape shape) =>
         shape.Declarations + "\n" +
         "float4 MainPS(float4 pos : SV_Position, float4 color : COLOR0) : COLOR0\n" +

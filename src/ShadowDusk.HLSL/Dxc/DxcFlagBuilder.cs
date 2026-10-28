@@ -33,14 +33,16 @@ internal static class DxcFlagBuilder
             // refuse the whole block with SD0100 ("cannot be expressed as any of std430, std140,
             // scalar"), and a member packed into an array's last register came out as an
             // enhanced-layouts `layout(offset = N)` member the rewriter refuses with SD0210.
-            // The byte offsets themselves never reach the output: MonoGameGlslRewriter replaces
-            // the block with MojoShader's {vs,ps}_uniforms_vec4[] (one register per member, in
-            // declaration order, the allocation mgfxc's D3D9 constant table gives), and the GL
-            // cbuffer record is built from that register layout. Every block that compiled
-            // before was already exact std140 (SPIRV-Cross emits a plain std140 block only when
-            // every offset equals the std140 one), so its SPIR-V offsets and GLSL are
-            // unchanged. The desktop parameter table comes from the DXIL reflection, which this
-            // flag does not touch.
+            // The GL output does not depend on these offsets: MonoGameGlslRewriter replaces the
+            // block with MojoShader's {vs,ps}_uniforms_vec4[] (one register per member, in
+            // declaration order, the allocation mgfxc's D3D9 constant table gives), the GL
+            // cbuffer record is built from that register layout, and a uniform SPIRV-Cross
+            // renamed off a GLSL reserved word is matched to its parameter by declaration order
+            // (CompilationPipeline.IndexOfParamByDeclarationOrder), never by offset, because the
+            // browser's SPIR-V reflection now sees std140 where the desktop's DXIL sees HLSL
+            // packing. Every block that compiled before was already exact std140 (SPIRV-Cross
+            // emits a plain std140 block only when every offset equals the std140 one), so its
+            // SPIR-V offsets and GLSL are unchanged.
             case (PlatformTarget.OpenGL, ShaderStage.Vertex):
                 profile = ShaderProfiles.Sm5Vertex;
                 platformFlags = new[] { "-spirv", "-fvk-use-gl-layout", "-fvk-use-dx-position-w" };
@@ -125,7 +127,9 @@ internal static class DxcFlagBuilder
                 platformFlags = Array.Empty<string>();
                 break;
 
-            // Metal goes through SPIR-V so use the same profile/flags as OpenGL
+            // Metal goes through SPIR-V with the OpenGL profiles, but keeps the HLSL packing
+            // (-fvk-use-dx-layout): Metal is parked, and SPIRV-Cross's MSL is not limited to
+            // std140, so the OpenGL layout change (issue #425) was not applied to it.
             case (PlatformTarget.Metal, ShaderStage.Vertex):
                 profile = ShaderProfiles.Sm5Vertex;
                 platformFlags = new[] { "-spirv", "-fvk-use-dx-layout", "-fvk-use-dx-position-w" };

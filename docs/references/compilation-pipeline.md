@@ -364,8 +364,10 @@ directly from the SPIR-V `Offset` decorations. Vulkan's SPIR-V is emitted with
 `-fvk-use-dx-layout`, so there all three reflectors report the same HLSL layout. OpenGL's is
 std140 (`-fvk-use-gl-layout`, issue #425): the same layout for every std140-legal block, with a
 member HLSL would pack mid-register moved to its own register. The GL cbuffer records come from
-the GLSL rewriter's register layout, never from these offsets, so the browser host's `.mgfx`
-stays byte-identical to the desktop's. (SPIR-V discards HLSL semantic strings, so its
+the GLSL rewriter's register layout, and the one GL step that reads reflected variables for them
+(the bridge for a uniform SPIRV-Cross renamed off a GLSL reserved word, `noise` to `_noise`)
+matches by declaration order, never by byte offset, so the browser host's `.mgfx` stays
+byte-identical to the desktop's. (SPIR-V discards HLSL semantic strings, so its
 input/output signatures are intentionally empty, which is why it only serves the PS-only browser
 corpus.)
 

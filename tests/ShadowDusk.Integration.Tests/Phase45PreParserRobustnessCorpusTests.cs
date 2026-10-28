@@ -50,9 +50,9 @@ namespace ShadowDusk.Integration.Tests;
 ///   bug, not a dropped-operator pre-parser one): a free uniform named after a GLSL
 ///   reserved word (<c>float noise;</c>) is renamed by SPIRV-Cross to <c>_noise</c>,
 ///   so the OpenGL cbuffer/parameter join (which matched BY NAME) missed and failed
-///   with <c>SD0012</c>. The join now falls back to an OFFSET BRIDGE (the GL uniform's
-///   <c>BaseRegister * 16</c> byte offset recovers the reflected variable's original
-///   name) on a name miss only, so the parameter resolves and stays exposed under
+///   with <c>SD0012</c>. The join now falls back to a bridge (the GL uniform's position
+///   in the block recovers the reflected variable's original name; by declaration order
+///   since issue #425, by byte offset before) on a name miss only, so the parameter resolves and stays exposed under
 ///   <c>noise</c>. DX + FNA were never affected (no GLSL on those paths).
 ///   (<c>ExReservedWordUniform.fx</c> — GL + DX + FNA.)</item>
 /// </list>

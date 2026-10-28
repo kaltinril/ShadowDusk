@@ -44,7 +44,21 @@ that loads and renders identically to `mgfxc`'s in the real MonoGame/KNI runtime
   `ps_uniforms_vec4[]` register in declaration order, as before and as in `mgfxc`'s build. Every
   shader that compiled before is byte-identical (all 579 OpenGL v10, v11 and KNIFX outputs of the
   fixture corpus, checked before and after), and the vendored Nez `Reflection.fx` now compiles for
-  OpenGL. Vulkan keeps the HLSL packing, since it ships the SPIR-V.
+  OpenGL. Vulkan keeps the HLSL packing, since it ships the SPIR-V. An explicit `packoffset` that puts a
+  vector mid-register (`float3 b : packoffset(c0.y)`) still cannot compile for OpenGL (it was `SD0100`);
+  it is now `SD0210` naming the `packoffset`, with DXC's validator text kept, instead of DXC's
+  "file a bug report" internal error.
+- **OpenGL: a uniform named after a GLSL reserved word no longer lands in another uniform's register when
+  uniforms pack** (found reviewing issue #425). SPIRV-Cross renames such a uniform (`noise` to `_noise`,
+  also `filter`, `output`, ...), and the step that maps it back to its parameter matched the reflected
+  byte offset to `register * 16`, which only holds when nothing packs. `float a; float b; float noise;
+  float4 c;` put `c` in `noise`'s register and gave `noise` a dead one, so `SetValue` on either drew
+  wrong, silently. A renamed `float3`/`float2` behind a `float`, which compiles now that the entry
+  above is fixed, would have done the same on the desktop but not in the browser host, which reflects
+  the std140 SPIR-V. The mapping now uses
+  declaration order with every other uniform's name checked, identically on every host, and fails
+  `SD0012` with a message naming the cause when that cannot be proven (a renamed uniform in a stage
+  with two cbuffers). No shader in the fixture corpus changes bytes.
 
 ## [0.22.0] - 2026-10-28
 

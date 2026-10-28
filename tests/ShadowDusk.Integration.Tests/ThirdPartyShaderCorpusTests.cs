@@ -41,7 +41,7 @@ namespace ShadowDusk.Integration.Tests;
 /// documented, legitimate shader-model reason (e.g. <c>int</c> uniforms and
 /// <c>tex1D</c> are not on the MonoGame-GL path). <c>Noise.fx</c> (a uniform named
 /// <c>noise</c>, a GLSL reserved word) USED to be a tracked GL exception — Phase 45 B10
-/// fixed it: the OpenGL cbuffer/parameter join now falls back to an offset bridge when
+/// fixed it: the OpenGL cbuffer/parameter join now falls back to a declaration-order bridge when
 /// SPIRV-Cross's <c>noise</c>→<c>_noise</c> rename breaks the name match, so
 /// <c>Noise.fx</c> compiles on GL too and is in the GL set below.</para>
 ///
