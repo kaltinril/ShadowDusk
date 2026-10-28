@@ -153,10 +153,8 @@ public static class SkslConverter
         Result<SkslConversion, ShaderError[]> first = ConvertCore(
             rawParsed, options, recovered: null, out bool shaderCompileFailed, cancellationToken,
             dxcCompilerFactory, glslTranspilerFactory);
-        // DXC accepted the source, so a technique view that could not be built is ShadowDusk's
-        // own preprocessor at fault: SD0009, as for the sampler-register view.
-        if (first.IsSuccess && techniques.Value.DeferredError is { } deferred)
-            return Result<SkslConversion, ShaderError[]>.Fail([deferred]);
+        // A technique view that could not be built leaves the conversion on the raw technique
+        // list (issue #407), as it was before.
         if (first.IsSuccess || !shaderCompileFailed)
             return first;
 

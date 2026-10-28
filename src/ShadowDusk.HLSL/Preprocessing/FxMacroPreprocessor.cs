@@ -346,6 +346,9 @@ internal sealed class FxMacroPreprocessor
                         case "warning":
                         case "ident":
                         case "sccs":
+                        // Editor folding markers: they mean nothing to any compiler.
+                        case "region":
+                        case "endregion":
                             // As compiler input they have to survive: '#pragma pack_matrix' changes
                             // code generation, and an '#error' must still stop the compile.
                             if (_compilerInput)
@@ -425,10 +428,10 @@ internal sealed class FxMacroPreprocessor
 
     private static ShaderError Error(string file, int line, string message)
         => new(File: file, Line: line, Column: 0, Code: ErrorCode,
-               Message: "OpenGL sampler-register reservation: could not build the preprocessed view " +
-                        $"of this effect ({message}). ShadowDusk decides which 'SamplerState : register(sN)' " +
-                        "declarations reserve a GL sampler register on the preprocessed source, like mgfxc, " +
-                        "and will not guess when it cannot preprocess it.");
+               Message: "could not build the preprocessed view of this effect " +
+                        $"({message}). ShadowDusk reads the technique list, and on OpenGL which " +
+                        "'SamplerState : register(sN)' declarations reserve a GL sampler register, " +
+                        "from that view, like mgfxc, and will not guess when it cannot preprocess the source.");
 
     // -------------------------------------------------------------------------
     // #define parsing

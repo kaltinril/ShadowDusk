@@ -233,7 +233,7 @@ internal sealed class CompilationPipeline
         // not exist, one in an #include'd file does, and `compile VS_SHADERMODEL V()` records the
         // profile the macro expands to. A recovery pass's pre-parse already ran on the
         // preprocessed text, so its techniques are that list already.
-        ShaderError? techniqueViewError = null;
+        ShaderError? techniqueViewWarning = null;
         bool techniquesFromView = false;
         if (recovered is null)
         {
@@ -243,8 +243,8 @@ internal sealed class CompilationPipeline
                 return Fail(resolvedTechniques.Error);
 
             fxParsed = fxParsed with { Techniques = resolvedTechniques.Value.Techniques };
-            techniqueViewError = resolvedTechniques.Value.DeferredError;
-            techniquesFromView = techniqueViewError is null;
+            techniqueViewWarning = resolvedTechniques.Value.ViewWarning;
+            techniquesFromView = techniqueViewWarning is null;
         }
 
         // A sampler_state texture the main file never declares (`Texture = <T>` and no `T`): mgfxc
@@ -578,6 +578,10 @@ internal sealed class CompilationPipeline
         // may have replaced `preprocessed` with a source rebuilt from the re-parse, which
         // carries no warnings of its own.
         var runWarnings  = new List<ShaderError>(preprocessWarnings);
+        // A technique view that could not be built (issue #407) leaves the compile on the raw
+        // technique list, as before; OpenGL fails on the same view below with the reservation error.
+        if (techniqueViewWarning is not null && options.Target != PlatformTarget.OpenGL)
+            runWarnings.Add(techniqueViewWarning);
         var seenWarnings = new HashSet<(string File, int Line, int Column, string Code, string Message)>();
 
         // OpenGL sampler-register reservations (issue #283): which modern
@@ -1004,11 +1008,6 @@ internal sealed class CompilationPipeline
         // GL sampler registers were allocated on a guess (issue #283).
         if (reservationError is not null)
             return Fail(reservationError, runWarnings);
-
-        // Same for the technique view (issue #407): the compile above ran on the raw technique
-        // list, which may hold a technique the preprocessed source does not.
-        if (techniqueViewError is not null)
-            return Fail(techniqueViewError, runWarnings);
 
         // fxc (so mgfxc, and FNA's reference) refuses two legacy samplers that one entry point
         // reads through one explicit register: `sampler2D A : register(s0); sampler2D B :
@@ -2065,7 +2064,7 @@ internal sealed class CompilationPipeline
         if (fnaTechniques.IsFailure)
             return Fail(fnaTechniques.Error);
         fxParsed = fxParsed with { Techniques = fnaTechniques.Value.Techniques };
-        ShaderError? fnaTechniqueViewError = fnaTechniques.Value.DeferredError;
+        ShaderError? fnaTechniqueViewWarning = fnaTechniques.Value.ViewWarning;
 
         // Zero-technique FNA macro fallback (Phase 41 GAP-1, extended to FNA). Mirrors the
         // GL/DX recovery in Run(): an effect whose techniques come ONLY from a TECHNIQUE(...)
@@ -2148,7 +2147,7 @@ internal sealed class CompilationPipeline
 
             // An #include'd technique block is still in vkd3d's input; its technique comes from
             // the preprocessed view now (issue #407), so blank it, as on the other targets.
-            if (fnaTechniqueViewError is null)
+            if (fnaTechniqueViewWarning is null)
                 preprocessed = preprocessed with { Text = FxPreParser.StripTechniqueBlocks(preprocessed.Text, sourceFileName) };
         }
 
@@ -2218,6 +2217,8 @@ internal sealed class CompilationPipeline
         // whole effect, deduped across entry points (same policy as the GL/DX path's
         // runWarnings) — returned on CompiledShader.Warnings.
         var fnaWarnings     = new List<ShaderError>(fnaPreprocessWarnings);
+        if (fnaTechniqueViewWarning is not null)
+            fnaWarnings.Add(fnaTechniqueViewWarning);
         var fnaSeenWarnings = new HashSet<(string File, int Line, int Column, string Code, string Message)>();
 
         foreach (TechniqueInfo technique in fxParsed.Techniques)
@@ -2279,11 +2280,6 @@ internal sealed class CompilationPipeline
 
             techniqueSources.Add(new Fx2TechniqueSource(technique.Name, passSources));
         }
-
-        // vkd3d accepted every entry point, so a technique view that could not be built is
-        // ShadowDusk's own preprocessor at fault (issue #407): fail loudly, as on the other targets.
-        if (fnaTechniqueViewError is not null)
-            return Fail(fnaTechniqueViewError, fnaWarnings);
 
         // Stage 4: assemble the effect description and write the fx_2_0 container.
         var buildResult = Fx2EffectBuilder.Build(

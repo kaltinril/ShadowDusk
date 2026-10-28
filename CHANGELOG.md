@@ -30,7 +30,7 @@ that loads and renders identically to `mgfxc`'s in the real MonoGame/KNI runtime
   loads there only with a 3.0 profile, exactly as when KNI's pipeline builds it. On FNA a macro
   that expands to an SM 2-3 profile is now honored (it was compiled at SM3); any other expansion
   keeps the SM3 ceiling. On raw text the same technique name in each `#if` branch is no longer
-  an `FX0005`; a real duplicate is still reported, on the preprocessed text. MGFX v10 records no shader
+  an `FX0005`; a real duplicate is still reported, on the preprocessed text. A view that cannot be built (`__has_include`, a conditional on `__HLSL_VERSION`) keeps the raw technique list and adds an `SD0009` warning; `#region`/`#endregion` are ignored by the view. MGFX v10 records no shader
   model; the committed byte-identity manifests (OpenGL, DirectX 11,
   DirectX 12, Vulkan, FNA) are unchanged.
 

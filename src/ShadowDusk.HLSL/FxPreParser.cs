@@ -2105,7 +2105,19 @@ public sealed class FxPreParser
         if (view.IsFailure)
             return Result<FxPreprocessedTechniques, ShaderError>.Fail(view.Error);
 
-        string text = view.Value.Text;
+if (view.Value.PredefinedMacroUse is { } predefined)
+        {
+            // DXC defines this macro and the managed view does not, so the technique list read off
+            // it could differ from the one DXC sees: the caller keeps the raw list instead.
+            return Result<FxPreprocessedTechniques, ShaderError>.Fail(new ShaderError(
+                File: predefined.File,
+                Line: predefined.Line,
+                Column: 0,
+                Code: Preprocessing.FxMacroPreprocessor.ErrorCode,
+                Message: $"a conditional tests '{predefined.Name}', which the compiler defines and the preprocessed view of this effect does not"));
+        }
+
+                string text = view.Value.Text;
         var lineMap = new Preprocessing.SourceLineMap(text, sourceFile);
 
         IReadOnlyList<Token> tokens = new FxLexer(text, sourceFile).Tokenize();

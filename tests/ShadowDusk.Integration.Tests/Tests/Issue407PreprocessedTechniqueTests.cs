@@ -144,6 +144,69 @@ public sealed class Issue407PreprocessedTechniqueTests
             "the included technique block is stripped from the compiler's input, so DXC never sees effect syntax");
     }
 
+    // A directive the managed preprocessor does not model must not fail a compile the compiler
+    // accepts: main compiled all three of these (the first with DXC's W4303) before the view.
+    private static string Region(bool sm3) => Functions(sm3) + $$"""
+        #region Techniques
+        technique B { pass { PixelShader = compile {{Ps(sm3)}} Q(); } }
+        #endregion
+        """;
+
+    // DXC refuses '#region' ("invalid preprocessing directive") on main as well, so only the
+    // targets that accept it are covered: DirectX 11 (vkd3d, W4303) and FNA.
+    [Theory]
+    [InlineData(PlatformTarget.DirectX)]
+    [InlineData(PlatformTarget.Fna)]
+    public async Task RegionDirective_StillCompiles(PlatformTarget target)
+    {
+        bool sm3 = target == PlatformTarget.Fna;
+        CompiledShader shader = await CompileOk(Region(sm3), target, sm3);
+
+        TechniqueNames(shader, target).ShouldBe(["B"]);
+    }
+
+    [Fact]
+    public async Task RegionDirective_StillCompiles_AsKnifxOnDirectX()
+    {
+        CompiledShader shader = await CompileOk(Region(sm3: false), PlatformTarget.DirectX, container: EffectContainer.Knifx);
+
+        shader.Data.ShouldNotBeEmpty();
+    }
+
+    [Theory]
+    [InlineData(PlatformTarget.DirectX12)]
+    [InlineData(PlatformTarget.Vulkan)]
+    public async Task HasIncludeConditional_CompilesOnTheRawTechniqueList_WithAWarning(PlatformTarget target)
+    {
+        string source = Functions(sm3: false) + """
+            #if defined(__has_include) && __has_include("tech.fxh")
+            #define EXTRA 1
+            #endif
+            technique B { pass { PixelShader = compile ps_4_0 Q(); } }
+            """;
+
+        CompiledShader shader = await CompileOk(source, target);
+
+        TechniqueNames(shader, target).ShouldBe(["B"]);
+        shader.Warnings.ShouldContain(w => w.Code == "SD0009" && w.Severity == ShaderErrorSeverity.Warning);
+    }
+
+    [Fact]
+    public async Task CompilerPredefinedMacroConditional_CompilesOnTheRawTechniqueList_WithAWarning()
+    {
+        // DXC defines __HLSL_VERSION, the managed view does not: the view is not trusted for it.
+        string source = Functions(sm3: false) + """
+            #if __HLSL_VERSION >= 2016
+            technique B { pass { PixelShader = compile ps_4_0 Q(); } }
+            #endif
+            """;
+
+        CompiledShader shader = await CompileOk(source, PlatformTarget.DirectX);
+
+        TechniqueNames(shader, PlatformTarget.DirectX).ShouldBe(["B"]);
+        shader.Warnings.ShouldContain(w => w.Code == "SD0009" && w.Severity == ShaderErrorSeverity.Warning);
+    }
+
     [Theory]
     [InlineData(PlatformTarget.OpenGL)]
     [InlineData(PlatformTarget.DirectX)]

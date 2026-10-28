@@ -172,10 +172,8 @@ public static class RaylibConverter
 
         Result<RaylibShader, ShaderError[]> first = ConvertCore(
             fxSource, rawParsed, options, recovered: null, out bool shaderCompileFailed, cancellationToken);
-        // DXC accepted the source, so a technique view that could not be built is ShadowDusk's
-        // own preprocessor at fault: SD0009, as for the sampler-register view.
-        if (first.IsSuccess && techniques.Value.DeferredError is { } deferred)
-            return Result<RaylibShader, ShaderError[]>.Fail([deferred]);
+        // A technique view that could not be built leaves the conversion on the raw technique
+        // list (issue #407), as it was before.
         if (first.IsSuccess || !shaderCompileFailed)
             return first;
 

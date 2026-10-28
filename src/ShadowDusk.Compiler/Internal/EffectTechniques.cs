@@ -21,12 +21,13 @@ internal static class EffectTechniques
 {
     /// <summary>What <see cref="Resolve"/> decided.</summary>
     /// <param name="Techniques">The techniques to compile, in source order.</param>
-    /// <param name="DeferredError">
-    /// An <c>SD0009</c> for a preprocessed view that could not be built. The compile then runs
-    /// on the raw technique list and the caller reports this only once the compiler has accepted
-    /// the source, so a genuinely malformed shader still gets the compiler's own diagnostic.
+    /// <param name="ViewWarning">
+    /// An <c>SD0009</c> warning for a preprocessed view that could not be built (a directive or
+    /// <c>#if</c> expression the managed preprocessor does not model). The compile then runs on
+    /// the raw technique list, as it did before issue #407, and the caller adds this to its
+    /// warnings. Never an error here: the compiler accepts such a source.
     /// </param>
-    internal sealed record Resolution(IReadOnlyList<TechniqueInfo> Techniques, ShaderError? DeferredError);
+    internal sealed record Resolution(IReadOnlyList<TechniqueInfo> Techniques, ShaderError? ViewWarning);
 
     /// <summary>
     /// Reads the techniques of <paramref name="rawSource"/> (the effect exactly as the author
@@ -61,7 +62,12 @@ internal static class EffectTechniques
         if (view.IsFailure)
         {
             return string.Equals(view.Error.Code, FxMacroPreprocessorErrorCode, StringComparison.Ordinal)
-                ? Result<Resolution, ShaderError>.Ok(new Resolution(rawParsed.Techniques, view.Error))
+                ? Result<Resolution, ShaderError>.Ok(new Resolution(rawParsed.Techniques, view.Error with
+                {
+                    Severity = ShaderErrorSeverity.Warning,
+                    Message = view.Error.Message + " The techniques were read from the raw source instead, " +
+                              "so a technique inside an inactive #if, or one an #include brings in, is not accounted for.",
+                }))
                 : Result<Resolution, ShaderError>.Fail(view.Error);
         }
 
