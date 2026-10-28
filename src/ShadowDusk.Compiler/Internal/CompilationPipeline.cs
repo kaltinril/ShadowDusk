@@ -578,10 +578,6 @@ internal sealed class CompilationPipeline
         // may have replaced `preprocessed` with a source rebuilt from the re-parse, which
         // carries no warnings of its own.
         var runWarnings  = new List<ShaderError>(preprocessWarnings);
-        // A technique view that could not be built (issue #407) leaves the compile on the raw
-        // technique list, as before; OpenGL fails on the same view below with the reservation error.
-        if (techniqueViewWarning is not null && options.Target != PlatformTarget.OpenGL)
-            runWarnings.Add(techniqueViewWarning);
         var seenWarnings = new HashSet<(string File, int Line, int Column, string Code, string Message)>();
 
         // OpenGL sampler-register reservations (issue #283): which modern
@@ -1579,7 +1575,7 @@ internal sealed class CompilationPipeline
             if (knifxResult.IsFailure)
                 return Fail(knifxResult.Error, runWarnings);
             return Result<CompiledShader, ShaderError[]>.Ok(
-                new CompiledShader(options.Target, knifxResult.Value) { Warnings = runWarnings, Parameters = reflectedParameters });
+                new CompiledShader(options.Target, knifxResult.Value) { Warnings = WithViewWarning(runWarnings, techniqueViewWarning), Parameters = reflectedParameters });
         }
 
         // Stage 6: MGFX binary writer.
@@ -1621,7 +1617,7 @@ internal sealed class CompilationPipeline
         byte[] mgfxBytes = writeResult.Value;
 
         return Result<CompiledShader, ShaderError[]>.Ok(
-            new CompiledShader(options.Target, mgfxBytes) { Warnings = runWarnings, Parameters = reflectedParameters });
+            new CompiledShader(options.Target, mgfxBytes) { Warnings = WithViewWarning(runWarnings, techniqueViewWarning), Parameters = reflectedParameters });
         }
         finally
         {
@@ -2217,8 +2213,6 @@ internal sealed class CompilationPipeline
         // whole effect, deduped across entry points (same policy as the GL/DX path's
         // runWarnings) — returned on CompiledShader.Warnings.
         var fnaWarnings     = new List<ShaderError>(fnaPreprocessWarnings);
-        if (fnaTechniqueViewWarning is not null)
-            fnaWarnings.Add(fnaTechniqueViewWarning);
         var fnaSeenWarnings = new HashSet<(string File, int Line, int Column, string Code, string Message)>();
 
         foreach (TechniqueInfo technique in fxParsed.Techniques)
@@ -2294,7 +2288,7 @@ internal sealed class CompilationPipeline
         return Result<CompiledShader, ShaderError[]>.Ok(
             new CompiledShader(PlatformTarget.Fna, writeResult.Value)
             {
-                Warnings   = fnaWarnings,
+                Warnings   = WithViewWarning(fnaWarnings, fnaTechniqueViewWarning),
                 Parameters = Fx2ParameterReflection.From(buildResult.Value.Parameters, preprocessed.Text, sourceFileName),
             });
     }
@@ -3199,6 +3193,14 @@ internal sealed class CompilationPipeline
         }
         return null;
     }
+
+    /// <summary>
+    /// The warnings of a SUCCESSFUL compile, led by the technique-view warning (issue #407) when the
+    /// preprocessed view could not be built and the raw technique list was used. A failed compile
+    /// does not carry it: its own error is the news.
+    /// </summary>
+    private static IReadOnlyList<ShaderError> WithViewWarning(List<ShaderError> warnings, ShaderError? viewWarning) =>
+        viewWarning is null ? warnings : [viewWarning, .. warnings];
 
     private static ShaderError DefaultNotPreserved(string file, int line, int column, string name, string reason) =>
         new(File: file,
