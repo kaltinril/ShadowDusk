@@ -2151,21 +2151,25 @@ public sealed class FxPreParser
         // they did when the raw text was parsed).
         Dictionary<int, List<Token>> viewTargets = CompileTargetsByLine(tokens);
         Dictionary<int, List<Token>> rawTargets = CompileTargetsByLine(rawTokens);
-        SourceSpan? AuthorSpan(SourceSpan? span)
+        Token? AuthorToken(SourceSpan? span)
         {
             if (span is not { } s ||
                 !viewTargets.TryGetValue(s.StartLine, out List<Token>? inView) ||
                 !rawTargets.TryGetValue(s.StartLine, out List<Token>? inRaw) ||
                 inView.Count != inRaw.Count)
             {
-                return span;
+                return null;
             }
             int index = inView.FindIndex(t => t.Column == s.StartColumn);
-            if (index < 0)
-                return span;
-            Token written = inRaw[index];
-            return new SourceSpan(written.Line, written.Column, written.Line, written.Column + written.Text.Length);
+            return index < 0 ? null : inRaw[index];
         }
+        SourceSpan? AuthorSpan(SourceSpan? span) =>
+            AuthorToken(span) is { } written
+                ? new SourceSpan(written.Line, written.Column, written.Line, written.Column + written.Text.Length)
+                : span;
+        // The macro name the author wrote for a profile a macro produced (null otherwise).
+        string? MacroName(string? profile, SourceSpan? span) =>
+            FromMacro(profile, span) ? AuthorToken(span)?.Text : null;
 
         List<TechniqueInfo> marked = parsed.Value.Select(t => t with
         {
@@ -2173,6 +2177,8 @@ public sealed class FxPreParser
             {
                 VertexProfileFromMacro = FromMacro(p.VertexProfile, p.VertexProfileSpan),
                 PixelProfileFromMacro = FromMacro(p.PixelProfile, p.PixelProfileSpan),
+                VertexProfileMacroName = MacroName(p.VertexProfile, p.VertexProfileSpan),
+                PixelProfileMacroName = MacroName(p.PixelProfile, p.PixelProfileSpan),
                 VertexProfileSpan = AuthorSpan(p.VertexProfileSpan),
                 PixelProfileSpan = AuthorSpan(p.PixelProfileSpan),
             }).ToList(),

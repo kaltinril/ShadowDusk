@@ -532,6 +532,11 @@ internal sealed class CompilationPipeline
         // Content Pipeline build. DirectX only — see DirectX11FloorCheck's remarks for why
         // the OpenGL/Vulkan/DX12 equivalents are deliberately not enforced here.
         bool enforceDx11Floor = directX;
+        // A profile a macro produced is validated through the macro name the author wrote, so DXC
+        // expands it with -P as before issue #407. (The Android emulator hangs the first SPIR-V
+        // compile after the corpus' effects stop making those -P calls: a DXC-spawned thread is
+        // blocked on a pipe read before IDxcResult.GetStatus returns. The cause is unexplained;
+        // this restores the old call pattern.)
         var profileExpansionCache = new Dictionary<string, string?>(StringComparer.Ordinal);
         foreach (TechniqueInfo technique in fxParsed.Techniques)
         {
@@ -540,7 +545,8 @@ internal sealed class CompilationPipeline
                 if (pass.VertexEntryPoint is not null)
                 {
                     var v = ValidateCompileProfile(
-                        pass.VertexProfile, pass.VertexProfileToken, pass.VertexProfileSpan, ShaderStage.Vertex,
+                        pass.VertexProfileMacroName?.ToLowerInvariant() ?? pass.VertexProfile,
+                        pass.VertexProfileMacroName ?? pass.VertexProfileToken, pass.VertexProfileSpan, ShaderStage.Vertex,
                         dxcCompiler, macros, preprocessed, sourceFileName,
                         profileExpansionCache, enforceStagePrefix: true, cancellationToken,
                         enforceDirectX11Floor: enforceDx11Floor, entryPoint: pass.VertexEntryPoint);
@@ -550,7 +556,8 @@ internal sealed class CompilationPipeline
                 if (pass.PixelEntryPoint is not null)
                 {
                     var p = ValidateCompileProfile(
-                        pass.PixelProfile, pass.PixelProfileToken, pass.PixelProfileSpan, ShaderStage.Pixel,
+                        pass.PixelProfileMacroName?.ToLowerInvariant() ?? pass.PixelProfile,
+                        pass.PixelProfileMacroName ?? pass.PixelProfileToken, pass.PixelProfileSpan, ShaderStage.Pixel,
                         dxcCompiler, macros, preprocessed, sourceFileName,
                         profileExpansionCache, enforceStagePrefix: true, cancellationToken,
                         enforceDirectX11Floor: enforceDx11Floor, entryPoint: pass.PixelEntryPoint);

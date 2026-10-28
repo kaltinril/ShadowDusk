@@ -60,6 +60,16 @@ public sealed record PassInfo
     /// <summary>The pixel counterpart of <see cref="VertexProfileFromMacro"/>.</summary>
     public bool PixelProfileFromMacro { get; init; }
 
+    /// <summary>
+    /// The macro name written in the <c>compile</c> statement when <see cref="VertexProfileFromMacro"/>
+    /// (<c>VS_SHADERMODEL</c>), else null. The compile validates a macro-produced profile through
+    /// this name so DXC expands it with <c>-P</c>, the call pattern before issue #407.
+    /// </summary>
+    public string? VertexProfileMacroName { get; init; }
+
+    /// <summary>The pixel counterpart of <see cref="VertexProfileMacroName"/>.</summary>
+    public string? PixelProfileMacroName { get; init; }
+
     /// <summary>All non-shader render-state assignments in this pass.</summary>
     public required IReadOnlyList<RenderStateEntry> RenderStates { get; init; }
 
