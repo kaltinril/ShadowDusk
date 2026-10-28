@@ -3151,8 +3151,21 @@ internal sealed class CompilationPipeline
         foreach (ParameterReflection p in parameters)
             parameterNames.Add(p.Name);
 
-        Result<GlobalInitializers, ShaderError> read =
-            GlobalInitializerReader.Read(preprocessedText, sourceFileName);
+        Result<GlobalInitializers, ShaderError> read;
+        try
+        {
+            read = GlobalInitializerReader.Read(preprocessedText, sourceFileName);
+        }
+        catch (Exception ex) when (ex is ArgumentException or InvalidOperationException or IndexOutOfRangeException
+                                       or FormatException or OverflowException or KeyNotFoundException)
+        {
+            // The reader is bounded and returns failures, so this is a bug in it; the compile
+            // itself succeeded, so say so loudly and ship zeros rather than fail a good shader.
+            warnings.Add(DefaultNotPreserved(sourceFileName, 0, 0, "<any global>",
+                $"the initializer reader hit an internal error ({ex.GetType().Name}: {ex.Message})"));
+            return new Dictionary<string, GlobalInitializerDefault>();
+        }
+
         if (read.IsFailure)
         {
             // The compile itself already succeeded, so the view is ours to build and we could not:
@@ -3161,6 +3174,11 @@ internal sealed class CompilationPipeline
                 "the preprocessed view needed to read initializers could not be built: " + read.Error.Message));
             return new Dictionary<string, GlobalInitializerDefault>();
         }
+
+        if (read.Value.CompilerPredefinedMacro is { } predefined)
+            warnings.Add(DefaultNotPreserved(sourceFileName, 0, 0, "<any global>",
+                $"a conditional tests {predefined}, a macro only the compiler defines, so the branch the " +
+                "initializers were read from may not be the one that was compiled"));
 
         var kept = new Dictionary<string, GlobalInitializerDefault>(StringComparer.Ordinal);
         foreach ((string name, GlobalInitializerDefault def) in read.Value.Defaults)
@@ -3177,8 +3195,12 @@ internal sealed class CompilationPipeline
             foreach (GlobalInitializerDefault d in kept.Values)
                 keptSites.Add((SourceBaseName(d.File), d.Line));
 
+            // DXC's wording differs by path: the SPIR-V compiles say "variable 'X' will be placed in
+            // $Globals so initializer ignored", the DXIL (DirectX 12) compile "Initializer of external
+            // global will be ignored". Both are untrue once the default is stored.
             warnings.RemoveAll(w => w.Code == "X0000" &&
-                w.Message.Contains("so initializer ignored", StringComparison.Ordinal) &&
+                (w.Message.Contains("so initializer ignored", StringComparison.Ordinal) ||
+                 w.Message.Contains("Initializer of external global will be ignored", StringComparison.Ordinal)) &&
                 keptSites.Contains((SourceBaseName(w.File), w.Line)));
         }
 

@@ -353,6 +353,125 @@ public sealed class GlobalInitializerReaderTests
         r.Failures.Single().Line.ShouldBe(5);
     }
 
+    // ---- review findings (adversarial review of the first cut) -----------------------------
+
+    [Fact]
+    public void DeepNesting_IsAFailure_NotAStackOverflow()
+    {
+        string parens = "float A = " + new string('(', 400) + "1" + new string(')', 400) + ";";
+        Read(parens).Failures.Single().Reason.ShouldContain("nested too deeply", Case.Sensitive);
+
+        // A long run of prefix operators is applied in a loop, so a moderate one still evaluates...
+        Floats(One("float A = " + new string('-', 1000) + "1;", "A").ElementBlobs[0]).ShouldBe(new[] { 1f });
+        // ...and an absurd one is refused rather than recursing.
+        Read("float A = " + new string('!', 50_000) + "1;").Failures.Count.ShouldBe(1);
+        Read("float A = " + string.Concat(Enumerable.Repeat("(float)", 20_000)) + "1;").Failures.Count.ShouldBe(1);
+    }
+
+    [Fact]
+    public void HugeArray_IsAFailure_NotAnException()
+    {
+        Read("float4 A[1073741824] = {};").Failures.Single().Reason.ShouldContain("array length", Case.Sensitive);
+        Read("static float4 A[1073741824] = {};").Failures.ShouldBeEmpty();   // a static is no uniform
+    }
+
+    [Fact]
+    public void AGlobalAfterAFunctionReturningAnElaboratedStruct_IsStillRead()
+    {
+        const string src = """
+            struct PSOut { float4 c : COLOR0; };
+            struct PSOut Helper(float x) { struct PSOut o; o.c = x; return o; }
+            float After = 7;
+            """;
+        Floats(One(src, "After").ElementBlobs[0]).ShouldBe(new[] { 7f });
+    }
+
+    [Fact]
+    public void Unsigned_Semantics()
+    {
+        Floats(One("float B = 4294967295u;", "B").ElementBlobs[0]).ShouldBe(new[] { 4294967296f });
+        BitConverter.ToUInt32(One("uint C = 4000000000u / 2u;", "C").ElementBlobs[0]).ShouldBe(2_000_000_000u);
+        Ints(One("bool A = 3000000000u > 1u;", "A").ElementBlobs[0]).ShouldBe(new[] { -1 });
+        Floats(One("float D = 0xFFFFFFFF;", "D").ElementBlobs[0]).ShouldBe(new[] { 4294967296f });
+        BitConverter.ToUInt32(One("uint E = 0xFFFFFFFF;", "E").ElementBlobs[0]).ShouldBe(uint.MaxValue);
+        Ints(One("int F = 0x7FFFFFFF;", "F").ElementBlobs[0]).ShouldBe(new[] { int.MaxValue });
+        One("uint G = 1;", "G").Type.ShouldBe((byte)2);
+    }
+
+    [Fact]
+    public void LeadingZeroIntegerIsOctal()
+    {
+        Ints(One("int A = 010;", "A").ElementBlobs[0]).ShouldBe(new[] { 8 });
+        Floats(One("float A = 0.5;", "A").ElementBlobs[0]).ShouldBe(new[] { 0.5f });
+        Read("int A = 09;").Failures.Count.ShouldBe(1);
+    }
+
+    [Fact]
+    public void Ternary_ResultTakesTheCommonType()
+    {
+        Floats(One("float E = (true ? 1 : 2.5) / 2;", "E").ElementBlobs[0]).ShouldBe(new[] { 0.5f });
+        Ints(One("int E = false ? 1 : 2;", "E").ElementBlobs[0]).ShouldBe(new[] { 2 });
+    }
+
+    [Fact]
+    public void Typedefs_ConstAfterTheType_And_UnsignedInt_AreRead()
+    {
+        const string src = """
+            typedef float4 col_t;
+            col_t Tint = float4(1,0,0,1);
+            float const Half = 0.5;
+            unsigned int V = 3;
+            """;
+        GlobalInitializers r = Read(src);
+        r.Failures.ShouldBeEmpty(string.Join("|", r.Failures.Select(f => f.Reason)));
+        Floats(r.Defaults["Tint"].ElementBlobs[0]).ShouldBe(new[] { 1f, 0f, 0f, 1f });
+        Floats(r.Defaults["Half"].ElementBlobs[0]).ShouldBe(new[] { 0.5f });
+        Ints(r.Defaults["V"].ElementBlobs[0]).ShouldBe(new[] { 3 });
+    }
+
+    [Fact]
+    public void AnInitializerOnAnUnmodelledType_IsAFailure_ButSamplerStatesAndStaticsAreNot()
+    {
+        const string src = """
+            double D = 2;
+            Texture2D Tex;
+            SamplerState S = sampler_state { Filter = MIN_MAG_MIP_POINT; };
+            sampler2D Old = sampler_state { Texture = <Tex>; };
+            static Weird W = 1;
+            """;
+        GlobalInitializers r = Read(src);
+        r.Failures.Select(f => f.Name).ShouldBe(new[] { "D" });
+        r.Failures[0].Reason.ShouldContain("'double'", Case.Sensitive);
+    }
+
+    [Fact]
+    public void ColumnsStayRight_OnLongLinesAndAfterBlockComments()
+    {
+        GlobalInitializerDefault d = One("/* a\n b */ float4 Tint = 1;", "Tint");
+        d.Line.ShouldBe(2);
+        d.Column.ShouldBe(14);
+        string longLine = string.Concat(Enumerable.Repeat("float A_ = 1; ", 5000)) + "float Z = 2;";
+        One(longLine, "Z").Column.ShouldBe(14 * 5000 + 7);
+    }
+
+    [Fact]
+    public void Read_ReportsAConditionalOnACompilerPredefinedMacro()
+    {
+        const string src = """
+            #if __HLSL_VERSION >= 2018
+            float A1 = 1;
+            #else
+            float A1 = 2;
+            #endif
+            """;
+        var result = GlobalInitializerReader.Read(src, "t.fx");
+        result.IsSuccess.ShouldBeTrue();
+        result.Value.CompilerPredefinedMacro.ShouldNotBeNull();
+        result.Value.CompilerPredefinedMacro!.ShouldContain("__HLSL_VERSION", Case.Sensitive);
+
+        GlobalInitializerReader.Read("float A = 1;", "t.fx").Value.CompilerPredefinedMacro.ShouldBeNull();
+    }
+
     // ---- through the real preprocessor ----------------------------------------------------
 
     [Fact]

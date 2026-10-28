@@ -46,9 +46,15 @@ public sealed record GlobalInitializerFailure(string Name, string File, int Line
 /// <summary>What <see cref="GlobalInitializerReader.Read"/> found.</summary>
 /// <param name="Defaults">Name -> default, for every initializer that was evaluated (last declaration wins).</param>
 /// <param name="Failures">Every initializer on a possible uniform that could not be evaluated.</param>
+/// <param name="CompilerPredefinedMacro">
+/// The first conditional that tested a macro only the compiler defines (<c>__HLSL_VERSION</c> ...), or
+/// null. The managed preprocessor evaluated it as undefined, so the branch it picked may not be the one
+/// DXC compiled and every default read from it is unverified.
+/// </param>
 public sealed record GlobalInitializers(
     IReadOnlyDictionary<string, GlobalInitializerDefault> Defaults,
-    IReadOnlyList<GlobalInitializerFailure> Failures);
+    IReadOnlyList<GlobalInitializerFailure> Failures,
+    string? CompilerPredefinedMacro = null);
 
 /// <summary>
 /// Reads the initializers of global (and <c>cbuffer</c>) numeric declarations out of an HLSL
@@ -96,7 +102,10 @@ public static class GlobalInitializerReader
         if (view.IsFailure)
             return Result<GlobalInitializers, ShaderError>.Fail(view.Error);
 
-        return Result<GlobalInitializers, ShaderError>.Ok(ReadPreprocessed(view.Value.Text, sourceFile));
+        GlobalInitializers read = ReadPreprocessed(view.Value.Text, sourceFile);
+        if (view.Value.PredefinedMacroUse is { } use)
+            read = read with { CompilerPredefinedMacro = $"{use.Name} ({use.File}, line {use.Line})" };
+        return Result<GlobalInitializers, ShaderError>.Ok(read);
     }
 
     /// <summary>
@@ -127,14 +136,15 @@ public static class GlobalInitializerReader
         int i = 0;
         int n = text.Length;
         bool lineStart = true;
+        int lineStartIndex = 0;
 
         while (i < n)
         {
             char c = text[i];
-            if (c == '\n') { line++; i++; lineStart = true; continue; }
+            if (c == '\n') { line++; i++; lineStart = true; lineStartIndex = i; continue; }
             if (c == '\r' || c == ' ' || c == '\t' || c == '\f' || c == '\v') { i++; continue; }
 
-            int col = ColumnOf(text, i);
+            int col = i - lineStartIndex + 1;
 
             if (c == '#' && lineStart)
             {
@@ -156,7 +166,7 @@ public static class GlobalInitializerReader
                 int close = text.IndexOf("*/", i + 2, StringComparison.Ordinal);
                 int stop = close < 0 ? n : close + 2;
                 for (int j = i; j < stop; j++)
-                    if (text[j] == '\n') line++;
+                    if (text[j] == '\n') { line++; lineStartIndex = j + 1; }
                 i = stop;
                 continue;
             }
@@ -220,13 +230,6 @@ public static class GlobalInitializerReader
         return tokens;
     }
 
-    private static int ColumnOf(string text, int index)
-    {
-        int s = text.LastIndexOf('\n', index > 0 ? index - 1 : 0);
-        if (index == 0) return 1;
-        return index - s;
-    }
-
     // '#line N "file"' / '# N "file"': the NEXT physical line is N, in "file".
     private static void ApplyLineDirective(ReadOnlySpan<char> directive, ref string file, ref int line)
     {
@@ -253,13 +256,13 @@ public static class GlobalInitializerReader
     // Type model
     // =====================================================================================
 
-    private enum Kind { Float, Int, Bool }
+    private enum Kind { Float, Int, UInt, Bool }
 
     private readonly record struct NumType(Kind Kind, int Rows, int Cols, bool IsMatrix, bool IsScalar)
     {
         public int Count => Rows * Cols;
         public byte MgfxClass => IsMatrix ? (byte)2 : IsScalar ? (byte)0 : (byte)1;
-        public byte MgfxType => Kind switch { Kind.Bool => (byte)1, Kind.Int => (byte)2, _ => (byte)3 };
+        public byte MgfxType => Kind switch { Kind.Bool => (byte)1, Kind.Int or Kind.UInt => (byte)2, _ => (byte)3 };
     }
 
     private static bool TryParseBaseKind(string name, out Kind kind)
@@ -268,9 +271,10 @@ public static class GlobalInitializerReader
         {
             case "float": case "half": case "min16float": case "min10float": case "float32_t":
                 kind = Kind.Float; return true;
-            case "int": case "uint": case "dword": case "min16int": case "min12int": case "min16uint":
-            case "int32_t": case "uint32_t":
+            case "int": case "min16int": case "min12int": case "int32_t":
                 kind = Kind.Int; return true;
+            case "uint": case "dword": case "min16uint": case "uint32_t":
+                kind = Kind.UInt; return true;
             case "bool":
                 kind = Kind.Bool; return true;
             default:
@@ -344,6 +348,9 @@ public static class GlobalInitializerReader
             case Kind.Int:
                 if (double.IsNaN(v) || double.IsInfinity(v)) return 0;
                 return unchecked((int)(long)Math.Truncate(Math.Max(-9.3e18, Math.Min(9.3e18, v))));
+            case Kind.UInt:
+                if (double.IsNaN(v) || double.IsInfinity(v)) return 0;
+                return unchecked((uint)(long)Math.Truncate(Math.Max(-9.3e18, Math.Min(9.3e18, v))));
             default:
                 return v != 0 ? 1 : 0;
         }
@@ -361,6 +368,8 @@ public static class GlobalInitializerReader
     // Scanner: declaration-scope statements
     // =====================================================================================
 
+    private const int MaxArrayLength = 4096;
+
     private static readonly HashSet<string> Modifiers = new(StringComparer.Ordinal)
     {
         "uniform", "const", "static", "extern", "shared", "volatile", "precise", "row_major",
@@ -375,6 +384,9 @@ public static class GlobalInitializerReader
 
         // Earlier const scalars/vectors an initializer may reference.
         private readonly Dictionary<string, Val> _consts = new(StringComparer.Ordinal);
+
+        // 'typedef float4 col_t;' names the scanner can resolve to a numeric type.
+        private readonly Dictionary<string, NumType> _aliases = new(StringComparer.Ordinal);
 
         public Dictionary<string, GlobalInitializerDefault> Defaults { get; } = new(StringComparer.Ordinal);
         public List<GlobalInitializerFailure> Failures { get; } = [];
@@ -400,7 +412,7 @@ public static class GlobalInitializerReader
             int start = _p;
 
             // cbuffer / tbuffer NAME [: register(..)] { declarations }
-            if (Cur.Kind == K.Ident && Cur.Text is "cbuffer" or "tbuffer")
+            if (!inBuffer && Cur.Kind == K.Ident && Cur.Text is "cbuffer" or "tbuffer")
             {
                 _p++;
                 while (Cur.Kind != K.Eof && !Is("{") && !Is(";")) _p++;
@@ -416,6 +428,18 @@ public static class GlobalInitializerReader
                     if (Is("}")) _p++;
                     if (Is(";")) _p++;
                 }
+                return;
+            }
+
+            // typedef [const] <numeric type> NAME;  -- remembered so 'NAME x = ...;' is read.
+            if (Cur.Kind == K.Ident && Cur.Text == "typedef")
+            {
+                int t = _p + 1;
+                while (At(t).Kind == K.Ident && Modifiers.Contains(At(t).Text)) t++;
+                if (At(t).Kind == K.Ident && TryParseTypeName(At(t).Text, out NumType aliased) &&
+                    At(t + 1).Kind == K.Ident && At(t + 2).Kind == K.Punct && At(t + 2).Text == ";")
+                    _aliases[At(t + 1).Text] = aliased;
+                SkipStatement();
                 return;
             }
 
@@ -442,7 +466,13 @@ public static class GlobalInitializerReader
             Tk tt = At(q);
             if (tt.Kind == K.Ident)
             {
-                if (TryParseTypeName(tt.Text, out type))
+                if (tt.Text == "unsigned" && At(q + 1).Kind == K.Ident && At(q + 1).Text is "int" or "dword")
+                {
+                    type = new NumType(Kind.UInt, 1, 1, IsMatrix: false, IsScalar: true);
+                    numeric = true;
+                    afterType = q + 2;
+                }
+                else if (TryParseTypeName(tt.Text, out type) || _aliases.TryGetValue(tt.Text, out type))
                 {
                     numeric = true;
                     afterType = q + 1;
@@ -451,6 +481,14 @@ public static class GlobalInitializerReader
                 {
                     if (TryParseTemplateType(q, out type, out int next)) { numeric = true; afterType = next; }
                 }
+            }
+
+            // 'float const A = 1;' -- a qualifier written after the type.
+            while (numeric && At(afterType).Kind == K.Ident && Modifiers.Contains(At(afterType).Text))
+            {
+                if (At(afterType).Text == "const") isConst = true;
+                if (At(afterType).Text == "static") isStatic = true;
+                afterType++;
             }
 
             // A numeric declaration is IDENT [dims] ... ; or IDENT '(' (a function). Decide by
@@ -463,9 +501,33 @@ public static class GlobalInitializerReader
                 return;
             }
 
+            // A declaration with an initializer whose type the evaluator does not know (a typedef it
+            // could not resolve, 'double', a struct) is a possible uniform default it cannot carry:
+            // say so rather than let the parameter silently default to zero.
+            if (!numeric && !isStatic && tt.Kind == K.Ident && At(q + 1).Kind == K.Ident && !IsResourceTypeName(tt.Text))
+            {
+                int j = q + 2;
+                while (At(j).Kind != K.Eof && !(At(j).Kind == K.Punct && At(j).Text is ";" or "{" or "(" or "=")) j++;
+                if (At(j).Kind == K.Punct && At(j).Text == "=" &&
+                    !(At(j + 1).Kind == K.Ident && At(j + 1).Text is "sampler_state" or "compile" or "SamplerState"))
+                {
+                    Tk name = At(q + 1);
+                    Failures.Add(new GlobalInitializerFailure(name.Text, name.File, name.Line, name.Col,
+                        $"the declared type '{tt.Text}' is not one the initializer evaluator models"));
+                }
+            }
+
             // Anything else (struct, function, technique, sampler, texture ...): skip it whole.
             _p = start;
             SkipStatement();
+        }
+
+        private static bool IsResourceTypeName(string name)
+        {
+            string n = name.ToLowerInvariant();
+            return n.StartsWith("sampler", StringComparison.Ordinal) || n.Contains("texture", StringComparison.Ordinal)
+                || n.Contains("buffer", StringComparison.Ordinal) || n is "string" or "struct" or "class" or "technique"
+                or "technique10" or "technique11" or "namespace" or "return" or "typedef";
         }
 
         private bool TryParseTemplateType(int q, out NumType type, out int next)
@@ -508,13 +570,14 @@ public static class GlobalInitializerReader
         {
             int depthParen = 0, depthBracket = 0;
             bool headIsStruct = Cur.Kind == K.Ident && Cur.Text is "struct" or "class" or "typedef";
+            bool sawParen = false;
             while (Cur.Kind != K.Eof)
             {
                 if (Cur.Kind == K.Punct)
                 {
                     switch (Cur.Text)
                     {
-                        case "(": depthParen++; break;
+                        case "(": depthParen++; sawParen = true; break;
                         case ")": depthParen--; break;
                         case "[": depthBracket++; break;
                         case "]": depthBracket--; break;
@@ -529,7 +592,7 @@ public static class GlobalInitializerReader
                                 // 'x = { ... };' and 'struct S { ... };' end at the ';'; a function
                                 // or technique body ends at its '}'.
                                 if (Is(";")) { _p++; return; }
-                                if (!afterEquals && !(headIsStruct && Cur.Kind == K.Ident)) return;
+                                if (!afterEquals && !(headIsStruct && !sawParen && Cur.Kind == K.Ident)) return;
                                 continue;
                             }
                             break;
@@ -577,6 +640,7 @@ public static class GlobalInitializerReader
                             if (dv.Count != 1) throw new EvalException("array length is not a scalar");
                             int len = (int)ConvertKind(dv, Kind.Int).C[0];
                             if (len < 1) throw new EvalException("array length is not positive");
+                            if (len > MaxArrayLength) throw new EvalException($"array length {len} is larger than the {MaxArrayLength} elements the reader models");
                             dims.Add(len);
                         }
                         catch (EvalException e) { dimsOk = false; dimsError = $"array length: {e.Message}"; }
@@ -739,7 +803,7 @@ public static class GlobalInitializerReader
             byte[] word = v.Kind switch
             {
                 Kind.Float => BitConverter.GetBytes((float)v.C[i]),
-                Kind.Int => BitConverter.GetBytes(unchecked((int)(long)v.C[i])),
+                Kind.Int or Kind.UInt => BitConverter.GetBytes(unchecked((int)(long)v.C[i])),
                 _ => BitConverter.GetBytes(v.C[i] != 0 ? -1 : 0),
             };
             if (!BitConverter.IsLittleEndian) Array.Reverse(word);
@@ -754,6 +818,11 @@ public static class GlobalInitializerReader
 
     private sealed class Evaluator
     {
+        // The evaluator is recursive descent over untrusted source and runs on every compile, so
+        // nesting is bounded well below any host's stack (the browser's is the smallest).
+        private const int MaxDepth = 64;
+        private const int MaxPrefixChain = 4096;
+        private int _depth;
         private readonly List<Tk> _t;
         private int _p;
         private readonly int _end;
@@ -808,7 +877,7 @@ public static class GlobalInitializerReader
                     var flat = new List<Val>();
                     foreach (BraceItem it in items) CollectFlat(it, flat);
                     int total = flat.Sum(f => f.Count);
-                    if (total != n * type.Count)
+                    if (total != (long)n * type.Count)
                         throw new EvalException(
                             $"the array initializer supplies {items.Count} item(s) ({total} component(s)) for {n} element(s) of {type.Count} component(s)");
                     return SplitFlat(flat, type, n);
@@ -935,7 +1004,12 @@ public static class GlobalInitializerReader
 
         // ---- expressions ------------------------------------------------------------------
 
-        private Val Expression() => Ternary();
+        private Val Expression()
+        {
+            if (++_depth > MaxDepth) throw new EvalException("the initializer is nested too deeply");
+            try { return Ternary(); }
+            finally { _depth--; }
+        }
 
         private Val Ternary()
         {
@@ -946,7 +1020,12 @@ public static class GlobalInitializerReader
                 Expect(":");
                 Val b = Ternary();
                 if (cond.Count != 1) throw new EvalException("a vector ternary condition is not modelled");
-                return cond.C[0] != 0 ? a : b;
+
+                // Both arms are evaluated (and must be evaluable); the result takes the common type of the two.
+                Kind common = a.Kind == Kind.Float || b.Kind == Kind.Float ? Kind.Float
+                    : a.Kind == Kind.UInt || b.Kind == Kind.UInt ? Kind.UInt
+                    : a.Kind == Kind.Int || b.Kind == Kind.Int ? Kind.Int : Kind.Bool;
+                return ConvertKind(cond.C[0] != 0 ? a : b, common);
             }
             return cond;
         }
@@ -984,17 +1063,16 @@ public static class GlobalInitializerReader
             bool compare = op is "==" or "!=" or "<" or ">" or "<=" or ">=";
             bool intOnly = op is "|" or "^" or "&" or "<<" or ">>" or "%";
 
+            bool asFloat = a.Kind == Kind.Float || b.Kind == Kind.Float;
             Kind resultKind;
             if (logical || compare) resultKind = Kind.Bool;
-            else if (a.Kind == Kind.Float || b.Kind == Kind.Float)
+            else if (asFloat)
             {
                 if (intOnly && op != "%") throw new EvalException($"'{op}' needs integer operands");
                 resultKind = Kind.Float;
             }
-            else resultKind = Kind.Int;
+            else resultKind = a.Kind == Kind.UInt || b.Kind == Kind.UInt ? Kind.UInt : Kind.Int;
 
-            // Operate in float when either side is float, else in integers.
-            bool asFloat = a.Kind == Kind.Float || b.Kind == Kind.Float;
             var c = new double[n];
             for (int i = 0; i < n; i++)
             {
@@ -1011,31 +1089,46 @@ public static class GlobalInitializerReader
                     case ">": r = x > y ? 1 : 0; break;
                     case "<=": r = x <= y ? 1 : 0; break;
                     case ">=": r = x >= y ? 1 : 0; break;
-                    case "+": r = asFloat ? (float)x + (float)y : unchecked((int)x + (int)y); break;
-                    case "-": r = asFloat ? (float)x - (float)y : unchecked((int)x - (int)y); break;
-                    case "*": r = asFloat ? (float)x * (float)y : unchecked((int)x * (int)y); break;
-                    case "/":
-                        if (asFloat) r = (float)x / (float)y;
+                    default:
+                        if (asFloat)
+                        {
+                            float fx = (float)x, fy = (float)y;
+                            r = op switch
+                            {
+                                "+" => fx + fy,
+                                "-" => fx - fy,
+                                "*" => fx * fy,
+                                "/" => fx / fy,
+                                "%" => fx % fy,
+                                _ => throw new EvalException($"operator '{op}' is not modelled"),
+                            };
+                        }
                         else
                         {
-                            if ((int)y == 0) throw new EvalException("integer division by zero");
-                            r = unchecked((int)x / (int)y);
+                            // Integers: values are held as exact doubles (int32 or uint32 range), so long math is exact.
+                            long lx = (long)x, ly = (long)y;
+                            long lr;
+                            switch (op)
+                            {
+                                case "+": lr = lx + ly; break;
+                                case "-": lr = lx - ly; break;
+                                case "*": lr = lx * ly; break;
+                                case "/":
+                                    if (ly == 0) throw new EvalException("integer division by zero");
+                                    lr = lx / ly; break;
+                                case "%":
+                                    if (ly == 0) throw new EvalException("integer modulo by zero");
+                                    lr = lx % ly; break;
+                                case "|": lr = lx | ly; break;
+                                case "^": lr = lx ^ ly; break;
+                                case "&": lr = lx & ly; break;
+                                case "<<": lr = lx << (int)(ly & 31); break;
+                                case ">>": lr = lx >> (int)(ly & 31); break;
+                                default: throw new EvalException($"operator '{op}' is not modelled");
+                            }
+                            r = Norm(resultKind, lr);
                         }
                         break;
-                    case "%":
-                        if (asFloat) r = (float)x % (float)y;
-                        else
-                        {
-                            if ((int)y == 0) throw new EvalException("integer modulo by zero");
-                            r = unchecked((int)x % (int)y);
-                        }
-                        break;
-                    case "|": r = (int)x | (int)y; break;
-                    case "^": r = (int)x ^ (int)y; break;
-                    case "&": r = (int)x & (int)y; break;
-                    case "<<": r = unchecked((int)x << ((int)y & 31)); break;
-                    case ">>": r = unchecked((int)x >> ((int)y & 31)); break;
-                    default: throw new EvalException($"operator '{op}' is not modelled");
                 }
                 c[i] = r;
             }
@@ -1045,38 +1138,62 @@ public static class GlobalInitializerReader
 
         private Val Unary()
         {
-            if (Is("-")) { _p++; return Negate(Unary()); }
-            if (Is("+")) { _p++; return Unary(); }
-            if (Is("!"))
+            // Prefix operators and casts are collected in a loop (never recursed), so a long chain
+            // of them cannot overflow the stack, then applied innermost first.
+            var prefixes = new List<(string Op, NumType Cast)>();
+            while (true)
             {
-                _p++;
-                Val v = Unary();
-                return v with { Kind = Kind.Bool, C = v.C.Select(x => x == 0 ? 1.0 : 0.0).ToArray() };
-            }
-            if (Is("~"))
-            {
-                _p++;
-                Val v = Unary();
-                if (v.Kind == Kind.Float) throw new EvalException("'~' needs an integer operand");
-                return v with { Kind = Kind.Int, C = v.C.Select(x => (double)~(int)x).ToArray() };
+                if (Is("-") || Is("+") || Is("!") || Is("~"))
+                {
+                    prefixes.Add((Cur.Text, default));
+                    _p++;
+                    if (prefixes.Count > MaxPrefixChain) throw new EvalException("too many chained prefix operators");
+                    continue;
+                }
+
+                // '(' type ')' unary   -- a cast
+                if (Is("(") && _p + 2 < _end && _t[_p + 1].Kind == K.Ident &&
+                    TryParseTypeName(_t[_p + 1].Text, out NumType castType) &&
+                    _t[_p + 2].Kind == K.Punct && _t[_p + 2].Text == ")")
+                {
+                    prefixes.Add(("cast", castType));
+                    _p += 3;
+                    if (prefixes.Count > MaxPrefixChain) throw new EvalException("too many chained prefix operators");
+                    continue;
+                }
+                break;
             }
 
-            // '(' type ')' unary   -- a cast
-            if (Is("(") && _p + 2 < _end && _t[_p + 1].Kind == K.Ident &&
-                TryParseTypeName(_t[_p + 1].Text, out NumType castType) &&
-                _t[_p + 2].Kind == K.Punct && _t[_p + 2].Text == ")")
+            Val v = Postfix();
+            for (int i = prefixes.Count - 1; i >= 0; i--)
             {
-                _p += 3;
-                return Coerce(Unary(), castType);
+                (string op, NumType cast) = prefixes[i];
+                switch (op)
+                {
+                    case "-": v = Negate(v); break;
+                    case "+": break;
+                    case "!":
+                        v = v with { Kind = Kind.Bool, C = v.C.Select(x => x == 0 ? 1.0 : 0.0).ToArray() };
+                        break;
+                    case "~":
+                        if (v.Kind == Kind.Float) throw new EvalException("'~' needs an integer operand");
+                        {
+                            Kind k = v.Kind == Kind.UInt ? Kind.UInt : Kind.Int;
+                            v = v with { Kind = k, C = v.C.Select(x => Norm(k, ~(long)x)).ToArray() };
+                        }
+                        break;
+                    default:
+                        v = Coerce(v, cast);
+                        break;
+                }
             }
-
-            return Postfix();
+            return v;
         }
 
         private static Val Negate(Val v)
         {
             Kind k = v.Kind == Kind.Bool ? Kind.Int : v.Kind;
-            return v with { Kind = k, C = v.C.Select(x => k == Kind.Float ? -x : (double)unchecked(-(int)x)).ToArray() };
+            return v with { Kind = k, C = v.C.Select(x => k == Kind.Float ? -x : Norm(k, -x)).ToArray() };
         }
 
         private Val Postfix()
@@ -1096,7 +1213,7 @@ public static class GlobalInitializerReader
                 if (Is("["))
                 {
                     int close = FindClose(_p);
-                    var sub = new Evaluator(_t, _p + 1, close, _consts);
+                    var sub = new Evaluator(_t, _p + 1, close, _consts) { _depth = _depth + 1 };
                     Val idx = sub.EvalAll();
                     _p = close + 1;
                     if (idx.Count != 1) throw new EvalException("an array index is not a scalar");
@@ -1237,17 +1354,22 @@ public static class GlobalInitializerReader
             if (isHex)
             {
                 string digits = s[2..].TrimEnd('u', 'U', 'l', 'L');
-                if (!long.TryParse(digits, NumberStyles.HexNumber, CultureInfo.InvariantCulture, out long hv))
+                if (!long.TryParse(digits, NumberStyles.HexNumber, CultureInfo.InvariantCulture, out long hv) || hv > uint.MaxValue)
                     throw new EvalException($"cannot read the number '{text}'");
-                return Val.Scalar(Kind.Int, unchecked((int)hv));
+                // A hex literal that does not fit an int is a uint.
+                return hv > int.MaxValue || s.EndsWith('u') || s.EndsWith('U')
+                    ? Val.Scalar(Kind.UInt, (uint)hv)
+                    : Val.Scalar(Kind.Int, (int)hv);
             }
 
             bool isFloat = s.Contains('.') || s.Contains('e') || s.Contains('E');
+            bool unsignedSuffix = false;
             string body = s;
             // Strip suffixes.
             while (body.Length > 0 && "fFhHuUlL".IndexOf(body[^1]) >= 0)
             {
                 if (body[^1] is 'f' or 'F' or 'h' or 'H') isFloat = true;
+                if (body[^1] is 'u' or 'U') unsignedSuffix = true;
                 body = body[..^1];
             }
             if (isFloat)
@@ -1256,9 +1378,20 @@ public static class GlobalInitializerReader
                     throw new EvalException($"cannot read the number '{text}'");
                 return Val.Scalar(Kind.Float, (float)d);
             }
-            if (!long.TryParse(body, NumberStyles.None, CultureInfo.InvariantCulture, out long l))
+
+            long l;
+            if (body.Length > 1 && body[0] == '0')
+            {
+                // C rules: a leading zero is octal.
+                try { l = System.Convert.ToInt64(body, 8); }
+                catch (Exception) { throw new EvalException($"cannot read the number '{text}' (not a valid octal literal)"); }
+            }
+            else if (!long.TryParse(body, NumberStyles.None, CultureInfo.InvariantCulture, out l))
                 throw new EvalException($"cannot read the number '{text}'");
-            return Val.Scalar(Kind.Int, unchecked((int)l));
+
+            if (l > uint.MaxValue) throw new EvalException($"the integer literal '{text}' does not fit 32 bits");
+            // A decimal literal that does not fit an int is a uint.
+            return unsignedSuffix || l > int.MaxValue ? Val.Scalar(Kind.UInt, (uint)l) : Val.Scalar(Kind.Int, (int)l);
         }
 
         // ---- math intrinsics --------------------------------------------------------------
@@ -1298,7 +1431,7 @@ public static class GlobalInitializerReader
                 if (a.Count != 1) throw new EvalException($"{name}() takes one argument");
                 Val v = a[0];
                 if (name == "abs" && v.Kind != Kind.Float)
-                    return v with { C = v.C.Select(x => (double)Math.Abs((int)x)).ToArray(), Kind = Kind.Int };
+                    return v with { C = v.C.Select(x => Norm(v.Kind == Kind.UInt ? Kind.UInt : Kind.Int, Math.Abs(x))).ToArray(), Kind = v.Kind == Kind.UInt ? Kind.UInt : Kind.Int };
                 Val fv = ConvertKind(v, Kind.Float);
                 return fv with { C = fv.C.Select(x => (double)f1((float)x)).ToArray() };
             }
@@ -1348,7 +1481,7 @@ public static class GlobalInitializerReader
             else if (b.Count == 1) shape = a;
             else throw new EvalException($"the arguments of {name}() have different shapes");
 
-            Kind k = a.Kind == Kind.Float || b.Kind == Kind.Float ? Kind.Float : Kind.Int;
+            Kind k = a.Kind == Kind.Float || b.Kind == Kind.Float ? Kind.Float : a.Kind == Kind.UInt || b.Kind == Kind.UInt ? Kind.UInt : Kind.Int;
             var c = new double[shape.Count];
             for (int i = 0; i < c.Length; i++)
                 c[i] = Norm(k, f(a.Count == 1 ? a.C[0] : a.C[i], b.Count == 1 ? b.C[0] : b.C[i]));

@@ -112,8 +112,13 @@ public sealed class InitializerDefaultsTests
 
         with.Length.ShouldBe(bare.Length);
         var differing = Enumerable.Range(0, with.Length).Where(i => with[i] != bare[i]).ToList();
-        // Effect key (bytes 6..9) plus the blob's two non-zero bytes (0x80 0x3F; the zeros match).
-        differing.Count(i => i is < 6 or > 9).ShouldBe(2);
+        // Effect key (bytes 6..9) plus the blob's two non-zero bytes (0x80 0x3F; the zeros match),
+        // which sit next to each other: nothing else in the file moved.
+        var outsideKey = differing.Where(i => i is < 6 or > 9).ToList();
+        outsideKey.Count.ShouldBe(2);
+        outsideKey[1].ShouldBe(outsideKey[0] + 1);
+        with[outsideKey[0]].ShouldBe((byte)0x80);
+        with[outsideKey[1]].ShouldBe((byte)0x3F);
     }
 
     // ---- the A..F shapes ------------------------------------------------------------------
@@ -282,13 +287,53 @@ public sealed class InitializerDefaultsTests
         red.Warnings.ShouldNotContain(w => w.Code == "SD0017");
     }
 
-    [Fact]
-    public async Task AShaderWithNoInitializers_CompilesToTheSameBytesAsBefore()
+    [Theory]
+    [InlineData(PlatformTarget.OpenGL)]
+    [InlineData(PlatformTarget.DirectX12)]
+    public async Task DxcsInitializerIgnoredWarning_IsGone_OnEveryDxcPath(PlatformTarget target)
     {
-        // F_NoInit has no initializer: no warnings added, blob zeros (identity with the old writer
-        // is also enforced by the byte-identity manifests).
+        // The SPIR-V compiles word it "will be placed in $Globals so initializer ignored"; the DXIL
+        // (DirectX 12) one "Initializer of external global will be ignored". Both are untrue once
+        // the default is stored.
+        foreach (string fixture in new[] { "A_Tint.fx", "E_Array.fx" })
+        {
+            CompiledShader compiled = await CompileAsync(fixture, target);
+            compiled.Warnings.ShouldNotContain(
+                w => w.Message.Contains("ignored", StringComparison.Ordinal) && w.Message.Contains("nitializer", StringComparison.Ordinal),
+                $"{fixture} {target}");
+        }
+    }
+
+    [Fact]
+    public async Task AShaderWithNoInitializers_AddsNothing()
+    {
+        // F_NoInit has no initializer: no warnings added, blob zeros. (That its bytes are
+        // unchanged is enforced by the byte-identity manifests, which cover fixtures without
+        // initializers.)
         CompiledShader compiled = await CompileAsync("F_NoInit.fx", PlatformTarget.OpenGL);
         compiled.Warnings.ShouldNotContain(w => w.Code == "SD0017");
+        Param(compiled, "Tint").DefaultValue.ShouldBe(new byte[16]);
+    }
+
+    [Fact]
+    public async Task AConditionalOnACompilerPredefinedMacro_IsAnSd0017Warning()
+    {
+        const string src = """
+            #define PS ps_3_0
+            #if __HLSL_VERSION >= 2018
+            float R = 1;
+            #else
+            float R = 2;
+            #endif
+            float4 main() : COLOR0 { return float4(R, 0, 0, 1); }
+            technique T { pass P { PixelShader = compile PS main(); } }
+            """;
+        var result = await new EffectCompiler().CompileAsync(
+            src, new CompilerOptions { Target = PlatformTarget.OpenGL, SourceFileName = "Predefined.fx" });
+        result.IsSuccess.ShouldBeTrue(result.IsFailure ? result.Error[0].Message : "");
+
+        ShaderError warning = result.Value.Warnings.Single(w => w.Code == "SD0017");
+        warning.Message.ShouldContain("__HLSL_VERSION", Case.Sensitive);
     }
 
     [Fact]
