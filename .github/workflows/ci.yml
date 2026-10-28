@@ -98,7 +98,28 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v6
 
+      # actions/setup-dotnet always downloads and unzips the latest 8.0.x and 10.0.x SDKs, even
+      # when the image has them one patch behind: 62 s on windows-latest and 31 s on macos-latest
+      # (measured on run 40748137079), while the image's own SDKs build and test the same code.
+      # So install only when the image lacks an SDK or a runtime of either major. The runtimes are
+      # checked too because the unit gate runs both TFMs. The versions found go in the log.
+      - name: Check preinstalled .NET 8 + .NET 10
+        id: dotnet
+        shell: bash
+        run: |
+          sdks=$(dotnet --list-sdks 2>/dev/null || true)
+          runtimes=$(dotnet --list-runtimes 2>/dev/null || true)
+          echo "SDKs:"; echo "$sdks"; echo "Runtimes:"; echo "$runtimes"
+          install=false
+          for major in 8 10; do
+            echo "$sdks" | grep -q "^$major\." || install=true
+            echo "$runtimes" | grep -q "^Microsoft.NETCore.App $major\." || install=true
+          done
+          echo "install=$install" >> "$GITHUB_OUTPUT"
+          echo "setup-dotnet needed: $install"
+
       - name: Setup .NET 8 + .NET 10
+        if: steps.dotnet.outputs.install == 'true'
         uses: actions/setup-dotnet@v5
         with:
           dotnet-version: |
