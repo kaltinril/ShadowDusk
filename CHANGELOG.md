@@ -14,6 +14,15 @@ that loads and renders identically to `mgfxc`'s in the real MonoGame/KNI runtime
 
 ### Added
 
+- **A global initializer is now the parameter's default value in every MGFX and KNIFX output** (OpenGL, DirectX 11, DirectX 12,
+  Vulkan, `.knifx`). `float R = 1;` is 1 in the real engine before any `Set` call; ShadowDusk used to write zeros everywhere. This
+  deliberately deviates from `mgfxc`, whose OpenGL build stores zeros and whose DirectX 11 build drops array elements and half of a
+  `float2x2`. Scalars, vectors, matrices, `int`, `bool` and arrays (each element its own blob) are evaluated from the source
+  (macros, `#if`, `-D` defines, `const` references, constructors and simple folding included). An initializer ShadowDusk cannot
+  evaluate is the new warning `SD0017` and a zero default, never silent. Only the default blob bytes change; MGFX stays v10 where it
+  was. DXC's now-untrue `initializer ignored` warning is dropped for every default that was preserved. Proven in real MonoGame
+  DesktopGL, WindowsDX, WindowsDX12 and DesktopVK and real KNI SDL2.GL and WinForms.DX11 (MGFX and KNIFX) by the new
+  `validation/InitializerDefaults*` drivers, each with a no-initializer control. The raylib and SkSL routes and the FNA `.fxb` are unchanged.
 - `tests/ShadowDusk.TestPng`: a small, dependency-free PNG encoder/decoder for the test and
   validation tooling, with its own unit suite (`tests/ShadowDusk.TestPng.Tests`). Not shipped:
   no `ShadowDusk.*` package references it.

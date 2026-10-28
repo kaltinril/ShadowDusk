@@ -1,0 +1,39 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- Rung-4 initializer-default proof on real KNI WinForms.DX11 (nkast 4.2.9001), for BOTH containers:
+       MGFX v10 and KNIFX v11. Windows only; not in ShadowDusk.slnx (see KniWinFormsDX). -->
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net8.0-windows</TargetFramework>
+    <RollForward>Major</RollForward>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <IsPackable>false</IsPackable>
+    <TreatWarningsAsErrors>false</TreatWarningsAsErrors>
+    <UseWindowsForms>true</UseWindowsForms>
+    <RootNamespace>ShadowDusk.Validation.InitializerDefaults.KniDx</RootNamespace>
+    <DefineConstants>$(DefineConstants);WINDOWSDX</DefineConstants>
+    <KniPlatform>WindowsDX</KniPlatform>
+    <ManagePackageVersionsCentrally>false</ManagePackageVersionsCentrally>
+  </PropertyGroup>
+
+  <ItemGroup Label="KNI (nkast) - WinForms DX11 desktop runtime, v4.2.9001">
+    <PackageReference Include="nkast.Xna.Framework" Version="4.2.9001.*" />
+    <PackageReference Include="nkast.Xna.Framework.Content" Version="4.2.9001.*" />
+    <PackageReference Include="nkast.Xna.Framework.Graphics" Version="4.2.9001.*" />
+    <PackageReference Include="nkast.Xna.Framework.Audio" Version="4.2.9001.*" />
+    <PackageReference Include="nkast.Xna.Framework.Media" Version="4.2.9001.*" />
+    <PackageReference Include="nkast.Xna.Framework.Input" Version="4.2.9001.*" />
+    <PackageReference Include="nkast.Xna.Framework.Game" Version="4.2.9001.*" />
+    <PackageReference Include="nkast.Kni.Platform.WinForms.DX11" Version="4.2.9001.*" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\ShadowDusk.Compiler\ShadowDusk.Compiler.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Compile Include="..\SharedInitializerDefaults\*.cs" />
+  </ItemGroup>
+
+</Project>

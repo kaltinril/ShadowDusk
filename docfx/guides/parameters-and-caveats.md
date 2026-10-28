@@ -13,7 +13,7 @@ This bites people, so it's first:
 
 Always set the target explicitly. The CLI default matches `mgfxc` (`DirectX_11`); the library default favors the cross-platform OpenGL path.
 
-## Global parameter initializers are not baked in
+## Global parameter initializers become the parameter's default
 
 A global with an initializer, e.g.:
 
@@ -21,12 +21,11 @@ A global with an initializer, e.g.:
 float FishEyeAmount = 0.35;
 ```
 
-…does **not** carry `0.35` into the `.mgfx`. DXC (unlike `fxc`/`mgfxc`) drops global cbuffer initializers, so the stored default is `0`. The effect renders as identity until you either:
+…carries `0.35` into the `.mgfx` (and `.knifx`) as the parameter's default value, on every target. The effect has that value the moment you load it, before any `SetValue`. DXC drops the initializer, so ShadowDusk reads it from your source (after macros, `#if` and any defines are applied) and writes it into the file itself.
 
-- `SetValue` the parameter from code after loading the `Effect`, or
-- inline the value as a literal in the shader instead of a named global.
+This is deliberately **better than `mgfxc`**, not the same: `mgfxc`'s OpenGL build stores zero for every initializer, and its DirectX 11 build loses array elements and half of a `float2x2`. ShadowDusk keeps scalars, vectors, matrices, `int`, `bool` and every element of an array.
 
-This is a known fidelity gap versus `mgfxc` for the *initializer* specifically (it did not affect the validated SM3 corpus). Setting parameters by name at runtime is the recommended pattern regardless.
+ShadowDusk evaluates literals, arithmetic, casts, constructors such as `float4(1, 0, 0, 1)`, brace lists, arrays, earlier `const` values and a few math functions. If an initializer is something else (a call to your own function, say), the compile still succeeds and warns with `SD0017` naming the variable; its default is then zero until you `SetValue` it. Setting parameters by name at runtime always works.
 
 ## Advanced texture intrinsics compile on Windows only (for now)
 

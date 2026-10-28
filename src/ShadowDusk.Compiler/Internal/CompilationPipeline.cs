@@ -1155,7 +1155,13 @@ internal sealed class CompilationPipeline
             constantBufferInfoList = BuildConstantBufferInfoList(allConstantBuffers, allParameters, directX);
         }
 
-        IReadOnlyList<EffectParameterInfo> effectParameterInfoList = BuildEffectParameterInfoList(allParameters);
+        // Global initializer defaults (`float R = 1;`): DXC and vkd3d drop the initializer, so it is
+        // read off the preprocessed source and carried to the writers (deliberate deviation from
+        // mgfxc, project_decisions.md). Every MGFX and KNIFX output gets them.
+        IReadOnlyDictionary<string, GlobalInitializerDefault> parameterDefaults =
+            ResolveParameterDefaults(preprocessed.Text, sourceFileName, allParameters, runWarnings);
+        IReadOnlyList<EffectParameterInfo> effectParameterInfoList =
+            BuildEffectParameterInfoList(allParameters, parameterDefaults, runWarnings);
 
         // Phase 43, F9: bake parsed sampler_state members (MinFilter/AddressU/…)
         // into per-sampler MGFX states, keyed by the .fx sampler name — the
@@ -3056,7 +3062,9 @@ internal sealed class CompilationPipeline
     }
 
     private static IReadOnlyList<EffectParameterInfo> BuildEffectParameterInfoList(
-        IReadOnlyList<ParameterReflection> parameters)
+        IReadOnlyList<ParameterReflection> parameters,
+        IReadOnlyDictionary<string, GlobalInitializerDefault> defaults,
+        List<ShaderError> warnings)
     {
         var result = new List<EffectParameterInfo>(parameters.Count);
 
@@ -3066,6 +3074,17 @@ internal sealed class CompilationPipeline
                 .Select(MapAnnotation)
                 .ToList() ?? new List<AnnotationInfo>();
 
+            GlobalInitializerDefault? def = null;
+            if (defaults.TryGetValue(param.Name, out GlobalInitializerDefault? candidate))
+            {
+                string? mismatch = DefaultShapeMismatch(param, candidate);
+                if (mismatch is null)
+                    def = candidate;
+                else
+                    warnings.Add(DefaultNotPreserved(candidate.File, candidate.Line, candidate.Column, param.Name, mismatch));
+            }
+
+            IReadOnlyList<EffectParameterInfo> elements = BuildElementParameters(param, def);
             result.Add(new EffectParameterInfo(
                 Class: (byte)param.Class,
                 Type: (byte)param.Type,
@@ -3075,10 +3094,101 @@ internal sealed class CompilationPipeline
                 RowCount: (byte)param.Rows,
                 ColumnCount: (byte)param.Columns,
                 Members: Array.Empty<EffectParameterInfo>(),
-                Elements: BuildElementParameters(param)));
+                Elements: elements,
+                // An array parent carries no blob (each element leaf does); a plain leaf carries its own.
+                DefaultValue: elements.Count == 0 && def is not null ? def.ElementBlobs[0] : null));
         }
 
         return result;
+    }
+
+    /// <summary>
+    /// Why the default read off the source cannot be attached to the reflected parameter, or null
+    /// when the shapes agree (the declared type, and the array length, are what reflection reports).
+    /// </summary>
+    private static string? DefaultShapeMismatch(ParameterReflection param, GlobalInitializerDefault def)
+    {
+        int declaredElements = Math.Max(1, def.ArrayLength);
+
+        // SPIR-V has no bool in a uniform block (Vulkan reflection reports a `bool` as Int32); the
+        // blob is the same 32-bit word either way.
+        bool typeAgrees = (byte)param.Type == def.Type
+            || (def.Type == 1 && param.Type == EffectParameterType.Int32);
+
+        if ((byte)param.Class != def.Class || !typeAgrees ||
+            param.Rows != def.Rows || param.Columns != def.Columns || Math.Max(1, param.Elements) != declaredElements)
+        {
+            return $"the declaration reads as class {def.Class} type {def.Type} {def.Rows}x{def.Columns} " +
+                   $"x{declaredElements}, but the compiled parameter is class {(int)param.Class} type " +
+                   $"{(int)param.Type} {param.Rows}x{param.Columns} x{param.Elements}";
+        }
+        return null;
+    }
+
+    private static ShaderError DefaultNotPreserved(string file, int line, int column, string name, string reason) =>
+        new(File: file,
+            Line: line,
+            Column: column,
+            Code: "SD0017",
+            Message: $"the initializer of '{name}' was not preserved as its default value, so the effect ships " +
+                     $"a default of zero: {reason}. Set the parameter by name at runtime, or simplify the initializer.",
+            Severity: ShaderErrorSeverity.Warning);
+
+    /// <summary>
+    /// Reads the global initializers of the compiled source (<c>float R = 1;</c>) and returns the
+    /// defaults for the parameters that exist in <paramref name="parameters"/>. An initializer that
+    /// cannot be evaluated is a registered <c>SD0017</c> warning on the compile, never a silent zero.
+    /// DXC's own "initializer ignored" warning for a declaration whose default IS preserved is
+    /// dropped, since it would now be untrue.
+    /// </summary>
+    private static IReadOnlyDictionary<string, GlobalInitializerDefault> ResolveParameterDefaults(
+        string preprocessedText,
+        string sourceFileName,
+        IReadOnlyList<ParameterReflection> parameters,
+        List<ShaderError> warnings)
+    {
+        var parameterNames = new HashSet<string>(StringComparer.Ordinal);
+        foreach (ParameterReflection p in parameters)
+            parameterNames.Add(p.Name);
+
+        Result<GlobalInitializers, ShaderError> read =
+            GlobalInitializerReader.Read(preprocessedText, sourceFileName);
+        if (read.IsFailure)
+        {
+            // The compile itself already succeeded, so the view is ours to build and we could not:
+            // say so rather than ship unexplained zeros.
+            warnings.Add(DefaultNotPreserved(read.Error.File, read.Error.Line, 0, "<any global>",
+                "the preprocessed view needed to read initializers could not be built: " + read.Error.Message));
+            return new Dictionary<string, GlobalInitializerDefault>();
+        }
+
+        var kept = new Dictionary<string, GlobalInitializerDefault>(StringComparer.Ordinal);
+        foreach ((string name, GlobalInitializerDefault def) in read.Value.Defaults)
+            if (parameterNames.Contains(name))
+                kept[name] = def;
+
+        foreach (GlobalInitializerFailure f in read.Value.Failures)
+            if (parameterNames.Contains(f.Name))
+                warnings.Add(DefaultNotPreserved(f.File, f.Line, f.Column, f.Name, f.Reason));
+
+        if (kept.Count > 0)
+        {
+            var keptSites = new HashSet<(string File, int Line)>();
+            foreach (GlobalInitializerDefault d in kept.Values)
+                keptSites.Add((SourceBaseName(d.File), d.Line));
+
+            warnings.RemoveAll(w => w.Code == "X0000" &&
+                w.Message.Contains("so initializer ignored", StringComparison.Ordinal) &&
+                keptSites.Contains((SourceBaseName(w.File), w.Line)));
+        }
+
+        return kept;
+    }
+
+    private static string SourceBaseName(string path)
+    {
+        int cut = Math.Max(path.LastIndexOf('/'), path.LastIndexOf('\\'));
+        return cut < 0 ? path : path[(cut + 1)..];
     }
 
     /// <summary>
@@ -3089,9 +3199,10 @@ internal sealed class CompilationPipeline
     /// empty, an array parameter was un-settable beyond element 0 even on DirectX.
     /// Shape mirrors mgfxc (<c>ConstantBufferData.GetParameterFromSymbol</c>): each
     /// element carries an EMPTY name/semantic, the parent's class/type/rows/columns,
-    /// no annotations, and a zero default-value blob (written by the leaf data rule).
+    /// no annotations, and its own default-value blob (the initializer's element, or zeros).
     /// </summary>
-    private static IReadOnlyList<EffectParameterInfo> BuildElementParameters(ParameterReflection param)
+    private static IReadOnlyList<EffectParameterInfo> BuildElementParameters(
+        ParameterReflection param, GlobalInitializerDefault? def)
     {
         if (param.Elements <= 1)
             return Array.Empty<EffectParameterInfo>();
@@ -3108,7 +3219,8 @@ internal sealed class CompilationPipeline
                 RowCount: (byte)param.Rows,
                 ColumnCount: (byte)param.Columns,
                 Members: Array.Empty<EffectParameterInfo>(),
-                Elements: Array.Empty<EffectParameterInfo>()));
+                Elements: Array.Empty<EffectParameterInfo>(),
+                DefaultValue: def is not null ? def.ElementBlobs[i] : null));
         }
         return elements;
     }
