@@ -495,6 +495,8 @@ jobs:
       # bound either way) and, measured on 4 pinned cores, cut the slowest test from 95 s to 34 s
       # and the longest no-progress gap to 16 s. Do not raise it without re-measuring the gaps
       # (project_rules.md, "Integration lane load").
+      # One TFM only: the integration tests drive native compilers and compare committed
+      # manifests, so a second TFM repeats the same native work. The unit gate above still runs both.
       - name: dotnet test (integration)
         timeout-minutes: 14
         env:
@@ -507,6 +509,7 @@ jobs:
           SHADOWDUSK_BYTE_IDENTITY_DUMP: ${{ github.workspace }}/TestResults/dxc-identity
         run: >
           dotnet test ShadowDusk.slnx --no-build -c Release -m:2
+          --framework net10.0
           --filter "Category=Integration"
           --settings ShadowDusk.runsettings
           --blame-hang-timeout 3m --blame-hang-dump-type full
