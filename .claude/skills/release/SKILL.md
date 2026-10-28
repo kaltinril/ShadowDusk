@@ -62,7 +62,7 @@ history, not just SemVer's letter):
      the evidence CI structurally cannot produce.
 3. **Branch.** `git checkout -b version/<version>` (main is already current from step 1).
 4. **Bump version.** Edit `Directory.Build.props` `<Version>` only — the single source of
-   truth. Do **NOT** touch the six `src/ShadowDusk.*/*.csproj` files; they no longer carry a
+   truth. Do **NOT** touch the ten `src/ShadowDusk.*/*.csproj` files; they no longer carry a
    version (the `<Version>` flows to all of them). Do **NOT** touch the
    `<PackageVersion Include=… />` items in `Directory.Packages.props` — those are unrelated
    Central Package Management dependency pins.

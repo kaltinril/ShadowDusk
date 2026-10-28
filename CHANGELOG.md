@@ -14,6 +14,14 @@ that loads and renders identically to `mgfxc`'s in the real MonoGame/KNI runtime
 
 ### Added
 
+### Changed
+
+### Fixed
+
+## [0.22.0] - 2026-10-28
+
+### Added
+
 - **A global initializer is now the parameter's default value in every MGFX and KNIFX output** (OpenGL, DirectX 11, DirectX 12,
   Vulkan, `.knifx`). `float R = 1;` is 1 in the real engine before any `Set` call; ShadowDusk used to write zeros everywhere. This
   deliberately deviates from `mgfxc`, whose OpenGL build stores zeros and whose DirectX 11 build drops array elements and half of a
@@ -37,6 +45,10 @@ that loads and renders identically to `mgfxc`'s in the real MonoGame/KNI runtime
 
 ### Changed
 
+- **Behavior change: an effect with global initializers now starts at those defaults instead of zero.**
+  `float Scale = 2.0;` is 2 before any `Set` call in every MGFX and KNIFX output (and FNA matrix and array defaults now match
+  `fxc`). A shader that relied on the old zero (an unset parameter reading 0) renders differently. Set the parameter
+  explicitly, or remove the initializer, to get zero. Details in the Added and Fixed entries below.
 - **Removed `SixLabors.ImageSharp`** from the repository (it was only ever a test-tooling
   dependency, never part of a shipped package, so consumers are unaffected). Five security
   advisories were published against it on 2026-10-07, and every release that fixes them
@@ -66,6 +78,12 @@ that loads and renders identically to `mgfxc`'s in the real MonoGame/KNI runtime
   header now selects `highp` under `#ifdef GL_FRAGMENT_PRECISION_HIGH` and keeps `mediump` as the
   GLES2 fallback. Desktop GL ignores the block, and KNI's WebGL2 converter already promoted it to
   `highp`, so neither changes behavior.
+
+### Known issues
+
+- FNA renders a non-symmetric matrix default transposed (`float2x2 M = float2x2(1,2,3,4);`); real `fxc`'s own `.fxb` does the same, and ShadowDusk matches it. Tracked in #421.
+- Vulkan reflects non-square matrix defaults transposed, so a non-square matrix initializer gets `SD0017` and a zero default. Tracked in #423.
+- Vulkan reflects a `bool = true` default as `Int32` with value `-1`, and a `uint` default above 2^31 reads negative on every target (`ParameterReflection.DefaultValue`). Tracked in #427.
 
 ## [0.21.0] - 2026-10-05
 
@@ -3577,7 +3595,8 @@ WASM-capable build — the same pipeline on every host, with no substitute compi
 - **The MGCB content-processor plugin** is a scaffold; the PATH-based `mgfxc` override is the
   shipping MGCB integration path.
 
-[Unreleased]: https://github.com/kaltinril/ShadowDusk/compare/v0.21.0...HEAD
+[Unreleased]: https://github.com/kaltinril/ShadowDusk/compare/v0.22.0...HEAD
+[0.22.0]: https://github.com/kaltinril/ShadowDusk/compare/v0.21.0...v0.22.0
 [0.21.0]: https://github.com/kaltinril/ShadowDusk/compare/v0.20.0...v0.21.0
 [0.20.0]: https://github.com/kaltinril/ShadowDusk/compare/v0.19.0...v0.20.0
 [0.19.0]: https://github.com/kaltinril/ShadowDusk/compare/v0.18.0...v0.19.0
