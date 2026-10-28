@@ -216,6 +216,57 @@ public sealed class Fx2EffectBuilderTests
         result.Value.Parameters.ShouldHaveSingleItem().DefaultValue.ShouldBe(vsDefault, customMessage: "an already-present default must not be overwritten by a later stage");
     }
 
+    [Fact]
+    public void Build_MatrixDefault_IsEmittedAsTheDenseRowMajorBlobFxcWrites()
+    {
+        // float2x2 M = {1,2,3,4}: the CTAB holds the column-major register image.
+        var result = Build(
+            ctabs:
+            [
+                PsCtab(Constant("M", @class: 3, rows: 2, columns: 2, registerCount: 2,
+                                defaultValue: [1f, 3f, 0f, 0f, 2f, 4f, 0f, 0f])),
+            ]);
+
+        result.IsSuccess.ShouldBeTrue(result.IsFailure ? result.Error.Message : "matrix default");
+        Fx2Parameter m = result.Value.Parameters.ShouldHaveSingleItem();
+        m.DefaultValue.ShouldBe(new[] { 1f, 2f, 3f, 4f },
+            customMessage: "the effect value blob is the logical row-major matrix, not the CTAB register image");
+    }
+
+    [Fact]
+    public void Build_ArrayDefault_IsEmittedOneElementAfterAnother()
+    {
+        var result = Build(
+            ctabs:
+            [
+                PsCtab(Constant("Colors", elements: 2, registerCount: 2,
+                                defaultValue: [1f, 0f, 0f, 1f, 0f, 1f, 0f, 1f])),
+            ]);
+
+        result.IsSuccess.ShouldBeTrue(result.IsFailure ? result.Error.Message : "array default");
+        Fx2Parameter colors = result.Value.Parameters.ShouldHaveSingleItem();
+        colors.Elements.ShouldBe(2);
+        colors.DefaultValue.ShouldBe(new[] { 1f, 0f, 0f, 1f, 0f, 1f, 0f, 1f });
+    }
+
+    [Fact]
+    public void Build_DefaultValue_StageWithTheLongerImageWins()
+    {
+        // Each stage's CTAB trims the default image to the registers THAT stage reads, so
+        // a vertex shader reading only Colors[0] must not hide the pixel shader's full array.
+        var result = Build(
+            ctabs:
+            [
+                VsCtab(Constant("Colors", elements: 2, registerCount: 1, defaultValue: [1f, 0f, 0f, 1f])),
+                PsCtab(Constant("Colors", elements: 2, registerCount: 2,
+                                defaultValue: [1f, 0f, 0f, 1f, 0f, 1f, 0f, 1f])),
+            ]);
+
+        result.IsSuccess.ShouldBeTrue(result.IsFailure ? result.Error.Message : "shapes agree");
+        result.Value.Parameters.ShouldHaveSingleItem().DefaultValue
+            .ShouldBe(new[] { 1f, 0f, 0f, 1f, 0f, 1f, 0f, 1f });
+    }
+
     // ---------------------------------------------------------------------------
     // 3. CTAB Elements normalization: CTAB writes 1 for non-arrays; on disk in
     //    fx_2_0, 0 means "not an array" (0 and 1 are distinct).
