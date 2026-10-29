@@ -1,6 +1,6 @@
 # Test Shader Corpus — Provenance & Fresh Examples
 
-**Last updated:** 2026-10-05 — documented the two smaller `.slang` sets, `slang-sksl/` (7 twins, issue #253) and `slang-adversarial/` (4 generics fixtures), in §5. Previously 2026-10-04 — documented the six vendored `third-party/XnaFiddle/` shaders (added 2026-10-03 by issue #368, the SkSL converter's `COLOR0` fixtures; see §4) and the two cross-host byte-identity fixtures `Sm3SemanticStructs.fx` (issue #295) and `ImplicitTruncationWarning.fx` (issue #335), both added 2026-10-02 (see §3), and recounted the corpus. Previously 2026-10-02 — issues #339/#340 added `DirectX_11` goldens (`mgfxc` 3.8.4.1, the pinned oracle) for the two texture-array fixtures and the expect-diagnostic `SamplerArray2.fx` (no golden on any profile) to the `texture-arrays/` set; earlier the same day issue #324 added that set (`TextureArray2.fx`, `TextureArray4NoRegister.fx`, `DirectX_12` **and** `Vulkan` goldens from `mgfxc` 3.8.5; see §3). Earlier the same day issues #308 and #309 added `SamplerLegacyInclude.fx` (+ `SamplerLegacyInclude.fxh`), `SamplerLegacyMacroDecl.fx` and `SamplerReservationKeywords.fx` (the sampler-register set below, `OpenGL` **and** `DirectX_11` goldens), and the nine vendored MonoGame `Include.fxh` effects now compile for OpenGL. Earlier the same day issue #299 added `SamplerLegacyRegisterIfBranch.fx` and `SamplerLegacyRegisterMacro.fx`, and issue #283 added `SamplerReservationIfBranch.fx` and `SamplerReservationMacro.fx` (the sampler-register set below), all four with `OpenGL` **and** `DirectX_11` goldens. Previously 2026-09-10 — vkd3d 2.1 (Phase 56) reclassified `Reflection.fx` and the Apos.Shapes revisions as FNA-compiling; the `E5017` loop/ternary gaps they sat behind were compiler gaps, not shader-model limits. Previously 2026-09-09: added the Slang input corpus: 17 `.slang` fixtures under
+**Last updated:** 2026-10-28 — added the root fixture `HalfGlobals.fx` (XNA-era `half` globals, `DirectX_11` golden from `mgfxc` 3.8.4.1; see §3) and recounted the corpus. Previously 2026-10-05 — documented the two smaller `.slang` sets, `slang-sksl/` (7 twins, issue #253) and `slang-adversarial/` (4 generics fixtures), in §5. Previously 2026-10-04 — documented the six vendored `third-party/XnaFiddle/` shaders (added 2026-10-03 by issue #368, the SkSL converter's `COLOR0` fixtures; see §4) and the two cross-host byte-identity fixtures `Sm3SemanticStructs.fx` (issue #295) and `ImplicitTruncationWarning.fx` (issue #335), both added 2026-10-02 (see §3), and recounted the corpus. Previously 2026-10-02 — issues #339/#340 added `DirectX_11` goldens (`mgfxc` 3.8.4.1, the pinned oracle) for the two texture-array fixtures and the expect-diagnostic `SamplerArray2.fx` (no golden on any profile) to the `texture-arrays/` set; earlier the same day issue #324 added that set (`TextureArray2.fx`, `TextureArray4NoRegister.fx`, `DirectX_12` **and** `Vulkan` goldens from `mgfxc` 3.8.5; see §3). Earlier the same day issues #308 and #309 added `SamplerLegacyInclude.fx` (+ `SamplerLegacyInclude.fxh`), `SamplerLegacyMacroDecl.fx` and `SamplerReservationKeywords.fx` (the sampler-register set below, `OpenGL` **and** `DirectX_11` goldens), and the nine vendored MonoGame `Include.fxh` effects now compile for OpenGL. Earlier the same day issue #299 added `SamplerLegacyRegisterIfBranch.fx` and `SamplerLegacyRegisterMacro.fx`, and issue #283 added `SamplerReservationIfBranch.fx` and `SamplerReservationMacro.fx` (the sampler-register set below), all four with `OpenGL` **and** `DirectX_11` goldens. Previously 2026-09-10 — vkd3d 2.1 (Phase 56) reclassified `Reflection.fx` and the Apos.Shapes revisions as FNA-compiling; the `E5017` loop/ternary gaps they sat behind were compiler gaps, not shader-model limits. Previously 2026-09-09: added the Slang input corpus: 17 `.slang` fixtures under
 `slang/`, cross-validated against the real `slangc` compiler (see `docs/validation-matrix.md`
 §8.0 and `validation/SlangCorpus`). Previously 2026-08-02: the issue-#189 fix added
 `SamplerRegisterOrder.fx` and `SamplerRegisterSparse.fx` (the sampler-register set below), both
@@ -9,7 +9,7 @@ four `ExPhantom*` fixtures (the phantom-parameter set below). Previously 2026-07
 A10 added three DirectX-profile-floor fixtures and **reclassified the vendored Nez set**, whose
 DirectX column collapsed once ShadowDusk started enforcing mgfxc's own floor (see the note
 above that table).
-Corpus on disk (counted 2026-10-05): **174 `.fx` + 8 `.fxh`** — 74 in the fixture root, 50 in
+Corpus on disk (counted 2026-10-28): **175 `.fx` + 8 `.fxh`** — 75 in the fixture root, 50 in
 `examples/`, 1 in `shadertoy/`, 44 under `third-party/` (15 Nez, 3 Apos.Shapes, 3 Gum, 17 MonoGame,
 6 XnaFiddle), 2 under `raylib/`, 3 under
 `texture-arrays/` — plus **28 `.slang`**: 17 under `slang/`, 7 under `slang-sksl/` and 4 under `slang-adversarial/` (separate input corpora, not `.fx`; see §5).
@@ -322,9 +322,9 @@ ShadowDusk's matching `SD0015` rejection, one per way the condition arises:
   refused. It exists so that reimplementing the floor as a `major >= 4` comparison is caught by
   a test rather than by a consumer's failed Content Pipeline build.
 
-### Cross-host byte-identity fixtures (issues #295, #335)
+### Cross-host byte-identity fixtures (issues #295, #335, `half` globals)
 
-Two project-owned root fixtures, each the one corpus shape a cross-host gate could not see before.
+Three project-owned root fixtures, each a corpus shape a cross-host gate could not see before.
 They feed the byte-identity manifests under `tests/fixtures/golden/byte-identity/`
 (`CrossHostByteIdentityTests`) and the browser vkd3d gates:
 
@@ -332,8 +332,8 @@ They feed the byte-identity manifests under `tests/fixtures/golden/byte-identity
   semantic on a **struct field** (`POSITION0` on the VS output and PS input, `COLOR0` on the PS
   output struct), compiled for an SM4+ target. `fxc` maps these to `SV_Position`/`SV_Target`;
   vkd3d-shader does so only with the backward-compatibility `MAP_SEMANTIC_NAMES` compile option, and
-  `FxPreParser` cannot rewrite a struct field. It is the only corpus fixture whose DXBC changes with
-  that option on or off, so a host passing a different option set (the browser vkd3d module, before
+  `FxPreParser` cannot rewrite a struct field. With `HalfGlobals.fx` it is one of the two corpus
+  fixtures whose DXBC changes with the vkd3d compile options on or off, so a host passing a different option set (the browser vkd3d module, before
   #295) becomes a byte mismatch. Pinned by `Vkd3dCompileOptionsParityTests`. Goldens on `OpenGL` +
   `DirectX_11`.
 - **`ImplicitTruncationWarning.fx`** — GitHub issue **#335**. Compiles everywhere with a
@@ -343,6 +343,17 @@ They feed the byte-identity manifests under `tests/fixtures/golden/byte-identity
   warnings beside the hashes, pinned by `Vkd3dWarningsParityTests`. The warning sits on a fixed
   line/column behind the macro prelude so the location relocation is exercised too: keep the lines
   above it stable or update the manifest. No committed golden.
+- **`HalfGlobals.fx`** (2026-10-28). An XNA-era SpriteBatch pixel shader whose uniforms are all
+  `half` types (`half4 Tint = half4(...)`, `half2`, `half`, `half3` with no initializer,
+  `half4x4`, `half[2]`), plus a `half` function, a `half` local and an identifier `halfWidth`.
+  `mgfxc` 3.8.4.1's DirectX_11 build treats them as `float` (fxc's backwards-compatibility flag);
+  vkd3d does only with the `ALLOW_HALF_GLOBALS` compile option and refuses the file with `E5002`
+  without it, so a host that drops that bit fails the browser vkd3d gates. Pinned by
+  `HalfGlobalsTests` (against its `float` twin on every target and against the golden) and
+  rendered by `validation/DxModernFeatures` (arm "half-globals") and `validation/KniWinFormsDX`
+  (row "HalfGlobals"). Golden on `DirectX_11` only:
+  `mgfxc` OpenGL refuses a `half` global (`X3650`), and so does FNA's reference `fxc /T fx_2_0`,
+  which is why it is in the DirectX and OpenGL byte-identity arms but not the FNA one.
 
 ### How they are used
 

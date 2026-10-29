@@ -19,6 +19,11 @@
 // s1 and samples at uv*3: the s1 wrap repeats the stripes, the s0 clamp smears the edge
 // texel. ShadowDusk's vkd3d build is pixel-diffed against the COMMITTED mgfxc golden, and the
 // golden is rendered once more with PointClamp on s1 to prove the scene can tell the two apart.
+//
+// ARM "half-globals" (tests/fixtures/shaders/HalfGlobals.fx): XNA-era `half` uniforms, which
+// mgfxc's DirectX_11 build compiles as float and vkd3d refused (E5002) until ShadowDusk passed
+// it ALLOW_HALF_GLOBALS. Both DXBC backends are pixel-diffed against the committed mgfxc golden,
+// with parameters at their defaults and set through the typed SetValue overloads.
 
 using System;
 using System.Linq;
@@ -111,7 +116,44 @@ Console.WriteLine($"\n[dx-modern] legacy-register: candidate vs mgfxc golden max
 Console.WriteLine($"[dx-modern] legacy-register: scene tells s0 from s1 (golden with PointClamp on s1 differs): {legacyGame.NonTrivial}");
 Console.WriteLine($"[dx-modern] legacy-register verdict: {(legacyOk ? "PASS" : "FAIL")}");
 
-return ok && legacyOk ? 0 : 1;
+// ---- Arm "half-globals" -------------------------------------------------------------------
+// tests/fixtures/shaders/HalfGlobals.fx declares its uniforms with the XNA-era `half` types
+// (half4 Tint = ..., half2, half, half3, half4x4, half[2]). mgfxc's DirectX_11 build treats them
+// as float (fxc's backwards-compatibility flag); before the fix ShadowDusk's DirectX target
+// refused the file with vkd3d's E5002, so this arm was red at the compile. Both ShadowDusk DXBC
+// backends are pixel-diffed against the COMMITTED mgfxc 3.8.4.1 golden in two scenes: "defaults"
+// (Tint, Offset, Strength, Bias left at their initializers) and "set" (every parameter set
+// through the typed SetValue overloads, which throw if a half global were not a Single
+// Vector/Scalar/Matrix parameter). ColorMatrix and Weights are set in both scenes: their
+// default blobs are the documented #422 deviation from mgfxc (column order, kept array
+// elements). Positive controls: the golden's two scenes differ, and the golden drawn with
+// Tint = 0 differs from its defaults scene, so the scene sees both the values and the defaults.
+string halfSrc = await System.IO.File.ReadAllTextAsync(System.IO.Path.Combine(repoRoot, "tests", "fixtures", "shaders", "HalfGlobals.fx"));
+byte[] halfGolden = await System.IO.File.ReadAllBytesAsync(System.IO.Path.Combine(repoRoot, "tests", "fixtures", "golden", "DirectX_11", "HalfGlobals.mgfx"));
+var halfCandidates = new System.Collections.Generic.List<(string Name, byte[] Bytes)>();
+foreach (DxbcBackend backend in new[] { DxbcBackend.Vkd3d, DxbcBackend.D3DCompiler })
+{
+    var hr = await new EffectCompiler().CompileAsync(halfSrc, new CompilerOptions
+    {
+        Target = PlatformTarget.DirectX,
+        DxbcBackend = backend,
+        SourceFileName = "HalfGlobals.fx",
+    });
+    if (hr.IsFailure)
+    {
+        Console.WriteLine($"\n[dx-modern] half-globals ({backend}): COMPILE FAIL: " +
+                          string.Join(" | ", hr.Error.Select(e => $"{e.Code} ({e.Line},{e.Column}): {e.Message}")));
+        Console.WriteLine("[dx-modern] half-globals verdict: FAIL");
+        return 1;
+    }
+    halfCandidates.Add((backend.ToString(), hr.Value.Data));
+}
+using var halfGame = new HalfGlobalsHarness(halfCandidates, halfGolden);
+halfGame.Run();
+bool halfOk = halfGame.Ok;
+Console.WriteLine($"[dx-modern] half-globals verdict: {(halfOk ? "PASS" : "FAIL")}");
+
+return ok && legacyOk && halfOk ? 0 : 1;
 
 static string FindRepoRoot()
 {
@@ -198,6 +240,144 @@ sealed class LegacyRegisterHarness : Game
             Console.WriteLine($"  legacy-register row (candidate): {string.Join(" ", Enumerable.Range(0, 6).Select(i => candidate[(H / 2) * W + i * W / 6]).Select(c => $"({c.R},{c.G},{c.B})"))}");
             Console.WriteLine($"  legacy-register row (mgfxc):     {string.Join(" ", Enumerable.Range(0, 6).Select(i => golden[(H / 2) * W + i * W / 6]).Select(c => $"({c.R},{c.G},{c.B})"))}");
         }
+        _done = true;
+        Exit();
+    }
+}
+
+// ---- Arm "half-globals": SpriteBatch scene, typed SetValue, defaults vs set -----------------
+
+sealed class HalfGlobalsHarness : Game
+{
+    private const int W = 64, H = 64;
+    // A candidate compiler's output may differ from fxc's in the last bit of a float op; the DX
+    // corpus gates allow 1/255 for that. Measured on the first run: reported below either way.
+    private const int Tolerance = 1;
+    private readonly GraphicsDeviceManager _gdm;
+    private readonly System.Collections.Generic.IReadOnlyList<(string Name, byte[] Bytes)> _candidates;
+    private readonly byte[] _golden;
+    private bool _done;
+
+    public bool Ok { get; private set; }
+
+    public HalfGlobalsHarness(System.Collections.Generic.IReadOnlyList<(string Name, byte[] Bytes)> candidates, byte[] golden)
+    {
+        _candidates = candidates; _golden = golden;
+        _gdm = new GraphicsDeviceManager(this)
+        {
+            PreferredBackBufferWidth = W,
+            PreferredBackBufferHeight = H,
+            GraphicsProfile = GraphicsProfile.HiDef,
+        };
+    }
+
+    private enum Scene { Defaults, Set, TintZero }
+
+    protected override void Draw(GameTime gameTime)
+    {
+        if (_done) { Exit(); return; }
+        var gd = GraphicsDevice;
+        using var sprite = new Texture2D(gd, 4, 4, false, SurfaceFormat.Color);
+        sprite.SetData(Enumerable.Range(0, 16)
+            .Select(i => new Color((i % 4) * 80, (i / 4) * 80, 255 - i * 15, 255)).ToArray());
+
+        // Non-symmetric, so a transposed matrix would show; identical in every arm.
+        var colorMatrix = new Matrix(0.75f, 0.25f, 0f, 0f,
+                                     0f, 1f, 0f, 0f,
+                                     0.5f, 0f, 0.5f, 0f,
+                                     0f, 0f, 0f, 1f);
+
+        Color[]? Render(byte[] effectBytes, Scene scene, string label)
+        {
+            try
+            {
+                using var effect = new Effect(gd, effectBytes);
+                effect.Parameters["ColorMatrix"].SetValue(colorMatrix);
+                effect.Parameters["Weights"].SetValue(new[] { 0.25f, 0.5f });
+                if (scene == Scene.Set)
+                {
+                    effect.Parameters["Tint"].SetValue(new Vector4(0.25f, 1f, 0.5f, 1f));
+                    effect.Parameters["Offset"].SetValue(new Vector2(0.25f, 0f));
+                    effect.Parameters["Strength"].SetValue(0.5f);
+                    effect.Parameters["Bias"].SetValue(new Vector3(0.1f, 0f, 0.2f));
+                    effect.Parameters["ColorMatrix"].SetValue(Matrix.Identity);
+                    effect.Parameters["Weights"].SetValue(new[] { 0.5f, 0.25f });
+                }
+                else if (scene == Scene.TintZero)
+                {
+                    effect.Parameters["Tint"].SetValue(Vector4.Zero);
+                }
+
+                using var rt = new RenderTarget2D(gd, W, H, false, SurfaceFormat.Color, DepthFormat.None);
+                using var sb = new SpriteBatch(gd);
+                gd.SetRenderTarget(rt);
+                gd.Clear(Color.Black);
+                sb.Begin(SpriteSortMode.Immediate, BlendState.Opaque, SamplerState.PointWrap, null, null, effect);
+                sb.Draw(sprite, new Rectangle(0, 0, W, H), Color.White);
+                sb.End();
+                gd.SetRenderTarget(null);
+                var px = new Color[W * H];
+                rt.GetData(px);
+                return px;
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"  half-globals {label} {scene} threw: {ex.GetType().Name}: {ex.Message}");
+                try { gd.SetRenderTarget(null); } catch { }
+                return null;
+            }
+        }
+
+        static int MaxD(Color[] a, Color[] b)
+        {
+            int m = 0;
+            for (int i = 0; i < a.Length; i++)
+                m = Math.Max(m, Math.Max(Math.Max(Math.Abs(a[i].R - b[i].R), Math.Abs(a[i].G - b[i].G)),
+                                         Math.Max(Math.Abs(a[i].B - b[i].B), Math.Abs(a[i].A - b[i].A))));
+            return m;
+        }
+
+        static string Row(Color[] px) =>
+            string.Join(" ", Enumerable.Range(0, 4).Select(i => px[(H / 2) * W + i * W / 4 + W / 8]).Select(c => $"({c.R},{c.G},{c.B})"));
+
+        bool ok = true;
+        Color[]? goldenDefaults = Render(_golden, Scene.Defaults, "mgfxc");
+        Color[]? goldenSet = Render(_golden, Scene.Set, "mgfxc");
+        Color[]? goldenTintZero = Render(_golden, Scene.TintZero, "mgfxc");
+        if (goldenDefaults is null || goldenSet is null || goldenTintZero is null)
+        {
+            Console.WriteLine("\n[dx-modern] half-globals: the mgfxc golden did not render");
+            ok = false;
+        }
+        else
+        {
+            int valuesControl = MaxD(goldenDefaults, goldenSet);
+            int defaultsControl = MaxD(goldenDefaults, goldenTintZero);
+            Console.WriteLine($"\n[dx-modern] half-globals: mgfxc defaults row: {Row(goldenDefaults)}");
+            Console.WriteLine($"[dx-modern] half-globals: mgfxc set row:      {Row(goldenSet)}");
+            Console.WriteLine($"[dx-modern] half-globals: control, mgfxc defaults vs set: maxd {valuesControl} (must be > 16)");
+            Console.WriteLine($"[dx-modern] half-globals: control, mgfxc defaults vs Tint = 0: maxd {defaultsControl} (must be > 16)");
+            ok &= valuesControl > 16 && defaultsControl > 16;
+
+            foreach ((string name, byte[] bytes) in _candidates)
+            {
+                Color[]? defaults = Render(bytes, Scene.Defaults, name);
+                Color[]? set = Render(bytes, Scene.Set, name);
+                if (defaults is null || set is null)
+                {
+                    Console.WriteLine($"[dx-modern] half-globals ({name}): did not render");
+                    ok = false;
+                    continue;
+                }
+                int dDefaults = MaxD(defaults, goldenDefaults);
+                int dSet = MaxD(set, goldenSet);
+                Console.WriteLine($"[dx-modern] half-globals ({name}) defaults row: {Row(defaults)}");
+                Console.WriteLine($"[dx-modern] half-globals ({name}) vs mgfxc golden: defaults maxd {dDefaults}, set maxd {dSet} (tolerance {Tolerance})");
+                ok &= dDefaults <= Tolerance && dSet <= Tolerance;
+            }
+        }
+
+        Ok = ok;
         _done = true;
         Exit();
     }

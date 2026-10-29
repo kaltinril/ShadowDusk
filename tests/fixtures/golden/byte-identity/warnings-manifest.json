@@ -11,6 +11,7 @@
   "DirectX_Vkd3d/Dots.fx": [],
   "DirectX_Vkd3d/Fading.fx": [],
   "DirectX_Vkd3d/Grayscale.fx": [],
+  "DirectX_Vkd3d/HalfGlobals.fx": [],
   "DirectX_Vkd3d/ImplicitTruncationWarning.fx": [
     "ImplicitTruncationWarning.fx(47,12-12): warning W5300: Implicit truncation of vector type."
   ],
@@ -96,6 +97,7 @@
   "OpenGL/Fading.fx": [],
   "OpenGL/FnaMultiPassStates.fx": [],
   "OpenGL/Grayscale.fx": [],
+  "OpenGL/HalfGlobals.fx": [],
   "OpenGL/ImplicitTruncationWarning.fx": [
     "ImplicitTruncationWarning.fx(47,12-12): warning X0000: implicit truncation of vector type [-Wconversion]"
   ],

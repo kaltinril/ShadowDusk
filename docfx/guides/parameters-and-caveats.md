@@ -105,6 +105,12 @@ Two uniform shapes are **rejected loudly** (`SD0210`) on the OpenGL target rathe
 
 The loud error is the honest result until these shapes are modelled — far better than the silent broken GLSL they would otherwise produce (which fails only at `Effect`-load time inside the game).
 
+## `half` uniforms are `float` uniforms
+
+An XNA-era uniform declared with a `half` type (`half4 Tint = half4(1, 0.5, 0, 1);`, or any `half`, `halfN`, `halfNxM` global or cbuffer member) compiles as the `float` declaration on DirectX 11, DirectX 12, Vulkan, OpenGL and KNIFX: a `Single` parameter of the same shape, with the same default, set with the same `SetValue` overload. That is what `mgfxc`'s DirectX 11 build does (fxc's backwards-compatibility flag). `half` locals and function parameters compile everywhere.
+
+The one exception is **FNA**: its reference compiler, `fxc /T fx_2_0`, refuses a `half` global (`X3650 ... global variables cannot use the 'half' type`), so ShadowDusk refuses it too, with vkd3d's `E5002` at the declaration. Declare the uniform as `float`.
+
 ## DirectX uses `vkd3d-shader`, not DXC
 
 For `Target = DirectX`, ShadowDusk emits DXBC (SM ≤ 5) — what MonoGame's DX11 runtime loads — via `vkd3d-shader` (cross-platform) or `d3dcompiler_47` (Windows-only oracle), selected by <xref:ShadowDusk.Core.CompilerOptions.DxbcBackend>. **DXC is not used for DX11** because it only emits SM6 DXIL. See [DirectX DXBC (vkd3d) Path](../architecture/directx-dxbc-vkd3d.md).

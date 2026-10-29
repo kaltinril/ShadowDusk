@@ -67,7 +67,8 @@
 #   * DxModernFeatures       — DX11 vertex-texture-fetch: vkd3d (shipping) vs
 #                              d3dcompiler/fxc oracle, real MonoGame WindowsDX. The
 #                              flagship gate here: single process, self-asserting exit
-#                              code, no Python, no external mgfxc invocation.
+#                              code, no Python, no external mgfxc invocation. Also its
+#                              legacy-register and half-globals arms (vs committed goldens).
 #   * KniWinFormsDX          — DX11 ShadowDusk vs the committed mgfxc goldens, real KNI
 #                              WinForms.DX11 (proves WARP extends to KNI's DX backend,
 #                              which carries the pin on PresentationParameters rather

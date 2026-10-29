@@ -285,8 +285,12 @@ StrippedHlsl to DXBC on every OS; the same DXBC bytes are **also** the reflectio
 **column-major** (matching `fxc`, the runtime, and vkd3d), while the DXC/GL path uses
 row-major, this is intentional and the two paths are validated independently.
 
-**One compile option is set here, and only here:** vkd3d's
-`BACKWARD_COMPATIBILITY`/`MAP_SEMANTIC_NAMES`, which maps the SM1-3 semantics to their System
+**One compile option is set here, and only here:** vkd3d's `BACKWARD_COMPATIBILITY`, with two
+bits, the vkd3d halves of the fxc `D3DCOMPILE_ENABLE_BACKWARDS_COMPATIBILITY` flag `mgfxc`'s
+DirectX_11 build always sets. `ALLOW_HALF_GLOBALS` makes a `half`/`halfN`/`halfNxM` global or
+cbuffer member a `float` (XNA-era `half4 Tint = ...;`), where vkd3d would otherwise refuse it with
+`E5002`; the reflected type, defaults and code are the `float` declaration's, and only the RDEF
+type-name string keeps `half4`, as in fxc's blob. `MAP_SEMANTIC_NAMES` maps the SM1-3 semantics to their System
 Value equivalents (`COLOR`*n* to `SV_Target`*n* on pixel-shader outputs, `POSITION` to
 `SV_Position`, `DEPTH`, `VFACE`, `VPOS`) when compiling for an SM4+ target. `fxc` accepts those
 semantics at `ps_4_0`, which is how MonoGame `.fx` files written against SM3 still build;
@@ -294,7 +298,9 @@ vkd3d rejects them outright without the option. Stage 1's `RewriteToSm4` already
 `) : COLOR<n>` **return** semantic, but by design it cannot touch the same semantic on a struct
 **field** (the struct may be a vertex-shader output, where `COLOR` is legal), so the option is
 what covers a pixel shader returning `struct { float4 c : COLOR0; }`. It is deliberately NOT
-set on the Stage 3c target, where those are the native semantics.
+set on the Stage 3c target, where those are the native semantics and where the FNA reference
+(`fxc /T fx_2_0`, default flags) refuses a `half` global itself (`X3650`), so vkd3d's `E5002`
+there is parity.
 
 **Every host passes the same list.** The options are chosen in one place
 (`Vkd3dCompileContract.ResolveCompileOptions`): the desktop backend marshals the list into the
