@@ -13,7 +13,7 @@ namespace ShadowDusk.Compiler.Internal;
 /// <c>#include</c>d file does, and <c>compile VS_SHADERMODEL V()</c> names the profile the macro
 /// expands to. The pre-parse reads the raw main file, which gets all three wrong, so the list is
 /// read off the preprocessed translation unit instead
-/// (<see cref="FxPreParser.ParseTechniquesPreprocessed(string, string, bool)"/>). Shared by every target of
+/// (<see cref="FxPreParser.ParseTechniquesPreprocessed"/>). Shared by every target of
 /// <c>CompilationPipeline</c> (the FNA one included) and by the raylib and SkSL converters, so
 /// they all agree on what an effect's techniques are.
 /// </summary>
@@ -40,10 +40,6 @@ internal static class EffectTechniques
     /// <param name="includeResolver">The compile's include resolver.</param>
     /// <param name="additionalIncludePaths">The compile's extra include directories.</param>
     /// <param name="rawParsed">The pre-parse of the raw source.</param>
-    /// <param name="compilerIsDxc">
-    /// Whether the effect's shaders are compiled by DXC (every target except DirectX 11 and FNA,
-    /// see <see cref="CompilesThroughDxc"/>): DXC predefines more macros than fxc does.
-    /// </param>
     /// <returns>The decision, or the pre-parser's <c>FXnnnn</c> verdict on a technique block of
     /// the preprocessed text (the effect's real error, at the author's line).</returns>
     public static Result<Resolution, ShaderError> Resolve(
@@ -52,8 +48,7 @@ internal static class EffectTechniques
         MacroSet macros,
         IIncludeResolver includeResolver,
         IReadOnlyList<string> additionalIncludePaths,
-        FxParseResult rawParsed,
-        bool compilerIsDxc)
+        FxParseResult rawParsed)
     {
         ArgumentNullException.ThrowIfNull(rawParsed);
 
@@ -63,7 +58,7 @@ internal static class EffectTechniques
             return Result<Resolution, ShaderError>.Fail(flattened.Error);
 
         Result<FxPreprocessedTechniques, ShaderError> view =
-            FxPreParser.ParseTechniquesPreprocessed(flattened.Value.Text, sourceFileName, compilerIsDxc);
+            FxPreParser.ParseTechniquesPreprocessed(flattened.Value.Text, sourceFileName);
         if (view.IsFailure)
         {
             return string.Equals(view.Error.Code, FxMacroPreprocessorErrorCode, StringComparison.Ordinal)
@@ -88,14 +83,6 @@ internal static class EffectTechniques
         return Result<Resolution, ShaderError>.Ok(new Resolution(
             rawParsed.Techniques.Count == 0 ? [] : techniques.LiteralTechniques, null));
     }
-
-    /// <summary>
-    /// Whether <paramref name="target"/>'s shaders are compiled by DXC. DirectX 11 (vkd3d-shader's
-    /// DXBC) and FNA (fx_2_0) are fxc-faithful and never run DXC, so the macros only DXC
-    /// predefines (<c>__GNUC__</c>, <c>__llvm__</c>, ...) are undefined there, as for <c>mgfxc</c>.
-    /// </summary>
-    internal static bool CompilesThroughDxc(PlatformTarget target) =>
-        target is not (PlatformTarget.DirectX or PlatformTarget.Fna);
 
     /// <summary>The managed preprocessor's registered "view could not be built" code.</summary>
     private const string FxMacroPreprocessorErrorCode = "SD0009";

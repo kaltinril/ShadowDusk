@@ -2342,24 +2342,10 @@ public sealed class FxPreParser
     /// </returns>
     public static Result<FxPreprocessedTechniques, ShaderError> ParseTechniquesPreprocessed(
         string flattenedRawSource, string sourceFile)
-        => ParseTechniquesPreprocessed(flattenedRawSource, sourceFile, compilerIsDxc: true);
-
-    /// <summary>
-    /// <see cref="ParseTechniquesPreprocessed(string, string)"/> for a compile whose shaders go
-    /// through DXC (<paramref name="compilerIsDxc"/> true: every target except DirectX 11 and FNA)
-    /// or not. DXC predefines more macros than fxc, so a conditional on one of those (such as
-    /// <c>__GNUC__</c>) leaves the technique list unknown only where DXC compiles the shaders.
-    /// </summary>
-    /// <param name="flattenedRawSource">The RAW effect source, flattened (see the other overload).</param>
-    /// <param name="sourceFile">Display name used in diagnostics.</param>
-    /// <param name="compilerIsDxc">Whether the effect's shaders are compiled by DXC.</param>
-    /// <returns>The techniques, or an error (see the other overload).</returns>
-    public static Result<FxPreprocessedTechniques, ShaderError> ParseTechniquesPreprocessed(
-        string flattenedRawSource, string sourceFile, bool compilerIsDxc)
     {
         ArgumentNullException.ThrowIfNull(flattenedRawSource);
 
-        var view = Preprocessing.FxMacroPreprocessor.ProcessForCompiler(flattenedRawSource, sourceFile, compilerIsDxc);
+        var view = Preprocessing.FxMacroPreprocessor.ProcessForCompiler(flattenedRawSource, sourceFile);
         if (view.IsFailure)
             return Result<FxPreprocessedTechniques, ShaderError>.Fail(view.Error);
 

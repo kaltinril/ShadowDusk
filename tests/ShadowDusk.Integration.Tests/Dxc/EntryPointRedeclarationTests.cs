@@ -94,11 +94,32 @@ public sealed class EntryPointRedeclarationTests
         ["unsigned-cmp-proto"] = Same,                // crashed main: the managed evaluator read it as false
         ["unsigned-div-proto"] = Same,
         ["error-directive-proto"] = DxcError,         // DXC's front end stops on the #error, no back end
-        ["timestamp-dead-branch"] = Timestamp,        // issue #444: refused before DXC runs
+        // Issue #444: every DXC call defines __TIMESTAMP__ to clang's placeholder text, so DXC's
+        // built-in (which crashed the process) never expands. 0.22.1 compiled the first three.
+        ["timestamp-dead-branch"] = Same,
         ["timestamp-in-comment"] = Same,
+        ["timestamp-unused-macro"] = Same,
+        ["timestamp-plain"] = TimestampLiteral,       // crashed 0.22.1 (0xC0000409)
+        ["timestamp-paste"] = TimestampLiteral,       // crashed 0.22.1 and the SD0238 branch (a paste it could not see)
+        ["timestamp-in-macro-body"] = TimestampLiteral,
+        // Fourth review of 2026-10-29: crashed 0.22.1 and the branch (OpenGL 0xC0000005).
+        ["gate-comment-before-hash"] = Same,
+        ["gate-block-comment-before-hash"] = Same,
+        ["gate-define-body-after-comment"] = Same,
+        ["gate-hash-comment-define"] = Refused,       // a macro writes the prototype and the definition together
+        ["gate-hash-space-comment-define"] = Refused,
+        ["gate-define-comment-name"] = Refused,
+        ["gate-define-form-feed-name"] = Refused,
+        ["gate-hash-vertical-tab-define"] = Refused,
+        ["gnu-line-marker-proto"] = Same,             // was a spurious SD0236 on the branch
+        ["line-directive-inside-proto"] = Same,       // the #line is kept, so later lines keep their numbers
     };
 
-    private const string Timestamp = "DIAG SD0238";
+    /// <summary>A used <c>__TIMESTAMP__</c> is a string literal: DXC's own front-end error for it in arithmetic.</summary>
+    private const string TimestampLiteral = "DIAG X0000";
+
+    /// <summary>The reviewer's raw files compile <c>ps_3_0</c>, below the DirectX 11 floor (mgfxc's own refusal).</summary>
+    private const string Sm3OnDirectX = "DIAG SD0015";
 
     /// <summary>
     /// The targets that never had the fault keep compiling as they did: vkd3d (DirectX 11, FNA)
@@ -108,7 +129,12 @@ public sealed class EntryPointRedeclarationTests
     {
         // The converters compile with warnings as errors (-WX): DXC's own preprocessor warning
         // about the unsigned conversion stops the compile in the front end, before the back end.
-        "raylib" or "sksl" => new(Spirv, StringComparer.Ordinal)
+        "raylib" => new(Expected("sksl"), StringComparer.Ordinal)
+        {
+            // raylib's built-in vertex shader writes no TEXCOORD0 (its own registered refusal).
+            ["gate-define-body-after-comment"] = "DIAG SD0633",
+        },
+        "sksl" => new(Spirv, StringComparer.Ordinal)
         {
             ["unsigned-cmp-proto"] = DxcError,
             ["unsigned-div-proto"] = DxcError,
@@ -135,7 +161,21 @@ public sealed class EntryPointRedeclarationTests
             ["paren-declarator-def"] = DxcError,
         },
         // FNA's fx_2_0 has no DX10-style texture objects (its own clean SD0303, as before).
-        "Fna" => new(Expected("DirectX"), StringComparer.Ordinal) { ["noproto-macros-fxh-sprite"] = "DIAG SD0303" },
+        "Fna" => new(Expected("DirectX"), StringComparer.Ordinal)
+        {
+            ["noproto-macros-fxh-sprite"] = "DIAG SD0303",
+            // ps_3_0 is FNA's own profile; vkd3d reads the reviewer's raw files as it always has.
+            ["gate-comment-before-hash"] = Same,
+            ["gate-block-comment-before-hash"] = Same,
+            ["gate-define-body-after-comment"] = Same,
+            ["gate-hash-comment-define"] = "DIAG E5000",
+            ["gate-hash-space-comment-define"] = "DIAG E5000",
+            ["gate-define-comment-name"] = Ok,
+            ["gate-define-form-feed-name"] = "DIAG E4000",
+            ["gate-hash-vertical-tab-define"] = "DIAG E5000",
+            ["gnu-line-marker-proto"] = Same,
+            ["line-directive-inside-proto"] = Same,
+        },
         "DirectX" => new(Spirv, StringComparer.Ordinal)
         {
             ["ps-proto-without-definition"] = DxcError,         // vkd3d E5005, relabelled
@@ -156,7 +196,19 @@ public sealed class EntryPointRedeclarationTests
             ["paren-declarator-def-alone"] = "DIAG E5000",
             ["cr-only-proto"] = "DIAG E4000",
             ["error-directive-proto"] = "DIAG E4001",           // vkd3d's own #error
-            ["timestamp-dead-branch"] = Same,                    // vkd3d never runs DXC: no crash to refuse
+            ["timestamp-plain"] = "DIAG E5000",                  // vkd3d's own verdict on sizeof
+            ["timestamp-paste"] = "DIAG E5000",
+            ["timestamp-in-macro-body"] = "DIAG E5000",
+            ["gate-comment-before-hash"] = Sm3OnDirectX,
+            ["gate-block-comment-before-hash"] = Sm3OnDirectX,
+            ["gate-define-body-after-comment"] = Sm3OnDirectX,
+            ["gate-hash-comment-define"] = Sm3OnDirectX,
+            ["gate-hash-space-comment-define"] = Sm3OnDirectX,
+            ["gate-define-comment-name"] = Sm3OnDirectX,
+            ["gate-define-form-feed-name"] = Sm3OnDirectX,
+            ["gate-hash-vertical-tab-define"] = Sm3OnDirectX,
+            ["gnu-line-marker-proto"] = Sm3OnDirectX,
+            ["line-directive-inside-proto"] = Sm3OnDirectX,
         },
         // DXC's DXIL front end calls an overload prototype without a definition ambiguous, as
         // it always has here (fxc compiles it); unchanged by this fix, which never touches
@@ -174,6 +226,12 @@ public sealed class EntryPointRedeclarationTests
             ["second-declarator-proto"] = Ok,
             ["paren-declarator-proto"] = Ok,
             ["paren-declarator-def"] = Ok,
+            // Validated DXIL never had the fault: DXC compiles the macro's two declarations as one.
+            ["gate-hash-comment-define"] = Ok,
+            ["gate-hash-space-comment-define"] = Ok,
+            ["gate-define-comment-name"] = Ok,
+            ["gate-define-form-feed-name"] = Ok,
+            ["gate-hash-vertical-tab-define"] = Ok,
         },
         _ => throw new ArgumentOutOfRangeException(nameof(target), target, null),
     };
@@ -204,6 +262,47 @@ public sealed class EntryPointRedeclarationTests
             string verdict = Verdict(output, c.Name);
             verdict.ShouldStartWith(expected[c.Name], Case.Sensitive, $"{target} / {c.Name}");
         }
+    }
+
+    /// <summary>
+    /// Issue #444: DXC's preprocessor (the zero-technique fallback's <c>-P</c> run) expands
+    /// <c>__TIMESTAMP__</c> to clang's own text for an unknown time, used plainly, pasted from two
+    /// halves and inside a macro body, and skips it in a dead branch, in a child process: DXC's
+    /// built-in expansion ended the process (<c>0xC0000409</c>).
+    /// </summary>
+    [Fact]
+    [Trait("Platform", "OpenGL")]
+    public async Task TimestampExpandsToClangsPlaceholder_InDxcsPreprocessor_NeverCrashes()
+    {
+        (int exitCode, string output) = await RunProbeAsync("timestamp-expansion");
+
+        exitCode.ShouldBe(0, $"the __TIMESTAMP__ probe died (0xC0000409 is DXC's built-in expansion back):\n{output}");
+        output.ShouldContain(EntryPointRedeclarationProbe.VerdictPrefix + "DONE", Case.Sensitive);
+        const string Placeholder = "K = \"??? ??? ?? ??:??:?? ????\";";
+        Verdict(output, "ts-plain").ShouldBe("PP " + Placeholder);
+        Verdict(output, "ts-paste").ShouldBe("PP " + Placeholder);
+        Verdict(output, "ts-macro-body").ShouldBe("PP " + Placeholder);
+        Verdict(output, "ts-dead-branch").ShouldBe("PP K = 1;");
+    }
+
+    /// <summary>
+    /// The positive control of the test above: the same pinned DXC's preprocessor, called without
+    /// the <c>__TIMESTAMP__</c> define, must still end the process, so the test above proves the
+    /// define rather than a DXC that stopped faulting. When a DXC bump fixes the fault upstream,
+    /// this turns red, and the define can be retired. Windows only, as measured (win-x64).
+    /// </summary>
+    [WindowsOnlyFact]
+    [Trait("Platform", "OpenGL")]
+    public async Task RawDxc_StillCrashesExpandingTimestamp_ProvingTheProbeCanDetectIt()
+    {
+        (int exitCode, string output) = await RunProbeAsync("raw-timestamp");
+
+        output.ShouldContain(EntryPointRedeclarationProbe.VerdictPrefix + "RAW START", Case.Sensitive);
+        output.ShouldNotContain(EntryPointRedeclarationProbe.VerdictPrefix + "RAW NODXC", Case.Sensitive);
+        output.ShouldNotContain(EntryPointRedeclarationProbe.VerdictPrefix + "RAW RETURNED", Case.Sensitive,
+            "the pinned DXC expanded its built-in __TIMESTAMP__ without crashing: the fault is gone, so the define in " +
+            "DxcFlagBuilder is no longer needed\n" + output);
+        exitCode.ShouldNotBe(0, output);
     }
 
     /// <summary>

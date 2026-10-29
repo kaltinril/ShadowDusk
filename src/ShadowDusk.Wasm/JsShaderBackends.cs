@@ -72,11 +72,6 @@ internal sealed class JsDxcShaderCompiler : IDxcShaderCompiler
             request.Macros,
             request.Options);
 
-        // The desktop DXC crashes the process expanding __TIMESTAMP__ (issue #444): the browser
-        // refuses it the same way (SD0238), so both hosts answer an effect the same.
-        if (DxcTimestampMacro.Refusal(request.HlslSource, request.SourceFileName) is { } timestamp)
-            return Result<PlatformBlob, ShaderError>.Fail(timestamp);
-
         // An entry function declared more than once crashes the desktop DXC's SPIR-V back end, so
         // the desktop host blanks its redundant prototypes, proven by DXC's own preprocessor (-P;
         // DxcSpirvEntryRedeclarations). The browser's DXC module exports no preprocess-only entry

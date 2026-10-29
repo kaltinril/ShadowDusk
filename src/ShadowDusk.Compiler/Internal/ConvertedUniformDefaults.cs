@@ -93,7 +93,7 @@ internal static class ConvertedUniformDefaults
             return result;
 
         IReadOnlyDictionary<string, GlobalInitializerDefault> defaults =
-            CompilationPipeline.ResolveParameterDefaults(compilerInput, sourceName, asked, warnings, compilerIsDxc: true);
+            CompilationPipeline.ResolveParameterDefaults(compilerInput, sourceName, asked, warnings);
 
         for (int i = 0; i < uniforms.Count; i++)
         {

@@ -89,7 +89,7 @@ public enum GlobalInitializerKind
 /// <param name="Reason">Why the initializer could not be evaluated.</param>
 public sealed record GlobalInitializerFailure(string Name, string File, int Line, int Column, string Reason);
 
-/// <summary>What <see cref="GlobalInitializerReader.Read(string, string, bool)"/> found.</summary>
+/// <summary>What <see cref="GlobalInitializerReader.Read"/> found.</summary>
 /// <param name="Defaults">Name -> default, for every initializer that was evaluated (last declaration wins).</param>
 /// <param name="Failures">Every initializer on a possible uniform that could not be evaluated.</param>
 /// <param name="CompilerPredefinedMacro">
@@ -140,25 +140,11 @@ public static class GlobalInitializerReader
     /// <param name="sourceFile">Display name used in diagnostics.</param>
     /// <returns>The defaults and failures, or an <c>SD0009</c> error when the preprocessed view cannot be built.</returns>
     public static Result<GlobalInitializers, ShaderError> Read(string flattenedSource, string sourceFile)
-        => Read(flattenedSource, sourceFile, compilerIsDxc: true);
-
-    /// <summary>
-    /// <see cref="Read(string, string)"/> for a compile whose shaders go through DXC
-    /// (<paramref name="compilerIsDxc"/> true: every target except DirectX 11 and FNA) or not.
-    /// DXC predefines more macros than fxc, so a conditional on one of those (such as
-    /// <c>__GNUC__</c>) is reported in <see cref="GlobalInitializers.CompilerPredefinedMacro"/>
-    /// only where DXC compiles the shaders.
-    /// </summary>
-    /// <param name="flattenedSource">The flattened source.</param>
-    /// <param name="sourceFile">Display name used in diagnostics.</param>
-    /// <param name="compilerIsDxc">Whether the effect's shaders are compiled by DXC.</param>
-    /// <returns>The defaults and failures, or an <c>SD0009</c> error when the preprocessed view cannot be built.</returns>
-    public static Result<GlobalInitializers, ShaderError> Read(string flattenedSource, string sourceFile, bool compilerIsDxc)
     {
         ArgumentNullException.ThrowIfNull(flattenedSource);
 
         Result<FxMacroPreprocessor.CompilerInput, ShaderError> view =
-            FxMacroPreprocessor.ProcessForCompiler(flattenedSource, sourceFile, compilerIsDxc);
+            FxMacroPreprocessor.ProcessForCompiler(flattenedSource, sourceFile);
         if (view.IsFailure)
             return Result<GlobalInitializers, ShaderError>.Fail(view.Error);
 
@@ -169,7 +155,7 @@ public static class GlobalInitializerReader
     }
 
     /// <summary>
-    /// The same as <see cref="Read(string, string, bool)"/> on text that is already preprocessed (macros expanded,
+    /// The same as <see cref="Read"/> on text that is already preprocessed (macros expanded,
     /// conditionals evaluated). Exposed for unit tests.
     /// </summary>
     internal static GlobalInitializers ReadPreprocessed(string preprocessed, string sourceFile)

@@ -56,7 +56,7 @@ internal static class Fx2ParameterReflection
 
         // Throwaway warnings: the FNA route reports no SD0017 (its defaults are the constant table's).
         IReadOnlyDictionary<string, GlobalInitializerDefault> fromSource = CompilationPipeline.ResolveParameterDefaults(
-            flattenedSource, sourceFile, result, new List<ShaderError>(), compilerIsDxc: false);
+            flattenedSource, sourceFile, result, new List<ShaderError>());
         for (int i = 0; i < result.Count; i++)
         {
             ParameterReflection p = result[i];

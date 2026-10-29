@@ -86,10 +86,6 @@ public sealed class DxcShaderCompiler : IDxcShaderCompiler, IDisposable
         if (NativeError(request.SourceFileName, usesValidator: false) is { } loadError)
             return Result<string, ShaderError>.Fail(loadError);
 
-        // DXC crashes the process expanding __TIMESTAMP__, even preprocessing only (issue #444).
-        if (DxcTimestampMacro.Refusal(request.HlslSource, request.SourceFileName) is { } timestamp)
-            return Result<string, ShaderError>.Fail(timestamp);
-
         IReadOnlyList<string> arguments = DxcFlagBuilder.BuildPreprocess(request.Macros);
 
         // Same raw vtable call the compile path uses (per-platform wchar_t arg encoding,
@@ -182,11 +178,6 @@ public sealed class DxcShaderCompiler : IDxcShaderCompiler, IDisposable
 
         if (NativeError(request.SourceFileName, usesValidator) is { } loadError)
             return Result<PlatformBlob, ShaderError>.Fail(loadError);
-
-        // DXC crashes the process expanding __TIMESTAMP__, in any compile (issue #444): refused
-        // (SD0238) before DXC is called at all, the preprocess runs below included.
-        if (DxcTimestampMacro.Refusal(request.HlslSource, request.SourceFileName) is { } timestamp)
-            return Result<PlatformBlob, ShaderError>.Fail(timestamp);
 
         // DXC's SPIR-V back end crashes the process on an entry function that is declared more
         // than once; its redundant prototypes are kept out of the input (SD0236 when that

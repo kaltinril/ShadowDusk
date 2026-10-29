@@ -216,8 +216,7 @@ public static class SkslConverter
             PlatformMacros.For(PlatformTarget.OpenGL),
             options.IncludeResolver ?? new FileSystemIncludeResolver(),
             options.AdditionalIncludePaths,
-            parse.Value,
-            compilerIsDxc: true);
+            parse.Value);
         if (techniques.IsFailure)
             return Result<SkslConversion, ShaderError[]>.Fail([techniques.Error]);
         FxParseResult rawParsed = parse.Value with { Techniques = techniques.Value.Techniques };

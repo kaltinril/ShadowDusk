@@ -19,7 +19,7 @@ namespace ShadowDusk.Integration.Tests.Dxc;
 /// </summary>
 /// <remarks>
 /// Selected by <see cref="ProbeArgument"/> from <see cref="DxcConcurrencyProbe.Main"/>:
-/// <c>--entry-redeclaration-probe &lt;OpenGL|Vulkan|DirectX|DirectX12|Fna|raylib|sksl|raw-dxc&gt;</c>.
+/// <c>--entry-redeclaration-probe &lt;OpenGL|Vulkan|DirectX|DirectX12|Fna|raylib|sksl|raw-dxc|timestamp-expansion&gt;</c>.
 /// <c>raw-dxc</c> is the positive control: the same pinned DXC, called directly with the plain
 /// prototype source and the OpenGL SPIR-V arguments, which must still crash, so the cases
 /// passing proves the fix and not a DXC that stopped faulting.
@@ -175,10 +175,42 @@ public static class EntryPointRedeclarationProbe
         new("unsigned-div-proto", Fx("#if (-1 / 2u) > 100", PsProto, "#endif", TechPs, PsDef), Fx("#if (-1 / 2u) > 100", "", "#endif", TechPs, PsDef), true),
         // A source DXC's preprocessor rejects reaches DXC as written: the front end stops on it.
         new("error-directive-proto", Fx("#error not this target", PsProto, TechPs, PsDef), null, true),
-        // Issue #444: DXC crashes expanding __TIMESTAMP__ (even -P); refused (SD0238) wherever DXC runs.
+        // Issue #444: DXC's built-in __TIMESTAMP__ crashes the process (even -P), so every DXC call
+        // defines it to clang's own placeholder text; nothing that names it is refused.
         new("timestamp-dead-branch", Fx("#if 0", "static const int Stamp = __TIMESTAMP__;", "#endif", TechPs, PsDef), Fx("", "", "", TechPs, PsDef), true),
         new("timestamp-in-comment", Fx("/* __TIMESTAMP__ */ // __TIMESTAMP__", TechPs, PsDef), Fx("", TechPs, PsDef), true),
+        new("timestamp-unused-macro", Fx("#define WHEN __TIMESTAMP__", TechPs, PsDef), Fx("", TechPs, PsDef), true),
+        // Expanded: a string literal (clang's text for an unknown time), which HLSL has no use for:
+        // the compile ends in an ordinary front-end diagnostic, never the process.
+        new("timestamp-plain", Fx("static const float K = sizeof(__TIMESTAMP__) > 0 ? 0.5 : 0.25;", TechPs, PsDef), null, true),
+        new("timestamp-paste", Fx("#define TS_CAT(a, b) a##b", "static const float K = sizeof(TS_CAT(__TIME, STAMP__)) > 0 ? 0.5 : 0.25;", TechPs, PsDef), null, true),
+        new("timestamp-in-macro-body", Fx("#define STAMP __TIMESTAMP__", "static const float K = sizeof(STAMP) > 0 ? 0.5 : 0.25;", TechPs, PsDef), null, true),
+        // Fourth review of 2026-10-29: the cheap gate read a directive's syntax and missed a comment
+        // (or a form feed, a vertical tab) between '#', 'define' and the macro name, so the source
+        // skipped DXC's preprocessor and the prototype reached the SPIR-V back end (0xC0000005).
+        // These are the reviewer's files as written (no prelude, which itself defines macros).
+        new("gate-comment-before-hash", Raw("/**/ #define X PS", "float4 X(float4 c : COLOR0) : COLOR0;", "float4 X(float4 c : COLOR0) : COLOR0 { return c * 0.5; }", RawTech),
+            Raw("/**/ #define X PS", "", "float4 X(float4 c : COLOR0) : COLOR0 { return c * 0.5; }", RawTech), true),
+        new("gate-block-comment-before-hash", Raw("/*", "*/ #define X PS", "float4 X(float4 c : COLOR0) : COLOR0;", "float4 X(float4 c : COLOR0) : COLOR0 { return c * 0.5; }", RawTech),
+            Raw("/*", "*/ #define X PS", "", "float4 X(float4 c : COLOR0) : COLOR0 { return c * 0.5; }", RawTech), true),
+        new("gate-define-body-after-comment", Raw("#define X /*", "*/ PS", "float4 X(float4 c : TEXCOORD0) : SV_Target0;", "float4 X(float4 c : TEXCOORD0) : SV_Target0 { return c * 0.5; }", RawTech),
+            Raw("#define X /*", "*/ PS", "", "float4 X(float4 c : TEXCOORD0) : SV_Target0 { return c * 0.5; }", RawTech), true),
+        new("gate-hash-comment-define", Raw("#/**/define TWICE(d) d; d { return c * 0.5; }", RawTwice, RawTech), null, true),
+        new("gate-hash-space-comment-define", Raw("# /* c */ define TWICE(d) d; d { return c * 0.5; }", RawTwice, RawTech), null, true),
+        new("gate-define-comment-name", Raw("#define/**/TWICE(d) d; d { return c * 0.5; }", RawTwice, RawTech), null, true),
+        new("gate-define-form-feed-name", Raw("#define\fTWICE(d) d; d { return c * 0.5; }", RawTwice, RawTech), null, true),
+        new("gate-hash-vertical-tab-define", Raw("#\vdefine TWICE(d) d; d { return c * 0.5; }", RawTwice, RawTech), null, true),
+        // A GNU line marker (`# 33 "foo.fx"`) is read like `#line`: the prototype is found and blanked.
+        new("gnu-line-marker-proto", Raw("# 33 \"foo.fx\"", PsProto, PsDef, RawTech), Raw("# 33 \"foo.fx\"", "", PsDef, RawTech), true),
+        // A directive inside a multi-line prototype stays (only the prototype's text is blanked).
+        new("line-directive-inside-proto", Raw("float4 PS(float4 c : COLOR0)", "#line 50", " : COLOR0;", PsDef, RawTech),
+            Raw("", "#line 50", "", PsDef, RawTech), true),
     ];
+
+    private const string RawTech = "technique Main { pass P0 { PixelShader = compile ps_3_0 PS(); } }";
+    private const string RawTwice = "TWICE(float4 PS(float4 c : TEXCOORD0) : SV_Target0)";
+
+    private static string Raw(params string[] lines) => string.Join('\n', lines) + "\n";
 
     private const string CatDefine = "#define CAT(a,b) a##b";
     private const string PsDefScaled = "float4 PS(float4 c : COLOR0) : COLOR0 { return c * SCALE; }";
@@ -211,6 +243,10 @@ public static class EntryPointRedeclarationProbe
         string target = args[0];
         if (target == "raw-dxc")
             return RunRawControl();
+        if (target == "timestamp-expansion")
+            return RunTimestampExpansion();
+        if (target == "raw-timestamp")
+            return RunRawTimestampControl();
         if (args.Length == 2)
             return RunFile(target, Path.GetFullPath(args[1]));
 
@@ -291,6 +327,59 @@ public static class EntryPointRedeclarationProbe
 
     private static string Hash(string text) =>
         Convert.ToHexString(SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(text))) + ":" + text.Length;
+
+    /// <summary>
+    /// DXC's preprocessor (the zero-technique fallback's own <c>-P</c> run) on <c>__TIMESTAMP__</c>
+    /// used plainly, pasted, in a dead branch and in a macro body: one verdict line each with the
+    /// expanded text, so the parent sees that each run returned, and what the name became.
+    /// </summary>
+    private static int RunTimestampExpansion()
+    {
+        (string Name, string Source)[] sources =
+        [
+            ("plain", "K = __TIMESTAMP__;\n"),
+            ("paste", "#define TS_CAT(a, b) a##b\nK = TS_CAT(__TIME, STAMP__);\n"),
+            ("dead-branch", "#if 0\nK = __TIMESTAMP__;\n#endif\nK = 1;\n"),
+            ("macro-body", "#define STAMP __TIMESTAMP__\nK = STAMP;\n"),
+        ];
+        using var compiler = new DxcShaderCompiler();
+        foreach ((string name, string source) in sources)
+        {
+            Console.WriteLine($"{VerdictPrefix}ts-{name} START");
+            Console.Out.Flush();
+            Result<string, ShaderError> expanded = compiler.Preprocess(new DxcPreprocessRequest { HlslSource = source, SourceFileName = SourceName });
+            string text = expanded.IsSuccess
+                ? string.Join(' ', expanded.Value.Split('\n').Select(l => l.Trim()).Where(l => l.Length > 0 && !l.StartsWith('#')))
+                : "FAILED " + expanded.Error.Code + " " + expanded.Error.Message.ReplaceLineEndings(" ");
+            Console.WriteLine($"{VerdictPrefix}ts-{name} PP {text}");
+            Console.Out.Flush();
+        }
+        Console.WriteLine($"{VerdictPrefix}DONE");
+        return 0;
+    }
+
+    /// <summary>
+    /// The pinned DXC's preprocessor, called directly WITHOUT <see cref="DxcFlagBuilder.TimestampDefine"/>
+    /// on a source that expands <c>__TIMESTAMP__</c>: the built-in expansion the define keeps DXC away from.
+    /// </summary>
+    private static int RunRawTimestampControl()
+    {
+        if (DxcLoader.Register() is { } loadError)
+        {
+            Console.WriteLine($"{VerdictPrefix}RAW NODXC {loadError.Code}: {loadError.Message}");
+            return 3;
+        }
+
+        using IDxcCompiler3 compiler = Vortice.Dxc.Dxc.CreateDxcCompiler<IDxcCompiler3>();
+        string[] arguments = ["-P"];
+
+        Console.WriteLine($"{VerdictPrefix}RAW START {string.Join(' ', arguments)}");
+        Console.Out.Flush();
+
+        using IDxcResult result = DxcNativeInterop.CompileRaw(compiler, "K = __TIMESTAMP__;\n", arguments, includeHandler: null);
+        Console.WriteLine($"{VerdictPrefix}RAW RETURNED status=0x{result.GetStatus().Code:X8} {result.GetErrors().ReplaceLineEndings(" ")}");
+        return 0;
+    }
 
     /// <summary>
     /// The pinned DXC, called with the OpenGL pixel SPIR-V arguments on a prototype-then-definition

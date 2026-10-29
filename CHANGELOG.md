@@ -339,7 +339,9 @@ that loads and renders identically to `mgfxc`'s in the real MonoGame/KNI runtime
   these shapes too. An unused overload prototype (different parameters, no definition) is dropped
   the same way, as fxc compiles past it. Every decision is DXC's own: its preprocessor is run
   first (`-P`, with the compile's own arguments, which never reaches the back end that faults),
-  and only when ITS text declares the entry more than once is anything done, so a prototype in a
+  skipped only when the source spells the entry's name at most once and defines no macro at all
+  (a comment, form feed or vertical tab inside a `#define` directive no longer hides one), and
+  only when ITS text declares the entry more than once is anything done, so a prototype in a
   branch DXC does not compile (`#ifdef _XBOX`, `#ifndef __HLSL_VERSION`), a conditional on a
   macro only DXC defines, and C's unsigned preprocessor arithmetic (`#if -1 > 0u`, which crashed
   0.22.1 too) all come out as DXC sees them. The blanked range is proven, not guessed: DXC's
@@ -348,7 +350,9 @@ that loads and renders identically to `mgfxc`'s in the real MonoGame/KNI runtime
   (`DECL_PARAM(Unused) float4 PS(...);`) is never removed with it, while a prototype a macro
   completes (`: POS_OUT`), writes whole (`DECLARE(PS)`) or names (`#define PF PSX`) is removed
   exactly. Blanked characters become as many spaces as their UTF-8 bytes, so DXC's columns later
-  on the line do not move. A source DXC's preprocessor rejects (`#error`, a warning under `-WX`)
+  on the line do not move, and a directive inside a multi-line prototype (`#line`, `#if`,
+  `#define`) is kept, so later diagnostics keep their lines; a GNU line marker (`# 33 "foo.fx"`)
+  is read like `#line`. A source DXC's preprocessor rejects (`#error`, a warning under `-WX`)
   reaches DXC as written and fails on that diagnostic in the front end. What cannot be compiled
   safely is refused with the new `SD0236` instead of a crash: a call to the entry point between
   its prototype and its definition, an overload prototype of an entry point the source calls
@@ -366,29 +370,33 @@ that loads and renders identically to `mgfxc`'s in the real MonoGame/KNI runtime
   on OpenGL, Vulkan, DirectX 11, FNA and KNIFX over 546 `.fx` files (every fixture,
   sample and validation effect, and the real-world effects under FlatRedBall, KNI, XnaFiddle,
   Gum and the MonoGame HLSL examples): every one compiles to the same bytes with the same diagnostics on every target, and every reviewer crash reproducer that ended 0.22.1's process now compiles or fails with a registered diagnostic (three sources DXC's front end rejects anyway, a `%:define` digraph, a `??=` trigraph and an `extern` prototype, get `SD0236` on Vulkan instead of DXC's own error).
-- **DXC's `__TIMESTAMP__` crash is refused, not hit (issue #444).** The pinned DXC ends the
-  process (`0xC0000409`) when its preprocessor expands `__TIMESTAMP__`, even preprocessing only.
-  An effect that names it as a token (outside comments and strings) is now refused with the new
-  `SD0238` before DXC runs, on every target DXC compiles (OpenGL, Vulkan, DirectX 12, raylib,
-  SkSL, and the zero-technique fallback's preprocess run on any target); DirectX 11 and FNA
-  compile it as before. A token in a branch DXC would not compile is refused too, because only
-  running DXC's preprocessor (the run that crashes) could tell.
-- **The managed preprocessed view knows the rest of DXC's predefined macros where DXC compiles.**
-  A conditional on a macro only the compiler defines makes the view untrusted (the technique list
-  is then read from the raw source with an `SD0009` warning, and legacy-sampler recovery
-  (`SD0016`) and initializer defaults (`SD0017`) say so). On the targets whose shaders DXC
-  compiles (OpenGL, Vulkan, DirectX 12, KNIFX GL, raylib, SkSL) that list now also holds the
-  macros the pinned DXC was measured to define beyond 0.22.1's (`__GNUC__`, `__GNUC_MINOR__`,
-  `__GNUC_PATCHLEVEL__`, `__GXX_ABI_VERSION`, `__llvm__`, `__BYTE_ORDER__`, the `__ORDER_*`,
-  `__FLT_*` and `__DBL_*` families, `__LITTLE_ENDIAN__`, `__DECIMAL_DIG__`, `__is_identifier`):
-  before, a view that read `#ifdef __GNUC__` as false took the branch DXC did not. DirectX 11
-  and FNA never run DXC and keep 0.22.1's list, so their output and diagnostics do not move. A
-  name neither compiler defines (`_XBOX`, `_DEBUG`, `__PSSL__`) stays undefined everywhere, as
-  in 0.22.1 and `mgfxc`.
-  This also closes a silent Vulkan gap: the texture/sampler pairing reads its live lines from the same
-  view, so `#ifdef __GNUC__` around one `Sample` call and `#else` around another paired the `#else`
-  texture while DXC compiled the first branch (a wrong texture with no diagnostic); such a file is now
-  paired whole, as DXC compiles it.
+- **`__TIMESTAMP__` no longer kills the process (issue #444).** The pinned DXC ends the process
+  (`0xC0000409`) whenever its preprocessor expands its built-in `__TIMESTAMP__` (the modification
+  time of the in-memory source, which it cannot read), even preprocessing only, and also when the
+  name is pasted together (`__TIME ## STAMP__`). Every DXC call (desktop and browser, every target
+  DXC compiles, the zero-technique fallback's preprocess run and the entry-prototype proof
+  included) now defines `__TIMESTAMP__` to clang's own text for an unknown time,
+  `"??? ??? ?? ??:??:?? ????"` (a string literal), with `-Wno-builtin-macro-redefined` so `-WX`
+  does not fail on the redefinition. An effect that only mentions it (a dead `#if 0` branch, an
+  unused macro body, a comment) compiles exactly as in 0.22.1; one that uses its value gets
+  DXC's ordinary front-end diagnostic for a string literal instead of a crash. DirectX 11 and
+  FNA (vkd3d) never ran DXC on it and are unchanged. Release bytes on every target are
+  unchanged; DirectX 12 `Debug` output moves, because DXC records its command line in the DXIL
+  debug information. Side effect: redefining or undefining another built-in macro (`__FILE__`,
+  `__LINE__`) is no longer a `-WX` error on the DXC targets.
+- **The Vulkan texture/sampler pairing knows the rest of DXC's predefined macros.** The pairing
+  reads the lines DXC compiles from the managed preprocessed view, which read a conditional on a
+  macro only DXC defines as false: `#ifdef __GNUC__` around one `Sample` call and `#else` around
+  another paired the `#else` texture while DXC compiled the first branch (a wrong texture with no
+  diagnostic). The pairing's view now also treats the macros the pinned DXC was measured to define
+  beyond 0.22.1's list (`__GNUC__`, `__GNUC_MINOR__`, `__GNUC_PATCHLEVEL__`, `__GXX_ABI_VERSION`,
+  `__llvm__`, `__BYTE_ORDER__`, the `__ORDER_*`, `__FLT_*` and `__DBL_*` families,
+  `__LITTLE_ENDIAN__`, `__DECIMAL_DIG__`, `__is_identifier`) as unknown, so such a file is paired
+  whole, as DXC compiles it. Only the pairing: the technique list, legacy-sampler recovery and
+  initializer defaults keep 0.22.1's list on every target, because they are `mgfxc`'s reading and
+  `mgfxc`'s preprocessor defines none of these (so `#ifdef __GNUC__` around a technique gives the
+  technique list `mgfxc` gives). A name neither compiler defines (`_XBOX`, `_DEBUG`, `__PSSL__`)
+  stays undefined everywhere, as in 0.22.1 and `mgfxc`.
 
 ## [0.22.1] - 2026-10-29
 

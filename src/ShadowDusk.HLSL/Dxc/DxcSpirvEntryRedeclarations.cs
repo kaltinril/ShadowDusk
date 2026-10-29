@@ -143,10 +143,7 @@ internal static partial class DxcSpirvEntryRedeclarations
         ArgumentNullException.ThrowIfNull(preprocess);
         string file = sourceFileName ?? string.Empty;
 
-        // `-D` macros come before the text, so the gate sees a macro that names the entry.
-        string prefix = string.Concat((macros ?? []).Select(m => $"#define {m.Name} {m.Value ?? "1"}\n"));
-        string lines = (prefix + source).Replace("\r\n", "\n", StringComparison.Ordinal).Replace('\r', '\n');
-        if (string.IsNullOrEmpty(entryPoint) || CannotBeDeclaredTwice(lines, entryPoint))
+        if (string.IsNullOrEmpty(entryPoint) || CannotBeDeclaredTwice(source, entryPoint, macros ?? []))
             return Ok(source);
 
         PreprocessedText original = preprocess(source);
@@ -167,6 +164,9 @@ internal static partial class DxcSpirvEntryRedeclarations
         if (plan.Value.Count == 0)
             return Ok(source);
 
+        // `-D` macros come before the text, so their names count as macro names too.
+        string prefix = string.Concat((macros ?? []).Select(m => $"#define {m.Name} {m.Value ?? "1"}\n"));
+        string lines = (prefix + source).Replace("\r\n", "\n", StringComparison.Ordinal).Replace('\r', '\n');
         var macroNames = new HashSet<string>(StringComparer.Ordinal);
         foreach (Match m in DefinedName().Matches(lines))
             macroNames.Add(m.Groups[1].Value);
@@ -273,7 +273,11 @@ internal static partial class DxcSpirvEntryRedeclarations
 
     private static bool SameToken(Tok a, Tok b) => a.Kind == b.Kind && string.Equals(a.Text, b.Text, StringComparison.Ordinal);
 
-    /// <summary>The preprocessed tokens with every listed declaration's tokens taken out.</summary>
+    /// <summary>
+    /// The preprocessed tokens with every listed declaration's tokens taken out. A directive DXC
+    /// passes through (<c>#pragma</c>) inside a declaration is not one of its tokens: the edit keeps
+    /// it (see <see cref="Blank"/>).
+    /// </summary>
     private static List<Tok> Without(List<Tok> tokens, IReadOnlyList<Declaration> removed)
     {
         List<Declaration> spans = removed.OrderBy(d => d.Start).ToList();
@@ -283,7 +287,7 @@ internal static partial class DxcSpirvEntryRedeclarations
         {
             while (next < spans.Count && spans[next].End <= t.Offset)
                 next++;
-            if (next >= spans.Count || t.Offset < spans[next].Start)
+            if (next >= spans.Count || t.Offset < spans[next].Start || t.Kind == TokKind.Directive)
                 kept.Add(t);
         }
         return kept;
@@ -580,26 +584,38 @@ internal static partial class DxcSpirvEntryRedeclarations
     private static Result<string, ShaderError> Fail(ShaderError error) => Result<string, ShaderError>.Fail(error);
 
     /// <summary>
-    /// A cheap, exact gate: two declarations need the name written twice, or written once in a
-    /// directive (an object-like macro used twice), or once as the argument of a function-like
-    /// macro (which may write its parameter twice), or a token paste. A line splice (a backslash
-    /// before a line break, which can join a name DXC then reads), a trigraph or a <c>%:</c> digraph
-    /// (a directive) defeats the reading, so any of them sends the source to DXC's preprocessor.
+    /// A cheap, conservative gate that skips DXC's preprocess run only where the entry's name
+    /// cannot reach DXC twice: the source never spells it, or spells it once and defines no macro
+    /// at all (no <c>define</c> word anywhere, comments and literals included), so that one
+    /// spelling is one token. Two declarations need the name written twice, or a macro that
+    /// writes it (an object-like macro used twice, a function-like macro whose argument it is),
+    /// or a token paste. Directive syntax is never read here: a comment, a form feed or a vertical
+    /// tab between <c>#</c>, <c>define</c> and the macro name (the review of 2026-10-29) is
+    /// whitespace to DXC, so any <c>define</c> word sends the source to DXC's preprocessor. So
+    /// does a <c>-D</c> macro that is function-like or spells the name, a token paste, a line
+    /// splice (a backslash before a line break, which can join a name DXC then reads), a trigraph
+    /// and a <c>%:</c> digraph (a directive).
     /// </summary>
-    private static bool CannotBeDeclaredTwice(string source, string name)
+    private static bool CannotBeDeclaredTwice(string source, string name, IReadOnlyList<(string Name, string? Value)> macros)
     {
         if (source.Contains("##", StringComparison.Ordinal) || LineSplice().IsMatch(source)
             || source.Contains("??", StringComparison.Ordinal) || source.Contains("%:", StringComparison.Ordinal))
         {
             return false;
         }
+        foreach ((string macro, string? value) in macros)
+        {
+            if (macro.Contains('(', StringComparison.Ordinal)
+                || IndexOfWord(macro, name, 0) >= 0
+                || (value is not null && IndexOfWord(value, name, 0) >= 0))
+            {
+                return false;
+            }
+        }
         int first = IndexOfWord(source, name, 0);
         if (first < 0)
             return true;
-        if (IndexOfWord(source, name, first + name.Length) >= 0 || FunctionLikeDefine().IsMatch(source))
-            return false;
-        int lineStart = source.LastIndexOf('\n', first) + 1;
-        return !source.AsSpan(lineStart, first - lineStart).TrimStart().StartsWith("#");
+        return IndexOfWord(source, name, first + name.Length) < 0 && IndexOfWord(source, "define", 0) < 0;
     }
 
     private static int IndexOfWord(string source, string word, int from)
@@ -617,13 +633,25 @@ internal static partial class DxcSpirvEntryRedeclarations
     /// <summary>
     /// Replaces every character of each range with spaces, keeping line breaks: as many spaces as
     /// the character's UTF-8 bytes, because DXC counts columns in bytes of its UTF-8 input, so a
-    /// later diagnostic on the same line keeps its column.
+    /// later diagnostic on the same line keeps its column. A preprocessor directive on a line of
+    /// its own inside a range (a <c>#line</c>, <c>#if</c>, <c>#define</c> or <c>#pragma</c> in a
+    /// multi-line prototype) is kept whole: only the prototype's own text is blanked, so a
+    /// <c>#line</c> still renumbers what follows and a <c>#define</c> still defines (the proof
+    /// then checks the result like any other).
     /// </summary>
     private static string Blank(string source, IReadOnlyList<(int Start, int End)> spans)
     {
         var blanked = new bool[source.Length];
         foreach ((int start, int end) in spans)
             Array.Fill(blanked, true, start, end - start);
+        if (spans.Any(s => source.AsSpan(s.Start, s.End - s.Start).IndexOfAny('\n', '\r') >= 0))
+        {
+            foreach (Tok directive in Tokenize(source, rawText: true).Where(t => t.Kind == TokKind.Directive))
+            {
+                if (spans.Any(s => directive.Offset > s.Start && directive.Offset < s.End))
+                    Array.Fill(blanked, false, directive.Offset, directive.Text.Length);
+            }
+        }
 
         var builder = new StringBuilder(source.Length);
         for (int i = 0; i < source.Length; i++)
@@ -1281,16 +1309,16 @@ internal static partial class DxcSpirvEntryRedeclarations
         }
     }
 
-    /// <summary>A <c>#line N "file"</c> directive (DXC's line marker, or the source's own): the line number, then the file if named.</summary>
-    [GeneratedRegex(@"^\s*#\s*line\s+(\d+)(?:\s+""((?:[^""\\]|\\.)*)"")?", RegexOptions.CultureInvariant)]
+    /// <summary>
+    /// A <c>#line N "file"</c> directive (DXC's line marker, or the source's own), or the GNU line
+    /// marker <c># N "file"</c> clang reads the same way: the line number, then the file if named.
+    /// </summary>
+    [GeneratedRegex(@"^\s*#\s*(?:line\s+)?(\d+)(?:\s+""((?:[^""\\]|\\.)*)"")?", RegexOptions.CultureInvariant)]
     private static partial Regex LineMarker();
 
     /// <summary>A backslash before a line break, spaces between allowed (clang splices it with a warning).</summary>
     [GeneratedRegex(@"\\[ \t\f\v]*\n", RegexOptions.CultureInvariant)]
     private static partial Regex LineSplice();
-
-    [GeneratedRegex(@"^[ \t]*#[ \t]*define[ \t]+[A-Za-z_][A-Za-z0-9_]*\(", RegexOptions.CultureInvariant | RegexOptions.Multiline)]
-    private static partial Regex FunctionLikeDefine();
 
     /// <summary>Words that end a declaration's leading modifiers (they are part of it, or before it).</summary>
     [GeneratedRegex(@"^(?:static|inline|noinline|precise|export|extern|const|unsigned|row_major|column_major|snorm|unorm|uniform)$", RegexOptions.CultureInvariant)]

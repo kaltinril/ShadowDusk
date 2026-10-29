@@ -159,20 +159,6 @@ public sealed class FxMacroPreprocessorCompilerInputTests
     [InlineData("#ifdef __hlsl_dx_compiler\nfloat4 a;\n#endif\n", "__hlsl_dx_compiler")]
     [InlineData("#if defined(__SHADER_TARGET_MAJOR) && __SHADER_TARGET_MAJOR > 5\nfloat4 a;\n#endif\n", "__SHADER_TARGET_MAJOR")]
     [InlineData("#if __spirv__\nfloat4 a;\n#endif\n", "__spirv__")]
-    // Measured on the pinned DXC (2026-10-29): it defines these too, so a view that read them as
-    // undefined silently took the other branch where DXC compiles the shaders.
-    [InlineData("#ifdef __GNUC__\nfloat4 a;\n#endif\n", "__GNUC__")]
-    [InlineData("#if __GNUC_MINOR__ > 1\nfloat4 a;\n#endif\n", "__GNUC_MINOR__")]
-    [InlineData("#ifdef __GNUC_PATCHLEVEL__\nfloat4 a;\n#endif\n", "__GNUC_PATCHLEVEL__")]
-    [InlineData("#ifdef __GXX_ABI_VERSION\nfloat4 a;\n#endif\n", "__GXX_ABI_VERSION")]
-    [InlineData("#if __llvm__\nfloat4 a;\n#endif\n", "__llvm__")]
-    [InlineData("#if __BYTE_ORDER__ == 1234\nfloat4 a;\n#endif\n", "__BYTE_ORDER__")]
-    [InlineData("#ifdef __ORDER_LITTLE_ENDIAN__\nfloat4 a;\n#endif\n", "__ORDER_LITTLE_ENDIAN__")]
-    [InlineData("#ifdef __LITTLE_ENDIAN__\nfloat4 a;\n#endif\n", "__LITTLE_ENDIAN__")]
-    [InlineData("#ifdef __FLT_MAX__\nfloat4 a;\n#endif\n", "__FLT_MAX__")]
-    [InlineData("#ifdef __DBL_MAX__\nfloat4 a;\n#endif\n", "__DBL_MAX__")]
-    // A name DXC defines is reported even where the source defines it later.
-    [InlineData("#ifndef __GNUC__\n#define __GNUC__ 0\n#endif\n", "__GNUC__")]
     public void AConditionalOnACompilerPredefinedMacro_IsReported(string src, string macro)
     {
         var result = FxMacroPreprocessor.ProcessForCompiler(src, "t.fx");
@@ -207,30 +193,51 @@ public sealed class FxMacroPreprocessorCompilerInputTests
         result.Value.PredefinedMacroUse.ShouldBeNull();
     }
 
-    [Theory]
-    [InlineData("#ifdef __GNUC__\nfloat4 a;\n#endif\n")]
-    [InlineData("#if __llvm__\nfloat4 a;\n#endif\n")]
-    [InlineData("#ifdef __FLT_MAX__\nfloat4 a;\n#endif\n")]
-    [InlineData("#ifdef __DBL_MAX__\nfloat4 a;\n#endif\n")]
-    [InlineData("#if __BYTE_ORDER__ == 1234\nfloat4 a;\n#endif\n")]
-    public void AMacroOnlyDxcDefines_IsNotReported_ForACompileThatNeverRunsDxc(string src)
+    // Measured on the pinned DXC (2026-10-29): it defines these too. Only the Vulkan register
+    // pairing (SkippedLines) must know every line DXC may compile, so only its view reports them.
+    // The compiler-input view (technique list, legacy-sampler recovery, initializer defaults) reads
+    // them as undefined on every target, as mgfxc's preprocessor does and as 0.22.1 did.
+    public static TheoryData<string, string> DxcOnlyConditionals() => new()
     {
-        // DirectX 11 and FNA compile through fxc-faithful compilers that define none of these, as
-        // mgfxc's fxc does not: the view's "undefined" is right there, and 0.22.1's behaviour stays.
-        var result = FxMacroPreprocessor.ProcessForCompiler(src, "t.fx", compilerIsDxc: false);
+        { "#ifdef __GNUC__\nfloat4 a;\n#endif\n", "__GNUC__" },
+        { "#if __GNUC_MINOR__ > 1\nfloat4 a;\n#endif\n", "__GNUC_MINOR__" },
+        { "#ifdef __GNUC_PATCHLEVEL__\nfloat4 a;\n#endif\n", "__GNUC_PATCHLEVEL__" },
+        { "#ifdef __GXX_ABI_VERSION\nfloat4 a;\n#endif\n", "__GXX_ABI_VERSION" },
+        { "#if __llvm__\nfloat4 a;\n#endif\n", "__llvm__" },
+        { "#if __BYTE_ORDER__ == 1234\nfloat4 a;\n#endif\n", "__BYTE_ORDER__" },
+        { "#ifdef __ORDER_LITTLE_ENDIAN__\nfloat4 a;\n#endif\n", "__ORDER_LITTLE_ENDIAN__" },
+        { "#ifdef __LITTLE_ENDIAN__\nfloat4 a;\n#endif\n", "__LITTLE_ENDIAN__" },
+        { "#ifdef __FLT_MAX__\nfloat4 a;\n#endif\n", "__FLT_MAX__" },
+        { "#ifdef __DBL_MAX__\nfloat4 a;\n#endif\n", "__DBL_MAX__" },
+        { "#ifdef __DECIMAL_DIG__\nfloat4 a;\n#endif\n", "__DECIMAL_DIG__" },
+        { "#ifdef __is_identifier\nfloat4 a;\n#endif\n", "__is_identifier" },
+        // A name DXC defines is reported even where the source defines it later.
+        { "#ifndef __GNUC__\n#define __GNUC__ 0\n#endif\n", "__GNUC__" },
+    };
 
-        result.IsSuccess.ShouldBeTrue();
-        result.Value.PredefinedMacroUse.ShouldBeNull();
+    [Theory]
+    [MemberData(nameof(DxcOnlyConditionals))]
+    public void AMacroOnlyDxcDefines_IsReportedOnlyByTheVulkanPairingsView(string src, string macro)
+    {
+        var compilerInput = FxMacroPreprocessor.ProcessForCompiler(src, "t.fx");
+        compilerInput.IsSuccess.ShouldBeTrue();
+        compilerInput.Value.PredefinedMacroUse.ShouldBeNull();
+
+        var skipped = FxMacroPreprocessor.SkippedLines(src, "t.fx");
+        skipped.IsSuccess.ShouldBeTrue();
+        skipped.Value.PredefinedMacroUse.ShouldNotBeNull();
+        skipped.Value.PredefinedMacroUse!.Name.ShouldBe(macro);
+        skipped.Value.PredefinedMacroUse.Line.ShouldBe(1);
     }
 
     [Theory]
     [InlineData("#if __HLSL_VERSION >= 2021\nfloat4 a;\n#endif\n", "__HLSL_VERSION")]
     [InlineData("#if __spirv__\nfloat4 a;\n#endif\n", "__spirv__")]
     [InlineData("#ifdef __clang__\nfloat4 a;\n#endif\n", "__clang__")]
-    public void The0221List_IsReportedOnEveryTarget(string src, string macro)
+    public void The0221List_IsReportedByBothViews(string src, string macro)
     {
-        FxMacroPreprocessor.ProcessForCompiler(src, "t.fx", compilerIsDxc: false).Value.PredefinedMacroUse!.Name.ShouldBe(macro);
-        FxMacroPreprocessor.ProcessForCompiler(src, "t.fx", compilerIsDxc: true).Value.PredefinedMacroUse!.Name.ShouldBe(macro);
+        FxMacroPreprocessor.ProcessForCompiler(src, "t.fx").Value.PredefinedMacroUse!.Name.ShouldBe(macro);
+        FxMacroPreprocessor.SkippedLines(src, "t.fx").Value.PredefinedMacroUse!.Name.ShouldBe(macro);
     }
 
     [Fact]

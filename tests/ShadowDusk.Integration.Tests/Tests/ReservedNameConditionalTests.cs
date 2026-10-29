@@ -16,9 +16,10 @@ namespace ShadowDusk.Integration.Tests.Tests;
 /// target, as 0.22.1 and <c>mgfxc</c> do: the final review of 2026-10-29 measured that treating
 /// every such name as "compiler-defined, value unknown" failed real effects on every target
 /// ("missing entry point definition", <c>SD0010</c>, <c>SD0016</c>) and warned (<c>SD0009</c>,
-/// <c>SD0017</c>) on harmless <c>#ifdef _DEBUG</c> blocks. And the names only DXC defines
-/// (<c>__GNUC__</c>, <c>__llvm__</c>, ...) are unknown only where DXC compiles the shaders: the
-/// DirectX 11 and FNA compilers never run DXC, so there they are undefined, as in 0.22.1.
+/// <c>SD0017</c>) on harmless <c>#ifdef _DEBUG</c> blocks. The names only DXC defines
+/// (<c>__GNUC__</c>, <c>__llvm__</c>, ...) are undefined to this view too, on every target, as to
+/// <c>mgfxc</c>'s preprocessor and 0.22.1: only the Vulkan register pairing, which must know every
+/// line DXC may compile, treats them as unknown.
 /// </summary>
 [Trait("Category", "Integration")]
 public sealed class ReservedNameConditionalTests
@@ -138,25 +139,38 @@ public sealed class ReservedNameConditionalTests
     }
 
     [Theory]
-    [InlineData(PlatformTarget.OpenGL, true)]
-    [InlineData(PlatformTarget.Vulkan, true)]
-    [InlineData(PlatformTarget.DirectX12, true)]
-    [InlineData(PlatformTarget.DirectX, false)]
-    [InlineData(PlatformTarget.Fna, false)]
-    public async Task AConditionalOnAMacroOnlyDxcDefines_IsUnknownOnlyWhereDxcCompiles(PlatformTarget target, bool dxc)
+    [MemberData(nameof(Targets))]
+    public async Task AConditionalOnAMacroOnlyDxcDefines_ReadsAsUndefined_OnEveryTarget(PlatformTarget target, EffectContainer container)
     {
-        // DXC defines __GNUC__ (measured with -P), so the view cannot know which branch DXC takes
-        // and the technique list falls back to the raw source (SD0009). DirectX 11 and FNA never
-        // run DXC: there __GNUC__ is undefined, as to mgfxc's fxc, and 0.22.1's output stays.
+        // DXC defines __GNUC__ (measured with -P), mgfxc's preprocessor does not. The technique
+        // list, legacy-sampler recovery and initializer defaults are mgfxc's, so they read it as
+        // undefined on every target and keep 0.22.1's output: no SD0009.
         bool sm3 = target == PlatformTarget.Fna;
         string source = "#ifdef __GNUC__\n#define K 2\n#else\n#define K 1\n#endif\n" + MainEffect(sm3);
 
-        CompiledShader shader = await CompileOk(source, target);
+        CompiledShader shader = await CompileOk(source, target, container);
 
-        TechniqueNames(shader, target).ShouldBe(["Main"]);
-        if (dxc)
-            shader.Warnings.ShouldContain(w => w.Code == "SD0009" && w.Message.Contains("'__GNUC__'", StringComparison.Ordinal));
-        else
-            shader.Warnings.ShouldNotContain(w => w.Code == "SD0009");
+        if (container == EffectContainer.Mgfx)
+            TechniqueNames(shader, target).ShouldBe(["Main"]);
+        shader.Warnings.ShouldNotContain(w => w.Code == "SD0009");
+    }
+
+    [Theory]
+    [MemberData(nameof(Targets))]
+    public async Task ATechniqueUnderIfdefGnuc_IsDropped_AsMgfxcDropsIt(PlatformTarget target, EffectContainer container)
+    {
+        // The review of 2026-10-29 (gnuc_tech.fx): reading __GNUC__ as unknown on the DXC targets
+        // changed the technique list from 0.22.1's (and mgfxc's) and added SD0009.
+        bool sm3 = target == PlatformTarget.Fna;
+        string source =
+            $"float4 P(float4 c : COLOR0) : {Sem(sm3)} {{ return c * 0.5; }}\n#ifdef __GNUC__\n" +
+            $"technique A {{ pass P0 {{ PixelShader = compile {Ps(sm3)} P(); }} }}\n#else\n" +
+            $"technique B {{ pass P0 {{ PixelShader = compile {Ps(sm3)} P(); }} }}\n#endif\n";
+
+        CompiledShader shader = await CompileOk(source, target, container);
+
+        if (container == EffectContainer.Mgfx)
+            TechniqueNames(shader, target).ShouldBe(["B"]);
+        NoViewWarnings(shader);
     }
 }

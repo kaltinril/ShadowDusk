@@ -455,7 +455,8 @@ public sealed class DxcSpirvEntryRedeclarationsTests
         string source = "float4 PS(float4 c : COLOR0)\n#if SM4\n : SV_Target\n#else\n : COLOR0\n#endif\n;\n" +
                         "float4 PS(float4 c : COLOR0) : COLOR0 { return c; }\n";
 
-        Prepared(source).ShouldBe(BlankLines(source, 1, 2, 3, 4, 5, 6, 7));
+        // The directives stay (only the prototype's own text is blanked): the same text to DXC.
+        Prepared(source).ShouldBe(BlankLines(source, 1, 3, 5, 7));
     }
 
     [Fact]
@@ -773,5 +774,123 @@ public sealed class DxcSpirvEntryRedeclarationsTests
         string source = "#define E ;\n#define SEM : COLOR0\n" + Prototype + tail + "\nfloat4 PS(float4 c : COLOR0) : COLOR0 { return c; }\n";
 
         Prepared(source).Split('\n')[2].ShouldBe(new string(' ', Prototype.Length) + tail);
+    }
+
+    // ---- Fourth review of 2026-10-29: the cheap gate reads no directive syntax --------------
+
+    /// <summary>
+    /// How many times <see cref="DxcSpirvEntryRedeclarations.Prepare"/> asks for DXC's preprocessor
+    /// on <paramref name="source"/>: 0 when the cheap gate skips it. The stub reports a failed
+    /// preprocess, so the source is then handed on as written and no DXC runs here.
+    /// </summary>
+    private static int PreprocessRuns(string source, IReadOnlyList<(string Name, string? Value)>? macros = null)
+    {
+        int runs = 0;
+        Result<string, ShaderError> result = DxcSpirvEntryRedeclarations.Prepare(source, "PS", "t.fx", macros, _ =>
+        {
+            runs++;
+            return new DxcSpirvEntryRedeclarations.PreprocessedText(false, string.Empty);
+        });
+        result.Value.ShouldBeSameAs(source);
+        return runs;
+    }
+
+    [Theory]
+    // The entry's name written once and no macro defined anywhere: one token, one declaration.
+    [InlineData(Definition + "\n")]
+    [InlineData("float4 Tint;\n" + Definition + "\n" + "technique T { pass { PixelShader = compile ps_4_0 Main(); } }\n")]
+    // The name never written: no macro can spell it without a paste (which itself runs DXC's).
+    [InlineData("#define K 2\nfloat4 Main(float4 c : COLOR0) : SV_Target { return c * K; }\n")]
+    public void TheCheapGate_SkipsDxcsPreprocessor_WhenTheEntrysNameCannotReachDxcTwice(string source)
+    {
+        PreprocessRuns(source).ShouldBe(0);
+    }
+
+    [Theory]
+    // The reviewer's crash shapes (each an OpenGL 0xC0000005 before the fix): a comment, a form
+    // feed or a vertical tab between '#', 'define' and the macro name is whitespace to DXC, and a
+    // comment before '#' still leaves a directive. The gate no longer reads directive syntax at
+    // all: any 'define' word sends the source to DXC's preprocessor.
+    [InlineData("/**/ #define X PS\nfloat4 X(float4 c : COLOR0) : COLOR0;\nfloat4 X(float4 c : COLOR0) : COLOR0 { return c; }\n")]
+    [InlineData("/*\n*/ #define X PS\nfloat4 X(float4 c : COLOR0) : COLOR0;\nfloat4 X(float4 c : COLOR0) : COLOR0 { return c; }\n")]
+    [InlineData("#define X /*\n*/ PS\nfloat4 X(float4 c : COLOR0) : SV_Target0;\nfloat4 X(float4 c : COLOR0) : SV_Target0 { return c; }\n")]
+    [InlineData("#/**/define TWICE(d) d; d { return c; }\nTWICE(float4 PS(float4 c : TEXCOORD0) : SV_Target0)\n")]
+    [InlineData("# /* c */ define TWICE(d) d; d { return c; }\nTWICE(float4 PS(float4 c : TEXCOORD0) : SV_Target0)\n")]
+    [InlineData("#define/**/TWICE(d) d; d { return c; }\nTWICE(float4 PS(float4 c : TEXCOORD0) : SV_Target0)\n")]
+    [InlineData("#define\fTWICE(d) d; d { return c; }\nTWICE(float4 PS(float4 c : TEXCOORD0) : SV_Target0)\n")]
+    [InlineData("#\vdefine TWICE(d) d; d { return c; }\nTWICE(float4 PS(float4 c : TEXCOORD0) : SV_Target0)\n")]
+    // The shapes the gate already sent on: the name twice, a paste, a splice, a trigraph, a digraph.
+    [InlineData("float4 PS(float4 c : COLOR0) : SV_Target;\n" + Definition + "\n")]
+    [InlineData("#define CAT(a, b) a##b\nfloat4 CAT(P, S)(float4 c : COLOR0) : SV_Target;\n" + Definition + "\n")]
+    [InlineData("float4 P\\\nS(float4 c : COLOR0) : SV_Target;\n" + Definition + "\n")]
+    [InlineData("??=define X PS\nfloat4 X(float4 c : COLOR0) : SV_Target;\n" + Definition + "\n")]
+    [InlineData("%:define X PS\nfloat4 X(float4 c : COLOR0) : SV_Target;\n" + Definition + "\n")]
+    public void TheCheapGate_RunsDxcsPreprocessor_WheneverAMacroCouldDeclareTheEntryTwice(string source)
+    {
+        PreprocessRuns(source).ShouldBe(1);
+    }
+
+    [Theory]
+    // A -D macro that spells the entry's name (as its value or its name) or is function-like.
+    [InlineData("X", "PS")]
+    [InlineData("PS", "Main")]
+    [InlineData("TWICE(d)", "d; d")]
+    public void TheCheapGate_RunsDxcsPreprocessor_ForADMacroThatCouldWriteTheEntry(string name, string value)
+    {
+        string source = "float4 X(float4 c : COLOR0) : SV_Target;\nfloat4 X(float4 c : COLOR0) : SV_Target { return c; }\n";
+
+        PreprocessRuns(source, [(name, value)]).ShouldBe(1);
+    }
+
+    [Fact]
+    public void TheCheapGate_SkipsDxcsPreprocessor_ForADMacroThatCannotWriteTheEntry()
+    {
+        PreprocessRuns(Definition + "\n", [("SM4", "1"), ("OPENGL", null), ("TINT", "float4(1, 0, 0, 1)")]).ShouldBe(0);
+    }
+
+    [Theory]
+    [InlineData("/**/ #define X PS\nfloat4 X(float4 c : COLOR0) : SV_Target;\nfloat4 X(float4 c : COLOR0) : SV_Target { return c; }\n", 2)]
+    [InlineData("/*\n*/ #define X PS\nfloat4 X(float4 c : COLOR0) : SV_Target;\nfloat4 X(float4 c : COLOR0) : SV_Target { return c; }\n", 3)]
+    [InlineData("#define X /*\n*/ PS\nfloat4 X(float4 c : COLOR0) : SV_Target;\nfloat4 X(float4 c : COLOR0) : SV_Target { return c; }\n", 3)]
+    public void AMacroBehindACommentThatNamesTheEntry_HasItsPrototypeBlanked(string source, int prototypeLine)
+    {
+        Prepared(source).ShouldBe(BlankLines(source, prototypeLine));
+    }
+
+    [Theory]
+    [InlineData("#/**/define TWICE(d) d; d { return c; }\nTWICE(float4 PS(float4 c : TEXCOORD0) : SV_Target0)\n")]
+    [InlineData("#define\fTWICE(d) d; d { return c; }\nTWICE(float4 PS(float4 c : TEXCOORD0) : SV_Target0)\n")]
+    [InlineData("#\vdefine TWICE(d) d; d { return c; }\nTWICE(float4 PS(float4 c : TEXCOORD0) : SV_Target0)\n")]
+    public void AFunctionLikeMacroBehindAnOddDirectiveSpelling_IsRefusedNotCrashed(string source)
+    {
+        Refused(source).Line.ShouldBe(2);
+    }
+
+    // ---- Nits of the fourth review ----------------------------------------------------------
+
+    [Fact]
+    public void AGnuLineMarker_IsReadLikeALineDirective_SoThePrototypeIsBlanked()
+    {
+        // `# 33 "foo.fx"` is clang's GNU line marker; it was read as no marker and the prototype
+        // refused (SD0236) for want of its raw line.
+        string source = "# 33 \"foo.fx\"\nfloat4 PS(float4 c : COLOR0) : SV_Target;\n" + Definition + "\n";
+
+        Prepared(source).ShouldBe(BlankLines(source, 2));
+    }
+
+    [Fact]
+    public void ALineDirectiveInsideAMultiLinePrototype_IsKept_SoLaterLinesKeepTheirNumbers()
+    {
+        string source = "float4 PS(float4 c : COLOR0)\n#line 50\n : SV_Target;\n" + Definition + "\nfloat4 Broken() { return undeclared; }\n";
+
+        Prepared(source).ShouldBe(BlankLines(source, 1, 3));
+    }
+
+    [Fact]
+    public void ADefineInsideAMultiLinePrototype_IsKept_NotBlankedWithIt()
+    {
+        string source = "float4 PS(float4 c : COLOR0)\n#define K 2\n : SV_Target;\nfloat4 PS(float4 c : COLOR0) : SV_Target { return c * K; }\n";
+
+        Prepared(source).ShouldBe(BlankLines(source, 1, 3));
     }
 }
