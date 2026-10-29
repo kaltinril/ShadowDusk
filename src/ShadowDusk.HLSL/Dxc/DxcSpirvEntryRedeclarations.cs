@@ -38,7 +38,7 @@ namespace ShadowDusk.HLSL.Dxc;
 /// through: DXC reports them cleanly (<c>missing entry point definition</c>,
 /// <c>ambiguous entry point function</c>, <c>functions that differ only in their return
 /// type</c>), as fxc refuses them (X3501, X3068). Three shapes cannot be made safe and are
-/// refused with <c>SD0234</c>, loudly, instead of crashing: a call to the entry function
+/// refused with <c>SD0236</c>, loudly, instead of crashing: a call to the entry function
 /// placed between its prototype and its definition (without the prototype the call has no
 /// declaration; fxc compiles it), an overload prototype of an entry function the source
 /// calls (which declaration a call means cannot be told from the text), and a prototype that
@@ -61,7 +61,7 @@ namespace ShadowDusk.HLSL.Dxc;
 internal static partial class DxcSpirvEntryRedeclarations
 {
     /// <summary>The registered diagnostic code for an entry-point redeclaration that cannot be removed safely.</summary>
-    public const string ErrorCode = "SD0234";
+    public const string ErrorCode = "SD0236";
 
     /// <summary>
     /// True for a DXC compile that emits SPIR-V, the only output with the fault, and for an

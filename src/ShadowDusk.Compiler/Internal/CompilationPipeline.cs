@@ -2685,10 +2685,10 @@ internal sealed class CompilationPipeline
             var result = dxcCompiler.Value.Compile(request, ct);
             if (result.IsFailure)
             {
-                // SD0234 names the entry point DXC was asked for; on Vulkan that is the "main" of the
+                // SD0236 names the entry point DXC was asked for; on Vulkan that is the "main" of the
                 // rename above, so put back the name the author wrote.
                 ShaderError error = result.Error;
-                if (string.Equals(error.Code, "SD0234", StringComparison.Ordinal)
+                if (string.Equals(error.Code, "SD0236", StringComparison.Ordinal)
                     && !string.Equals(effectiveEntryPoint, entryPoint, StringComparison.Ordinal))
                 {
                     error = error with

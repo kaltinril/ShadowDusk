@@ -30,7 +30,7 @@ that loads and renders identically to `mgfxc`'s in the real MonoGame/KNI runtime
   already do with them: the effect compiles to exactly the bytes of the same effect without the
   prototype, and `mgfxc` 3.8.4.1 compiles these shapes too. An unused overload prototype
   (different parameters, no definition) is dropped the same way, as fxc compiles past it. What
-  cannot be compiled safely is refused with the new `SD0234` instead of a crash: a call to the
+  cannot be compiled safely is refused with the new `SD0236` instead of a crash: a call to the
   entry point between its prototype and its definition, an overload prototype of an entry point
   the source calls, and a prototype a macro produces. DirectX 11, DirectX 12 and FNA never had
   the fault and are unchanged; no output changes for any effect without an entry-point prototype.

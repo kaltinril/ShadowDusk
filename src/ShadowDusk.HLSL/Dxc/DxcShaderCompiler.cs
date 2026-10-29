@@ -157,7 +157,7 @@ public sealed class DxcShaderCompiler : IDxcShaderCompiler, IDisposable
             return Result<PlatformBlob, ShaderError>.Fail(loadError);
 
         // DXC's SPIR-V back end crashes the process on an entry function that is declared more
-        // than once; its redundant prototypes are kept out of the input (SD0234 when that
+        // than once; its redundant prototypes are kept out of the input (SD0236 when that
         // cannot be done safely). Returns the source unchanged when it has none.
         string hlslSource = request.HlslSource;
         if (DxcSpirvEntryRedeclarations.AppliesTo(arguments))

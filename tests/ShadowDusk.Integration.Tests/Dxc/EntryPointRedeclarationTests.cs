@@ -27,7 +27,7 @@ public sealed class EntryPointRedeclarationTests
     // "OK NOTWIN" compiled (no twin to compare); "DIAG <code>" a clean, registered diagnostic.
     private const string Same = "OK SAME";
     private const string Ok = "OK NOTWIN";
-    private const string Refused = "DIAG SD0234";
+    private const string Refused = "DIAG SD0236";
     private const string DxcError = "DIAG X0000";
 
     /// <summary>What each SPIR-V route (OpenGL, Vulkan, raylib, SkSL) must answer.</summary>
@@ -112,7 +112,7 @@ public sealed class EntryPointRedeclarationTests
     /// The positive control: the same pinned DXC, handed the plain prototype-then-definition
     /// source with the OpenGL SPIR-V arguments and no input preparation, must still crash, so
     /// the theory above proves the fix rather than a DXC that stopped faulting. When a DXC bump
-    /// fixes the fault upstream, this turns red, and the workaround (and SD0234) can be retired.
+    /// fixes the fault upstream, this turns red, and the workaround (and SD0236) can be retired.
     /// </summary>
     [Fact]
     [Trait("Platform", "OpenGL")]
@@ -124,7 +124,7 @@ public sealed class EntryPointRedeclarationTests
         output.ShouldNotContain(EntryPointRedeclarationProbe.VerdictPrefix + "RAW NODXC", Case.Sensitive);
         output.ShouldNotContain(EntryPointRedeclarationProbe.VerdictPrefix + "RAW RETURNED", Case.Sensitive,
             "the pinned DXC compiled an entry point with a prototype to SPIR-V without crashing: the fault is gone, so the " +
-            "prototype blanking and SD0234 are no longer needed\n" + output);
+            "prototype blanking and SD0236 are no longer needed\n" + output);
         exitCode.ShouldNotBe(0, output);
     }
 

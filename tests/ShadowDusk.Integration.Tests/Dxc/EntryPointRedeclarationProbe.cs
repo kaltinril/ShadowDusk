@@ -82,7 +82,7 @@ public static class EntryPointRedeclarationProbe
         new("ps-proto-without-definition", Fx(PsProto, TechPs), null, true),
         // A prototype differing only in its return type: a clean error (fxc: X3068).
         new("ps-proto-return-type-differs", Fx("float3 PS(float4 c : COLOR0) : COLOR0;", TechPs, PsDef), null, true),
-        // Shapes SPIR-V cannot be given safely: refused with SD0234 instead of crashing.
+        // Shapes SPIR-V cannot be given safely: refused with SD0236 instead of crashing.
         new("ps-called-between-proto-and-def", Fx(PsProto, Half, TechPs, PsDef), null, true),
         new("ps-overload-proto-of-called-entry", Fx(Overload, PsDef, Half, TechPs), null, true),
         new("ps-proto-from-macro", Fx("#define DECLARE(name) float4 name(float4 c : COLOR0) : COLOR0;", "DECLARE(PS)", TechPs, PsDef), null, true),

@@ -11,7 +11,7 @@ namespace ShadowDusk.HLSL.Tests.Dxc;
 /// Pure tests for <see cref="DxcSpirvEntryRedeclarations"/>: DXC's SPIR-V back end crashes the
 /// process on an entry function declared more than once, so the entry's redundant prototypes are
 /// blanked out of the compile's input (lines and columns kept), shapes DXC reports cleanly are
-/// left to it, and shapes that cannot be made safe are refused with SD0234. No native library,
+/// left to it, and shapes that cannot be made safe are refused with SD0236. No native library,
 /// disk or process; the integration half (<c>EntryPointRedeclarationTests</c>) runs every target
 /// in a child process, with a control that still crashes DXC directly.
 /// </summary>
@@ -29,8 +29,8 @@ public sealed class DxcSpirvEntryRedeclarationsTests
     private static ShaderError Refused(string source, string entry = "PS")
     {
         Result<string, ShaderError> result = DxcSpirvEntryRedeclarations.Prepare(source, entry, "t.fx");
-        result.IsFailure.ShouldBeTrue("expected an SD0234 refusal, got:\n" + (result.IsSuccess ? result.Value : ""));
-        result.Error.Code.ShouldBe("SD0234");
+        result.IsFailure.ShouldBeTrue("expected an SD0236 refusal, got:\n" + (result.IsSuccess ? result.Value : ""));
+        result.Error.Code.ShouldBe("SD0236");
         return result.Error;
     }
 
