@@ -14,9 +14,28 @@ that loads and renders identically to `mgfxc`'s in the real MonoGame/KNI runtime
 
 ### Added
 
+- **KNI's own effect test suite is now a render gate** (`validation/KniEffectTest{KniGl,KniDx,Gl,Dx,Dx12,Vulkan}`).
+  Every test of KNI's `Tests/Framework.Graphics/EffectTest.cs`, which KNI's author checked against XNA, runs in a
+  real engine on KNI's own test shaders, vendored unmodified under `tests/fixtures/shaders/third-party/KNI` (Ms-PL,
+  with the licence and a `NOTICE.md`), plus five companion shaders for a matrix default, a texture at
+  `register(t1)`, a texture array and vertex texture fetch. Runtimes: KNI 4.2.9001 and 4.3.9001 (SDL2.GL and
+  WinForms.DX11, MGFX and KNIFX), MonoGame DesktopGL, WindowsDX, WindowsDX12 and DesktopVK, with real `mgfxc`
+  builds and KNI's own prebuilt `.xnb` as reference arms. Each row is gated, a listed known ShadowDusk bug that must
+  keep failing until its fix flips it, or informational with the reason printed; positive controls must be
+  caught. It runs in CI (llvmpipe, WARP, lavapipe with the Vulkan validation layer) and in
+  `run-windows-render-gates.ps1`. Test and validation only: no package changes.
+
 ### Changed
 
+- The `SD0210` message for vertex-stage texture sampling on OpenGL now names KNI too: KNI's GL backend, like
+  MonoGame's, binds only the pixel shader's sampler uniforms.
+
 ### Fixed
+
+- **DXC's "initializer ignored" warning no longer survives a preserved default whose brace list starts on the next
+  line** (`float4x4 M =` then `{ ... };`, as in KNI's `OptimizedMatrix.fx`). DXC's SPIR-V warning points at the
+  brace, not the declaration, and names the first initialized global in every such warning, so it is now matched to
+  the nearest declaration above it. Warnings only; no output byte changes.
 
 - **Techniques are read from the preprocessed source, like `mgfxc` (issue #407).** A technique
   inside a false `#if` (or behind an unset `/Defines` value) was still compiled, a technique in an

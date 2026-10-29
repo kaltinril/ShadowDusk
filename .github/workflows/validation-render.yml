@@ -137,6 +137,8 @@
 #                              then `-- apos`, the Apos.Shapes gallery (maxd 0).
 #   * CandidateVulkan        — the 10-shader PS corpus, own-output only (mgfxc's Vulkan output
 #                              is unloadable for it, upstream SlotOffset bug).
+#   * KniEffectTestVulkan    — KNI's own effect test suite in real DesktopVK (measured with zero
+#                              layer errors locally under the same Khronos validation layer).
 #   * Two POSITIVE CONTROLS  — a wrong shader must fail the pixel diff, and SPIR-V stamped 1.3
 #                              on MonoGame's Vulkan 1.0 instance must trip the layer (lavapipe
 #                              renders it at maxd 0, which is exactly why the layer is here).
@@ -194,7 +196,7 @@ jobs:
     if: |
       github.event_name != 'pull_request' ||
       contains(github.event.pull_request.labels.*.name, 'run-validation-render')
-    timeout-minutes: 20
+    timeout-minutes: 30  # +KNI EffectTest (three driver builds + runs)
     steps:
       - name: Checkout
         uses: actions/checkout@v6
@@ -310,6 +312,32 @@ jobs:
           dotnet build validation/SlangTexturedGl/SlangTexturedGl.csproj -c Release
           xvfb-run -a dotnet run --project validation/SlangTexturedGl -c Release --no-build
 
+      # KNI's own effect test suite (Tests/Framework.Graphics/EffectTest.cs, checked against XNA by
+      # KNI's author) on KNI's vendored test shaders: real KNI SDL2.GL on BOTH KNI lines (4.2.9001,
+      # 4.3.9001; each its own lock file) and real MonoGame DesktopGL. Each driver exits non-zero on a
+      # gated regression, on a known-failing row that unexpectedly passes (the fixing PR must flip it)
+      # and on a missed positive control. No GL context is a hard failure (device creation throws).
+      # All three run even if one fails; the step fails if any did.
+      - name: KNI EffectTest gate (real KNI SDL2.GL 4.2.9001 + 4.3.9001, real MonoGame DesktopGL)
+        if: ${{ !cancelled() }}
+        env:
+          LIBGL_ALWAYS_SOFTWARE: "1"
+        run: |
+          set +e
+          rc=0
+          for args in "validation/KniEffectTestKniGl" "validation/KniEffectTestKniGl -p:KniVersion=4.3.9001" "validation/KniEffectTestGl"; do
+            echo "::group::$args"
+            # shellcheck disable=SC2086 # word-splitting $args into project + property is intended
+            xvfb-run -a dotnet run -c Release --project $args
+            this=$?
+            echo "::endgroup::"
+            if [ "$this" -ne 0 ]; then
+              echo "::error::KNI EffectTest $args FAILED (exit $this)"
+              rc=1
+            fi
+          done
+          exit $rc
+
       # The GL corpus is the two-process orchestration the in-process gates above avoid:
       # Baseline renders the committed mgfxc goldens, Candidate renders ShadowDusk's own
       # output for the same 10 shaders, and compare.py pixel-diffs the two sets. It is the
@@ -367,7 +395,7 @@ jobs:
     if: |
       github.event_name != 'pull_request' ||
       contains(github.event.pull_request.labels.*.name, 'run-validation-render')
-    timeout-minutes: 20
+    timeout-minutes: 35  # +KNI EffectTest (four driver builds + runs on WARP)
     steps:
       - name: Checkout
         uses: actions/checkout@v6
@@ -465,6 +493,34 @@ jobs:
           dotnet run --project validation/InitializerDefaultsDx -c Release --no-build
           dotnet run --project validation/InitializerDefaultsKniDx -c Release --no-build
           dotnet run --project validation/InitializerDefaultsDx12 -c Release --no-build
+
+      # KNI's own effect test suite (EffectTest.cs) on WARP: real KNI WinForms.DX11 on both KNI lines,
+      # real MonoGame WindowsDX and real MonoGame 3.8.5 WindowsDX12 (the latter needs the SwiftShader
+      # loader above for SDL's window). Each driver exits non-zero on a gated regression, a
+      # known-failing row that unexpectedly passes, or a missed positive control. All four run; the
+      # step fails if any did. Runs even if an earlier DX gate failed.
+      - name: Run KNI EffectTest gates (real KNI WinForms.DX11 4.2.9001 + 4.3.9001, MonoGame WindowsDX, MonoGame WindowsDX12 on WARP)
+        if: ${{ !cancelled() }}
+        env:
+          SHADOWDUSK_DX_WARP: "1"
+        run: |
+          $failed = @()
+          foreach ($run in @(
+              'validation/KniEffectTestKniDx',
+              'validation/KniEffectTestKniDx -p:KniVersion=4.3.9001',
+              'validation/KniEffectTestDx',
+              'validation/KniEffectTestDx12')) {
+            $parts = $run -split ' '
+            Write-Host "::group::$run"
+            dotnet run -c Release --project $parts[0] @($parts | Select-Object -Skip 1)
+            $rc = $LASTEXITCODE
+            Write-Host "::endgroup::"
+            if ($rc -ne 0) {
+              Write-Host "::error::KNI EffectTest $run FAILED (exit $rc)"
+              $failed += $run
+            }
+          }
+          if ($failed.Count -gt 0) { Write-Host "KNI EffectTest failed: $($failed -join '; ')"; exit 1 }
 
       - name: Run MonoGame WindowsDX12 corpus (ShadowDusk vs mgfxc DirectX_12 golden)
         env:
@@ -579,7 +635,7 @@ jobs:
     if: |
       github.event_name != 'pull_request' ||
       contains(github.event.pull_request.labels.*.name, 'run-validation-render')
-    timeout-minutes: 25
+    timeout-minutes: 30
     steps:
       - name: Checkout
         uses: actions/checkout@v6
@@ -639,6 +695,7 @@ jobs:
           dotnet build validation/CandidateVulkan/CandidateVulkan.csproj -c Release
           dotnet build validation/BaselineVulkan/BaselineVulkan.csproj -c Release
           dotnet build validation/InitializerDefaultsVulkan/InitializerDefaultsVulkan.csproj -c Release
+          dotnet build validation/KniEffectTestVulkan/KniEffectTestVulkan.csproj -c Release
 
       # Every gate runs under validation/run-with-vk-validation.sh: the Khronos validation
       # layer is forced on, and any layer ERROR fails the step even when the pixels match.
@@ -683,6 +740,14 @@ jobs:
       - name: Vulkan initializer defaults (real DesktopVK)
         if: ${{ !cancelled() }}
         run: validation/run-with-vk-validation.sh initializer-defaults -- xvfb-run -a dotnet run --project validation/InitializerDefaultsVulkan -c Release --no-build
+
+      # KNI's own effect test suite (EffectTest.cs) on real DesktopVK, under the validation layer like
+      # every gate here (measured locally under the same layer: zero errors; the test's
+      # BasicEffect-VS + KNI-PS draw is invalid Vulkan and is deliberately not issued). Exits non-zero
+      # on a gated regression, an unexpectedly passing known-failing row, or a missed positive control.
+      - name: Vulkan KNI EffectTest gate (real DesktopVK)
+        if: ${{ !cancelled() }}
+        run: validation/run-with-vk-validation.sh kni-effecttest -- xvfb-run -a dotnet run --project validation/KniEffectTestVulkan -c Release --no-build
 
       # POSITIVE CONTROLS: each plants a known defect in the candidate and the step passes
       # only if the gate turned RED for that reason. Without these, a lane that silently

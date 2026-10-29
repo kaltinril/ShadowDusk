@@ -1,0 +1,58 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- KNI EffectTest gate on real KNI WinForms.DX11, MGFX v10 and KNIFX, plus KNI's own prebuilt DirectX .xnb as a reference arm. Windows only.
+       Built TWICE: the default KniVersion (4.2.9001, the central pin) and -p:KniVersion=4.3.9001.
+       Each version keeps its own lock file; the requested version is baked in as assembly metadata and
+       checked against the runtime that actually loaded, so a stale build cannot pass as the other one.
+       Not in ShadowDusk.slnx. See validation/SharedKniEffectTest and docs/validation-matrix.md section 6. -->
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net8.0-windows</TargetFramework>
+    <RollForward>Major</RollForward>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <IsPackable>false</IsPackable>
+    <TreatWarningsAsErrors>false</TreatWarningsAsErrors>
+    <RootNamespace>ShadowDusk.Validation.KniEffectTest.KniDx</RootNamespace>
+    <DefineConstants>$(DefineConstants);WINDOWSDX</DefineConstants>
+    <KniPlatform>WindowsDX</KniPlatform>
+    <UseWindowsForms>true</UseWindowsForms>
+    <KniVersion Condition="'$(KniVersion)' == ''">4.2.9001</KniVersion>
+    <NuGetLockFilePath>packages.$(KniVersion).lock.json</NuGetLockFilePath>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <AssemblyMetadata Include="KniVersion" Value="$(KniVersion)" />
+  </ItemGroup>
+
+  <ItemGroup Label="KNI (nkast) runtime, version from Directory.Packages.props">
+    <PackageReference Include="nkast.Xna.Framework" />
+    <PackageReference Include="nkast.Xna.Framework.Content" />
+    <PackageReference Include="nkast.Xna.Framework.Graphics" />
+    <PackageReference Include="nkast.Xna.Framework.Audio" />
+    <PackageReference Include="nkast.Xna.Framework.Media" />
+    <PackageReference Include="nkast.Xna.Framework.Input" />
+    <PackageReference Include="nkast.Xna.Framework.Game" />
+    <PackageReference Include="nkast.Kni.Platform.WinForms.DX11" />
+  </ItemGroup>
+
+  <ItemGroup Condition="'$(KniVersion)' != '4.2.9001'">
+    <PackageReference Update="nkast.Xna.Framework" VersionOverride="$(KniVersion)" />
+    <PackageReference Update="nkast.Xna.Framework.Content" VersionOverride="$(KniVersion)" />
+    <PackageReference Update="nkast.Xna.Framework.Graphics" VersionOverride="$(KniVersion)" />
+    <PackageReference Update="nkast.Xna.Framework.Audio" VersionOverride="$(KniVersion)" />
+    <PackageReference Update="nkast.Xna.Framework.Media" VersionOverride="$(KniVersion)" />
+    <PackageReference Update="nkast.Xna.Framework.Input" VersionOverride="$(KniVersion)" />
+    <PackageReference Update="nkast.Xna.Framework.Game" VersionOverride="$(KniVersion)" />
+    <PackageReference Update="nkast.Kni.Platform.WinForms.DX11" VersionOverride="$(KniVersion)" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\ShadowDusk.Compiler\ShadowDusk.Compiler.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Compile Include="..\SharedKniEffectTest\*.cs" />
+  </ItemGroup>
+
+</Project>
