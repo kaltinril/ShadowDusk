@@ -33,7 +33,7 @@ real MonoGame WindowsDX and real KNI WinForms.DX11, maxd 0 after.
 
 ## 2. The rule fxc follows (measured, `mgfxc` 3.8.4.1 `/Profile:DirectX_11`)
 
-On the 180 shapes of `tests/fixtures/golden/dx11-texture-slots/` (sources and goldens beside each
+On the 240 shapes of `tests/fixtures/golden/dx11-texture-slots/` (sources and goldens beside each
 other) plus the 27 of `legacy-sampler-units/`, per compiled shader:
 
 1. Every explicit `register(tN)` on a `t`-register declaration (any texture, `Buffer`,
@@ -79,22 +79,29 @@ effect that has a legacy sampler (`CompilationPipeline.ReorderDirectX11TextureSl
   third review measured it folding a call that returns a constant, a local set from one, a
   default or `out` argument, `k > 0 && false`, one component of `float2(k, 0)`,
   `saturate(-1 - abs(k)) > 0`, a loop that never runs and a `return` under such a condition,
-  and NOT folding `k * 0 > 1`, `k - k > 0` or a `static` initialised from a uniform (goldens
-  `K01`..`K38`). An earlier walk that tracked "compile-time" values syntactically got every
-  folded one silently wrong. So every read under an `if`, a `switch`, a loop that may run zero
-  times, or after a `return`/`discard`/`break`/`continue` under one, is CONDITIONAL (a `break`
-  reaches only the end of its loop or switch), and the walk REFUSES with `SD0230` whenever a
-  conditional first read, if fxc dropped it, would let another texture's first read come before
-  the next read of the same texture (`D12_UnrollLoopIndex`, `K01`..`K11`, `K20`, `K21`, `K26`,
-  `K31`, `K36`, `K37`). The one exception is a condition CERTAINLY decided at run time: a uniform
-  (top-level, neither `static` nor `const`, not shadowed) or an entry input the entry never
-  assigns or passes out, of a signed numeric scalar, one vector component or a `bool`, bare,
-  negated or compared with a short literal or another such value; a `switch` on one; a `for`
-  whose first iteration certainly runs (literal or `static const` bounds, or a uniform bound) and
-  a `do` loop. Both arms of `?:` are read whatever the condition (measured with a literal
-  `false`, a `static const` and `0 > 1`), so they are not conditional. The walk also refuses a
-  read through a sampler parameter and a bound legacy texture it never saw read (`K13`: placing
-  it last by guess gave `A` on `t0` where `mgfxc` has `B`);
+  and NOT folding a plain uniform or input, `k * 0 > 1`, `k - k > 0` or a `static` initialised
+  from a uniform (goldens `K01`..`K38`). A fourth review broke the "certainly run-time"
+  exception the walk then had for uniforms and unmodified inputs: fxc also folds a uniform the
+  shader assigns or passes `out`, a local declared in a comma list that shadows it, a
+  parenthesized write to an input, an `unsigned int` compared with `0` and a loop bound that
+  truncates (goldens `P*`, `Q*`, `R*`). So **the walk never evaluates a condition.** What it
+  models is only what was measured and depends on no value: straight-line evaluation order; a
+  read after an unconditional `return`, `break` or `continue` in the same block is removed (a
+  bare block ending in one included; `P14`..`P16`, `Q11`, `Q16`, `T08`, `T09`), while `discard`
+  removes nothing (`P25`, `T06`); a `switch` numbers the arm holding `default` after every
+  `case` arm, the others in token order, wherever `default` is written (`P20`, `Q02`, `T01`..`T05`;
+  fxc rejects an arm that falls through, X3533, so the walk refuses one); both arms of `?:` are
+  read whatever the condition. Every read under an `if`/`else`, in a `switch` arm, in a loop not
+  certainly entered (only a `do` loop, or a `for` whose counter is a signed `int` from an integer
+  literal compared `< <= > >= !=` with an integer literal or a `static const int` from one, the
+  first test holding in exact integer arithmetic), in a later iteration of a loop (walked again),
+  or after a `return`/`break`/`continue` that may not run sits under a GUARD. The guards are taken
+  as independent (more orders, never fewer) and a read is kept only if all its guards are; the
+  walk REFUSES with `SD0230` when some choice of guards keeps a read of one texture while
+  dropping every earlier read of another that is read again later. Reads under the same guards
+  share their fate, so the reads after one early `return` stay or go together (`T10`, `T11`).
+  The walk also refuses a read through a sampler parameter and a bound legacy texture it never
+  saw read (`K13`: placing it last by guess gave `A` on `t0` where `mgfxc` has `B`);
 - the preprocessed view gives the legacy textures and every explicit `t` register
   (`GlSamplerSlots.ExplicitTextureRegisters`, stage-qualified registers included);
 - when the planned slots differ, the shader is recompiled with every `t` resource's top-level
@@ -128,8 +135,9 @@ moved, the same files on each, and only:
   (`PointTexture@t0s1 LinearTexture@t1s0`) and `SamplerRegisterOrder.fx`
   (`MaskSampler@t0s1 SpriteSampler@t1s0`).
 
-None of these is in a byte-identity manifest, which is why every manifest is unchanged. No warning
-list changed.
+None of these is in a byte-identity manifest, which is why every manifest is unchanged. One warning
+list changed: the real Apos.Shapes shader (`tests/fixtures/issues/202/apos-shapes.fx`) now warns
+`SD0230` on both backends with unchanged bytes (§5).
 
 ## 5. Still open
 
@@ -139,17 +147,19 @@ list changed.
   record. Pinned as a known divergence.
 - **vkd3d keeps reads fxc folds away** (`D01`..`D10`: `x * 0`, `lerp(a, b, 1)`, `a - a`,
   `dot(x, 0)`, `saturate(-1 - abs(x))`): the dead texture keeps a record and a slot on vkd3d only.
-- **An order a condition could change** (`D12_UnrollLoopIndex`, an `[unroll]` loop reading under
-  `if (i == 2)`, and the `K*` probes): fxc folds what it can, the walk refuses with `SD0230`.
-  **Known false refusals**, loud, never silent: when fxc does NOT fold a condition the walk
-  cannot prove run-time (`K18_UniformTimesZero` `k * 0 > 1`, `K15_StaticFromUniform`
-  `static float s = k`), the warning fires and the slots stay in declaration order, which is not
-  `mgfxc`'s when the conditional read came first (`K15`, `K18`). The class needs a texture
-  whose first read is conditional, read again later, with another texture's first read in
-  between. Any refusal, correct ones included, falls back to declaration order, so it differs
-  from `mgfxc` whenever `mgfxc`'s order is not declaration order (`K20`, a folded `return`).
-  All three are in `KnownDivergence`.
-- **A legacy sampler passed as a function argument** (`K13_SamplerParam`) compiles natively: its
+- **An order a condition could change**: fxc folds what it can and the walk refuses with
+  `SD0230`. **Known false refusals**, loud, never silent: when fxc does NOT fold the condition (a
+  uniform, an input, `k * 0 > 1`, a `static` from a uniform), the warning fires and the slots stay
+  in declaration order, which is not `mgfxc`'s when the conditional read came first: 26 of the 240
+  shapes (`K16`, `K17`, `K28`, `K33`, `K38`, `P01`..`P04`, `Q08`, ...), listed in
+  `DirectX11TextureSlotOrderTests.FalseSD0230`. The class needs a texture whose first read is
+  under a guard, read again later, with another texture's first read in between. The real
+  Apos.Shapes shader is one: its blur branch reads the dither noise and returns ahead of the ramp
+  reads, so were that branch folded away the ramp would come first; it warns, and its
+  declaration order is `mgfxc`'s table, so its slots are right (asserted by
+  `AposShapes_KeepsMgfxcsTable_AndWarnsTheFalseSD0230`). Any refusal, correct ones included,
+  falls back to declaration order, so it differs from `mgfxc` whenever `mgfxc`'s order is not
+  declaration order (`K20`, a folded `return`; `D12`, iteration order).- **A legacy sampler passed as a function argument** (`K13_SamplerParam`) compiles natively: its
   sampler slot is `s0` where `mgfxc` has `s1` (pre-existing), and its texture slots warn
   `SD0230`. Passed AND read directly (`F(B, uv) + tex2D(B, uv)`) it does not compile on vkd3d
   (`E5005`) and gets two texture records under d3dcompiler (pre-existing rewrite gap, not pinned).

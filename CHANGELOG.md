@@ -37,25 +37,34 @@ that loads and renders identically to `mgfxc`'s in the real MonoGame/KNI runtime
   DXBC backends and every host: no compiled instruction stream carries it (`d3dcompiler_47`
   schedules its reads, emitting a read feeding `clip` first and `tex2D(A) * tex2D(B) +
   tex2D(C) * 2` C first, and vkd3d-shader swaps the operands of `>` and `<=`); the surviving
-  resources come from the shipped compile's own RDEF. fxc numbers after inlining and folding
-  every condition it can evaluate, which no syntactic test predicts (measured: a call returning a
-  constant, a local, a default or `out` argument, `k > 0 && false`, one component of a vector, a
-  loop that never runs, an unrolled loop's counter), so a texture whose first read sits under an
-  `if`, a `switch`, a loop that may run zero times, or after a `return`/`discard` under one, may
-  be numbered at any later read of it: when that could change the order against another texture,
-  the check refuses with `SD0230` rather than guess. Only a condition certainly decided at run
-  time (a uniform or an unmodified shader input, bare or compared with a literal, a `switch` on a
-  uniform) keeps its read in place, and both arms of `?:` always count. The price is a narrow
-  class of refusals where fxc would in fact keep the order (a condition fxc does not fold but the
-  check cannot prove run-time, such as `k * 0 > 1` or a `static` initialised from a uniform,
-  followed by a later read of the same texture): those keep the old slots, loudly. Measured on 180
-  shapes (`tests/fixtures/golden/dx11-texture-slots/`, 36 of them condition probes) and the 27
-  legacy-sampler goldens, on both backends: `mgfxc`'s table or an `SD0230` warning, never a
+  resources come from the shipped compile's own RDEF. The walk follows straight-line evaluation
+  order exactly; it also removes a read after an unconditional `return`, `break` or `continue` in
+  the same block (fxc does; `discard` removes nothing) and numbers a `switch`'s `default` arm
+  after every `case` arm, wherever it is written (both measured). It never evaluates a
+  condition: fxc numbers after inlining and folding every condition it can evaluate, which no
+  syntactic test predicts (measured: a call returning a constant, a local, a default or `out`
+  argument, `k > 0 && false`, one component of a vector, a uniform the shader assigns, a local
+  declared in a comma list, a parenthesized write to an input, an `unsigned int` compared with
+  `0`, a loop bound that truncates). So a read under an `if`/`else`, in a `switch` arm, in a loop
+  that is not certainly entered (only a signed `int` counter from an integer literal against an
+  integer literal or a `static const int` from one is), in a later loop iteration, or after a
+  `return`/`break`/`continue` that may not run, is one fxc may or may not keep; when keeping or
+  dropping such reads could change the order, the check refuses with `SD0230` and keeps the old
+  slots rather than guess. Both arms of `?:` always count, and reads sharing their conditions
+  share their fate (everything after one early `return` stays or goes together). The price is a
+  class of loud refusals where fxc in fact keeps the order: a texture first read under a uniform
+  or input condition and read again after another texture (26 of the 240 golden shapes, among
+  them `if (k > 0)` on a uniform and a `switch` on one), and the real Apos.Shapes shader (issue
+  #202), whose blur branch reads the dither noise and returns ahead of the ramp reads: it keeps
+  its declaration-order slots, which are `mgfxc`'s, and warns. Measured on 240 shapes
+  (`tests/fixtures/golden/dx11-texture-slots/`, 95 of them condition probes from two reviews) and
+  the 27 legacy-sampler goldens, on both backends: `mgfxc`'s table or an `SD0230` warning, never a
   silent other order (the 11 listed as divergent before now match), except one texture
   behind two legacy samplers, or behind a legacy sampler and a direct read (one record, `mgfxc`
   has two), legacy samplers a macro declares (compiled natively, a pre-existing gap), and, on
   vkd3d only, reads vkd3d's optimiser keeps where fxc folds them (`x * 0`, `lerp(a, b, 1)`,
-  `a - a`): the dead texture keeps a record and a slot. Anything the check cannot model or apply
+  `a - a`, a `switch` on a `static const`): the dead texture keeps a record and a slot. Anything
+  the check cannot model or apply
   (a texture declared through a macro or in a declarator list, a resource array, an unreadable
   preprocessed view, an order a foldable condition could change, an overloaded function, a legacy
   sampler passed as a function argument, a bound texture whose read the check did not find, two
