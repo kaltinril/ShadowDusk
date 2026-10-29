@@ -429,8 +429,8 @@ is a CORRECT result, not a defect.
 | third-party/MonoGame/RainbowH.fx | OpenGL | PASS |  |  |
 | third-party/MonoGame/TextureArrayEffect.fx | DirectX_11 | PASS |  |  |
 | third-party/MonoGame/TextureArrayEffect.fx | OpenGL | FAIL | SD0210 | Unsupported sampler type for the MonoGame/KNI GL target: 'sampler2DArray'. The MojoShader-dialect rewrite models 'sampler2D', 'samplerCube' and 'sampler3D'; a '... |
-| third-party/MonoGame/VertexTextureEffect.fx | DirectX_11 | FAIL | FX0012 | The legacy D3D9 sampling intrinsic 'tex2Dlod' is not supported on this target: its arguments do not map 1:1 onto a modern Texture method, so ShadowDusk cannot r... |
-| third-party/MonoGame/VertexTextureEffect.fx | OpenGL | FAIL | FX0012 | The legacy D3D9 sampling intrinsic 'tex2Dlod' is not supported on this target: its arguments do not map 1:1 onto a modern Texture method, so ShadowDusk cannot r... |
+| third-party/MonoGame/VertexTextureEffect.fx | DirectX_11 | PASS |  |  |
+| third-party/MonoGame/VertexTextureEffect.fx | OpenGL | FAIL | SD0210 | Vertex-stage texture sampling is not supported for the MonoGame OpenGL target: MonoGame 3.8.2's GL runtime never assigns texture units to VERTEX-shader samplers... |
 | third-party/Nez/Bevels.fx | DirectX_11 | FAIL | SD0015 | compile target 'ps_2_0' is below the DirectX target's floor — mgfxc rejects it with "Invalid profile 'ps_2_0'. Pixel shader 'PixelShaderFunction' must be SM 4.0... |
 | third-party/Nez/Bevels.fx | OpenGL | PASS |  |  |
 | third-party/Nez/BloomCombine.fx | DirectX_11 | FAIL | SD0015 | compile target 'ps_2_0' is below the DirectX target's floor — mgfxc rejects it with "Invalid profile 'ps_2_0'. Pixel shader 'PixelShaderFunction' must be SM 4.0... |
@@ -447,8 +447,8 @@ is a CORRECT result, not a defect.
 | third-party/Nez/Letterbox.fx | OpenGL | PASS |  |  |
 | third-party/Nez/Noise.fx | DirectX_11 | FAIL | SD0015 | compile target 'ps_3_0' is below the DirectX target's floor — mgfxc rejects it with "Invalid profile 'ps_3_0'. Pixel shader 'PixelShaderFunction' must be SM 4.0... |
 | third-party/Nez/Noise.fx | OpenGL | PASS |  |  |
-| third-party/Nez/PaletteCycler.fx | DirectX_11 | FAIL | FX0012 | The legacy D3D9 sampling intrinsic 'tex1D' is not supported on this target: its arguments do not map 1:1 onto a modern Texture method, so ShadowDusk cannot rewr... |
-| third-party/Nez/PaletteCycler.fx | OpenGL | FAIL | FX0012 | The legacy D3D9 sampling intrinsic 'tex1D' is not supported on this target: its arguments do not map 1:1 onto a modern Texture method, so ShadowDusk cannot rewr... |
+| third-party/Nez/PaletteCycler.fx | DirectX_11 | FAIL | FX0012 | The legacy D3D9 sampling intrinsic 'tex1D' is not supported on this target: ShadowDusk rewrites the 2D sampler family (tex2D, tex2Dgrad, tex2Dlod, tex2Dbias, te... |
+| third-party/Nez/PaletteCycler.fx | OpenGL | FAIL | FX0012 | The legacy D3D9 sampling intrinsic 'tex1D' is not supported on this target: ShadowDusk rewrites the 2D sampler family (tex2D, tex2Dgrad, tex2Dlod, tex2Dbias, te... |
 | third-party/Nez/PixelGlitch.fx | DirectX_11 | FAIL | SD0015 | compile target 'ps_3_0' is below the DirectX target's floor — mgfxc rejects it with "Invalid profile 'ps_3_0'. Pixel shader 'MainPS' must be SM 4.0 level 9.1 or... |
 | third-party/Nez/PixelGlitch.fx | OpenGL | PASS |  |  |
 | third-party/Nez/Reflection.fx | DirectX_11 | FAIL | SD0015 | compile target 'vs_2_0' is below the DirectX target's floor — mgfxc rejects it with "Invalid profile 'vs_2_0'. Vertex shader 'mirrorVertex' must be SM 4.0 level... |
@@ -478,13 +478,13 @@ is a CORRECT result, not a defect.
 
 - `SD0015`: 22 cell(s) — FnaMultiPassStates.fx [DirectX_11], examples/ExIntUniformMember.fx [DirectX_11], examples/ExMat3UniformMember.fx [DirectX_11], examples/ExProfileSm3BothArms.fx [DirectX_11], examples/ExProfileSm3OnDirectX.fx [DirectX_11], examples/ExProfileSm6OnDirectX.fx [DirectX_11], third-party/Gum/FnaSample-Shader.fx [DirectX_11], third-party/Gum/KniInCode-Shader.fx [DirectX_11], third-party/Nez/Bevels.fx [DirectX_11], third-party/Nez/BloomCombine.fx [DirectX_11], third-party/Nez/BloomExtract.fx [DirectX_11], third-party/Nez/Crosshatch.fx [DirectX_11], third-party/Nez/GaussianBlur.fx [DirectX_11], third-party/Nez/HeatDistortion.fx [DirectX_11], third-party/Nez/Letterbox.fx [DirectX_11], third-party/Nez/Noise.fx [DirectX_11], third-party/Nez/PixelGlitch.fx [DirectX_11], third-party/Nez/Reflection.fx [DirectX_11], third-party/Nez/SpriteBlinkEffect.fx [DirectX_11], third-party/Nez/SpriteLines.fx [DirectX_11], third-party/Nez/Twist.fx [DirectX_11], third-party/Nez/Vignette.fx [DirectX_11]
 - `SD0010`: 8 cell(s) — minimal_vs_ps.fx [DirectX_11], minimal_vs_ps.fx [OpenGL], passthrough_vs.fx [DirectX_11], passthrough_vs.fx [OpenGL], textured_vs_ps.fx [DirectX_11], textured_vs_ps.fx [OpenGL], third-party/Gum/FnaSample-Shader.fx [OpenGL], third-party/MonoGame/ParameterTypes.fx [OpenGL]
-- `SD0210`: 6 cell(s) — examples/ExIntUniformMember.fx [OpenGL], examples/ExMat3UniformMember.fx [OpenGL], examples/ExVsTextureFetch.fx [OpenGL], third-party/MonoGame/Instancing.fx [OpenGL], third-party/MonoGame/TextureArrayEffect.fx [OpenGL], third-party/Nez/Crosshatch.fx [OpenGL]
+- `SD0210`: 7 cell(s) — examples/ExIntUniformMember.fx [OpenGL], examples/ExMat3UniformMember.fx [OpenGL], examples/ExVsTextureFetch.fx [OpenGL], third-party/MonoGame/Instancing.fx [OpenGL], third-party/MonoGame/TextureArrayEffect.fx [OpenGL], third-party/MonoGame/VertexTextureEffect.fx [OpenGL], third-party/Nez/Crosshatch.fx [OpenGL]
 - `SD0013`: 6 cell(s) — examples/ExProfileBogusLiteral.fx [DirectX_11], examples/ExProfileBogusLiteral.fx [OpenGL], examples/ExProfileTypo.fx [DirectX_11], examples/ExProfileTypo.fx [OpenGL], examples/ExProfileUndefinedMacro.fx [DirectX_11], examples/ExProfileUndefinedMacro.fx [OpenGL]
 - `X0000`: 5 cell(s) — third-party/Gum/KniInCode-Shader.fx [OpenGL], third-party/MonoGame/CustomSpriteBatchEffectComparisonSampler.fx [OpenGL], third-party/MonoGame/DefinesTest.fx [OpenGL], third-party/MonoGame/ParserTest.fx [OpenGL], third-party/MonoGame/PreprocessorTest.fx [OpenGL]
-- `FX0012`: 4 cell(s) — third-party/MonoGame/VertexTextureEffect.fx [DirectX_11], third-party/MonoGame/VertexTextureEffect.fx [OpenGL], third-party/Nez/PaletteCycler.fx [DirectX_11], third-party/Nez/PaletteCycler.fx [OpenGL]
 - `SD0001`: 2 cell(s) — MinimalWithInclude.fx [DirectX_11], MinimalWithInclude.fx [OpenGL]
 - `SD0014`: 2 cell(s) — examples/ExProfileStageMismatch.fx [DirectX_11], examples/ExProfileStageMismatch.fx [OpenGL]
 - `SD0217`: 2 cell(s) — texture-arrays/TextureArray2.fx [OpenGL], texture-arrays/TextureArray4NoRegister.fx [OpenGL]
+- `FX0012`: 2 cell(s) — third-party/Nez/PaletteCycler.fx [DirectX_11], third-party/Nez/PaletteCycler.fx [OpenGL]
 - `SD0224`: 1 cell(s) — texture-arrays/SamplerArray2.fx [DirectX_11]
 - `SD0100`: 1 cell(s) — texture-arrays/SamplerArray2.fx [OpenGL]
 - `E5030`: 1 cell(s) — third-party/MonoGame/DefinesTest.fx [DirectX_11]

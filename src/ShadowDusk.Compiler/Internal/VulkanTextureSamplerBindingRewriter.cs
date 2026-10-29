@@ -94,6 +94,17 @@ internal static class VulkanTextureSamplerBindingRewriter
     private static readonly Regex SampleCall =
         new(@"(\w+)\s*\.\s*(?:Sample|Gather)\w*\s*\(\s*(\w+)\s*[,)]", RegexOptions.Compiled);
 
+    // FxPreParser rewrites a legacy tex2Dlod / tex2Dbias / tex2Dproj call to a call of a helper
+    // it defines (`tex2Dlod(s, t)` becomes `tex2Dlod_SD0(T, s, t)`, the helper samples its own
+    // PARAMETERS), so the global pair never appears in a `T.Sample(s, …)` call: the helper call
+    // is that pair's pairing signal. Mirrors FxPreParser.RewriteRestructuredIntrinsic's naming
+    // (intrinsic + "_SD" + counter, texture first, sampler second), as SynthesizedTextureSuffix
+    // mirrors its texture suffix. Missing it left the pair auto-numbered on Vulkan, the
+    // separate-descriptor shape that reads the wrong mip / access-violates in DesktopVK
+    // (measured 2026-10-28 on validation/VsDrivenVulkan -- legacy-lod).
+    private static readonly Regex RestructuredHelperCall =
+        new(@"\btex2D(?:lod|bias|proj)_SD\d+\s*\(\s*(\w+)\s*,\s*(\w+)\s*,", RegexOptions.Compiled);
+
     // Preprocessor conditionals, tracked so the shared-sampler diagnostic below can tell
     // "two textures + one sampler in ONE live code path" (broken on Vulkan, SD0028) apart
     // from "the same sampler re-paired across mutually-exclusive #if branches" (legal —
@@ -153,7 +164,10 @@ internal static class VulkanTextureSamplerBindingRewriter
         var branchStack = new List<(int Group, int Branch)>();
         int nextDirective = 0, nextGroup = 0;
 
-        foreach (Match m in SampleCall.Matches(hlsl))
+        IEnumerable<Match> pairingCalls = SampleCall.Matches(hlsl)
+            .Concat(RestructuredHelperCall.Matches(hlsl))
+            .OrderBy(m => m.Index);
+        foreach (Match m in pairingCalls)
         {
             // Advance the conditional-branch cursor to this call's position.
             while (nextDirective < directives.Count && directives[nextDirective].Index < m.Index)

@@ -161,7 +161,11 @@ they only affect the scanner's own pattern matching.
 
 It runs in one of two modes. `RewriteToSm4` (MonoGame/KNI, the default) rewrites legacy D3D9
 forms forward for DXC/vkd3d: legacy `texture`/`sampler` declarations to `Texture2D`/`SamplerState`,
-`tex2D(s, uv)` to `s.Sample(...)`, and a `: COLOR` pixel return semantic to `: SV_Target`.
+`tex2D(s, uv)` to `T.Sample(s, uv)` (`tex2Dgrad` to `T.SampleGrad`), `tex2Dlod` / `tex2Dbias` /
+`tex2Dproj` to a call of a helper defined before the calling declaration (returning
+`T.SampleLevel(s, t.xy, t.w)` / `T.SampleBias(s, t.xy, t.w)` / `T.Sample(s, t.xy / t.w)`, so the
+coordinate is evaluated once), and a `: COLOR` pixel return semantic to `: SV_Target`. The 1D, 3D and
+cube intrinsic families are refused with `FX0012`.
 `PreserveSm3` (FNA) leaves all of that **verbatim** so vkd3d compiles the D3D9 source natively.
 
 **Why.** Stripping FX syntax up front means every downstream compiler sees plain HLSL, and

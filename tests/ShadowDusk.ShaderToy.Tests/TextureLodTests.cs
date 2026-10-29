@@ -5,11 +5,11 @@ namespace ShadowDusk.ShaderToy.Tests;
 
 /// <summary>
 /// <c>textureLod</c> lowering. A base-level <c>textureLod(s, uv, 0.)</c> lowers to a plain <c>tex2D</c>
-/// (the legacy <c>tex2Dlod</c> intrinsic does not rewrite to a modern Texture method on the OpenGL/DirectX
-/// targets, FX0012; the single-pass harness binds each iChannelN without mipmaps, so mip 0 is the only
-/// level and the two are equivalent). A non-zero LOD is a loud, LOCATED convert-time reject — matching
-/// the mip-bias form — instead of emitting <c>tex2Dlod</c> that fails downstream with an error pointing
-/// at generated HLSL.
+/// (the single-pass harness binds each iChannelN without mipmaps, so mip 0 is the only level and the two
+/// are equivalent). A non-zero LOD is a loud, LOCATED convert-time reject — matching the mip-bias form.
+/// The legacy <c>tex2Dlod</c> it would map to was <c>FX0012</c> on the OpenGL/DirectX targets until
+/// 2026-10-28; the pre-parser rewrites it now, but the ShaderToy route is not render-validated with it, so
+/// the subset stays closed.
 /// </summary>
 public sealed class TextureLodTests
 {
@@ -41,9 +41,9 @@ public sealed class TextureLodTests
 
         ConvertResult r = ShaderToyConverter.Convert(glsl);
 
-        // The tex2Dlod it used to emit does not compile through the OpenGL/DirectX pipeline
-        // (FX0012), so the boundary is now rejected HERE, located in the user's GLSL, exactly like
-        // the mip-bias texture(s, uv, bias) form.
+        // The tex2Dlod it used to emit was FX0012 through the OpenGL/DirectX pipeline (rewritten since
+        // 2026-10-28, not yet render-validated on this route), so the boundary is rejected HERE,
+        // located in the user's GLSL, exactly like the mip-bias texture(s, uv, bias) form.
         r.Success.ShouldBeFalse("a non-zero LOD has no compilable mapping on the primary targets");
         r.Fx.ShouldBeNull();
         ConvertDiagnostic error = r.Diagnostics.Where(d =>

@@ -96,6 +96,8 @@ ShadowDusk/
 │                                       #   OpenGL/DirectX_11 goldens; the parameter NAME tests, outside the corpus sweeps)
 │                                       #   + legacy-sampler-units/ (legacy beside modern samplers: OpenGL units and
 │                                       #   DirectX 11 sampler slots vs mgfxc; also the GL/DX render-arm fixtures)
+│                                       #   + legacy-lod-intrinsics/ (tex2Dlod/tex2Dbias/tex2Dproj render fixture, its
+│                                       #   modern twin, mgfxc 3.8.4.1/3.8.5 goldens, MonoGame VertexTextureEffect goldens)
 ├── samples/
 │   ├── ShaderFiddle.Web/               # KNI Blazor-WASM in-browser fiddle (sample of reach)
 │   ├── ShaderToyViewer/                # Interactive ShaderToy viewer: runtime convert -> in-memory
@@ -211,7 +213,9 @@ ShadowDusk/
 │                                  #     + compare_forwardcompat.py, run-forwardcompat.ps1),
 │                                  #   shared source linked into the drivers (not projects): Shared/ (GL
 │                                  #     renderers + shader inputs), SharedDx/ (DX renderers, headless
-│                                  #     rasterizer, Apos.Shapes gallery renderer)
+│                                  #     rasterizer, Apos.Shapes gallery renderer), SharedLegacyLod/ (the
+│                                  #     tex2Dlod/tex2Dbias/tex2Dproj + MonoGame VTF scene the DX11, DX12
+│                                  #     and Vulkan drivers all draw)
 │                                  #   + the compare_*.py oracles. See docs/validation-matrix.md §6.
 │                                  #   Two entries here are NOT render proofs:
 │                                  #     MgcbPlugin runs a real `dotnet mgcb` content build through the MGCB

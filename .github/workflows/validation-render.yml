@@ -68,7 +68,9 @@
 #                              d3dcompiler/fxc oracle, real MonoGame WindowsDX. The
 #                              flagship gate here: single process, self-asserting exit
 #                              code, no Python, no external mgfxc invocation. Also its
-#                              legacy-register and half-globals arms (vs committed goldens).
+#                              legacy-register and half-globals arms (vs committed goldens),
+#                              and "legacy-lod" (tex2Dlod/tex2Dbias/tex2Dproj vs the
+#                              committed mgfxc DirectX_11 golden).
 #   * KniWinFormsDX          — DX11 ShadowDusk vs the committed mgfxc goldens, real KNI
 #                              WinForms.DX11 (proves WARP extends to KNI's DX backend,
 #                              which carries the pin on PresentationParameters rather
@@ -135,7 +137,8 @@
 # measured run and needs only apt (an elevated Windows runner ignores VK_ICD_FILENAMES, so a
 # non-SDK ICD there needs registry writes).
 #   * VsDrivenVulkan         — VS-driven fixture vs the mgfxc 3.8.5 Vulkan golden (maxd 0),
-#                              then `-- apos`, the Apos.Shapes gallery (maxd 0).
+#                              then `-- apos`, the Apos.Shapes gallery (maxd 0), then
+#                              `-- legacy-lod` (tex2Dlod/tex2Dbias/tex2Dproj, maxd 0).
 #   * CandidateVulkan        — the 10-shader PS corpus, own-output only (mgfxc's Vulkan output
 #                              is unloadable for it, upstream SlotOffset bug).
 #   * Two POSITIVE CONTROLS  — a wrong shader must fail the pixel diff, and SPIR-V stamped 1.3
@@ -721,6 +724,15 @@ jobs:
       - name: Vulkan texture array rejected with SD0221 (issue #324)
         if: ${{ !cancelled() }}
         run: dotnet run --project validation/VsDrivenVulkan -c Release --no-build -- texarr
+
+      # tex2Dlod (vertex AND pixel stage), tex2Dbias and tex2Dproj in legacy sampler syntax,
+      # ShadowDusk's Vulkan build vs mgfxc 3.8.5's Vulkan build of the modern twin (mgfxc 3.8.5
+      # refuses the legacy spelling on Vulkan), maxd 0, with four built-in positive controls that
+      # must each move exactly their own column. The run that found the Vulkan pairing gap (the
+      # helper call hid the pair from the binding rewriter: wrong mip, then a native fault).
+      - name: Vulkan legacy LOD intrinsics (tex2Dlod/tex2Dbias/tex2Dproj vs mgfxc, real DesktopVK)
+        if: ${{ !cancelled() }}
+        run: validation/run-with-vk-validation.sh legacy-lod -- xvfb-run -a dotnet run --project validation/VsDrivenVulkan -c Release --no-build -- legacy-lod
 
       # Own-output proof: mgfxc's Vulkan output for this corpus is unloadable (upstream
       # SlotOffset bug, see compare_vulkan.py), so BaselineVulkan is best-effort and

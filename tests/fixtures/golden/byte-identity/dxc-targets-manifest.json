@@ -910,9 +910,10 @@
     "warnings": []
   },
   "DirectX12.Debug/third-party/MonoGame/VertexTextureEffect.fx": {
-    "errors": [
-      "third-party/MonoGame/VertexTextureEffect.fx(75,20-20): error FX0012: The legacy D3D9 sampling intrinsic \u0027tex2Dlod\u0027 is not supported on this target: its arguments do not map 1:1 onto a modern Texture method, so ShadowDusk cannot rewrite it automatically. Rewrite the call to the modern form (e.g. tex2Dlod(s, t) becomes T.SampleLevel(s, t.xy, t.w); tex2Dproj(s, t) becomes T.Sample(s, t.xy / t.w)). The FNA (fx_2_0) target compiles this intrinsic natively."
-    ]
+    "mgfx": "a873899239886913c5efac14b5390459d560480213cef9eb6e1abc9ea0b8e9ea",
+    "mgfxNormalized": "4c68f43e3466bf25d3bd955dfa60974c71ec10bc8c663db85abd9b466a3d2cab",
+    "dxil": "3775eddfd16fd1e1da102c0ec4a8d2daf6d6e4013691e4f68748b771fafb703f",
+    "warnings": []
   },
   "DirectX12.Debug/third-party/Nez/Bevels.fx": {
     "mgfx": "8c76c55f3e1d707cd6e8e9ec38c1c0fcff4eac253e6b64f7c5af9d816e1d3648",
@@ -964,7 +965,7 @@
   },
   "DirectX12.Debug/third-party/Nez/PaletteCycler.fx": {
     "errors": [
-      "third-party/Nez/PaletteCycler.fx(36,9-9): error FX0012: The legacy D3D9 sampling intrinsic \u0027tex1D\u0027 is not supported on this target: its arguments do not map 1:1 onto a modern Texture method, so ShadowDusk cannot rewrite it automatically. Rewrite the call to the modern form (e.g. tex2Dlod(s, t) becomes T.SampleLevel(s, t.xy, t.w); tex2Dproj(s, t) becomes T.Sample(s, t.xy / t.w)). The FNA (fx_2_0) target compiles this intrinsic natively."
+      "third-party/Nez/PaletteCycler.fx(36,9-9): error FX0012: The legacy D3D9 sampling intrinsic \u0027tex1D\u0027 is not supported on this target: ShadowDusk rewrites the 2D sampler family (tex2D, tex2Dgrad, tex2Dlod, tex2Dbias, tex2Dproj) to modern Texture2D methods, but not the 1D, 3D and cube families. Declare the texture as Texture1D / Texture3D / TextureCube with a SamplerState and call its method instead (e.g. texCUBE(s, d) becomes T.Sample(s, d); tex3Dlod(s, t) becomes T.SampleLevel(s, t.xyz, t.w)). The FNA (fx_2_0) target compiles this intrinsic natively."
     ]
   },
   "DirectX12.Debug/third-party/Nez/PixelGlitch.fx": {
@@ -1950,9 +1951,10 @@
     "warnings": []
   },
   "DirectX12/third-party/MonoGame/VertexTextureEffect.fx": {
-    "errors": [
-      "third-party/MonoGame/VertexTextureEffect.fx(75,20-20): error FX0012: The legacy D3D9 sampling intrinsic \u0027tex2Dlod\u0027 is not supported on this target: its arguments do not map 1:1 onto a modern Texture method, so ShadowDusk cannot rewrite it automatically. Rewrite the call to the modern form (e.g. tex2Dlod(s, t) becomes T.SampleLevel(s, t.xy, t.w); tex2Dproj(s, t) becomes T.Sample(s, t.xy / t.w)). The FNA (fx_2_0) target compiles this intrinsic natively."
-    ]
+    "mgfx": "9a7a9eca6fd00e8845c6de4e3efeb0b7924970cbe9969c51313c018fb25e767f",
+    "mgfxNormalized": "9244ee1e883063353eb48d73378a5585191d9587830f859f28cab003278fa827",
+    "dxil": "5d88ac938a9f5811daa88a15cb112ff80f95f63b03f05127d38a7d797605f107",
+    "warnings": []
   },
   "DirectX12/third-party/Nez/Bevels.fx": {
     "mgfx": "bf1a8c9c84e21f3feee8251818ebb589325ebc410c703bb6b8baa65fd7b00a07",
@@ -2004,7 +2006,7 @@
   },
   "DirectX12/third-party/Nez/PaletteCycler.fx": {
     "errors": [
-      "third-party/Nez/PaletteCycler.fx(36,9-9): error FX0012: The legacy D3D9 sampling intrinsic \u0027tex1D\u0027 is not supported on this target: its arguments do not map 1:1 onto a modern Texture method, so ShadowDusk cannot rewrite it automatically. Rewrite the call to the modern form (e.g. tex2Dlod(s, t) becomes T.SampleLevel(s, t.xy, t.w); tex2Dproj(s, t) becomes T.Sample(s, t.xy / t.w)). The FNA (fx_2_0) target compiles this intrinsic natively."
+      "third-party/Nez/PaletteCycler.fx(36,9-9): error FX0012: The legacy D3D9 sampling intrinsic \u0027tex1D\u0027 is not supported on this target: ShadowDusk rewrites the 2D sampler family (tex2D, tex2Dgrad, tex2Dlod, tex2Dbias, tex2Dproj) to modern Texture2D methods, but not the 1D, 3D and cube families. Declare the texture as Texture1D / Texture3D / TextureCube with a SamplerState and call its method instead (e.g. texCUBE(s, d) becomes T.Sample(s, d); tex3Dlod(s, t) becomes T.SampleLevel(s, t.xyz, t.w)). The FNA (fx_2_0) target compiles this intrinsic natively."
     ]
   },
   "DirectX12/third-party/Nez/PixelGlitch.fx": {
@@ -2847,9 +2849,9 @@
     "warnings": []
   },
   "Vulkan.Debug/third-party/MonoGame/VertexTextureEffect.fx": {
-    "errors": [
-      "third-party/MonoGame/VertexTextureEffect.fx(75,20-20): error FX0012: The legacy D3D9 sampling intrinsic \u0027tex2Dlod\u0027 is not supported on this target: its arguments do not map 1:1 onto a modern Texture method, so ShadowDusk cannot rewrite it automatically. Rewrite the call to the modern form (e.g. tex2Dlod(s, t) becomes T.SampleLevel(s, t.xy, t.w); tex2Dproj(s, t) becomes T.Sample(s, t.xy / t.w)). The FNA (fx_2_0) target compiles this intrinsic natively."
-    ]
+    "mgfx": "48b98468ef53db19f731dbfb361f894f13bdb1c7f6d8bad0b6180424256fbcff",
+    "spirv": "98bdccac3e45c75f6d5cdf974fbc89718d18267b4774ecdec83cf5280762cc03",
+    "warnings": []
   },
   "Vulkan.Debug/third-party/Nez/Bevels.fx": {
     "mgfx": "e9c52e37e809fe5ad82d809212936735df49da6940ebc3fae96065b9757237da",
@@ -2893,7 +2895,7 @@
   },
   "Vulkan.Debug/third-party/Nez/PaletteCycler.fx": {
     "errors": [
-      "third-party/Nez/PaletteCycler.fx(36,9-9): error FX0012: The legacy D3D9 sampling intrinsic \u0027tex1D\u0027 is not supported on this target: its arguments do not map 1:1 onto a modern Texture method, so ShadowDusk cannot rewrite it automatically. Rewrite the call to the modern form (e.g. tex2Dlod(s, t) becomes T.SampleLevel(s, t.xy, t.w); tex2Dproj(s, t) becomes T.Sample(s, t.xy / t.w)). The FNA (fx_2_0) target compiles this intrinsic natively."
+      "third-party/Nez/PaletteCycler.fx(36,9-9): error FX0012: The legacy D3D9 sampling intrinsic \u0027tex1D\u0027 is not supported on this target: ShadowDusk rewrites the 2D sampler family (tex2D, tex2Dgrad, tex2Dlod, tex2Dbias, tex2Dproj) to modern Texture2D methods, but not the 1D, 3D and cube families. Declare the texture as Texture1D / Texture3D / TextureCube with a SamplerState and call its method instead (e.g. texCUBE(s, d) becomes T.Sample(s, d); tex3Dlod(s, t) becomes T.SampleLevel(s, t.xyz, t.w)). The FNA (fx_2_0) target compiles this intrinsic natively."
     ]
   },
   "Vulkan.Debug/third-party/Nez/PixelGlitch.fx": {
@@ -3724,9 +3726,9 @@
     "warnings": []
   },
   "Vulkan/third-party/MonoGame/VertexTextureEffect.fx": {
-    "errors": [
-      "third-party/MonoGame/VertexTextureEffect.fx(75,20-20): error FX0012: The legacy D3D9 sampling intrinsic \u0027tex2Dlod\u0027 is not supported on this target: its arguments do not map 1:1 onto a modern Texture method, so ShadowDusk cannot rewrite it automatically. Rewrite the call to the modern form (e.g. tex2Dlod(s, t) becomes T.SampleLevel(s, t.xy, t.w); tex2Dproj(s, t) becomes T.Sample(s, t.xy / t.w)). The FNA (fx_2_0) target compiles this intrinsic natively."
-    ]
+    "mgfx": "a2a7bcdc4eab5544c0f9a76d6ade2a894693127b964aff5031d39cdc8a77b7bc",
+    "spirv": "d568f1cd7707c7c8512ee169afda2099a374f5353a7e724bca5350acf89ab56a",
+    "warnings": []
   },
   "Vulkan/third-party/Nez/Bevels.fx": {
     "mgfx": "90ead298c17a052d9add659fabb0cac89c52ea8dc58537c4813446d80d7899a6",
@@ -3770,7 +3772,7 @@
   },
   "Vulkan/third-party/Nez/PaletteCycler.fx": {
     "errors": [
-      "third-party/Nez/PaletteCycler.fx(36,9-9): error FX0012: The legacy D3D9 sampling intrinsic \u0027tex1D\u0027 is not supported on this target: its arguments do not map 1:1 onto a modern Texture method, so ShadowDusk cannot rewrite it automatically. Rewrite the call to the modern form (e.g. tex2Dlod(s, t) becomes T.SampleLevel(s, t.xy, t.w); tex2Dproj(s, t) becomes T.Sample(s, t.xy / t.w)). The FNA (fx_2_0) target compiles this intrinsic natively."
+      "third-party/Nez/PaletteCycler.fx(36,9-9): error FX0012: The legacy D3D9 sampling intrinsic \u0027tex1D\u0027 is not supported on this target: ShadowDusk rewrites the 2D sampler family (tex2D, tex2Dgrad, tex2Dlod, tex2Dbias, tex2Dproj) to modern Texture2D methods, but not the 1D, 3D and cube families. Declare the texture as Texture1D / Texture3D / TextureCube with a SamplerState and call its method instead (e.g. texCUBE(s, d) becomes T.Sample(s, d); tex3Dlod(s, t) becomes T.SampleLevel(s, t.xyz, t.w)). The FNA (fx_2_0) target compiles this intrinsic natively."
     ]
   },
   "Vulkan/third-party/Nez/PixelGlitch.fx": {

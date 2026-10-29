@@ -32,6 +32,9 @@
     <Compile Include="..\SharedDx\DxEffectImageRenderer.cs" />
     <Compile Include="..\SharedDx\VsDxEffectImageRenderer.cs" />
     <Compile Include="..\SharedDx\AposGalleryRenderer.cs" />
+    <!-- Mode legacy-lod (tex2Dlod / tex2Dbias / tex2Dproj): the scene the DX11 and Vulkan
+         drivers draw too. -->
+    <Compile Include="..\SharedLegacyLod\LegacyLodScene.cs" />
     <!-- Issue #324 (mode texarr): the MGFX parameter-block reader and the DX12 ShaderCode header
          reader, source-linked (BCL-only) so the driver compares the candidate's table with the
          mgfxc golden's record for record, the same way the in-suite tests do. -->

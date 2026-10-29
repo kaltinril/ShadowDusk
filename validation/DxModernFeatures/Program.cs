@@ -24,6 +24,10 @@
 // mgfxc's DirectX_11 build compiles as float and vkd3d refused (E5002) until ShadowDusk passed
 // it ALLOW_HALF_GLOBALS. Both DXBC backends are pixel-diffed against the committed mgfxc golden,
 // with parameters at their defaults and set through the typed SetValue overloads.
+// ARM "legacy-lod" (tests/fixtures/golden/legacy-lod-intrinsics/Tex2DLodRender.fx): tex2Dlod in
+// the vertex and pixel stage, tex2Dbias and tex2Dproj in legacy sampler syntax, vs the committed
+// mgfxc 3.8.4.1 DirectX_11 golden, plus mgfxc's build of the modern twin, which must render the
+// same (validation/SharedLegacyLod; the DX12 and Vulkan drivers draw the same scene).
 
 using System;
 using System.Linq;
@@ -153,7 +157,23 @@ halfGame.Run();
 bool halfOk = halfGame.Ok;
 Console.WriteLine($"[dx-modern] half-globals verdict: {(halfOk ? "PASS" : "FAIL")}");
 
-return ok && legacyOk && halfOk ? 0 : 1;
+// ---- Arm "legacy-lod" ----------------------------------------------------------------------
+// tex2Dlod in the VERTEX and pixel stage, tex2Dbias and tex2Dproj, in legacy D3D9 sampler
+// syntax (tests/fixtures/golden/legacy-lod-intrinsics/Tex2DLodRender.fx). ShadowDusk refused
+// all three with FX0012 before 2026-10-28; mgfxc 3.8.4.1 compiles them at vs_4_0/ps_4_0.
+// Reference: the COMMITTED mgfxc DirectX_11 golden. Also drawn: mgfxc's build of the modern
+// twin (Tex2DLodRenderModern.fx, the Texture2D methods the intrinsics are defined as), which
+// must equal the golden; that is the measurement the DirectX 12 and Vulkan arms rely on when
+// they use the twin as their reference. Positive controls: four ShadowDusk builds that each
+// drop one intrinsic's w operand (LOD_VS=0, LOD_PS=0, BIAS=0, PROJ_Q=1) must move exactly
+// their own column.
+bool lodOk = await ShadowDusk.Validation.LegacyLod.LegacyLodArm.RunAsync(
+    PlatformTarget.DirectX, repoRoot, "dx-modern legacy-lod", "legacy-lod-dx11", tolerance: 0, "VertexTextureEffect.DirectX_11.mgfx",
+    ("mgfxc-legacy", "Tex2DLodRender.DirectX_11.mgfx"),
+    ("mgfxc-modern-twin", "Tex2DLodRenderModern.DirectX_11.mgfx"));
+Console.WriteLine($"[dx-modern] legacy-lod verdict: {(lodOk ? "PASS" : "FAIL")}");
+
+return ok && legacyOk && halfOk && lodOk ? 0 : 1;
 
 static string FindRepoRoot()
 {

@@ -27,7 +27,10 @@
                                    (ShadowDusk DX vs mgfxc DX golden, real MonoGame WindowsDX).
     * DX modern features (VTF)   - validation/DxModernFeatures (vkd3d vs fxc oracle, maxd 0;
                                    plus the legacy-register and half-globals arms vs the
-                                   committed mgfxc goldens).
+                                   committed mgfxc goldens, and arm "legacy-lod": tex2Dlod
+                                   (VS and PS), tex2Dbias and tex2Dproj in legacy sampler
+                                   syntax vs the mgfxc 3.8.4.1 DirectX_11 golden, four
+                                   positive controls (maxd 0)).
     * DX Apos.Shapes gallery     - validation/VsDrivenDx -- apos: the full 30-cell Apos.Shapes
                                    ShapeBatch gallery through the real NuGet package; d3dcompiler_47
                                    arm vs the real mgfxc DirectX_11 golden, vkd3d arm vs the
@@ -61,6 +64,8 @@
                                    Plus `-- texarr` (issue #324): Texture2D Tex[2] vs the real
                                    mgfxc 3.8.5 golden - same parameter table (one `Tex` bound to
                                    slot 0), same picture, element [1] really read.
+                                   Plus `-- legacy-lod`: tex2Dlod (VS and PS), tex2Dbias, tex2Dproj
+                                   vs mgfxc 3.8.5's DirectX_12 build of the modern twin (maxd 0).
     * KNI DirectX                - validation/KniWinFormsDX (ShadowDusk DX vs mgfxc, real KNI
                                    WinForms.DX11).
     * KNI OpenGL desktop         - validation/Baseline + Candidate + KniDesktopGL + compare_kni.py
@@ -132,7 +137,9 @@
                                    (maxd 0), plus the 30-cell ShapeBatch gallery (maxd 0), plus
                                    `-- texarr` (issue #324, expect-diagnostic, no device): a
                                    texture array must be refused with SD0221, since mgfxc 3.8.5's
-                                   own Vulkan output for it binds nothing.
+                                   own Vulkan output for it binds nothing, plus `-- legacy-lod`
+                                   (tex2Dlod/tex2Dbias/tex2Dproj vs mgfxc 3.8.5's Vulkan build of
+                                   the modern twin, maxd 0, four positive controls).
     * XNB direct writer          - validation/XnbContentLoad: a ShadowDusk-written .xnb through a
                                    real MonoGame WindowsDX Content.Load<Effect> vs stock mgcb's
                                    (pixel-identical), plus the envelope assertions (Phase 60).
@@ -287,6 +294,10 @@ $gates.Add(@{
         # load and draw the same picture, and element [1], reachable only through
         # GraphicsDevice.Textures[1], must really be read (CPU expectation (cat + green) / 2).
         Invoke-Checked 'dotnet' @('run', '--project', 'validation/VsDrivenDx12', '-c', 'Release', '--', 'texarr')
+        # tex2Dlod (vertex AND pixel stage), tex2Dbias, tex2Dproj in legacy sampler syntax vs
+        # mgfxc 3.8.5's DirectX_12 build of the modern twin (mgfxc 3.8.5 has no DX12 reference
+        # for the legacy spelling), maxd 0, four positive controls.
+        Invoke-Checked 'dotnet' @('run', '--project', 'validation/VsDrivenDx12', '-c', 'Release', '--', 'legacy-lod')
     }
 })
 $gates.Add(@{
@@ -559,6 +570,10 @@ if (-not $SkipVulkan) {
             # no parameter, no sampler record and no descriptor binding (the committed golden is
             # decoded to pin that). `-- texarr-reference` draws mgfxc's effect itself, as evidence.
             Invoke-Checked 'dotnet' @('run', '--project', 'validation/VsDrivenVulkan', '-c', 'Release', '--', 'texarr')
+            # tex2Dlod (vertex AND pixel stage), tex2Dbias, tex2Dproj in legacy sampler syntax vs
+            # mgfxc 3.8.5's Vulkan build of the modern twin, maxd 0, four positive controls. Its
+            # own process (one device per process on DesktopVK).
+            Invoke-Checked 'dotnet' @('run', '--project', 'validation/VsDrivenVulkan', '-c', 'Release', '--', 'legacy-lod')
         }
     })
     $gates.Add(@{
