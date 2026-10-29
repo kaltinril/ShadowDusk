@@ -14,6 +14,9 @@ that loads and renders identically to `mgfxc`'s in the real MonoGame/KNI runtime
 
 ### Added
 
+- **`ConstantBufferReflection.RawDescriptorSet`** (`ShadowDusk.Core.Reflection`): the raw SPIR-V
+  `DescriptorSet` decoration of a Vulkan constant buffer, set by the SPIR-V reflection (0 elsewhere).
+  The Vulkan target uses it to refuse a buffer outside its stage's descriptor set (`SD0229`).
 - **`TextureReflection.IsStorage`** (`ShadowDusk.Core.Reflection`): true for a read-write (storage) image, an HLSL `RWTexture*`, set by the SPIR-V reflection from `OpTypeImage`'s Sampled operand; false from DXIL/DXBC. The Vulkan target uses it to refuse such a texture (`SD0233`).
 
 ### Changed
@@ -43,7 +46,11 @@ that loads and renders identically to `mgfxc`'s in the real MonoGame/KNI runtime
   sampler with an explicit register (`Texture2D A; SamplerState S : register(s2);`) now takes the
   texture register DirectX gives it (slot 0, where SpriteBatch binds) instead of inheriting the
   sampler's `s2`, and a sampler named only in its declaration (dead code) no longer holds a register
-  such a texture has to step past; no previously committed fixture has either shape. `SD0228` names every
+  such a texture has to step past. One previously committed fixture has the first shape:
+  `tests/fixtures/golden/legacy-sampler-units/LegacyBeforeModernSamplerRegister0.fx` (a legacy `sampler2D A`
+  before `Texture2D T` read through `SamplerState S : register(s0)`) now puts `A` on slot 0 and `T` on
+  slot 1 on Vulkan, where it put `T` on 0 and `A` on 1; the new slots are the ones `mgfxc`'s DirectX 11
+  golden of that file gives them. `SD0228` names every
   texture and sampler below binding 32, and after the retry names only what the retry could not pin,
   at its line.
 - **Vulkan: an explicit register space is dropped (`register(t1, space0)`).** A space is a Vulkan
@@ -70,28 +77,34 @@ that loads and renders identically to `mgfxc`'s in the real MonoGame/KNI runtime
   backend rejected with an internal compiler error, is written lowercase. Proven in real DesktopVK
   (`VsDrivenVulkan -- regslots`: `RegisterLoadOnly` vs `mgfxc`'s own build, `RegisterHelperPair` and
   `RegisterPreprocessedPairs` and `RegisterTwoSamplers` vs `mgfxc` on their explicit-register forms, maxd 0), with positive
-  controls for the register-space and dead-sampler fixes. No previously committed fixture's output moves. **Vulkan output changes** for
-  `examples/ExLegacyTextureDiscard.fx` (its sprite sampler `s0` now reads slot 0, like DirectX)
-  and `third-party/MonoGame/ParameterTypes.fx` (`Tex3D`/`TexCube` now slots 1/2, their
-  registers); every other committed Vulkan entry and every DirectX 12, DirectX 11, OpenGL and FNA
-  entry is unchanged.
+  controls for the register-space and dead-sampler fixes. **Vulkan output changes** (these fixes
+  together with the slot fix above) for `examples/ExLegacyTextureDiscard.fx` (its sprite sampler `s0`
+  now reads slot 0, like DirectX), `third-party/MonoGame/ParameterTypes.fx` (`Tex3D`/`TexCube` now
+  slots 1/2, their registers) and, outside the byte-identity corpus,
+  `legacy-sampler-units/LegacyBeforeModernSamplerRegister0.fx` (see above); every other committed
+  Vulkan entry and every DirectX 12, DirectX 11, OpenGL and FNA entry is unchanged.
 - **Vulkan: texture/sampler pairing is per compiled shader, and dead code no longer decides it.**
   Each compiled shader is its own Vulkan descriptor layout, but the binding rewrite paired a texture
   once for the whole file, from its first `Sample` call: a texture read through a point sampler in
   one technique and a linear sampler in another (or through one sampler in the vertex shader and
   another in the pixel shader) left the second shader's sampler as a standalone descriptor, as in
   `mgfxc`'s own build, which DesktopVK does not handle, so that technique drew nothing. A call in a
-  function the entry point never calls, or on a line an inactive `#if` drops (`#if 0`, the branch
+  function the entry point never calls (read with every macro expanded, so a helper called only
+  through a `#define` still counts as called; a member call such as `h.Get(uv)` reaches only struct
+  methods), or on a line an inactive `#if` drops (`#if 0`, the branch
   the macros do not take, read by the managed preprocessor with the compile's macros), took the
   pairing the same way: the live call's sampler shipped as a standalone descriptor, or a second
   texture on that sampler was refused as `SD0028`. Pairing now reads only the code each shader can
-  run (except when a conditional tests a macro only DXC defines, the `SD0009` warning: then every
-  line still counts, as before, and a dead call that comes first gives the live one an alias and
-  `SD0235`); a second sampler is
+  run (except when a conditional tests a macro only DXC defines, the `SD0009` warning, or the
+  preprocessed view cannot be built: then the whole file is paired, every line and every function
+  counting, as before, and a dead call that comes first gives the live one an alias and `SD0235`);
+  a second sampler is
   aliased only where both calls can be live (the two branches of one `#if` are resolved by the
   preprocessed retry instead); an alias whose original DXC removed keeps the original's parameter
   name; and an unregistered texture nothing live references (a legacy branch's synthesized
-  declaration) is numbered after every other texture. Declaring an alias now raises the warning
+  declaration) is numbered after every other texture. An alias takes the lowest free slot above its
+  texture's, so the texture's own slot stays its DirectX register and an alias never takes slot 0,
+  where SpriteBatch binds its sprite. Declaring an alias now raises the warning
   `SD0235` (set that texture through `Effect.Parameters`: SpriteBatch fills slot 0 only), and an
   identifier using the reserved `_SDVkAlias` suffix is refused on Vulkan with `SD0234` (other targets
   treat it as an ordinary name). Storage buffers (`StructuredBuffer`, `ByteAddressBuffer` and their
