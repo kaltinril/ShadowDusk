@@ -419,18 +419,32 @@ jobs:
       - name: Add SwiftShader's vulkan-1.dll loader to PATH
         run: Add-Content -Path $env:GITHUB_PATH -Value 'C:\Swiftshader'
 
+      # This job's `run:` blocks are pwsh, whose step result is the LAST native command's exit
+      # code only: a failing command followed by a passing one leaves the step green (that is how
+      # a 9/18 InitializerDefaultsKniDx run passed CI on PR #409). So every native command in a
+      # multi-command step is followed by an exit-code check.
       - name: Build the DX render gates
         run: |
           dotnet build validation/DxModernFeatures/DxModernFeatures.csproj -c Release
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
           dotnet build validation/KniWinFormsDX/KniWinFormsDX.csproj -c Release
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
           dotnet build validation/BaselineDx/BaselineDx.csproj -c Release
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
           dotnet build validation/CandidateDx/CandidateDx.csproj -c Release
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
           dotnet build validation/BaselineDx12/BaselineDx12.csproj -c Release
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
           dotnet build validation/CandidateDx12/CandidateDx12.csproj -c Release
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
           dotnet build validation/InitializerDefaultsDx/InitializerDefaultsDx.csproj -c Release
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
           dotnet build validation/InitializerDefaultsKniDx/InitializerDefaultsKniDx.csproj -c Release
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
           dotnet build validation/InitializerDefaultsDx12/InitializerDefaultsDx12.csproj -c Release
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
           dotnet build validation/SlangFullCorpus/SlangFullCorpus.csproj -c Release -f net8.0-windows
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
 
       # Issue #204: pin every gate to WARP (Windows' bundled software D3D rasterizer)
       # instead of a hardware adapter — windows-latest has no GPU. SHADOWDUSK_DX_WARP is
@@ -451,28 +465,46 @@ jobs:
           SHADOWDUSK_DX_WARP: "1"
         run: |
           dotnet run --project validation/BaselineDx -c Release --no-build
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
           dotnet run --project validation/CandidateDx -c Release --no-build
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
           python validation/compare_dx.py
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
 
       # Global-initializer defaults (owner directive 2026-10-28): `float R = 1;` is the default in the
       # real engine with no Set call, for MonoGame WindowsDX, KNI WinForms.DX11 (MGFX and KNIFX) and
-      # MonoGame WindowsDX12, each with a no-initializer control that must render black.
+      # MonoGame WindowsDX12, each with a no-initializer control that must render black. The KNI
+      # driver also pins the KNIFX shader model on a Reach device (ps_4_0_level_9_1 loads, 9_3 and
+      # 4_0 refused). All three run even if one fails; the step fails if any did.
       - name: Run initializer-default gates (real MonoGame WindowsDX, KNI DX11, MonoGame DX12 on WARP)
         if: ${{ !cancelled() }}
         env:
           SHADOWDUSK_DX_WARP: "1"
         run: |
-          dotnet run --project validation/InitializerDefaultsDx -c Release --no-build
-          dotnet run --project validation/InitializerDefaultsKniDx -c Release --no-build
-          dotnet run --project validation/InitializerDefaultsDx12 -c Release --no-build
+          $failed = @()
+          foreach ($driver in 'InitializerDefaultsDx', 'InitializerDefaultsKniDx', 'InitializerDefaultsDx12') {
+            Write-Host "::group::$driver"
+            dotnet run --project validation/$driver -c Release --no-build
+            $rc = $LASTEXITCODE
+            Write-Host "::endgroup::"
+            if ($rc -ne 0) {
+              Write-Host "::error::validation/$driver FAILED (exit $rc)"
+              $failed += $driver
+            }
+          }
+          if ($failed.Count -gt 0) { Write-Host "Initializer-default gates failed: $($failed -join ', ')"; exit 1 }
+          Write-Host "Initializer-default gates: all 3 passed."
 
       - name: Run MonoGame WindowsDX12 corpus (ShadowDusk vs mgfxc DirectX_12 golden)
         env:
           SHADOWDUSK_DX_WARP: "1"
         run: |
           dotnet run --project validation/BaselineDx12 -c Release --no-build
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
           dotnet run --project validation/CandidateDx12 -c Release --no-build
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
           python validation/compare_dx12.py
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
 
       # Issue #254: the real-slangc ShadowDusk.Slang route, gate 3 (the last unverified piece
       # of that package outside a dev box): every corpus shader's DirectX_11 output loads into a
