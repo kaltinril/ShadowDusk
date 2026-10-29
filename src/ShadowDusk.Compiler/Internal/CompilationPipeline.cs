@@ -3015,7 +3015,7 @@ internal sealed class CompilationPipeline
     /// (<see cref="DxTextureSlotOrder"/>), recompiles with each texture pinned to its fxc slot.
     /// <c>null</c> when nothing needs to move (the first compile's bytes stand, unchanged). A
     /// pinned compile that cannot be produced, or does not land on the plan, keeps the first
-    /// compile and reports <c>SD0228</c> instead of shipping slots nobody chose.
+    /// compile and reports <c>SD0230</c> instead of shipping slots nobody chose.
     /// </summary>
     private static (ReadOnlyMemory<byte>? Bytes, ShaderError? Warning)? ReorderDirectX11TextureSlots(
         IDxbcShaderCompiler dxbcCompiler,
@@ -3042,7 +3042,7 @@ internal sealed class CompilationPipeline
             File: request.SourceFileName,
             Line: 0,
             Column: 0,
-            Code: "SD0228",
+            Code: "SD0230",
             Message: $"DirectX 11: the textures of '{request.EntryPoint}' could not be put on the slots fxc (and so mgfxc) " +
                      $"gives them ({described}): {why}. They keep the backend's declaration-order slots, so " +
                      "GraphicsDevice.Textures[N] and SpriteBatch's texture (slot 0) reach a different texture than in " +

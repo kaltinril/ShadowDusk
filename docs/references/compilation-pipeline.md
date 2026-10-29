@@ -300,7 +300,7 @@ difference picks which sampler reads the sprite. After each DX11 compile of an e
 legacy sampler, `DxTextureSlotOrder` reads the first-read order off the compiled DXBC's own
 instruction stream and the surviving textures off its RDEF, and when the slots differ recompiles
 with every texture pinned by an explicit `register(tN)`; a shader whose slots already agree is
-not recompiled. A texture it cannot pin keeps the old slots and warns `SD0228`.
+not recompiled. A texture it cannot pin keeps the old slots and warns `SD0230`.
 
 **Every host passes the same list.** The options are chosen in one place
 (`Vkd3dCompileContract.ResolveCompileOptions`): the desktop backend marshals the list into the

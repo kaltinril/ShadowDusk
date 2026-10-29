@@ -82,7 +82,7 @@ compiler's dead-code result), and compiling the legacy syntax natively in vkd3d 
 every legacy shader's bytes and parameter naming).
 
 A texture that cannot be pinned (declared through a macro, in a declarator list such as
-`Texture2D A, B;`, or already on another register) keeps the previous slots and warns `SD0228`;
+`Texture2D A, B;`, or already on another register) keeps the previous slots and warns `SD0230`;
 the compile does not fail.
 
 ## 4. Which bytes changed
@@ -113,5 +113,5 @@ list changed.
 - **KNIFX DirectX cannot be rendered in the KNI gate**: a KNIFX DirectX effect at
   `ps_4_0_level_9_1` throws `Shader model 4.0 is not supported by the current graphics profile
   'HiDef'` in KNI 4.2.9001 WinForms.DX11, on `main` too (all nine KNIFX rows of
-  `validation/InitializerDefaultsKniDx` fail there). Unrelated to the slots, recorded in
-  `docs/validation-matrix.md` §7. The KNIFX body carries the same DXBC and sampler table as MGFX.
+  `validation/InitializerDefaultsKniDx` fail there). Unrelated to the slots, fixed by PR #430
+  (`_level_9_1` records SM 2.0, `_level_9_3` 3.0), recorded in `docs/validation-matrix.md` §7. The KNIFX body carries the same DXBC and sampler table as MGFX.

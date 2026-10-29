@@ -124,7 +124,8 @@ internal static class Program
         // texture and one parameter's exchanged. (KNIFX carries the same DXBC and sampler table,
         // but a KNIFX DirectX effect at ps_4_0_level_9_1 does not load on this HiDef device at
         // all: "Shader model 4.0 is not supported by the current graphics profile 'HiDef'",
-        // measured 2026-10-28 on main too, validation/InitializerDefaultsKniDx's KNIFX rows.)
+        // measured 2026-10-28 on main too, validation/InitializerDefaultsKniDx's KNIFX rows;
+        // fixed by PR #430, after which the KNIFX container can be added here.)
         string slotsDir = Path.Combine(repoRoot, "tests", "fixtures", "golden", "dx11-texture-slots");
         var slotRows = new List<SlotRow>();
         foreach ((string shape, Dictionary<string, string> parameters, string? control) in SlotRow.Cases)

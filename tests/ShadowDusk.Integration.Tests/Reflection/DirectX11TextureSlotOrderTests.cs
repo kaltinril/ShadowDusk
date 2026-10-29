@@ -71,7 +71,7 @@ public sealed class DirectX11TextureSlotOrderTests
         MgfxBlobReader golden = Golden(shape);
         IReadOnlyDictionary<string, int> explicitRegisters = ExplicitTextureRegisters(shape);
 
-        warnings.ShouldNotContain(w => w.Code == "SD0228", "every shape here can be pinned");
+        warnings.ShouldNotContain(w => w.Code == "SD0230", "every shape here can be pinned");
 
         IReadOnlyList<string> expected = Tables(golden, explicitRegisters);
         IReadOnlyList<string> actual = Tables(subject, new Dictionary<string, int>(StringComparer.Ordinal));
@@ -107,7 +107,7 @@ public sealed class DirectX11TextureSlotOrderTests
     }
 
     [Fact]
-    public async Task ATextureThatCannotBePinned_CompilesWithTheOldSlots_AndWarnsSD0228()
+    public async Task ATextureThatCannotBePinned_CompilesWithTheOldSlots_AndWarnsSD0230()
     {
         // `Texture2D T, U;` is a declarator list, which the re-pin does not rewrite; the legacy
         // sampler A should be on t0 ahead of both, so the plan cannot be applied. Fail loudly:
@@ -124,7 +124,7 @@ public sealed class DirectX11TextureSlotOrderTests
             new CompilerOptions { Target = PlatformTarget.DirectX, SourceFileName = "list.fx" }, cts.Token);
 
         result.IsSuccess.ShouldBeTrue();
-        ShaderError warning = result.Value.Warnings.Where(w => w.Code == "SD0228").ShouldHaveSingleItem();
+        ShaderError warning = result.Value.Warnings.Where(w => w.Code == "SD0230").ShouldHaveSingleItem();
         warning.Severity.ShouldBe(ShaderErrorSeverity.Warning);
         warning.Message.ShouldContain("A_SDTexture t0", Case.Sensitive);
         warning.Message.ShouldContain("declarator list", Case.Sensitive);

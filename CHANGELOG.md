@@ -39,7 +39,7 @@ that loads and renders identically to `mgfxc`'s in the real MonoGame/KNI runtime
   names is honoured, as in XNA and KNI's own effect tests, where `mgfxc` reserves `tN` and moves
   the sampler's texture to the next free slot; and two legacy samplers sharing one texture keep
   one record (`mgfxc` has two), still open. If a texture cannot be pinned (declared through a
-  macro or in a declarator list) the effect compiles as before and warns `SD0228`. **DirectX 11
+  macro or in a declarator list) the effect compiles as before and warns `SD0230`. **DirectX 11
   and KNIFX DirectX output changes** only for shaders whose legacy-sampler texture slots were not
   fxc's: in the corpus, `ForwardLighting.fx`, `SamplerPairMirror.fx` and
   `SamplerRegisterOrder.fx` (now `mgfxc`'s table exactly), and none of the byte-identity
