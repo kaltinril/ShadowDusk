@@ -715,6 +715,24 @@ jobs:
           SHADOWDUSK_VK_CONTROL: ordinal-slots
         run: validation/run-with-vk-validation.sh control-ordinal-slots --expect-red 'CONTROL-DETECTED' -- xvfb-run -a dotnet run --project validation/VsDrivenVulkan -c Release --no-build -- regslots
 
+      # RegisterSpace0's SPIR-V DescriptorSet decorations set back to 0 (what an explicit space0
+      # gave before it was dropped). The layer reports the shader using a set the pipeline layout
+      # lacks (VUID ...-layout-07988) and the draw may then fault before the pixel verdict prints,
+      # so either marker proves the planted defect turned the lane red.
+      - name: Positive control, a kept register space must fail the register-slot row
+        if: ${{ !cancelled() }}
+        env:
+          SHADOWDUSK_VK_CONTROL: keep-space
+        run: validation/run-with-vk-validation.sh control-keep-space --expect-red '(CONTROL-DETECTED|layout-07988)' -- xvfb-run -a dotnet run --project validation/VsDrivenVulkan -c Release --no-build -- regslots
+
+      # RegisterDeadSampler compiled with its texture on t1, the layout a reserved dead sampler
+      # register used to force: a SpriteBatch-only draw then reads an empty slot.
+      - name: Positive control, a reserved dead sampler register must fail the register-slot row
+        if: ${{ !cancelled() }}
+        env:
+          SHADOWDUSK_VK_CONTROL: reserve-dead
+        run: validation/run-with-vk-validation.sh control-reserve-dead --expect-red 'CONTROL-DETECTED' -- xvfb-run -a dotnet run --project validation/VsDrivenVulkan -c Release --no-build -- regslots
+
       - name: Upload render outputs + validation-layer logs (debug)
         if: always()
         uses: actions/upload-artifact@v7

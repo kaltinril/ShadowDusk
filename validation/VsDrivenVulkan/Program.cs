@@ -369,22 +369,43 @@ return texArrPass ? 0 : 1;
 // textures set, checked per pixel, so two arms that are wrong the same way cannot pass.
 // Before the fix the ShadowDusk arm drew (0,0,0,0) for the lone t1 and the array.
 //
-// Positive control: SHADOWDUSK_VK_CONTROL=ordinal-slots rewrites the candidate's sampler
-// records and descriptor-header slot masks back to ordinal numbering (the pre-fix bytes) and
-// the run must turn red with CONTROL-DETECTED.
+//   RegisterLoadOnly          a texture on t1 only LOADED (no sampler) beside the sprite pair:
+//                             mgfxc writes it its own record (slot 1, sampler slot 255) and its
+//                             build draws it; ShadowDusk wrote none. A real mgfxc oracle.
+//   RegisterHelperPair        pairs made through helper functions (texture + sampler passed in,
+//                             or a texture passed in and a global sampler read). Golden: mgfxc on
+//                             the explicit-register form.
+//   RegisterPreprocessedPairs pairs only visible once preprocessed (a macro sampler name, a
+//                             token-pasting macro, a dead #if 0 pairing). Golden: mgfxc on the
+//                             expanded explicit-register form.
+//   RegisterTwoSamplers       one texture (Tex1) sampled through two samplers: ShadowDusk aliases
+//                             it onto a second descriptor bound to the same parameter. Golden:
+//                             mgfxc on the two-texture form (Tex1b set to the same texture).
+//
+// Positive controls (SHADOWDUSK_VK_CONTROL), each reverting one fix in the candidate; the run
+// must turn red with CONTROL-DETECTED, raised only when the row that fix guards fails:
+//   ordinal-slots   records and header slot masks back to ordinal numbering (the first fix);
+//                   any row may go red.
+//   keep-space      RegisterSpace0's SPIR-V DescriptorSet decorations back to 0 (what the
+//                   explicit space0 gave before it was dropped).
+//   reserve-dead    RegisterDeadSampler compiled with SpriteTex on t1 (the layout the dead
+//                   sampler's reserved s0 used to force).
 // ---------------------------------------------------------------------------------------
 async Task<int> RunRegisterSlotsPhase()
 {
 string control = Environment.GetEnvironmentVariable("SHADOWDUSK_VK_CONTROL")?.Trim() ?? "";
-if (control is not ("" or "ordinal-slots"))
+if (control is not ("" or "ordinal-slots" or "keep-space" or "reserve-dead"))
 {
-    Console.Error.WriteLine($"unknown SHADOWDUSK_VK_CONTROL '{control}' for regslots (expected 'ordinal-slots')");
+    Console.Error.WriteLine($"unknown SHADOWDUSK_VK_CONTROL '{control}' for regslots (expected 'ordinal-slots', 'keep-space' or 'reserve-dead')");
     return 2;
 }
 if (control != "")
     Console.WriteLine($"[regslots-vulkan] POSITIVE CONTROL ACTIVE: {control} (this run is expected to FAIL)");
 
-string[] fixtures = ["RegisterLoneT1", "RegisterGapT0T2", "RegisterTexture2DArrayT1", "RegisterSpace0", "RegisterDeadSampler"];
+string[] fixtures = ["RegisterLoneT1", "RegisterGapT0T2", "RegisterTexture2DArrayT1", "RegisterSpace0", "RegisterDeadSampler",
+                     "RegisterLoadOnly", "RegisterHelperPair", "RegisterPreprocessedPairs", "RegisterTwoSamplers"];
+// The row each fix-specific control must turn red.
+string? controlRow = control switch { "keep-space" => "RegisterSpace0", "reserve-dead" => "RegisterDeadSampler", _ => null };
 string regOut = Path.Combine(repoRoot, "validation", "output", "regslots-vulkan");
 Directory.CreateDirectory(regOut);
 
@@ -397,8 +418,18 @@ foreach (string name in fixtures)
     byte[]? goldenBytes = File.Exists(golden) ? await File.ReadAllBytesAsync(golden) : null;
     regJobs.Add(new($"{name}.mgfxc", goldenBytes, goldenBytes is null ? $"golden not found: {golden}" : null));
 
+    string fxSource = await File.ReadAllTextAsync(fx);
+    if (control == "reserve-dead" && name == "RegisterDeadSampler")
+    {
+        // The pre-fix layout: the dead sampler's s0 was reserved, so SpriteTex went to t1.
+        const string Unregistered = "Texture2D SpriteTex;";
+        if (!fxSource.Contains(Unregistered, StringComparison.Ordinal))
+            throw new InvalidOperationException("reserve-dead control: SpriteTex declaration not found; update the control.");
+        fxSource = fxSource.Replace(Unregistered, "Texture2D SpriteTex : register(t1);", StringComparison.Ordinal);
+        Console.WriteLine("[regslots-vulkan] reserve-dead control: SpriteTex compiled on t1");
+    }
     var result = await new EffectCompiler().CompileAsync(
-        await File.ReadAllTextAsync(fx),
+        fxSource,
         new CompilerOptions { Target = PlatformTarget.Vulkan, IncludeResolver = new FileSystemIncludeResolver(), SourceFileName = fx });
     byte[]? cand = null;
     string? candErr = null;
@@ -409,6 +440,8 @@ foreach (string name in fixtures)
         cand = result.Value.Data;
         if (control == "ordinal-slots")
             Console.WriteLine($"[regslots-vulkan] ordinal-slots control: {name}: {ApplyOrdinalSlots(cand)}");
+        if (control == "keep-space" && name == "RegisterSpace0")
+            Console.WriteLine($"[regslots-vulkan] keep-space control: {SetDescriptorSets(cand, from: 1, to: 0)} DescriptorSet decoration(s) set back to 0");
         await File.WriteAllBytesAsync(Path.Combine(regOut, name + ".candidate.mgfx"), cand);
     }
     regJobs.Add(new($"{name}.sd", cand, candErr));
@@ -444,10 +477,20 @@ using var regGame = new EffectImageRenderer(catPath, regOut, regJobs, (effect, c
         loneTex ??= Solid(gd, lone);
         t1.SetValue(loneTex);
     }
+    if (effect.Parameters["Tex1b"] is { } t1b)
+    {
+        loneTex ??= Solid(gd, lone);
+        t1b.SetValue(loneTex);
+    }
     if (effect.Parameters["Overlay"] is { } overlay)
     {
         whiteTex ??= Solid(gd, Color.White);
         overlay.SetValue(whiteTex);
+    }
+    if (effect.Parameters["Tint1"] is { } tint1)
+    {
+        whiteTex ??= Solid(gd, Color.White);
+        tint1.SetValue(whiteTex);
     }
     effect.Parameters["Tint"]?.SetValue(new Vector4(1f, 0.5f, 1f, 1f));
     if (effect.Parameters["Arr"] is { } arr)
@@ -484,6 +527,13 @@ foreach (string name in fixtures)
         "RegisterSpace0"           => cap => AllPixels(cap, p => Near(p, tinted), $"every pixel Tex1 * Tint ({tinted.R},{tinted.G},{tinted.B},{tinted.A})"),
         // SpriteBatch's own sprite, the cat: visible content (a slot nothing binds draws nothing).
         "RegisterDeadSampler"      => cap => (HasVisibleContent(cap), $"the sprite (visible content); centre {Centre(cap)}"),
+        // (cat + Tex1 + Tex1) / 3: green at least 136 everywhere. An unbound alias slot gives (cat + Tex1) / 3.
+        "RegisterTwoSamplers"      => cap => AllPixels(cap, p => p.G >= 135 && p.A >= 254, "every pixel green >= 135 ((cat + Tex1 + Tex1) / 3)"),
+        // (cat + Tex1) / 2: green at least 102 everywhere (Tex1's 204 / 2). An unbound Tex1 gives cat / 2.
+        "RegisterLoadOnly"         => cap => AllPixels(cap, p => p.G >= 101 && p.A >= 254, "every pixel green >= 101 ((cat + loaded texel) / 2)"),
+        // (cat + white + white) / 3: every channel at least 170. One unbound texture gives (cat + white) / 3.
+        "RegisterHelperPair" or "RegisterPreprocessedPairs"
+                                   => cap => AllPixels(cap, p => p.R >= 169 && p.G >= 169 && p.B >= 169 && p.A >= 254, "every channel >= 169 ((cat + white + white) / 3)"),
         // (cat + white) / 2: every channel at least 127. An unbound t2 gives cat / 2.
         _                          => cap => AllPixels(cap, p => p.R >= 127 && p.G >= 127 && p.B >= 127 && p.A >= 254, "every channel >= 127 ((cat + white) / 2)"),
     };
@@ -494,12 +544,13 @@ foreach (string name in fixtures)
     allPass &= pass;
     Console.WriteLine($"[regslots-vulkan] {name}: maxd {(maxd == int.MaxValue ? "n/a" : maxd)}; mgfxc {(goldenOk ? "OK" : "WRONG")} ({goldenDetail}); " +
                       $"candidate {(candOk ? "OK" : "WRONG")} ({candDetail}) -> {(pass ? "PASS" : "FAIL")}");
-    if (control == "ordinal-slots" && goldenOk && (!candOk || maxd > 1))
+    bool rowRed = goldenOk && (!candOk || maxd > 1);
+    if (rowRed && (control == "ordinal-slots" || name == controlRow))
         controlDetected = true;
 }
 
 if (controlDetected)
-    Console.WriteLine("[regslots-vulkan] CONTROL-DETECTED: the ordinal-slot candidate diverged from mgfxc's render");
+    Console.WriteLine($"[regslots-vulkan] CONTROL-DETECTED: the {control} candidate diverged from mgfxc's render");
 Console.WriteLine($"[regslots-vulkan] {(allPass ? "PASS" : "FAIL")}");
 return allPass ? 0 : 1;
 }
@@ -593,6 +644,42 @@ static string ApplyOrdinalSlots(byte[] mgfx)
     if (headers == 0 || records == 0)
         throw new InvalidOperationException($"ordinal-slots control: patched {headers} header(s) and {records} record(s); the container shape changed, update the control.");
     return $"{headers} header(s), {records} record(s), slots {string.Join(", ", remap.OrderBy(kv => kv.Key).Select(kv => $"{kv.Key}->{kv.Value}"))}";
+}
+
+// The keep-space control: rewrites every OpDecorate DescriptorSet <from> to <to> in every SPIR-V
+// module of the container (located through the parsed shader code, the SPIR-V after the 84-byte
+// descriptor header and its 24-byte bindings). Returns how many decorations changed.
+static int SetDescriptorSets(byte[] mgfx, uint from, uint to)
+{
+    const uint OpDecorate = 71, DescriptorSet = 34;
+    var parsed = ShadowDusk.Integration.Tests.MgfxBlobReader.Parse(mgfx);
+    int changed = 0;
+    foreach (var shader in parsed.Shaders)
+    {
+        int code = mgfx.AsSpan().IndexOf(shader.Bytecode);
+        uint bindings = BitConverter.ToUInt32(mgfx, code + 80);
+        int spirv = code + 84 + 24 * (int)bindings;
+        int end = code + shader.Bytecode.Length;
+        if (BitConverter.ToUInt32(mgfx, spirv) != 0x07230203u)
+            throw new InvalidOperationException("keep-space control: no SPIR-V module where the header says; update the control.");
+        for (int w = spirv + 20; w + 4 <= end;)
+        {
+            uint word = BitConverter.ToUInt32(mgfx, w);
+            int count = (int)(word >> 16);
+            if (count == 0)
+                break;
+            if ((word & 0xFFFF) == OpDecorate && count == 4
+                && BitConverter.ToUInt32(mgfx, w + 8) == DescriptorSet && BitConverter.ToUInt32(mgfx, w + 12) == from)
+            {
+                BitConverter.GetBytes(to).CopyTo(mgfx, w + 12);
+                changed++;
+            }
+            w += 4 * count;
+        }
+    }
+    if (changed == 0)
+        throw new InvalidOperationException("keep-space control: no DescriptorSet decoration changed; update the control.");
+    return changed;
 }
 
 // The SPIR-V version ("1.0", "1.3", ...) of every module embedded in an .mgfx container.
