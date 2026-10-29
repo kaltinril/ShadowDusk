@@ -39,7 +39,7 @@ The shim satisfies the existing `[JSImport]` contract for module **`shadowdusk-d
 **The load-bearing difference vs the Slang shim: `args` are forwarded to DXC
 VERBATIM** — no `-E`/`-T` parsing, no flag translation. The faithful module *is* DXC
 and accepts the exact `DxcFlagBuilder` list
-(`-E <entry> -T ps_5_0 -spirv -fvk-use-dx-layout -auto-binding-space 1 -Zpr -WX`).
+(`-E <entry> -T ps_5_0 -spirv -fvk-use-gl-layout -auto-binding-space 1 -Zpr -WX`).
 This is precisely the property Slang lacked (2 DXC flags don't forward through Slang's
 API), which is why DXC is the faithful path and Slang is sample-only.
 

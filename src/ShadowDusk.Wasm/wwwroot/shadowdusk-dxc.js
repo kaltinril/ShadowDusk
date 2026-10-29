@@ -19,7 +19,7 @@
 //
 // KEY DIFFERENCE vs the Slang shim: the incoming `args` are forwarded to DXC
 // VERBATIM. The faithful module IS DXC, so it accepts the exact DxcFlagBuilder
-// list (-E <entry> -T ps_5_0 -spirv -fvk-use-dx-layout -auto-binding-space 1
+// list (-E <entry> -T ps_5_0 -spirv -fvk-use-gl-layout -auto-binding-space 1
 // -Zpr -WX). There is NO -E/-T parsing or flag translation here — the property
 // Slang lacked, which is precisely why DXC is the faithful path.
 //

@@ -11,9 +11,9 @@ static const float K = 0.5;
 
 float4 Tint = TINT;
 float Gain = K * 2 + 0.25;
+float3 Axis = float3(-1, 0, 1);   // packed behind Gain, ahead of a float4x4 (issue #425)
 float4x4 World = float4x4(1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16);
 float4 NoDefault;
-float3 Axis = float3(-1, 0, 1);   // last: a float3 ahead of a float4x4 trips a SPIRV-Cross std140 error unrelated to defaults
 
 float4 MainPS(float4 pos : SV_POSITION, float4 color : COLOR0, float2 tc : TEXCOORD0) : COLOR0
 {

@@ -7,3 +7,7 @@ float4[2], and a control with no initializer. `mgfxc-3.8.4.1-DirectX_11/` holds 
 scalar, vector, int and bool blobs are compared to byte for byte; its float2x2 and array blobs are
 the known-lossy ones ShadowDusk deliberately does not copy). mgfxc's OpenGL build writes zeros for
 all of them, so there is no OpenGL golden to compare.
+
+`G_PackedFloat3` (issue #425) is a `float3` that HLSL packing puts behind a `float` in one
+register, followed by a `float4x4`, the shape that used to fail the OpenGL compile with `SD0100`.
+It has no `mgfxc` golden; its pixel tells a misplaced member apart.

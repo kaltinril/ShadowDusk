@@ -9,7 +9,7 @@ using Xunit;
 namespace ShadowDusk.Integration.Tests.Tests;
 
 /// <summary>
-/// Phase 45 <b>B10</b>: the OpenGL cbuffer/parameter "offset bridge".
+/// Phase 45 <b>B10</b>: the OpenGL cbuffer/parameter bridge for a renamed uniform.
 ///
 /// <para>A free uniform whose name collides with a GLSL reserved word (the canonical
 /// case is <c>float noise;</c>, which clashes with GLSL's deprecated <c>noiseN()</c>
@@ -18,10 +18,12 @@ namespace ShadowDusk.Integration.Tests.Tests;
 /// the reflected effect-parameter list <b>by name</b>, so the GLSL side's <c>_noise</c>
 /// found no <c>noise</c> on the parameter side and the loud <c>SD0012</c> guard fired —
 /// even though <c>noise</c> is valid HLSL that fxc/mgfxc accept (it compiles fine on DX
-/// and FNA). The fix adds an OFFSET BRIDGE that runs <b>only on a name miss</b>: the GL
-/// uniform's <c>BaseRegister * 16</c> byte offset locates the reflected cbuffer variable
-/// (which still carries the ORIGINAL name), recovering the parameter index without ever
-/// trusting the SPIRV-Cross spelling. The parameter stays exposed under <c>noise</c>.</para>
+/// and FNA). The fix adds a bridge that runs <b>only on a name miss</b>: the GL uniform's
+/// position in the block locates the reflected cbuffer variable at the same position (which
+/// still carries the ORIGINAL name), recovering the parameter index without ever trusting
+/// the SPIRV-Cross spelling. The parameter stays exposed under <c>noise</c>. It first matched
+/// by byte offset (<c>BaseRegister * 16</c>), which packing breaks; issue #425 moved it to
+/// declaration order (<c>Issue425GlUniformPackingTests</c> covers the packed shapes).</para>
 ///
 /// <para>These tests assert the BEHAVIOUR the bridge guarantees: (1) the reserved-word
 /// shader now compiles on OpenGL and exposes the parameter under its original name
@@ -110,7 +112,7 @@ public sealed class ReservedWordUniformBridgeTests
 
         var result = await CompileGlAsync(ReservedWordSource, cts.Token);
 
-        result.IsSuccess.ShouldBeTrue($"the B10 offset bridge must resolve the renamed '_noise' uniform back to " +
+        result.IsSuccess.ShouldBeTrue($"the B10 bridge must resolve the renamed '_noise' uniform back to " +
                      $"the 'noise' parameter (no more SD0012); errors: {DescribeErrors(result)}");
 
         var reader = MgfxBlobReader.Parse(result.Value.Data);
@@ -118,7 +120,7 @@ public sealed class ReservedWordUniformBridgeTests
 
         // The parameter is exposed under the ORIGINAL HLSL name — never the SPIRV-Cross
         // rename — so the consumer's effect.Parameters["noise"].SetValue(...) binds.
-        reader.ParameterNames.ShouldContain("noise", "the offset bridge recovers the parameter index but the .mgfx parameter " +
+        reader.ParameterNames.ShouldContain("noise", "the bridge recovers the parameter index but the .mgfx parameter " +
                      "keeps its original declared name");
         reader.ParameterNames.ShouldNotContain("_noise", "the SPIRV-Cross reserved-word rename must never leak into the parameter table");
 

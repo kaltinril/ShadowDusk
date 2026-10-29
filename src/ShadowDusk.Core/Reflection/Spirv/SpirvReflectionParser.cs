@@ -8,9 +8,16 @@ namespace ShadowDusk.Core.Reflection.Spirv;
 /// bindings. Designed to MATCH what the native DXIL oracle
 /// (<c>DxilReflectionExtractor</c>) emits for the same shader compiled with DX layout.
 ///
-/// <para>The SPIR-V is produced by DXC with <c>-fvk-use-dx-layout</c>, so member
-/// byte offsets are taken verbatim from <c>Offset</c> decorations and member byte
-/// sizes are computed with the same HLSL constant-buffer packing the oracle reports.</para>
+/// <para>Member byte offsets are taken verbatim from <c>Offset</c> decorations and member
+/// byte sizes are computed with the same HLSL constant-buffer packing the oracle reports.
+/// Vulkan's SPIR-V is produced with <c>-fvk-use-dx-layout</c>, so its offsets are the HLSL
+/// packing. OpenGL's is produced with <c>-fvk-use-gl-layout</c> (std140, issue #425), which
+/// equals the HLSL packing for every block that is already std140-legal and moves a member
+/// HLSL would pack mid-register (a <c>float3</c> behind a <c>float</c>) to its own register.
+/// The OpenGL effect's cbuffer records come from the GLSL rewriter's register layout, and the
+/// one place the GL pipeline reads reflected variables for it (the reserved-word rename bridge)
+/// matches them by declaration order, never by offset, so the OpenGL output does not depend on
+/// which layout reflection saw.</para>
 /// </summary>
 internal sealed class SpirvReflectionParser
 {

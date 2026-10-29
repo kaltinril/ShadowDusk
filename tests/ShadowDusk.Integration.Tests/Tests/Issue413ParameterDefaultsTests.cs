@@ -19,8 +19,7 @@ namespace ShadowDusk.Integration.Tests.Tests;
 [Trait("Category", "Integration")]
 public sealed class Issue413ParameterDefaultsTests
 {
-    // Declared on every target. The order is the one SPIRV-Cross can lay out for OpenGL (Dir before
-    // Scale so they share a register, the array last); other orders fail there with SD0100/SD0210.
+    // Declared on every target (Dir before Scale so they share a DirectX register, the array last).
     private const string Common = """
         float3 Dir = float3(1.25, 2.25, 3.25);
         float Scale = 2.5;

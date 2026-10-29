@@ -90,9 +90,13 @@ triple `(preprocessed HLSL, DXC arg list, desktop SPIR-V bytes)` — written to
 decorator records precisely what the desktop pipeline feeds DXC; the arg list is read
 from the internal `DxcFlagBuilder` via reflection (no reimplementation drift).
 
-Corpus (== `SpirvReflectionByteIdentityTests.s_corpus`): Grayscale, Invert, TintShader,
-Sepia, Saturate, Pixelated, Scanlines, Fading, Dots, Dissolve. Captured args are uniformly
-`-E <entry> -T ps_5_0 -spirv -fvk-use-dx-layout -auto-binding-space 1 -Zpr -WX`.
+Corpus (the first ten of `SpirvReflectionByteIdentityTests.s_corpus`): Grayscale, Invert,
+TintShader, Sepia, Saturate, Pixelated, Scanlines, Fading, Dots, Dissolve. Captured args are
+uniformly `-E <entry> -T ps_5_0 -spirv -fvk-use-gl-layout -auto-binding-space 1 -Zpr`
+(regenerated 2026-10-28 for issue #425's std140 layout; the `.spv` bytes did not change, since
+std140 equals the HLSL packing for these blocks, and `-WX` had already left the default flags).
+Regenerate with `dotnet run --project .wasm-build/dxc-corpus-probe -- <repo root> .wasm-build/corpus-spirv`
+whenever `DxcFlagBuilder`'s OpenGL flags change.
 
 **Gate:** `node .wasm-build/node-test-dxc-wasm.mjs` loads the WASM module and asserts,
 for each corpus shader, that `compileToSpirv(hlsl, args)` equals the desktop `.spv`
