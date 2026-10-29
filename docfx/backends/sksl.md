@@ -18,7 +18,8 @@ if (result.IsFailure)
     throw new InvalidOperationException(string.Join("\n", result.Error.Select(e => $"{e.Code}: {e.Message}")));
 
 SkslConversion conversion = result.Value;
-using SKRuntimeEffect effect = SKRuntimeEffect.CreateShader(conversion.SkslText, out string errors);
+using SKRuntimeEffect effect = SKRuntimeEffect.CreateShader(conversion.SkslText, out string errors)
+    ?? throw new InvalidOperationException($"Skia rejected the SkSL: {errors}");
 ```
 
 The result carries everything the draw code binds:
@@ -59,6 +60,12 @@ foreach (SkslUniform u in conversion.Uniforms)
 - **`null`:** the global has no initializer; the initializer could not be evaluated or does not match the uniform's shape (the conversion then carries an `SD0017` warning); or the uniform is synthesized. Textures are child shaders, not uniforms, and are not listed.
 
 The defaults are reported beside the shader, never written into it: the SkSL text is the same whether or not the `.fx` declares initializers.
+
+Three details where the value is not simply "the MGFX one":
+
+- The converter compiles with the OpenGL macro set, so the value is the one the `.mgfx` route reports for an **OpenGL** build. Under `#if OPENGL` / `#else` the DirectX build's default can differ.
+- `int` and `uint` values are floats, so one beyond 2^24 is not exact (the same as `ParameterReflection.DefaultValue`).
+- Degenerate one-row or one-column shapes are shaped by the converted uniform: `float1 F = 0.5;` is a `float` uniform with default `[0.5]` (the `.mgfx` route reports none, with `SD0017`), while `float1x1`, `float1x3` and `float3x1` come out of DXC as a scalar, a vector or an array, so the converters report `null` with `SD0017` where the `.mgfx` route has a value.
 
 A global named after a GLSL reserved word comes out of SPIRV-Cross with a leading underscore (`input` becomes `_input`); `Uniforms` lists it under that name, with the default `input` declares. SkSL has no `uint` or `bool` uniforms and no non-square matrices, so Skia's own compiler rejects a converted shader that declares one.
 

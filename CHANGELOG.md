@@ -32,6 +32,12 @@ that loads and renders identically to `mgfxc`'s in the real MonoGame/KNI runtime
   Skia / raylib and nothing set on KNI / MonoGame GL (the `.mgfx` defaults apply), plus a
   `Defaults-zeros` match and a `control-unset-defaults` control that must diverge (and, on Skia, a
   `control-transposed-matrix` control).
+  A uniform SPIRV-Cross renamed (`input` to `_input`, `a__b` to `a_b`, `gl_X`, a clash suffix) is paired
+  with its HLSL global through the SPIR-V member names, and a global with a default that no uniform
+  pairs with is an `SD0017` warning, never a silent `null`. The value is the MGFX route's for an
+  OpenGL build (the converters' macro set). **Record equality:** `RaylibUniform` and `SkslUniform`
+  equality now includes `DefaultValue` (compared element by element), so two entries for the same
+  uniform with different declared defaults are no longer equal.
 
 ### Changed
 

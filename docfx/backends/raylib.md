@@ -42,15 +42,19 @@ foreach (RaylibUniform u in converted.Uniforms)
         case "vec2":  Raylib.SetShaderValueV(shader, loc, values.ToArray(), ShaderUniformDataType.Vec2, count); break;
         case "vec3":  Raylib.SetShaderValueV(shader, loc, values.ToArray(), ShaderUniformDataType.Vec3, count); break;
         case "vec4":  Raylib.SetShaderValueV(shader, loc, values.ToArray(), ShaderUniformDataType.Vec4, count); break;
-        // int/ivecN (and uint/uvecN, which a bool global becomes) take the same values as integers.
+        // int/ivecN take the values as int.
         case "int":   Raylib.SetShaderValueV(shader, loc, values.Select(v => (int)v).ToArray(), ShaderUniformDataType.Int, count); break;
         case "ivec2": Raylib.SetShaderValueV(shader, loc, values.Select(v => (int)v).ToArray(), ShaderUniformDataType.IVec2, count); break;
-        // ... ivec3, ivec4, and the unsigned types the same way
+        // uint/uvecN (a bool global is one too) must be set as unsigned: Int on a uint uniform is a
+        // GL error, and (int)3e9f saturates.
+        case "uint":  Raylib.SetShaderValueV(shader, loc, values.Select(v => (uint)v).ToArray(), ShaderUniformDataType.UInt, count); break;
+        case "uvec2": Raylib.SetShaderValueV(shader, loc, values.Select(v => (uint)v).ToArray(), ShaderUniformDataType.UIVec2, count); break;
+        // ... ivec3/ivec4 and uvec3/uvec4 the same way
     }
 }
 ```
 
-`DefaultValue` holds the same values, in the same layout, as `ParameterReflection.DefaultValue` on the `.mgfx` route for the same source: array element after array element, each element's components in order, no padding (exactly what `SetShaderValueV` takes with a count of `max(1, ArrayLength)`); `int` as a float, `uint` by its unsigned value, `bool` as 0 or 1 (a `bool` global is a `uint` uniform, because SPIR-V has no bool in a uniform block). It is `null` when the global has no initializer, or when the initializer could not be evaluated or does not match the uniform (the conversion then carries an `SD0017` warning). The defaults are reported beside the shader, never written into it: the fragment shader text is the same whether or not the `.fx` declares initializers.
+`DefaultValue` holds the same values, in the same layout, as `ParameterReflection.DefaultValue` on the `.mgfx` route for the same source: array element after array element, each element's components in order, no padding (exactly what `SetShaderValueV` takes with a count of `max(1, ArrayLength)`); `int` as a float, `uint` by its unsigned value, `bool` as 0 or 1 (a `bool` global is a `uint` uniform, because SPIR-V has no bool in a uniform block). It is `null` when the global has no initializer, or when the initializer could not be evaluated or does not match the uniform (the conversion then carries an `SD0017` warning). The defaults are reported beside the shader, never written into it: the fragment shader text is the same whether or not the `.fx` declares initializers. The value is the one the `.mgfx` route reports for an **OpenGL** build of the same source (the converter compiles with the OpenGL macro set); an `int`/`uint` beyond 2^24 is not exact as a float; and the degenerate shapes behave as on the SkSL route (see [SkiaSharp (SkSL)](sksl.md#declared-defaults)).
 
 ## Slang input
 
