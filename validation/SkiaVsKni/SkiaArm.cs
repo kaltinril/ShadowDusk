@@ -48,7 +48,11 @@ internal static class SkiaArm
                     ? v
                     : throw new InvalidDataException($"{job.Name}: uniform '{name}' has no value"),
             };
-            uniforms[name] = value;
+            // SkiaSharp takes a scalar uniform as a float, anything wider as a float array.
+            if (value.Length == 1)
+                uniforms[name] = value[0];
+            else
+                uniforms[name] = value;
         }
 
         var images = new List<IDisposable>();

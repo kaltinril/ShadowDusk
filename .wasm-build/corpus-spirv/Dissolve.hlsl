@@ -8,14 +8,26 @@
 	#define VS_SHADERMODEL vs_3_0
 	#define PS_SHADERMODEL ps_3_0
 #else
-	#define VS_SHADERMODEL vs_4_0_level_9_1
-	#define PS_SHADERMODEL ps_4_0_level_9_1
+	#if SM6
+		#define VS_SHADERMODEL vs_6_0
+		#define PS_SHADERMODEL ps_6_0
+	#else
+		#define VS_SHADERMODEL vs_4_0_level_9_1
+		#define PS_SHADERMODEL ps_4_0_level_9_1
+	#endif
 #endif
 
+#if SM6
+Texture2D s0Texture;
+Texture2D s0_SDTexture; SamplerState s0;
+Texture2D _dissolveTex;
+Texture2D _dissolveTexSampler_SDTexture; SamplerState _dissolveTexSampler;
+#else
 Texture2D s0_SDTexture; SamplerState s0;
 
 Texture2D _dissolveTex;
 SamplerState _dissolveTexSampler;
+#endif
 
 float _progress; // 0 - 1 where 0 is no change to s0 and 1 will discard all of s0 where _dissolveTex.r < value
 float _dissolveThreshold; // 0.04
@@ -29,6 +41,25 @@ struct VertexShaderOutput
 	float2 TexCoord : TEXCOORD0;
 };
 
+#if SM6
+float4 mainPixel( VertexShaderOutput input ) : SV_Target
+{
+	float progress = _progress + _dissolveThreshold;
+
+	float4 color = s0Texture.Sample( s0, input.TexCoord );
+	// get dissolve from 0 - 1 where 0 is pure white and 1 is pure black
+	float dissolveAmount = 1 - _dissolveTex.Sample( _dissolveTexSampler, input.TexCoord ).r;
+
+	// when our dissolve.r (dissolveAmount) is less than progress we discard
+	if( dissolveAmount < progress - _dissolveThreshold )
+		discard;
+
+	bool b = dissolveAmount < progress;
+	float colorAmount = lerp( 1, 0, 1 - saturate( abs( progress - _dissolveThreshold - dissolveAmount ) / _dissolveThreshold ) );
+	float4 thresholdColor = lerp( float4( 0, 0, 0, 1 ), _dissolveThresholdColor, colorAmount );
+	return lerp( color, color * thresholdColor, b );
+}
+#else
 float4 mainPixel( VertexShaderOutput input ) : SV_Target0
 {
 	float progress = _progress + _dissolveThreshold;
@@ -46,6 +77,7 @@ float4 mainPixel( VertexShaderOutput input ) : SV_Target0
 	float4 thresholdColor = lerp( float4( 0, 0, 0, 1 ), _dissolveThresholdColor, colorAmount );
 	return lerp( color, color * thresholdColor, b );
 }
+#endif
 
 
                   

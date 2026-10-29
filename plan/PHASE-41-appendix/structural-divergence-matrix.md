@@ -25,7 +25,7 @@
   - Structurally **clean**: **87**
   - **Divergent** (>=1 level): **21**
   - Compile/parse **failures**: **10**
-- Non-golden census cells: **250** (**184** compile, **66** fail with a code)
+- Non-golden census cells: **250** (**185** compile, **65** fail with a code)
 
 ## Golden-backed fixtures — per-level structural verdict
 
@@ -474,7 +474,7 @@ is a CORRECT result, not a defect.
 | third-party/Nez/PixelGlitch.fx | DirectX_11 | FAIL | SD0015 | compile target 'ps_3_0' is below the DirectX target's floor — mgfxc rejects it with "Invalid profile 'ps_3_0'. Pixel shader 'MainPS' must be SM 4.0 level 9.1 or... |
 | third-party/Nez/PixelGlitch.fx | OpenGL | PASS |  |  |
 | third-party/Nez/Reflection.fx | DirectX_11 | FAIL | SD0015 | compile target 'vs_2_0' is below the DirectX target's floor — mgfxc rejects it with "Invalid profile 'vs_2_0'. Vertex shader 'mirrorVertex' must be SM 4.0 level... |
-| third-party/Nez/Reflection.fx | OpenGL | FAIL | SD0100 | SPIRV-Cross [compile]: Buffer block cannot be expressed as any of std430, std140, scalar, even with enhanced layouts. You can try flattening this block to suppo... |
+| third-party/Nez/Reflection.fx | OpenGL | PASS |  |  |
 | third-party/Nez/SpriteBlinkEffect.fx | DirectX_11 | FAIL | SD0015 | compile target 'ps_3_0' is below the DirectX target's floor — mgfxc rejects it with "Invalid profile 'ps_3_0'. Pixel shader 'mainPixel' must be SM 4.0 level 9.1... |
 | third-party/Nez/SpriteBlinkEffect.fx | OpenGL | PASS |  |  |
 | third-party/Nez/SpriteLines.fx | DirectX_11 | FAIL | SD0015 | compile target 'ps_3_0' is below the DirectX target's floor — mgfxc rejects it with "Invalid profile 'ps_3_0'. Pixel shader 'verticalLinesPS' must be SM 4.0 lev... |
@@ -504,9 +504,9 @@ is a CORRECT result, not a defect.
 - `SD0013`: 6 cell(s) — examples/ExProfileBogusLiteral.fx [DirectX_11], examples/ExProfileBogusLiteral.fx [OpenGL], examples/ExProfileTypo.fx [DirectX_11], examples/ExProfileTypo.fx [OpenGL], examples/ExProfileUndefinedMacro.fx [DirectX_11], examples/ExProfileUndefinedMacro.fx [OpenGL]
 - `X0000`: 5 cell(s) — third-party/Gum/KniInCode-Shader.fx [OpenGL], third-party/MonoGame/CustomSpriteBatchEffectComparisonSampler.fx [OpenGL], third-party/MonoGame/DefinesTest.fx [OpenGL], third-party/MonoGame/ParserTest.fx [OpenGL], third-party/MonoGame/PreprocessorTest.fx [OpenGL]
 - `FX0012`: 4 cell(s) — third-party/MonoGame/VertexTextureEffect.fx [DirectX_11], third-party/MonoGame/VertexTextureEffect.fx [OpenGL], third-party/Nez/PaletteCycler.fx [DirectX_11], third-party/Nez/PaletteCycler.fx [OpenGL]
-- `SD0100`: 3 cell(s) — register-slots/RegisterLoadOnly.fx [OpenGL], texture-arrays/SamplerArray2.fx [OpenGL], third-party/Nez/Reflection.fx [OpenGL]
 - `SD0001`: 2 cell(s) — MinimalWithInclude.fx [DirectX_11], MinimalWithInclude.fx [OpenGL]
 - `SD0014`: 2 cell(s) — examples/ExProfileStageMismatch.fx [DirectX_11], examples/ExProfileStageMismatch.fx [OpenGL]
+- `SD0100`: 2 cell(s) — register-slots/RegisterLoadOnly.fx [OpenGL], texture-arrays/SamplerArray2.fx [OpenGL]
 - `SD0217`: 2 cell(s) — texture-arrays/TextureArray2.fx [OpenGL], texture-arrays/TextureArray4NoRegister.fx [OpenGL]
 - `SD0224`: 1 cell(s) — texture-arrays/SamplerArray2.fx [DirectX_11]
 - `E5030`: 1 cell(s) — third-party/MonoGame/DefinesTest.fx [DirectX_11]

@@ -8,9 +8,16 @@ namespace ShadowDusk.Core.Reflection.Spirv;
 /// bindings. Designed to MATCH what the native DXIL oracle
 /// (<c>DxilReflectionExtractor</c>) emits for the same shader compiled with DX layout.
 ///
-/// <para>The SPIR-V is produced by DXC with <c>-fvk-use-dx-layout</c>, so member
-/// byte offsets are taken verbatim from <c>Offset</c> decorations and member byte
-/// sizes are computed with the same HLSL constant-buffer packing the oracle reports.</para>
+/// <para>Member byte offsets are taken verbatim from <c>Offset</c> decorations and member
+/// byte sizes are computed with the same HLSL constant-buffer packing the oracle reports.
+/// Vulkan's SPIR-V is produced with <c>-fvk-use-dx-layout</c>, so its offsets are the HLSL
+/// packing. OpenGL's is produced with <c>-fvk-use-gl-layout</c> (std140, issue #425), which
+/// equals the HLSL packing for every block that is already std140-legal and moves a member
+/// HLSL would pack mid-register (a <c>float3</c> behind a <c>float</c>) to its own register.
+/// The OpenGL effect's cbuffer records come from the GLSL rewriter's register layout, and the
+/// one place the GL pipeline reads reflected variables for it (the reserved-word rename bridge)
+/// matches them by declaration order, never by offset, so the OpenGL output does not depend on
+/// which layout reflection saw.</para>
 /// </summary>
 internal sealed class SpirvReflectionParser
 {
@@ -254,7 +261,7 @@ internal sealed class SpirvReflectionParser
             int offset = offsets is not null && offsets.TryGetValue(i, out int o) ? o : 0;
             string memberName = names is not null && names.TryGetValue(i, out string? n) ? n : $"member{i}";
 
-            variables.Add(BuildVariable(memberName, offset, memberType));
+            variables.Add(BuildVariable(memberName, offset, memberType, HlslRowMajor(st.Id, i)));
         }
 
         // The DXIL oracle reports the cbuffer's HLSL name. DXC names the cbuffer
@@ -264,7 +271,7 @@ internal sealed class SpirvReflectionParser
 
         // Constant-buffer total size: the oracle reports cbDesc.Size, which HLSL rounds
         // up to a 16-byte boundary. Compute from the last member's offset + size.
-        int sizeBytes = ComputeStructSize(memberTypes, offsets);
+        int sizeBytes = ComputeStructSize(st.Id, memberTypes, offsets);
 
         return new ConstantBufferReflection
         {
@@ -277,9 +284,9 @@ internal sealed class SpirvReflectionParser
         };
     }
 
-    private VariableReflection BuildVariable(string name, int startOffset, SpirvType? type)
+    private VariableReflection BuildVariable(string name, int startOffset, SpirvType? type, bool hlslRowMajor)
     {
-        var (cls, ptype, rows, cols, elements, sizeBytes) = DescribeVariable(type);
+        var (cls, ptype, rows, cols, elements, sizeBytes) = DescribeVariable(type, hlslRowMajor);
 
         return new VariableReflection
         {
@@ -292,6 +299,8 @@ internal sealed class SpirvReflectionParser
             Columns        = cols,
             Elements       = elements,
             Members        = BuildStructMembers(type),
+            IsRowMajor     = hlslRowMajor && cls == EffectParameterClass.Matrix,
+            IsHeaderTransposed = hlslRowMajor && cls == EffectParameterClass.Matrix,   // see DescribeVariable
         };
     }
 
@@ -321,7 +330,7 @@ internal sealed class SpirvReflectionParser
         for (int i = 0; i < memberTypes.Length; i++)
         {
             SpirvType? memberType = _types.GetValueOrDefault(memberTypes[i]);
-            var (cls, ptype, rows, cols, elements, _) = DescribeVariable(memberType);
+            var (cls, ptype, rows, cols, elements, _) = DescribeVariable(memberType, HlslRowMajor(st.Id, i));
 
             members.Add(new VariableReflection
             {
@@ -334,6 +343,8 @@ internal sealed class SpirvReflectionParser
                 Columns        = cols,
                 Elements       = elements,
                 Members        = BuildStructMembers(memberType),
+                IsRowMajor     = HlslRowMajor(st.Id, i) && cls == EffectParameterClass.Matrix,
+                IsHeaderTransposed = HlslRowMajor(st.Id, i) && cls == EffectParameterClass.Matrix,
             });
         }
 
@@ -352,7 +363,7 @@ internal sealed class SpirvReflectionParser
     /// </list>
     /// </summary>
     private (EffectParameterClass Class, EffectParameterType Type, int Rows, int Cols, int Elements, int Size)
-        DescribeVariable(SpirvType? type)
+        DescribeVariable(SpirvType? type, bool hlslRowMajor = false)
     {
         switch (type)
         {
@@ -365,15 +376,31 @@ internal sealed class SpirvReflectionParser
 
             case MatrixType m:
             {
-                int rows = m.Column.Count;          // each column vector spans 'rows' components
-                int cols = m.ColumnCount;
+                // DXC lowers an HLSL floatRxC to a SPIR-V matrix of R column vectors of C
+                // components: each HLSL ROW becomes a SPIR-V column (the RowMajor/ColMajor
+                // decoration is inverted to keep the memory layout).
+                //
+                // The header is what MonoGame's runtime uploads by (issue #423): ConstantBuffer
+                // .SetParameter copies ColumnCount registers of RowCount floats, one register per
+                // 16 bytes, from Data, which SetValue(Matrix) fills column by column. For the
+                // default HLSL column-major packing (SPIR-V RowMajor) the buffer holds one register
+                // per HLSL column, so the header is the HLSL shape, R x C, as the DXIL oracle
+                // reports. For a row_major matrix (SPIR-V ColMajor) the buffer holds one register
+                // per HLSL row, so the upload matches it only with the header C x R: that is what
+                // real mgfxc 3.8.5's Vulkan build writes for row_major, and it gives a row_major
+                // non-square matrix MonoGame's usual row_major semantics (the Set Matrix arrives
+                // transposed, exactly as a row_major float4x4 does). The HLSL shape there would
+                // upload C registers of R floats over R registers of C: scrambled, and past the end
+                // of the buffer (or into the next member) when C > R.
+                int rows = hlslRowMajor ? m.Column.Count : m.ColumnCount;
+                int cols = hlslRowMajor ? m.ColumnCount : m.Column.Count;
                 int size = m.Column.Component.ByteSize * rows * cols;
                 return (EffectParameterClass.Matrix, m.Column.Component.ElementType, rows, cols, 0, size);
             }
 
             case ArrayType a:
             {
-                var (cls, ptype, rows, cols, _, _) = DescribeVariable(a.Element);
+                var (cls, ptype, rows, cols, _, _) = DescribeVariable(a.Element, hlslRowMajor);
                 // The oracle's array size = (totalBytes + 15) & ~15, where totalBytes
                 // is the array stride * length (stride already padded to 16 by DX layout).
                 int total = a.Stride > 0 ? a.Stride * a.Length : 0;
@@ -395,6 +422,15 @@ internal sealed class SpirvReflectionParser
                 return (EffectParameterClass.Scalar, EffectParameterType.Void, 1, 1, 0, 0);
         }
     }
+
+    /// <summary>
+    /// True when member <paramref name="member"/> of struct <paramref name="structId"/> carries the
+    /// SPIR-V <c>ColMajor</c> decoration, which DXC writes for an HLSL <c>row_major</c> matrix (the
+    /// majorness term is inverted along with the shape).
+    /// </summary>
+    private bool HlslRowMajor(uint structId, int member) =>
+        _memberColMajor.TryGetValue(structId, out Dictionary<int, bool>? majors)
+        && majors.TryGetValue(member, out bool colMajor) && colMajor;
 
     /// <summary>Packed struct size: last member's Offset decoration + its size.</summary>
     private int StructSizeBytes(StructType st)
@@ -444,7 +480,7 @@ internal sealed class SpirvReflectionParser
         _                 => 0,
     };
 
-    private int ComputeStructSize(uint[] memberTypes, Dictionary<int, int>? offsets)
+    private int ComputeStructSize(uint structId, uint[] memberTypes, Dictionary<int, int>? offsets)
     {
         if (memberTypes.Length == 0)
             return 0;
@@ -452,12 +488,49 @@ internal sealed class SpirvReflectionParser
         int lastIndex = memberTypes.Length - 1;
         int lastOffset = offsets is not null && offsets.TryGetValue(lastIndex, out int o) ? o : 0;
         SpirvType? lastType = _types.GetValueOrDefault(memberTypes[lastIndex]);
-        var (_, _, _, _, _, lastSize) = DescribeVariable(lastType);
+        bool rowMajor = HlslRowMajor(structId, lastIndex);
+        var (_, _, rows, cols, _, lastSize) = DescribeVariable(lastType, rowMajor);
+        if (lastType is MatrixType lastMatrix)
+            lastSize = Math.Max(StorageFootprint(structId, lastIndex, lastMatrix, lastSize), UploadFootprint(rows, cols));
 
         int raw = lastOffset + lastSize;
         // HLSL constant buffers round the total up to a 16-byte boundary.
         return (raw + 15) & ~15;
     }
+
+    /// <summary>
+    /// The bytes a matrix member really spans in the buffer: every register but the last is a
+    /// full <c>MatrixStride</c>, and the last holds only its own components. The packed
+    /// <c>4 * rows * cols</c> undercounts a matrix whose registers are not full (a column-major
+    /// <c>float2x2</c> spans 24 bytes, not 16). SPIR-V <c>RowMajor</c> (HLSL column-major, the
+    /// Vulkan default) stores the SPIR-V rows (<see cref="VectorType.Count"/> of them, each
+    /// <see cref="MatrixType.ColumnCount"/> wide) one per stride; <c>ColMajor</c> (HLSL
+    /// <c>row_major</c>) stores the column vectors.
+    /// </summary>
+    private int StorageFootprint(uint structId, int memberIndex, MatrixType m, int packedSize)
+    {
+        if (!_memberMatrixStride.TryGetValue(structId, out Dictionary<int, int>? strides)
+            || !strides.TryGetValue(memberIndex, out int stride)
+            || !_memberColMajor.TryGetValue(structId, out Dictionary<int, bool>? majors)
+            || !majors.TryGetValue(memberIndex, out bool colMajor))
+            return packedSize;   // undecorated: nothing to say about padding
+
+        int componentBytes = m.Column.Component.ByteSize;
+        return colMajor
+            ? (m.ColumnCount - 1) * stride + m.Column.Count * componentBytes
+            : (m.Column.Count - 1) * stride + m.ColumnCount * componentBytes;
+    }
+
+    /// <summary>
+    /// The bytes MonoGame's runtime writes for a matrix with this header: <c>ConstantBuffer
+    /// .SetParameter</c> copies <paramref name="cols"/> registers of <paramref name="rows"/> floats,
+    /// 16 bytes apart. The buffer is allocated from the size this reflector reports, so a buffer
+    /// that ENDS in a matrix must cover this too, or the first <c>Apply</c> throws in
+    /// <c>Buffer.BlockCopy</c> (issue #423). With the majorness-aware header of
+    /// <see cref="DescribeVariable"/> it equals <see cref="StorageFootprint"/>; it is taken as a
+    /// floor so the two can never drift apart into a throw.
+    /// </summary>
+    private static int UploadFootprint(int rows, int cols) => (cols - 1) * 16 + rows * 4;
 
     // ---- Naming helpers --------------------------------------------------------
 

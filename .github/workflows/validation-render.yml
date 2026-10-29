@@ -419,18 +419,34 @@ jobs:
       - name: Add SwiftShader's vulkan-1.dll loader to PATH
         run: Add-Content -Path $env:GITHUB_PATH -Value 'C:\Swiftshader'
 
+      # This job's `run:` blocks are pwsh, whose step result is the LAST native command's exit
+      # code only: a failing command followed by a passing one leaves the step green (that is how
+      # a 9/18 InitializerDefaultsKniDx run passed CI on PR #409). So every native command in a
+      # multi-command step is followed by an exit-code check.
       - name: Build the DX render gates
         run: |
           dotnet build validation/DxModernFeatures/DxModernFeatures.csproj -c Release
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
           dotnet build validation/KniWinFormsDX/KniWinFormsDX.csproj -c Release
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
           dotnet build validation/BaselineDx/BaselineDx.csproj -c Release
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
           dotnet build validation/CandidateDx/CandidateDx.csproj -c Release
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
           dotnet build validation/BaselineDx12/BaselineDx12.csproj -c Release
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
           dotnet build validation/CandidateDx12/CandidateDx12.csproj -c Release
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
           dotnet build validation/InitializerDefaultsDx/InitializerDefaultsDx.csproj -c Release
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
           dotnet build validation/InitializerDefaultsKniDx/InitializerDefaultsKniDx.csproj -c Release
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
           dotnet build validation/InitializerDefaultsDx12/InitializerDefaultsDx12.csproj -c Release
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
+          dotnet build validation/NonSquareMatrixDx/NonSquareMatrixDx.csproj -c Release
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
           dotnet build validation/SlangFullCorpus/SlangFullCorpus.csproj -c Release -f net8.0-windows
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
 
       # Issue #204: pin every gate to WARP (Windows' bundled software D3D rasterizer)
       # instead of a hardware adapter — windows-latest has no GPU. SHADOWDUSK_DX_WARP is
@@ -451,28 +467,54 @@ jobs:
           SHADOWDUSK_DX_WARP: "1"
         run: |
           dotnet run --project validation/BaselineDx -c Release --no-build
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
           dotnet run --project validation/CandidateDx -c Release --no-build
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
           python validation/compare_dx.py
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
 
       # Global-initializer defaults (owner directive 2026-10-28): `float R = 1;` is the default in the
       # real engine with no Set call, for MonoGame WindowsDX, KNI WinForms.DX11 (MGFX and KNIFX) and
-      # MonoGame WindowsDX12, each with a no-initializer control that must render black.
+      # MonoGame WindowsDX12, each with a no-initializer control that must render black. The KNI
+      # driver also pins the KNIFX shader model on a Reach device (ps_4_0_level_9_1 loads, 9_3 and
+      # 4_0 refused). All three run even if one fails; the step fails if any did.
       - name: Run initializer-default gates (real MonoGame WindowsDX, KNI DX11, MonoGame DX12 on WARP)
         if: ${{ !cancelled() }}
         env:
           SHADOWDUSK_DX_WARP: "1"
         run: |
-          dotnet run --project validation/InitializerDefaultsDx -c Release --no-build
-          dotnet run --project validation/InitializerDefaultsKniDx -c Release --no-build
-          dotnet run --project validation/InitializerDefaultsDx12 -c Release --no-build
+          $failed = @()
+          foreach ($driver in 'InitializerDefaultsDx', 'InitializerDefaultsKniDx', 'InitializerDefaultsDx12') {
+            Write-Host "::group::$driver"
+            dotnet run --project validation/$driver -c Release --no-build
+            $rc = $LASTEXITCODE
+            Write-Host "::endgroup::"
+            if ($rc -ne 0) {
+              Write-Host "::error::validation/$driver FAILED (exit $rc)"
+              $failed += $driver
+            }
+          }
+          if ($failed.Count -gt 0) { Write-Host "Initializer-default gates failed: $($failed -join ', ')"; exit 1 }
+          Write-Host "Initializer-default gates: all 3 passed."
+
+      # Issue #423: non-square matrix parameters Set from C# land in MonoGame's DirectX registers,
+      # with the committed real mgfxc 3.8.5 DirectX_11 builds rendered alongside as the reference.
+      - name: Run non-square matrix Set gate (real MonoGame WindowsDX on WARP)
+        if: ${{ !cancelled() }}
+        env:
+          SHADOWDUSK_DX_WARP: "1"
+        run: dotnet run --project validation/NonSquareMatrixDx -c Release --no-build
 
       - name: Run MonoGame WindowsDX12 corpus (ShadowDusk vs mgfxc DirectX_12 golden)
         env:
           SHADOWDUSK_DX_WARP: "1"
         run: |
           dotnet run --project validation/BaselineDx12 -c Release --no-build
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
           dotnet run --project validation/CandidateDx12 -c Release --no-build
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
           python validation/compare_dx12.py
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
 
       # Issue #254: the real-slangc ShadowDusk.Slang route, gate 3 (the last unverified piece
       # of that package outside a dev box): every corpus shader's DirectX_11 output loads into a
@@ -569,6 +611,7 @@ jobs:
             validation/output/candidate-dx12/**
             validation/output/diff-dx12/**
             validation/output-slang-full-corpus/**
+            validation/output/nonsquare-matrix/**
           if-no-files-found: ignore
           retention-days: 7
 
@@ -622,6 +665,16 @@ jobs:
       # Pin Mesa's lavapipe (CPU Vulkan) as the only ICD, so a runner image that ever grows
       # another driver cannot change what judged the pixels. The manifest's file name varies
       # across Mesa packagings, so it is located rather than hard-coded; none found = red.
+      # Measured 2026-10-28 (PR #434): MonoGame 3.8.5 DesktopVK's MGG_Shader_Create allocates ~13,500
+      # descriptor sets per shader and never frees them, and lavapipe backs each set with its own buffer
+      # mapping. At vm.max_map_count (262144 on this image, ~19 shaders) lavapipe's descriptor-set create
+      # memsets a failed map and the driver segfaults (exit 139) minutes in. A GPU driver does not map per
+      # set. Raising the per-process mapping limit runs every case; nothing is skipped.
+      - name: Raise vm.max_map_count for lavapipe (MonoGame maps ~13.5k descriptor sets per shader)
+        run: |
+          sudo sysctl -w vm.max_map_count=2097152
+          cat /proc/sys/vm/max_map_count
+
       - name: Pin lavapipe as the only Vulkan ICD
         run: |
           ls -l /usr/share/vulkan/icd.d/ /usr/share/vulkan/explicit_layer.d/
@@ -639,6 +692,7 @@ jobs:
           dotnet build validation/CandidateVulkan/CandidateVulkan.csproj -c Release
           dotnet build validation/BaselineVulkan/BaselineVulkan.csproj -c Release
           dotnet build validation/InitializerDefaultsVulkan/InitializerDefaultsVulkan.csproj -c Release
+          dotnet build validation/NonSquareMatrixVulkan/NonSquareMatrixVulkan.csproj -c Release
 
       # Every gate runs under validation/run-with-vk-validation.sh: the Khronos validation
       # layer is forced on, and any layer ERROR fails the step even when the pixels match.
@@ -691,6 +745,13 @@ jobs:
       - name: Vulkan initializer defaults (real DesktopVK)
         if: ${{ !cancelled() }}
         run: validation/run-with-vk-validation.sh initializer-defaults -- xvfb-run -a dotnet run --project validation/InitializerDefaultsVulkan -c Release --no-build
+
+      # Issue #423: non-square matrix parameters Set from C# on real DesktopVK, against MonoGame's
+      # DirectX semantics. The real mgfxc 3.8.5 Vulkan builds and the stock SkinnedEffect render
+      # alongside and are reported only (both are known to be wrong or throw on DesktopVK).
+      - name: Vulkan non-square matrix Set (real DesktopVK)
+        if: ${{ !cancelled() }}
+        run: validation/run-with-vk-validation.sh nonsquare-matrix -- xvfb-run -a dotnet run --project validation/NonSquareMatrixVulkan -c Release --no-build
 
       # POSITIVE CONTROLS: each plants a known defect in the candidate and the step passes
       # only if the gate turned RED for that reason. Without these, a lane that silently
@@ -756,5 +817,6 @@ jobs:
             validation/output/baseline-vulkan/**
             validation/output/diff-vulkan/**
             validation/output/vk-validation/**
+            validation/output/nonsquare-matrix/**
           if-no-files-found: ignore
           retention-days: 7

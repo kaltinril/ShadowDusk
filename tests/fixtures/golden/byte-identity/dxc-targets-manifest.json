@@ -2464,7 +2464,7 @@
     "warnings": []
   },
   "Vulkan.Debug/SkinnedEffect.fx": {
-    "mgfx": "0bd249b62d0f8d7270cc742759ca07e5547f825d124438df3fc8ffbd4f39fce4",
+    "mgfx": "8aa9660236a493620fda7291b07812cd335ee53b3f30c59097dfbacf2ed98ba4",
     "spirv": "4e928a7e095b9a5b5b4579da8903dc365d25be7bde3c6e34c8fb8e2f112f0200",
     "warnings": []
   },
@@ -3398,7 +3398,7 @@
     "warnings": []
   },
   "Vulkan/SkinnedEffect.fx": {
-    "mgfx": "3fa27afff1f0a38d5905a6b3cb6c578c1d951f73b0482dc94eb88277da8d07a9",
+    "mgfx": "a6d2b3f6af9b41a043a3790120d099d3d927ea08b92eec07245b6d41bb2b6d25",
     "spirv": "2297103754cb0602c5547184e4776053c7234f0902d4765839ae738230dda980",
     "warnings": []
   },
