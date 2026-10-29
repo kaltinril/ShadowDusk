@@ -6,6 +6,6 @@ internal static class Program
     [STAThread]
     private static int Main()
     {
-        return InitializerDefaultsProbe.Run("kni-gl", PlatformTarget.OpenGL, [EffectContainer.Mgfx, EffectContainer.Knifx], mgfxcOpenGlControl: true);
+        return InitializerDefaultsProbe.Run("kni-gl", PlatformTarget.OpenGL, [EffectContainer.Mgfx, EffectContainer.Knifx], mgfxcOpenGlControl: true, knifxReachRows: true);
     }
 }

@@ -90,6 +90,10 @@ This is the shape you hit when a shader written for DesktopGL or FNA — `PixelS
 
 The floor is **per target**, and only the DirectX one is enforced today: OpenGL caps at SM 3.0 and Vulkan requires exactly `*_6_0`, so a profile that is wrong for DirectX is often exactly right for another target. Do not "fix" an `SD0015` by raising the profile for every backend.
 
+### KNIFX: the shader model KNI checks
+
+A `.knifx` container records each shader's model, and KNI's runtime refuses a shader whose model is above the graphics profile's ceiling (Reach 2.0, HiDef 3.0, FL10_0 4.0, FL11_0 5.0). ShadowDusk records the model the way KNI's own content pipeline does for the feature-level-9 profiles: `*_4_0_level_9_1` is **2.0** and `*_4_0_level_9_3` is **3.0**, so the standard MonoGame header (`#define PS_SHADERMODEL ps_4_0_level_9_1`) loads on Reach and HiDef. Writing `ps_4_0` (no feature level) records 4.0, which KNI only accepts from `FL10_0` up, exactly as it does for its own build. A few profiles KNI's own pipeline refuses outright (`*_4_0_level_9_0`, SM6 such as `ps_6_0`, `ps_2_a`, the `*_sw` profiles, SM1) still compile here and record 4.0, 6.0, 3.0 or 1.x; an SM6 shader on the OpenGL KNIFX target then fails to load on desktop KNI SDL2.GL at every profile measured (Reach to FL11_0), so name `ps_3_0` (or the `*_4_0_level_9_1` pair) for KNIFX.
+
 ## Uniform types on the OpenGL target (cbuffers, arrays, staged limits)
 
 Free uniforms, named `cbuffer`s (including one shared by both shader stages, or several in one stage), and **array uniforms** (`float4 Colors[4]`, `float4x4 Bones[N]`, `float`/`float2`/`float3` arrays) are fully modelled: array parameters expose their elements in `Effect.Parameters` — `Parameters["Colors"].SetValue(Vector4[])` and `Parameters["Colors"].Elements[i]` work exactly as with `mgfxc` output, on every target.
