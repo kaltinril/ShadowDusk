@@ -5,7 +5,7 @@ using ShadowDusk.Core;
 namespace ShadowDusk.Compiler.Internal;
 
 /// <summary>
-/// Thrown by <see cref="VulkanTextureSamplerBindingRewriter.Rewrite"/> when two DIFFERENT
+/// Thrown by <see cref="VulkanTextureSamplerBindingRewriter.Rewrite(string)"/> when two DIFFERENT
 /// textures sample through ONE sampler in the same live code path (not in mutually-exclusive
 /// preprocessor branches). Vulkan's combined image-sampler binding model gives each texture
 /// its own descriptor, and the pair co-location this rewriter enforces would put BOTH

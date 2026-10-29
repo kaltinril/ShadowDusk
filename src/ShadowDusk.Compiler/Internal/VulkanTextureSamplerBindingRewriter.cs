@@ -186,8 +186,24 @@ internal static class VulkanTextureSamplerBindingRewriter
         return result.ToString();
     }
 
-    public static string Rewrite(string hlsl)
+    /// <summary>A texture alias the rewrite declared: <paramref name="Texture"/> read through
+    /// <paramref name="Sampler"/> by the shader, at <paramref name="Offset"/> in the returned text.</summary>
+    internal sealed record Alias(string Texture, string Sampler, string Name, int Offset);
+
+    /// <summary>The whole-file rewrite: every function counts as reachable.</summary>
+    public static string Rewrite(string hlsl) => Rewrite(hlsl, entryPoint: null, out _);
+
+    /// <summary>
+    /// The rewrite for ONE compiled shader: only the <c>Sample</c> calls and helper calls in
+    /// functions reachable from <paramref name="entryPoint"/> pair a texture with a sampler, and a
+    /// sampler that shader never names is free to move. Each compiled shader is one Vulkan
+    /// descriptor layout, so a texture read through sampler A in one pass and B in another needs
+    /// no alias. <see langword="null"/> (or an entry point not defined in the text) is the
+    /// whole file. <paramref name="aliases"/> lists the aliases declared (see <see cref="AliasSuffix"/>).
+    /// </summary>
+    internal static string Rewrite(string hlsl, string? entryPoint, out IReadOnlyList<Alias> aliases)
     {
+        aliases = Array.Empty<Alias>();
         hlsl = StripRegisterSpaces(hlsl);
 
         var textureNames = new List<string>();
@@ -217,6 +233,10 @@ internal static class VulkanTextureSamplerBindingRewriter
         if (textureNames.Count == 0 && samplerNames.Count == 0)
             return hlsl;
 
+        // What this shader can reach: a Sample or helper call inside a function the entry point
+        // never calls is dead code for it (its first textual pairing must not decide the pair).
+        Func<int, bool> inScope = ReachableScope(masked, entryPoint);
+
         // First texture.Sample(sampler, ...) pairing wins per texture name. Alongside the
         // pairing, every call is checked against the earlier calls on the same sampler:
         // a SECOND texture on one sampler in the same live code path would co-locate both
@@ -237,8 +257,11 @@ internal static class VulkanTextureSamplerBindingRewriter
         // the place a call can be pointed at an alias.
         var events = new List<(string Tex, string Samp, int Offset, int TexAt)>();
         foreach (Match m in SampleCall.Matches(masked))
-            events.Add((m.Groups[1].Value, m.Groups[2].Value, m.Index, m.Groups[1].Index));
-        events.AddRange(HelperPairs(masked, textureNames, samplerNames).Select(p => (p.Tex, p.Samp, p.Offset, -1)));
+            if (inScope(m.Index))
+                events.Add((m.Groups[1].Value, m.Groups[2].Value, m.Index, m.Groups[1].Index));
+        events.AddRange(HelperPairs(masked, textureNames, samplerNames)
+            .Where(p => inScope(p.Offset))
+            .Select(p => (p.Tex, p.Samp, p.Offset, -1)));
         events.Sort((a, b) => a.Offset.CompareTo(b.Offset));
 
         // One texture sampled DIRECTLY through a second, different sampler (the linear + point
@@ -251,6 +274,13 @@ internal static class VulkanTextureSamplerBindingRewriter
         var aliasOf = new Dictionary<(string Tex, string Samp), string>();
         var aliasesByTexture = new Dictionary<string, List<string>>(StringComparer.Ordinal);
         var aliasCallEdits = new List<(int Index, int Length, string Text)>();
+        var declaredAliases = new List<(string Texture, string Sampler, string Name, int TexAt)>();
+        // The #if branches of every call that made a texture's PRIMARY pairing: a second sampler
+        // is aliased only when its call can be live together with one of them. A call mutually
+        // exclusive with all of them is the other branch of an #if: it is left alone, and the
+        // compile resolves it from the preprocessed source (CompilationPipeline's retry), where only
+        // the live branch exists. Aliasing it would leave the alias the only live texture.
+        var primaryBranches = new Dictionary<string, List<(int Group, int Branch)[]>>(StringComparer.Ordinal);
 
         foreach (var (eventTex, samp, offset, texAt) in events)
         {
@@ -262,8 +292,13 @@ internal static class VulkanTextureSamplerBindingRewriter
             if (!textureNames.Contains(tex) || !samplerNames.Contains(samp))
                 continue;
 
-            if (pairedSampler.TryGetValue(tex, out string? primary) && primary != samp && texAt >= 0
-                && !tex.Contains(AliasSuffix, StringComparison.Ordinal))
+            (int, int)[] branches = branchStack.ToArray();
+            if (pairedSampler.TryGetValue(tex, out string? primary) && primary == samp)
+                primaryBranches[tex].Add(branches);
+
+            if (primary is not null && primary != samp && texAt >= 0
+                && !tex.Contains(AliasSuffix, StringComparison.Ordinal)
+                && primaryBranches[tex].Any(p => !MutuallyExclusive(p, branches)))
             {
                 if (!aliasOf.TryGetValue((tex, samp), out string? alias))
                 {
@@ -274,15 +309,18 @@ internal static class VulkanTextureSamplerBindingRewriter
                     aliasOf[(tex, samp)] = alias;
                     textureNames.Add(alias);
                     pairedSampler[alias] = samp;
+                    declaredAliases.Add((tex, samp, alias, texAt));
                 }
                 aliasCallEdits.Add((texAt, tex.Length, alias));
                 tex = alias;
             }
 
             if (!pairedSampler.ContainsKey(tex))
+            {
                 pairedSampler[tex] = samp;
+                primaryBranches[tex] = [branches];
+            }
 
-            (int, int)[] branches = branchStack.ToArray();
             if (!callsBySampler.TryGetValue(samp, out var calls))
                 callsBySampler[samp] = calls = new List<(string, int, (int, int)[])>();
 
@@ -311,9 +349,12 @@ internal static class VulkanTextureSamplerBindingRewriter
         {
             if (pairedSamplers.Contains(samp))
                 continue;
-            int declarations = samplerDecls.Count(d => d.Groups["name"].Value == samp);
-            int mentions = Regex.Matches(masked, $@"\b{Regex.Escape(samp)}\b").Count;
-            if (mentions <= declarations)
+            // A mention counts when this shader can reach it (outside every function, or in a
+            // function the entry point reaches); the declarations themselves never count.
+            var declarationSpans = samplerDecls.Where(d => d.Groups["name"].Value == samp).Select(d => (d.Index, End: d.Index + d.Length)).ToList();
+            bool live = Regex.Matches(masked, $@"\b{Regex.Escape(samp)}\b")
+                .Any(m => !declarationSpans.Any(d => m.Index >= d.Index && m.Index < d.End) && inScope(m.Index));
+            if (!live)
                 deadSamplers.Add(samp);
         }
 
@@ -435,8 +476,8 @@ internal static class VulkanTextureSamplerBindingRewriter
                 ? $"{m.Groups["type"].Value}{m.Groups["tmpl"].Value} {name} : register(t{ti});"
                 : m.Value;
             // Each alias is declared right after the texture it aliases, same type and template.
-            if (aliasesByTexture.TryGetValue(name, out var aliases))
-                foreach (string alias in aliases)
+            if (aliasesByTexture.TryGetValue(name, out var textureAliases))
+                foreach (string alias in textureAliases)
                     declaration += $" {m.Groups["type"].Value}{m.Groups["tmpl"].Value} {alias} : register(t{registerIndex[alias]});";
             if (!ReferenceEquals(declaration, m.Value))
                 edits.Add((m.Index, m.Length, declaration));
@@ -450,15 +491,78 @@ internal static class VulkanTextureSamplerBindingRewriter
 
         edits.Sort((a, b) => a.Index.CompareTo(b.Index));
         var result = new System.Text.StringBuilder(hlsl.Length + edits.Count * 16);
+        // Where each alias's first call lands in the returned text, for the caller's warning.
+        var firstCall = declaredAliases.ToDictionary(a => a.TexAt, a => a);
+        var reported = new List<Alias>();
         int copied = 0;
         foreach (var (index, length, text) in edits)
         {
-            result.Append(hlsl, copied, index - copied).Append(text);
+            result.Append(hlsl, copied, index - copied);
+            if (firstCall.TryGetValue(index, out var declared))
+                reported.Add(new Alias(declared.Texture, declared.Sampler, declared.Name, result.Length));
+            result.Append(text);
             copied = index + length;
         }
         result.Append(hlsl, copied, hlsl.Length - copied);
+        aliases = reported;
         return result.ToString();
     }
+
+    // ---- Reachability -----------------------------------------------------------------
+
+    /// <summary>
+    /// Whether an offset is code the shader whose entry point is <paramref name="entryPoint"/>
+    /// can execute: outside every function body (declarations, techniques), or inside a function
+    /// reachable from the entry point through calls by name (every overload of a called name
+    /// counts, the conservative direction). With no entry point, or one the text does not
+    /// define, everything is in scope.
+    /// </summary>
+    private static Func<int, bool> ReachableScope(string masked, string? entryPoint)
+    {
+        if (entryPoint is null)
+            return _ => true;
+
+        var bodies = new List<(string Name, int Start, int End)>();
+        foreach (Match m in FunctionHeader.Matches(masked))
+        {
+            int start = m.Index + m.Length - 1;
+            int end = MatchingBrace(masked, start);
+            if (end > start)
+                bodies.Add((m.Groups["fn"].Value, start, end));
+        }
+        if (!bodies.Any(b => b.Name == entryPoint))
+            return _ => true;
+
+        var reachable = new HashSet<string>(StringComparer.Ordinal) { entryPoint };
+        var queue = new Queue<string>(reachable);
+        var names = bodies.Select(b => b.Name).ToHashSet(StringComparer.Ordinal);
+        while (queue.Count > 0)
+        {
+            string fn = queue.Dequeue();
+            foreach (var body in bodies.Where(b => b.Name == fn))
+            {
+                foreach (Match call in CallName.Matches(masked.Substring(body.Start, body.End - body.Start)))
+                {
+                    string callee = call.Groups["fn"].Value;
+                    if (names.Contains(callee) && reachable.Add(callee))
+                        queue.Enqueue(callee);
+                }
+            }
+        }
+
+        // Only the outermost body counts for an offset (control-flow blocks match the header
+        // pattern too, but they sit inside a function and share its reachability).
+        var outer = bodies.Where(b => !bodies.Any(o => o.Start < b.Start && b.End < o.End)).ToList();
+        return offset =>
+        {
+            foreach (var b in outer)
+                if (offset > b.Start && offset < b.End)
+                    return reachable.Contains(b.Name);
+            return true;
+        };
+    }
+
+    private static readonly Regex CallName = new(@"(?<![\w.])(?<fn>[A-Za-z_]\w*)\s*\(", RegexOptions.Compiled);
 
     private static void Collect(
         Match m,

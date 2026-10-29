@@ -454,9 +454,14 @@ internal sealed class CompilationPipeline
         // Texture2D/SamplerState declarations.
         PreprocessedSource glCompileSource = monoGameGl
             ? preprocessed with { Text = GlStructOutputColorRewriter.Rewrite(preprocessed.Text, fxParsed.Techniques) }
-            : options.Target == PlatformTarget.Vulkan
-                ? preprocessed with { Text = VulkanTextureSamplerBindingRewriter.Rewrite(preprocessed.Text) }
-                : preprocessed;
+            : preprocessed;
+
+        // Vulkan: the binding rewrite runs PER COMPILED SHADER (VulkanShaderSource below), because
+        // each shader is its own descriptor layout: a texture read through sampler A in one pass
+        // and B in another is one combined descriptor in each, never an alias.
+        bool vulkan = options.Target == PlatformTarget.Vulkan;
+        if (vulkan && VulkanReservedName(preprocessed.Text, sourceFileName) is { } reservedName)
+            return Fail(reservedName);
 
         // Stages 3–5: Compile each pass's entry points, reflect, and transpile.
         // The preprocessor has already flattened all #includes so no include handler is needed for DXC.
@@ -610,6 +615,31 @@ internal sealed class CompilationPipeline
         var runWarnings  = new List<ShaderError>(preprocessWarnings);
         var seenWarnings = new HashSet<(string File, int Line, int Column, string Code, string Message)>();
 
+        var vulkanSources = new Dictionary<string, PreprocessedSource>(StringComparer.Ordinal);
+        PreprocessedSource VulkanShaderSource(string entryPoint)
+        {
+            if (vulkanSources.TryGetValue(entryPoint, out PreprocessedSource? cached))
+                return cached;
+            string text = VulkanTextureSamplerBindingRewriter.Rewrite(preprocessed.Text, entryPoint, out var aliases);
+            foreach (var alias in aliases)
+            {
+                var (file, line, column) = VulkanTextureSamplerBindingRewriter.Locate(text, alias.Offset);
+                AccumulateWarnings(runWarnings, seenWarnings, [new ShaderError(
+                    File:     string.IsNullOrEmpty(file) ? sourceFileName : file,
+                    Line:     line,
+                    Column:   column,
+                    Code:     "SD0235",
+                    Message:  $"Vulkan target: texture '{alias.Texture}' is sampled through a second sampler, '{alias.Sampler}', " +
+                              $"in shader '{entryPoint}'. MonoGame's DesktopVK binds a texture and a sampler as one combined " +
+                              "descriptor, so ShadowDusk gives this pairing a second descriptor holding the same texture, bound " +
+                              $"to the '{alias.Texture}' effect parameter. Set '{alias.Texture}' through Effect.Parameters: " +
+                              "SpriteBatch fills only the first texture slot, so a sprite texture read this way reaches only " +
+                              "the first sampler.",
+                    Severity: ShaderErrorSeverity.Warning)]);
+            }
+            return vulkanSources[entryPoint] = preprocessed with { Text = text };
+        }
+
         // OpenGL sampler-register reservations (issue #283): which modern
         // `SamplerState X : register(sN)` declarations take a GL sampler register out of
         // circulation is decided on the PREPROCESSED source, like mgfxc — not on the raw tokens
@@ -760,7 +790,7 @@ internal sealed class CompilationPipeline
                         dxcCompiler,
                         dxbcCompiler,
                         glslTranspiler,
-                        glCompileSource,
+                        vulkan ? VulkanShaderSource(pass.VertexEntryPoint) : glCompileSource,
                         pass.VertexEntryPoint,
                         ShaderStage.Vertex,
                         options.Target,
@@ -821,7 +851,7 @@ internal sealed class CompilationPipeline
                         dxcCompiler,
                         dxbcCompiler,
                         glslTranspiler,
-                        glCompileSource,
+                        vulkan ? VulkanShaderSource(pass.PixelEntryPoint) : glCompileSource,
                         pass.PixelEntryPoint,
                         ShaderStage.Pixel,
                         options.Target,
@@ -948,6 +978,11 @@ internal sealed class CompilationPipeline
 
                     ReflectedEffect reflected = reflectResult.Value;
 
+                    // The text this stage was compiled from (on Vulkan its own per-shader rewrite), for locating diagnostics.
+                    string stageSource = vulkan
+                        ? VulkanShaderSource(blobIndex == vsIndex ? pass.VertexEntryPoint! : pass.PixelEntryPoint!).Text
+                        : glCompileSource.Text;
+
                     // Issue #324: an ARRAY of textures or samplers has no representation in
                     // MonoGame's Vulkan effect format (real mgfxc 3.8.5 reflects it as nothing
                     // at all), and used to be silently dropped here too. Refuse it by name. On
@@ -968,7 +1003,7 @@ internal sealed class CompilationPipeline
                         return Fail(samplerArrayError, runWarnings);
                     }
                     if (options.Target == PlatformTarget.Vulkan
-                        && ResourceArrayDiagnostics.VulkanError(reflected, glCompileSource.Text, sourceFileName) is { } arrayError)
+                        && ResourceArrayDiagnostics.VulkanError(reflected, stageSource, sourceFileName) is { } arrayError)
                     {
                         return Fail(arrayError, runWarnings);
                     }
@@ -983,7 +1018,7 @@ internal sealed class CompilationPipeline
                     if (options.Target == PlatformTarget.Vulkan)
                     {
                         Result<ReflectedEffect, ShaderError> slotted =
-                            VulkanResourceSlots.FromBindings(reflected, compiledShaderBlobs[blobIndex].Stage, glCompileSource.Text, sourceFileName);
+                            VulkanResourceSlots.FromBindings(reflected, compiledShaderBlobs[blobIndex].Stage, stageSource, sourceFileName);
                         if (slotted.IsFailure)
                         {
                             // A first pass only: the retry from the preprocessed source (Run)
@@ -1012,7 +1047,17 @@ internal sealed class CompilationPipeline
                         // second sampler; VulkanTextureSamplerBindingRewriter) is not an effect
                         // parameter of its own: its record binds the original's.
                         if (options.Target == PlatformTarget.Vulkan && IsVulkanTextureAlias(param.Name))
+                        {
+                            // Normally the original is in the same shader and owns the parameter.
+                            // If DXC removed it (only the alias is live), the alias IS the texture:
+                            // keep it under the original's name so its record still has a parameter.
+                            string baseName = VulkanTextureAliasBase(param.Name);
+                            if (reflected.Parameters.Any(p => p.Name == baseName))
+                                continue;
+                            if (seenParamNames.Add(baseName))
+                                allParameters.Add(param with { Name = baseName });
                             continue;
+                        }
                         if (seenParamNames.Add(param.Name))
                             allParameters.Add(param);
                     }
@@ -1088,7 +1133,9 @@ internal sealed class CompilationPipeline
             ApplySynthesizedSamplerParameterNames(allParameters, fxParsed.SynthesizedSamplerTextures);
         string TextureParameterName(string textureName)
         {
-            textureName = VulkanTextureAliasBase(textureName);
+            // Only Vulkan declares aliases; elsewhere a name ending in the suffix is the author's own.
+            if (options.Target == PlatformTarget.Vulkan)
+                textureName = VulkanTextureAliasBase(textureName);
             return textureParameterNames.TryGetValue(textureName, out string? parameterName) ? parameterName : textureName;
         }
 
@@ -3000,6 +3047,31 @@ internal sealed class CompilationPipeline
     {
         var m = VulkanTextureAlias.Match(name);
         return m.Success ? m.Groups["base"].Value : name;
+    }
+
+    /// <summary>
+    /// <c>SD0234</c>: on Vulkan, an identifier of the source uses the suffix the binding rewrite
+    /// reserves for its texture aliases (<see cref="VulkanTextureSamplerBindingRewriter.AliasSuffix"/>),
+    /// so an alias could collide with it (a redefinition DXC would report against text the author
+    /// never wrote), and its record would be bound to the wrong parameter. Located at the first
+    /// such identifier.
+    /// </summary>
+    private static ShaderError? VulkanReservedName(string source, string sourceFileName)
+    {
+        System.Text.RegularExpressions.Match m = System.Text.RegularExpressions.Regex.Match(
+            ResourceArrayDiagnostics.MaskCommentsAndStrings(source),
+            @"\b\w*" + System.Text.RegularExpressions.Regex.Escape(VulkanTextureSamplerBindingRewriter.AliasSuffix) + @"\w*\b");
+        if (!m.Success)
+            return null;
+        var (file, line, column) = VulkanTextureSamplerBindingRewriter.Locate(source, m.Index);
+        return new ShaderError(
+            File:    string.IsNullOrEmpty(file) ? sourceFileName : file,
+            Line:    line,
+            Column:  column,
+            Code:    "SD0234",
+            Message: $"Vulkan target: the identifier '{m.Value}' uses the suffix '{VulkanTextureSamplerBindingRewriter.AliasSuffix}', " +
+                     "which ShadowDusk reserves on Vulkan for the second descriptor it declares when one texture is sampled " +
+                     "through two samplers. Rename it.");
     }
 
     /// <summary>
