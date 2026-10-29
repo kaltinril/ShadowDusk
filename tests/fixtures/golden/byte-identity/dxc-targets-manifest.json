@@ -904,9 +904,9 @@
     "warnings": []
   },
   "DirectX12.Debug/third-party/MonoGame/VertexTextureEffect.fx": {
-    "mgfx": "007f3f564591d95f16f9507f112d81f0283529bc7e789eae2b172cc70d421789",
-    "mgfxNormalized": "de9cd75d0347d383face734d3bc8e1683fc3ea0adb5d9dcd27c3daa2a47f3c40",
-    "dxil": "97f4ae61e088eaac739a67824fd7700c808c75e5364a97a7c6911d9683fea2c1",
+    "mgfx": "a873899239886913c5efac14b5390459d560480213cef9eb6e1abc9ea0b8e9ea",
+    "mgfxNormalized": "4c68f43e3466bf25d3bd955dfa60974c71ec10bc8c663db85abd9b466a3d2cab",
+    "dxil": "3775eddfd16fd1e1da102c0ec4a8d2daf6d6e4013691e4f68748b771fafb703f",
     "warnings": []
   },
   "DirectX12.Debug/third-party/Nez/Bevels.fx": {
@@ -2832,8 +2832,8 @@
     "warnings": []
   },
   "Vulkan.Debug/third-party/MonoGame/VertexTextureEffect.fx": {
-    "mgfx": "c74922c6153b455fa26105b94aab291baac8eae5007dde47dc2a17d0e6e07f8a",
-    "spirv": "97ba7aeaf2ce527ee706daa9c72fb249d4e3192db58096e5a849c5bd7f992856",
+    "mgfx": "48b98468ef53db19f731dbfb361f894f13bdb1c7f6d8bad0b6180424256fbcff",
+    "spirv": "98bdccac3e45c75f6d5cdf974fbc89718d18267b4774ecdec83cf5280762cc03",
     "warnings": []
   },
   "Vulkan.Debug/third-party/Nez/Bevels.fx": {

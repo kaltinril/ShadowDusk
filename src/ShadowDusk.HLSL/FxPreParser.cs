@@ -1115,7 +1115,7 @@ public sealed class FxPreParser
             // line: the helper then shares the end of that line, again moving no code column.
             int boundaryEnd = _restructuredBoundaryEnd.GetValueOrDefault(declStart, -1);
             int insertAt =
-                LineAboveIfFree(declStart) is int above && !Inside(above) ? above :
+                LineAboveIfFree(declStart, boundaryEnd) is int above && !Inside(above) ? above :
                 boundaryEnd >= 0 && OnlyTriviaAcrossALine(boundaryEnd, declStart) && !Inside(boundaryEnd) ? boundaryEnd :
                 declStart;
 
@@ -1159,6 +1159,7 @@ public sealed class FxPreParser
             UndeclaredStateTextures = new Dictionary<string, string>(_undeclaredStateTextures, StringComparer.Ordinal),
             ReservedGlSamplerSlots = CollectReservedSamplerRegisters(),
             DeferredLegacyIntrinsicCalls = _deferredRestructuredCalls.ToArray(),
+            RestructuredHelpers = LocateRestructuredHelpers(strippedHlsl),
         });
     }
 
@@ -3220,19 +3221,23 @@ public sealed class FxPreParser
     private (int Offset, int TokenIndex, int BoundaryEnd) TopLevelDeclarationStart(int braceDepth)
     {
         int level = braceDepth;
-        int angle = 0;
         int i = _pos - 1;
         for (; i >= 0; i--)
         {
             TokenKind k = _tokens[i].Kind;
             if (level == 0)
             {
-                if (k == TokenKind.RBrace || (k == TokenKind.Semicolon && angle == 0))
+                if (k is TokenKind.RBrace or TokenKind.Semicolon)
                     break;
-                if (k == TokenKind.RAngle)
-                    angle++;
-                else if (k == TokenKind.LAngle && angle > 0)
-                    angle--;
+                // An FX annotation block: skip it whole, so the ';' between its entries does not
+                // read as the previous declaration's terminator. Only a '>' in annotation
+                // position counts (right before the body's '{' or the declaration's ';'); a '>'
+                // in an expression ('uniform bool hi = (2 > 1)') is not a bracket.
+                if (k == TokenKind.RAngle && IsAnnotationClose(i) && AnnotationOpenBefore(i) is int open)
+                {
+                    i = open;
+                    continue;
+                }
             }
             if (k == TokenKind.RBrace)
                 level++;
@@ -3259,6 +3264,72 @@ public sealed class FxPreParser
         }
 
         return (offset, j, i >= 0 ? _tokenCharOffset[i] + _tokens[i].Text.Length : -1);
+    }
+
+    // Where each helper definition landed in the stripped text (see FxParseResult.RestructuredHelpers).
+    private RestructuredHelperDefinition[] LocateRestructuredHelpers(string stripped)
+    {
+        var found = new List<RestructuredHelperDefinition>();
+        foreach (((_, string intrinsic, _), string name) in _restructuredHelperNames)
+        {
+            int start = stripped.IndexOf("float4 " + name + "(", StringComparison.Ordinal);
+            if (start < 0)
+                continue;
+            int end = stripped.IndexOf("; } ", start, StringComparison.Ordinal);
+            end = end < 0 ? start : end + 3;
+            int lineStart = stripped.LastIndexOf('\n', Math.Max(0, start - 1)) + 1;
+            if (start == 0)
+                lineStart = 0;
+            int line = 1;
+            for (int c = 0; c < lineStart; c++)
+                if (stripped[c] == '\n')
+                    line++;
+            found.Add(new RestructuredHelperDefinition(name, intrinsic, line, start - lineStart + 1, end - lineStart + 1));
+        }
+        return found.ToArray();
+    }
+
+    // A '>' closes an annotation when the next code token is the '{' of the body or the ';' of the
+    // declaration.
+    private bool IsAnnotationClose(int index)
+    {
+        int n = index + 1;
+        while (n < _tokens.Count && _tokens[n].Kind is TokenKind.LineComment or TokenKind.BlockComment)
+            n++;
+        return n < _tokens.Count && _tokens[n].Kind is TokenKind.LBrace or TokenKind.Semicolon;
+    }
+
+    // The '<' that opens the annotation the '>' at 'close' ends: the nearest '<' before it that
+    // starts an entry list ('<' then 'Type Name', or an empty '<>') and follows a declarator, a
+    // semantic or a ')'. A comparison inside an entry's value ('int n = 3 > 2;') does not match.
+    private int? AnnotationOpenBefore(int close)
+    {
+        for (int q = close - 1; q >= 0; q--)
+        {
+            TokenKind k = _tokens[q].Kind;
+            if (k is TokenKind.LBrace or TokenKind.RBrace)
+                return null;
+            if (k != TokenKind.LAngle)
+                continue;
+
+            int p = q - 1;
+            while (p >= 0 && _tokens[p].Kind is TokenKind.LineComment or TokenKind.BlockComment)
+                p--;
+            if (p < 0 || _tokens[p].Kind is not (TokenKind.Identifier or TokenKind.RParen))
+                continue;
+
+            int n1 = q + 1;
+            while (n1 < close && _tokens[n1].Kind is TokenKind.LineComment or TokenKind.BlockComment)
+                n1++;
+            if (n1 == close)
+                return q;                    // '<>'
+            int n2 = n1 + 1;
+            while (n2 < close && _tokens[n2].Kind is TokenKind.LineComment or TokenKind.BlockComment)
+                n2++;
+            if (_tokens[n1].Kind == TokenKind.Identifier && n2 < close && _tokens[n2].Kind == TokenKind.Identifier)
+                return q;
+        }
+        return null;
     }
 
     /// <summary>
@@ -3304,7 +3375,7 @@ public sealed class FxPreParser
     /// only whitespace and comments and its first character is not inside a token (a block
     /// comment or a continued directive running through it); otherwise <c>null</c>.
     /// </summary>
-    private int? LineAboveIfFree(int offset)
+    private int? LineAboveIfFree(int offset, int boundaryEnd)
     {
         int lineStart = offset;
         while (lineStart > 0 && _source[lineStart - 1] != '\n')
@@ -3315,6 +3386,17 @@ public sealed class FxPreParser
         int above = lineStart - 1;            // the '\n' ending the line above
         while (above > 0 && _source[above - 1] != '\n')
             above--;
+
+        // The line must lie after the previous declaration's terminator: a blank line inside a
+        // multi-line initializer ('= { …\n\n};') is not at global scope.
+        if (above < boundaryEnd)
+            return null;
+
+        // A backslash-newline splice joins a line onto the one before it (the preprocessor does
+        // that before anything else), so a line spliced onto a '// comment \' is part of the
+        // comment: text placed there is commented out.
+        if (EndsInLineSplice(above))
+            return null;
 
         for (int t = 0; t < _tokens.Count; t++)
         {
@@ -3347,6 +3429,20 @@ public sealed class FxPreParser
         }
 
         return above;
+    }
+
+    // Whether the line that ends right before 'lineStart' ends in a backslash (a splice that joins
+    // the line starting at 'lineStart' onto it). Allows a '\r' before the '\n' and trailing
+    // spaces/tabs after the backslash, which some preprocessors still splice on.
+    private bool EndsInLineSplice(int lineStart)
+    {
+        int c = lineStart - 1;               // the '\n' ending the previous line
+        if (c < 0 || _source[c] != '\n')
+            return false;
+        c--;
+        while (c >= 0 && (_source[c] == '\r' || _source[c] == ' ' || _source[c] == '\t'))
+            c--;
+        return c >= 0 && _source[c] == '\\';
     }
 
     /// <summary>
@@ -3404,7 +3500,7 @@ public sealed class FxPreParser
     {
         var types = new HashSet<string>(StringComparer.Ordinal);
         foreach (string type in DeclaredTextureTypes(texture))
-            types.Add(type);
+            types.Add(NormalizeTextureType(type));
         return types.Count switch
         {
             0 => "Texture2D",
@@ -3413,10 +3509,31 @@ public sealed class FxPreParser
         };
     }
 
+    // One spelling per type: whitespace and comments removed, and a float4 element type, the
+    // default, dropped ('Texture2D <float4>' is 'Texture2D').
+    private static string NormalizeTextureType(string type)
+    {
+        string compact = new(type.Where(c => !char.IsWhiteSpace(c)).ToArray());
+        int lt = compact.IndexOf('<');
+        return lt > 0 && compact[(lt + 1)..] is "float4>" or "vector<float,4>>" ? compact[..lt] : compact;
+    }
+
+    // The types the texture is declared with at GLOBAL scope (outside every brace and parenthesis:
+    // a function parameter or a local of the same name is a different object).
     private IEnumerable<string> DeclaredTextureTypes(string texture)
     {
+        int braces = 0, parens = 0;
         for (int i = 1; i < _tokens.Count; i++)
         {
+            switch (_tokens[i - 1].Kind)
+            {
+                case TokenKind.LBrace: braces++; break;
+                case TokenKind.RBrace: braces = Math.Max(0, braces - 1); break;
+                case TokenKind.LParen: parens++; break;
+                case TokenKind.RParen: parens = Math.Max(0, parens - 1); break;
+            }
+            if (braces != 0 || parens != 0)
+                continue;
             if (_tokens[i].Kind != TokenKind.Identifier || !string.Equals(_tokens[i].Text, texture, StringComparison.Ordinal))
                 continue;
 

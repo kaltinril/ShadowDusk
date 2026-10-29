@@ -367,4 +367,186 @@ public sealed class LegacyLodIntrinsicTests
             : "");
         return MgfxBlobReader.Parse(result.Value.Data);
     }
+
+    // ---- Review probes: deferred calls that are compiled out, includes, splices -------------
+
+    private static async Task<Result<CompiledShader, ShaderError[]>> CompileWithAsync(
+        string source, PlatformTarget target, string name,
+        IReadOnlyDictionary<string, string>? includes = null, params string[] defines)
+    {
+        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(120));
+        return await new EffectCompiler().CompileAsync(source, new CompilerOptions
+        {
+            Target = target,
+            SourceFileName = name,
+            IncludeResolver = new ShadowDusk.Core.Preprocessor.InMemoryIncludeResolver(
+                new Dictionary<string, string>(includes ?? new Dictionary<string, string>())),
+            Defines = defines.Select(d => new ShadowDusk.Core.Preprocessor.UserDefine(d)).ToArray(),
+        }, cts.Token);
+    }
+
+    private const string InactiveTypedSource =
+        Header +
+        "#ifdef FLOATTEX\n" +
+        "Texture2D<float> Tex;\n" +
+        "#else\n" +
+        "Texture2D<float4> Tex;\n" +
+        "#endif\n" +
+        "sampler2D S = sampler_state { Texture = <Tex>; };\n" +
+        "#ifdef USE_LOD\n" +
+        "float4 PSLod(float4 position : SV_Position, float4 color : COLOR0, float2 uv : TEXCOORD0) : COLOR0 { return tex2Dlod(S, float4(uv, 0, 2)) * color; }\n" +
+        "technique TLod { pass P { PixelShader = compile PS_SHADERMODEL PSLod(); } }\n" +
+        "#endif\n" +
+        "float4 MainPS(float4 position : SV_Position, float4 color : COLOR0, float2 uv : TEXCOORD0) : COLOR0 { return tex2D(S, uv) * color; }\n" +
+        "technique T { pass P { PixelShader = compile PS_SHADERMODEL MainPS(); } }\n";
+
+    private const string InactiveSplitSource =
+        Header +
+        "texture Tex;\n" +
+        "sampler2D S = sampler_state { Texture = <Tex>; };\n" +
+        "#if USE_LOD\n" +
+        "#ifdef ALT\n" +
+        "float4 PSLod(float4 position : SV_Position, float4 color : COLOR0, float2 uv : TEXCOORD0) : COLOR0\n" +
+        "#else\n" +
+        "float4 PSLod(float4 position : SV_Position, float4 color : COLOR0, float2 uv : TEXCOORD0) : COLOR0\n" +
+        "#endif\n" +
+        "{ return tex2Dlod(S, float4(uv, 0, 2)) * color; }\n" +
+        "technique TLod { pass P { PixelShader = compile PS_SHADERMODEL PSLod(); } }\n" +
+        "#endif\n" +
+        "float4 MainPS(float4 position : SV_Position, float4 color : COLOR0, float2 uv : TEXCOORD0) : COLOR0 { return tex2D(S, uv) * color; }\n" +
+        "technique T { pass P { PixelShader = compile PS_SHADERMODEL MainPS(); } }\n";
+
+    public static TheoryData<PlatformTarget, string, bool> DeferredCallConfigurations()
+    {
+        var data = new TheoryData<PlatformTarget, string, bool>();
+        foreach (PlatformTarget t in new[] { PlatformTarget.OpenGL, PlatformTarget.DirectX, PlatformTarget.DirectX12, PlatformTarget.Vulkan })
+        foreach (string shape in new[] { "typed", "split" })
+        foreach (bool useLod in new[] { false, true })
+            data.Add(t, shape, useLod);
+        return data;
+    }
+
+    [Theory]
+    [MemberData(nameof(DeferredCallConfigurations))]
+    public async Task DeferredCall_CompilesWhetherItsBranchIsActiveOrNot(PlatformTarget target, string shape, bool useLod)
+    {
+        // A call the raw parse defers (texture typed per branch; one body under two headers) that
+        // the active configuration compiles OUT used to be a false FX0012 on DirectX 11: the
+        // up-front recovery found nothing to rewrite and fell back to the deferred error.
+        string source = shape == "typed" ? InactiveTypedSource : InactiveSplitSource;
+
+        var result = await CompileWithAsync(source, target, shape + ".fx", null, useLod ? ["USE_LOD"] : []);
+
+        result.IsSuccess.ShouldBeTrue(result.IsFailure
+            ? string.Join(" | ", result.Error.Select(e => e.FxcFormattedMessage))
+            : "");
+        MgfxBlobReader effect = MgfxBlobReader.Parse(result.Value.Data);
+        effect.Parameters.Select(p => p.Name).ShouldContain("Tex");
+        effect.Techniques.Count.ShouldBe(useLod ? 2 : 1);
+    }
+
+    [Theory]
+    [InlineData(PlatformTarget.OpenGL)]
+    [InlineData(PlatformTarget.DirectX)]
+    [InlineData(PlatformTarget.DirectX12)]
+    [InlineData(PlatformTarget.Vulkan)]
+    public async Task DeferredCall_DoesNotHideAMissingInclude(PlatformTarget target)
+    {
+        // DirectX 11 returned the deferred FX0012 before flattening, hiding the real error.
+        const string source =
+            "#include \"does_not_exist.fxh\"\n" +
+            Header +
+            "texture Tex;\n" +
+            "sampler2D S = sampler_state { Texture = <Tex>; };\n" +
+            "#ifdef ALT\n" +
+            "float4 MainPS(float2 uv : TEXCOORD0) : COLOR0\n" +
+            "#else\n" +
+            "float4 MainPS(float2 uv : TEXCOORD0, float4 c : COLOR0) : COLOR0\n" +
+            "#endif\n" +
+            "{ return tex2Dlod(S, float4(uv, 0, 1)); }\n" +
+            "technique T { pass P { PixelShader = compile PS_SHADERMODEL MainPS(); } }\n";
+
+        var result = await CompileWithAsync(source, target, "inc.fx");
+
+        result.IsFailure.ShouldBeTrue();
+        result.Error.ShouldContain(e => e.Code == "SD0001");
+        result.Error.ShouldNotContain(e => e.Code == "FX0012");
+    }
+
+    public static TheoryData<PlatformTarget, string> PlacementProbes()
+    {
+        var data = new TheoryData<PlatformTarget, string>();
+        foreach (PlatformTarget t in new[] { PlatformTarget.OpenGL, PlatformTarget.DirectX, PlatformTarget.DirectX12, PlatformTarget.Vulkan })
+        {
+            // A blank line spliced onto a '// comment \' (the helper there would be commented out).
+            data.Add(t, "sampler2D S;\n// a comment \\\n\nfloat4 MainPS(float4 position : SV_Position, float4 color : COLOR0, float2 uv : TEXCOORD0) : COLOR0\n{ return tex2Dlod(S, float4(uv, 0, 0)) * color; }\n");
+            // A blank line inside a multi-line initializer list.
+            data.Add(t, "sampler2D S;\nstatic const float2 Offs[2] = { float2(0, 0), float2(1, 1)\n\n}; float4 MainPS(float4 position : SV_Position, float4 color : COLOR0, float2 uv : TEXCOORD0) : COLOR0 { return tex2Dlod(S, float4(uv + Offs[1], 0, 0)) * color; }\n");
+        }
+        return data;
+    }
+
+    [Theory]
+    [MemberData(nameof(PlacementProbes))]
+    public async Task HelperPlacement_ProbesCompile(PlatformTarget target, string body)
+    {
+        string source = Header + body + "technique T { pass P { PixelShader = compile PS_SHADERMODEL MainPS(); } }\n";
+
+        var result = await CompileWithAsync(source, target, "place.fx");
+
+        result.IsSuccess.ShouldBeTrue(result.IsFailure
+            ? string.Join(" | ", result.Error.Select(e => e.FxcFormattedMessage))
+            : "");
+    }
+
+    [Fact]
+    [Trait("Platform", "DirectX")]
+    public async Task ComparisonInAnEntryParameterDefault_DirectX11_Compiles()
+    {
+        // `uniform bool hi = (2 > 1)`: the unbalanced '>' used to put the helper between a
+        // struct's '}' and ';'. (The DXC targets refuse a uniform entry parameter regardless:
+        // "Semantic must be defined for all parameters of an entry function", with tex2D too.)
+        const string source =
+            "texture Tex;\n" +
+            "sampler2D S = sampler_state { Texture = <Tex>; };\n" +
+            "struct VSOut\n{\n    float4 pos : POSITION0;\n    float2 uv : TEXCOORD0;\n};\n" +
+            "float4 MainPS(VSOut i, uniform bool hi = (2 > 1)) : COLOR0\n{\n    return tex2Dlod(S, float4(i.uv, 0, 0));\n}\n" +
+            "technique T { pass P { PixelShader = compile ps_4_0 MainPS(); } }\n";
+
+        var result = await CompileWithAsync(source, PlatformTarget.DirectX, "angle.fx");
+
+        result.IsSuccess.ShouldBeTrue(result.IsFailure
+            ? string.Join(" | ", result.Error.Select(e => e.FxcFormattedMessage))
+            : "");
+    }
+
+    [Theory]
+    [InlineData(PlatformTarget.OpenGL)]
+    [InlineData(PlatformTarget.DirectX)]
+    [InlineData(PlatformTarget.DirectX12)]
+    [InlineData(PlatformTarget.Vulkan)]
+    public async Task HelperNameAnIncludeAlsoUses_IsNotRenamedToTheIntrinsic(PlatformTarget target)
+    {
+        // The raw parse cannot see an #include's identifiers, so its helper can collide with one.
+        // The resulting error is about the helper's own definition (or sits in the include), and
+        // naming the intrinsic there would mislead: it keeps the compiler's own wording.
+        var includes = new Dictionary<string, string> { ["names.fxh"] = "float4 tex2Dlod_SD0(Texture2D t, SamplerState s, float4 c) { return 0; }\n" };
+        const string source =
+            "#include \"names.fxh\"\n" +
+            Header +
+            "sampler2D S;\n" +
+            "float4 MainPS(float4 position : SV_Position, float4 color : COLOR0, float2 uv : TEXCOORD0) : COLOR0 { return tex2Dlod(S, float4(uv, 0, 0)) * color; }\n" +
+            "technique T { pass P { PixelShader = compile PS_SHADERMODEL MainPS(); } }\n";
+
+        var result = await CompileWithAsync(source, target, "clash.fx", includes);
+
+        result.IsFailure.ShouldBeTrue("the include defines the helper's exact signature");
+        result.Error.ShouldContain(e => (e.RawDiagnostics ?? e.Message).Contains("tex2Dlod_SD0", StringComparison.Ordinal));
+        foreach (ShaderError error in result.Error.Where(e => e.Severity == ShaderErrorSeverity.Error))
+        {
+            bool mentionsHelper = (error.RawDiagnostics ?? error.Message).Contains("tex2Dlod_SD0", StringComparison.Ordinal);
+            if (mentionsHelper)
+                error.Message.ShouldContain("tex2Dlod_SD0", Case.Sensitive, error.FxcFormattedMessage);
+        }
+    }
 }

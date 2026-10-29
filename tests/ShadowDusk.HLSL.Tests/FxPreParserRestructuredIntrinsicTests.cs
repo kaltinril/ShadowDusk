@@ -397,6 +397,107 @@ public sealed class FxPreParserRestructuredIntrinsicTests
         line.ShouldContain("} float4 PSMain(", Case.Sensitive);
     }
 
+    [Fact]
+    public void ComparisonInTheHeader_IsNotAnAnnotation_TheHelperStaysOutOfTheStruct()
+    {
+        // `uniform bool hi = (2 > 1)`: an unbalanced '>' used to open an "annotation" that hid the
+        // struct's ';', so the walk stopped at the struct's '}' and the helper landed between '}'
+        // and ';'.
+        string stripped = Rewrite(
+            "sampler2D S;\n" +
+            "struct VSOut\n" +
+            "{\n" +
+            "    float4 pos : POSITION0;\n" +
+            "    float2 uv : TEXCOORD0;\n" +
+            "};\n" +
+            "float4 PSMain(VSOut i, uniform bool hi = (2 > 1)) : COLOR0\n" +
+            "{\n" +
+            "    return tex2Dlod(S, float4(i.uv, 0, 0));\n" +
+            "}" + Technique);
+
+        string[] lines = stripped.Split('\n');
+        lines[5].ShouldStartWith("}; float4 tex2Dlod_SD0(", Case.Sensitive);
+        stripped.ShouldNotContain("} float4 tex2Dlod_SD0", Case.Sensitive);
+    }
+
+    [Fact]
+    public void ComparisonInsideAnAnnotation_DoesNotUnbalanceIt()
+    {
+        string stripped = Rewrite(
+            "sampler2D S;\n" +
+            "float4 PSMain(float2 uv : TEXCOORD0) : COLOR0 < int n = 3 > 2; string s = \"x\"; > { return tex2Dlod(S, float4(uv, 0, 1)); }" + Technique);
+
+        string[] lines = stripped.Split('\n');
+        lines[0].ShouldStartWith("Texture2D S_SDTexture; SamplerState S; float4 tex2Dlod_SD0(", Case.Sensitive);
+        lines[1].ShouldStartWith("float4 PSMain(float2 uv : TEXCOORD0) : COLOR0 < int n = 3 > 2;", Case.Sensitive);
+    }
+
+    [Fact]
+    public void BlankLineInsideAMultiLineInitializer_IsNotAFreeLine()
+    {
+        // The blank line before '}; float4 PS(' sits inside the initializer list: placing the
+        // helper there put a function definition inside '{ … }'.
+        string stripped = Rewrite(
+            "sampler2D S;\n" +
+            "static const float2 Offs[2] = { float2(0, 0), float2(1, 1)\n" +
+            "\n" +
+            "}; float4 PSMain(float2 uv : TEXCOORD0) : COLOR0 { return tex2Dlod(S, float4(uv + Offs[1], 0, 0)); }" + Technique);
+
+        string[] lines = stripped.Split('\n');
+        lines[2].ShouldBe("");
+        lines[3].ShouldStartWith("}; float4 tex2Dlod_SD0(", Case.Sensitive);
+    }
+
+    [Theory]
+    [InlineData("// a comment \\")]
+    [InlineData("// a comment \\\r")]
+    [InlineData("// a comment \\  ")]
+    public void LineSplicedOntoAComment_IsNotAFreeLine(string comment)
+    {
+        // The preprocessor joins the blank line onto '// a comment \', so a helper placed on it
+        // would be commented out.
+        string stripped = Rewrite(
+            "sampler2D S;\n" +
+            comment + "\n" +
+            "\n" +
+            "float4 PSMain(float2 uv : TEXCOORD0) : COLOR0 { return tex2Dlod(S, float4(uv, 0, 0)); }" + Technique);
+
+        string[] lines = stripped.Split('\n');
+        lines[2].Trim().ShouldBe("");
+        lines[0].ShouldStartWith("Texture2D S_SDTexture; SamplerState S; float4 tex2Dlod_SD0(", Case.Sensitive);
+    }
+
+    [Theory]
+    [InlineData("Texture2D<float4>")]
+    [InlineData("Texture2D < float4 >")]
+    [InlineData("Texture2D")]
+    public void SameTypeSpelledDifferentlyPerBranch_IsOneType_TheCallIsRewritten(string otherSpelling)
+    {
+        string result = Rewrite(
+            "#ifdef FOO\n" +
+            "Texture2D Tex;\n" +
+            "#else\n" +
+            otherSpelling + " Tex;\n" +
+            "#endif\n" +
+            "sampler S = sampler_state { Texture = <Tex>; };\n" +
+            "float4 PSMain(float2 uv : TEXCOORD0) : COLOR0 { return tex2Dlod(S, float4(uv, 0, 1)); }" + Technique);
+
+        result.ShouldContain("float4 tex2Dlod_SD0(Texture2D sdTexture,", Case.Sensitive);
+        result.ShouldContain("tex2Dlod_SD0(Tex, S,", Case.Sensitive);
+    }
+
+    [Fact]
+    public void ParameterOrLocalNamedLikeTheTexture_IsNotItsDeclaration()
+    {
+        string result = Rewrite(
+            "Texture2D Tex;\n" +
+            "sampler S = sampler_state { Texture = <Tex>; };\n" +
+            "float Shade(Texture2D<float> Tex, float x) { return x; }\n" +
+            "float4 PSMain(float2 uv : TEXCOORD0) : COLOR0 { Texture2D<float> Tex2; return tex2Dlod(S, float4(uv, 0, 1)); }" + Technique);
+
+        result.ShouldContain("float4 tex2Dlod_SD0(Texture2D sdTexture,", Case.Sensitive);
+    }
+
     [Theory]
     [InlineData("tex1D")]
     [InlineData("tex1Dlod")]
