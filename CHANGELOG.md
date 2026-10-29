@@ -33,6 +33,13 @@ that loads and renders identically to `mgfxc`'s in the real MonoGame/KNI runtime
   an `FX0005`; a real duplicate is still reported, on the preprocessed text. A view that cannot be built (`__has_include`, a conditional on `__HLSL_VERSION`) keeps the raw technique list and adds an `SD0009` warning; `#region`/`#endregion` are ignored by the view. MGFX v10 records no shader
   model; the committed byte-identity manifests (OpenGL, DirectX 11,
   DirectX 12, Vulkan, FNA) are unchanged.
+- **The FNA defaults gate failed on devices that round 0.5 down.** `FnaValidation -- defaults`
+  failed `DefaultsScale`, `DefaultsIntBool` and `DefaultsArray` on an RTX 3080 (D3D11 and OpenGL)
+  although ShadowDusk's build matched `fxc`'s exactly: those fixtures put 0.5 in a channel
+  (127.5/255), which the device rendered as 127 against a pin of 128. The reference-centre vs
+  pin sanity check now allows +-1 per channel, as the `InitializerDefaults*` drivers do; the
+  ShadowDusk vs `fxc` comparison (parameters and every pixel) is still exact. Validation only,
+  no output change.
 
 ## [0.22.0] - 2026-10-28
 
