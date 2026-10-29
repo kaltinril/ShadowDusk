@@ -747,6 +747,88 @@ public sealed class VulkanTextureSamplerBindingRewriterTests
         aliases.ShouldBeEmpty();
     }
 
+    [Theory]
+    [InlineData("#define DO_SAMPLE(uv) Helper(uv)", "DO_SAMPLE(uv)")]
+    [InlineData("#define FN Helper", "FN(uv)")]
+    [InlineData("#define CALL(f, uv) f(uv)", "CALL(Helper, uv)")]
+    public void Rewrite_AHelperCalledOnlyThroughAMacro_IsReachableInTheExpandedView(string define, string call)
+    {
+        // Read off the raw text Helper looked uncalled: its Sample paired nothing, Smp counted as dead
+        // and was moved off Tex's register, and DXC split the pair (SD0232). The preprocessor's view
+        // has the call literal, on the line the macro was used on.
+        string hlsl = "Texture2D Tex : register(t0);\n" +
+                      "SamplerState Smp : register(s0);\n" +
+                      "float4 Helper(float2 uv) { return Tex.Sample(Smp, uv); }\n" +
+                      define + "\n" +
+                      $"float4 PS(float2 uv : TEXCOORD0) : SV_Target {{ return {call}; }}\n";
+        string view = "Texture2D Tex : register(t0);\n" +
+                      "SamplerState Smp : register(s0);\n" +
+                      "float4 Helper(float2 uv) { return Tex.Sample(Smp, uv); }\n" +
+                      "\n" +
+                      "float4 PS(float2 uv : TEXCOORD0) : SV_Target { return Helper(uv); }\n";
+
+        string result = VulkanTextureSamplerBindingRewriter.Rewrite(hlsl, "PS", new HashSet<int>(), view, out var aliases);
+
+        result.ShouldBe(hlsl); // both registers already agree: nothing moves
+        aliases.ShouldBeEmpty();
+    }
+
+    [Fact]
+    public void Rewrite_AFunctionAMacroDefines_IsInScope()
+    {
+        // The header inside the #define is not a function of this text: the macro's body is used
+        // wherever the macro is, so its Sample call pairs.
+        const string hlsl = """
+            Texture2D Tex; SamplerState U; SamplerState Smp;
+            #define MAKE_PS(name) float4 name(float2 uv : TEXCOORD0) : SV_Target { return Tex.Sample(Smp, uv); }
+            float4 PS(float2 uv : TEXCOORD0) : SV_Target { return Tex.Sample(Smp, uv); }
+            """;
+
+        string result = RewriteFor(hlsl, "PS", out _);
+
+        result.ShouldContain("Texture2D Tex : register(t0);", Case.Sensitive);
+        result.ShouldContain("SamplerState Smp : register(s0);", Case.Sensitive);
+    }
+
+    [Fact]
+    public void Rewrite_ADeadFreeFunctionNamedLikeACalledMethod_StaysDead()
+    {
+        // `h.Get(uv)` reaches the struct method only; the free Get's call through U used to count and
+        // give SpriteTexture a second sampler (an alias, and a misleading SD0235).
+        const string hlsl = """
+            Texture2D SpriteTexture; SamplerState S; SamplerState U;
+            struct Helper { float4 Get(float2 uv) { return SpriteTexture.Sample(S, uv); } };
+            float4 Get(float2 uv) { return SpriteTexture.Sample(U, uv); }
+            float4 MainPS(float2 uv : TEXCOORD0) : SV_Target0 { Helper h; return h.Get(uv); }
+            """;
+
+        string result = RewriteFor(hlsl, "MainPS", out var aliases);
+
+        result.ShouldContain("Texture2D SpriteTexture : register(t0);", Case.Sensitive);
+        result.ShouldContain("SamplerState S : register(s0);", Case.Sensitive);
+        result.ShouldNotContain("_SDVkAlias", Case.Sensitive);
+        aliases.ShouldBeEmpty();
+    }
+
+    [Fact]
+    public void Rewrite_AnAlias_TakesAnIndexAboveItsTexture()
+    {
+        // Tex's own slot stays its lowest (its DirectX register); its aliases used to fill slots 0
+        // and 1, below it, where SpriteBatch binds its sprite over slot 0.
+        const string hlsl = """
+            Texture2D Tex : register(t2); SamplerState A; SamplerState B; SamplerState C;
+            float4 MainPS(float2 uv : TEXCOORD0) : SV_Target0 { return Tex.Sample(A, uv) + Tex.Sample(B, uv) + Tex.Sample(C, uv); }
+            """;
+
+        string result = RewriteFor(hlsl, "MainPS", out var aliases);
+
+        result.ShouldContain("Texture2D Tex : register(t2); Texture2D Tex_SDVkAlias1 : register(t3); Texture2D Tex_SDVkAlias2 : register(t4);", Case.Sensitive);
+        result.ShouldContain("SamplerState A : register(s2);", Case.Sensitive);
+        result.ShouldContain("SamplerState B : register(s3);", Case.Sensitive);
+        result.ShouldContain("SamplerState C : register(s4);", Case.Sensitive);
+        aliases.Count.ShouldBe(2);
+    }
+
     [Fact]
     public void Rewrite_ATexturePerPassSampler_IsOneDescriptorAtItsSlotInEachShader()
     {

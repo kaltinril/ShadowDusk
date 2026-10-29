@@ -664,6 +664,147 @@ public sealed class VulkanExplicitRegisterSlotTests
         error.Column.ShouldBe(declaration.IndexOf(" Buf", StringComparison.Ordinal) + 2);
     }
 
+    // ---- A helper called only through a macro (the fourth review's BLOCKER) --------------------
+
+    // The pairing read each function's calls off the raw text, so a helper called only out of a
+    // #define looked uncalled: its Sample paired nothing, the sampler counted as dead and was moved
+    // off its texture's register, and DXC split the pair. In a file that also tests a macro only DXC
+    // defines the preprocessed retry that rescues this is unavailable, so it failed as SD0232 where
+    // 0.22.1 compiled one combined descriptor at slot 0. The calls are now read from the managed
+    // preprocessor's macro-expanded view, and a file whose view is untrusted pairs over the whole file.
+    public static TheoryData<string, string> MacroCalledHelpers()
+    {
+        const string modern = "Texture2D Tex : register(t0);\nSamplerState Smp : register(s0);\n";
+        const string unregistered = "Texture2D Tex;\nSamplerState Smp;\n";
+        const string legacy = "texture Tex;\nsampler Smp = sampler_state { Texture = <Tex>; };\n";
+        const string helper = "float4 Helper(float2 uv) { return Tex.Sample(Smp, uv); }\n";
+        const string legacyHelper = "float4 Helper(float2 uv) { return tex2D(Smp, uv); }\n";
+        var data = new TheoryData<string, string>();
+        foreach (string conditional in new[] { "", "#ifdef __spirv__\n#endif\n", "#if defined(__SHADER_TARGET_MAJOR)\n#endif\n", "#if __HLSL_VERSION\n#endif\n" })
+        {
+            string tag = conditional.Length == 0 ? "no DXC macro" : conditional.Split('\n')[0];
+            data.Add($"function-like macro, registers, {tag}", modern + helper + "#define DO_SAMPLE(uv) Helper(uv)\n" + conditional + "%BODY%DO_SAMPLE(uv)");
+            data.Add($"function-like macro, no registers, {tag}", unregistered + helper + "#define DO_SAMPLE(uv) Helper(uv)\n" + conditional + "%BODY%DO_SAMPLE(uv)");
+            data.Add($"object-like macro, {tag}", modern + helper + "#define FN Helper\n" + conditional + "%BODY%FN(uv)");
+            data.Add($"legacy sampler_state, {tag}", legacy + legacyHelper + "#define DO_SAMPLE(uv) Helper(uv)\n" + conditional + "%BODY%DO_SAMPLE(uv)");
+        }
+        return data;
+    }
+
+    private const string MacroProbePs =
+        "float4 PS(float4 p : SV_Position, float2 uv : TEXCOORD0) : SV_Target { return %CALL%; }\n" +
+        "technique T { pass P { PixelShader = compile ps_4_0 PS(); } }\n";
+
+    private static string MacroProbe(string shape)
+    {
+        int at = shape.IndexOf("%BODY%", StringComparison.Ordinal);
+        return shape[..at] + MacroProbePs.Replace("%CALL%", shape[(at + "%BODY%".Length)..], StringComparison.Ordinal);
+    }
+
+    [Theory]
+    [MemberData(nameof(MacroCalledHelpers))]
+    public async Task Vulkan_AHelperCalledThroughAMacro_IsOneCombinedDescriptorAtSlot0_AsIn0221(string name, string shape)
+    {
+        var result = await CompileSourceAsync(MacroProbe(shape), "MacroHelper.fx");
+
+        result.IsSuccess.ShouldBeTrue(result.IsFailure ? $"{name}: " + string.Join("; ", result.Error.Select(e => $"{e.Code}: {e.Message}")) : "ok");
+        var subject = MgfxBlobReader.Parse(result.Value.Data);
+        MgfxSamplerRecord record = subject.Samplers.ShouldHaveSingleItem(name);
+        (subject.ParameterNames[record.Parameter], record.TextureSlot, record.SamplerSlot).ShouldBe(("Tex", (byte)0, (byte)0), name);
+        VulkanShaderCodeReader.Parse(subject.Shaders.Single().Bytecode).Bindings
+            .Select(b => (b.Binding, b.DescriptorType)).ShouldBe([(32u, CombinedImageSampler)], name);
+        result.Value.Warnings.ShouldNotContain(w => w.Code == "SD0235", name);
+    }
+
+    [Theory]
+    [InlineData("macro", "")]
+    [InlineData("macro", "#ifdef __spirv__\n#endif\n")]
+    [InlineData("direct", "")]
+    [InlineData("direct", "#ifdef __spirv__\n#endif\n")]
+    public async Task Vulkan_ASamplerSharedWithAHelperCalledThroughAMacro_IsSD0028_LikeTheDirectForm(string form, string conditional)
+    {
+        // Through the macro it compiled to A + S at binding 32 and B as a lone SAMPLED_IMAGE at 33
+        // (sampler slot 255) while the shader samples B through S: a silent wrong render. 0.22.1 and the
+        // direct form both refuse it.
+        string source =
+            "Texture2D A; Texture2D B; SamplerState S;\n" +
+            "float4 HB(float2 uv) { return B.Sample(S, uv); }\n" +
+            "#define DOB(uv) HB(uv)\n" +
+            conditional +
+            MacroProbePs.Replace("%CALL%", "A.Sample(S, uv) + " + (form == "macro" ? "DOB(uv)" : "HB(uv)"), StringComparison.Ordinal);
+
+        var result = await CompileSourceAsync(source, "SharedMacro.fx");
+
+        result.IsFailure.ShouldBeTrue($"{form}, '{conditional}': compiled where it must be SD0028");
+        ShaderError error = result.Error.ShouldHaveSingleItem();
+        error.Code.ShouldBe("SD0028");
+        // HB's call is first in the file, so B is named first.
+        error.Message.ShouldContain("textures 'B' and 'A' are both sampled through the single sampler 'S'", Case.Sensitive);
+    }
+
+    [Fact]
+    public async Task Vulkan_AFileTestingADxcOnlyMacro_PairsOverTheWholeFile_AsBefore()
+    {
+        // The managed view cannot know __HLSL_VERSION (SD0009), so it neither drops the '#if 0' line
+        // nor reads the calls: every line and every function counts, as in the released rewrite. The
+        // dead call comes first and decides SpriteTexture's sampler, so the live one gets an alias
+        // (SD0235); DXC then removes the original and the alias keeps its parameter name.
+        const string source = """
+            #if __HLSL_VERSION >= 2016
+            #endif
+            Texture2D SpriteTexture; SamplerState U; SamplerState S;
+            float4 MainPS(float4 pos : SV_Position, float4 color : COLOR0, float2 uv : TEXCOORD0) : SV_Target0 {
+            #if 0
+              return SpriteTexture.Sample(U, uv);
+            #endif
+              return SpriteTexture.Sample(S, uv) * color;
+            }
+            technique T { pass P { PixelShader = compile ps_4_0 MainPS(); } }
+            """;
+
+        var result = await CompileSourceAsync(source, "DxcMacro.fx");
+
+        result.IsSuccess.ShouldBeTrue(result.IsFailure ? string.Join("; ", result.Error.Select(e => $"{e.Code}: {e.Message}")) : "ok");
+        result.Value.Warnings.ShouldContain(w => w.Code == "SD0009" && w.Message.Contains("__HLSL_VERSION", StringComparison.Ordinal));
+        result.Value.Warnings.ShouldContain(w => w.Code == "SD0235");
+        var subject = MgfxBlobReader.Parse(result.Value.Data);
+        MgfxSamplerRecord record = subject.Samplers.ShouldHaveSingleItem();
+        subject.ParameterNames[record.Parameter].ShouldBe("SpriteTexture");
+        subject.ParameterNames.ShouldNotContain(n => n.Contains("_SDVkAlias", StringComparison.Ordinal));
+        VulkanShaderCodeReader.Parse(subject.Shaders.Single().Bytecode).Bindings
+            .Select(b => b.DescriptorType).ShouldBe([CombinedImageSampler]);
+    }
+
+    [DxcPredefinesGnucFact]
+    public async Task Vulkan_APairingUnderIfdefGnuc_IsTheOneDxcCompiles()
+    {
+        // DXC predefines __GNUC__ (measured with `dxc -P`), so it compiles the first branch. Until the
+        // managed preprocessor knows that, its view drops that branch as skipped and the pairing reads
+        // the #else branch's texture instead. Skipped until FxMacroPreprocessor.IsCompilerPredefined
+        // lists __GNUC__ (see DxcPredefinesGnucFactAttribute); then the whole file is paired and the
+        // texture DXC samples is the one bound.
+        const string source = """
+            Texture2D TexA; Texture2D TexB; SamplerState S;
+            float4 MainPS(float4 pos : SV_Position, float2 uv : TEXCOORD0) : SV_Target0 {
+            #ifdef __GNUC__
+              return TexB.Sample(S, uv);
+            #else
+              return TexA.Sample(S, uv);
+            #endif
+            }
+            technique T { pass P { PixelShader = compile ps_4_0 MainPS(); } }
+            """;
+
+        var result = await CompileSourceAsync(source, "Gnuc.fx");
+
+        result.IsSuccess.ShouldBeTrue(result.IsFailure ? string.Join("; ", result.Error.Select(e => $"{e.Code}: {e.Message}")) : "ok");
+        var subject = MgfxBlobReader.Parse(result.Value.Data);
+        MgfxSamplerRecord record = subject.Samplers.ShouldHaveSingleItem();
+        (subject.ParameterNames[record.Parameter], record.TextureSlot, record.SamplerSlot).ShouldBe(("TexB", (byte)0, (byte)0));
+        VulkanShaderCodeReader.Parse(subject.Shaders.Single().Bytecode).Bindings
+            .Select(b => (b.Binding, b.DescriptorType)).ShouldBe([(32u, CombinedImageSampler)]);
+    }
+
     private static async Task<Result<CompiledShader, ShaderError[]>> CompileSourceAsync(string source, string fileName)
     {
         using var cts = new CancellationTokenSource(TestBudget.Compile);
@@ -756,5 +897,21 @@ public sealed class VulkanExplicitRegisterSlotTests
         string path = Path.Combine(dir.FullName, "tests", "fixtures", "golden", "Vulkan", stem + ".mgfx");
         File.Exists(path).ShouldBeTrue($"mgfxc 3.8.5 /Profile:Vulkan golden must exist at {path}");
         return path;
+    }
+}
+
+/// <summary>
+/// Runs a test only once the managed preprocessor knows DXC predefines <c>__GNUC__</c> (measured with
+/// <c>dxc -P</c>). Until then the test's shape is a known gap: a conditional on that macro is evaluated as
+/// false, so its lines count as skipped although DXC compiles them. Self-activating: when
+/// <c>FxMacroPreprocessor.IsCompilerPredefined</c> lists <c>__GNUC__</c>, the test runs.
+/// </summary>
+internal sealed class DxcPredefinesGnucFactAttribute : FactAttribute
+{
+    public DxcPredefinesGnucFactAttribute()
+    {
+        var probe = ShadowDusk.HLSL.Preprocessing.FxMacroPreprocessor.SkippedLines("#ifdef __GNUC__\n#endif\n", "probe.fx");
+        if (probe.IsFailure || probe.Value.PredefinedMacroUse is null)
+            Skip = "FxMacroPreprocessor.IsCompilerPredefined does not list __GNUC__ yet, which DXC predefines.";
     }
 }

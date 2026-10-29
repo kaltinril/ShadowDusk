@@ -616,24 +616,30 @@ internal sealed class CompilationPipeline
         var seenWarnings = new HashSet<(string File, int Line, int Column, string Code, string Message)>();
 
         var vulkanSources = new Dictionary<string, PreprocessedSource>(StringComparer.Ordinal);
-        // The lines an untaken #if drops from the text DXC compiles, read by the managed
-        // preprocessor with this compile's macros (they head the flattened text). Unknown (null)
-        // when the view cannot be built or a conditional tests a macro only DXC defines: the
-        // rewrite then treats every line as live, as it did before.
-        IReadOnlySet<int>? vulkanSkippedLines = null;
-        bool vulkanSkippedLinesRead = false;
+        // The lines an untaken #if drops from the text DXC compiles, and the macro-expanded view the
+        // rewrite reads each function's calls from, both from the managed preprocessor with this
+        // compile's macros (they head the flattened text). Unknown (null) when the view cannot be
+        // built or a conditional tests a macro only DXC defines (the view may then not be the code DXC
+        // compiles, and the preprocessed retry that backs the per-shader pairing is unavailable too):
+        // the rewrite then pairs over the whole file, every line and every function counting, as the
+        // released rewrite did.
+        (IReadOnlySet<int> Lines, string View)? vulkanLiveCode = null;
+        bool vulkanLiveCodeRead = false;
         PreprocessedSource VulkanShaderSource(string entryPoint)
         {
             if (vulkanSources.TryGetValue(entryPoint, out PreprocessedSource? cached))
                 return cached;
-            if (!vulkanSkippedLinesRead)
+            if (!vulkanLiveCodeRead)
             {
-                vulkanSkippedLinesRead = true;
+                vulkanLiveCodeRead = true;
                 var skipped = ShadowDusk.HLSL.Preprocessing.FxMacroPreprocessor.SkippedLines(preprocessed.Text, sourceFileName);
                 if (skipped.IsSuccess && skipped.Value.PredefinedMacroUse is null)
-                    vulkanSkippedLines = skipped.Value.Lines;
+                    vulkanLiveCode = (skipped.Value.Lines, skipped.Value.View);
             }
-            string text = VulkanTextureSamplerBindingRewriter.Rewrite(preprocessed.Text, entryPoint, vulkanSkippedLines, out var aliases);
+            IReadOnlyList<VulkanTextureSamplerBindingRewriter.Alias> aliases;
+            string text = vulkanLiveCode is { } live
+                ? VulkanTextureSamplerBindingRewriter.Rewrite(preprocessed.Text, entryPoint, live.Lines, live.View, out aliases)
+                : VulkanTextureSamplerBindingRewriter.Rewrite(preprocessed.Text, entryPoint: null, skippedLines: null, out aliases);
             foreach (var alias in aliases)
             {
                 var (file, line, column) = VulkanTextureSamplerBindingRewriter.Locate(text, alias.Offset);

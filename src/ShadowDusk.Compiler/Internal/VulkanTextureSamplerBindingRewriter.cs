@@ -210,7 +210,22 @@ internal static class VulkanTextureSamplerBindingRewriter
     /// gives a texture its sampler (it used to win the pairing as the first call in the file, leaving
     /// the live pairing on a second, aliased descriptor away from slot 0).</param>
     /// <param name="aliases">The aliases the rewrite declared.</param>
-    internal static string Rewrite(string hlsl, string? entryPoint, IReadOnlySet<int>? skippedLines, out IReadOnlyList<Alias> aliases)
+    internal static string Rewrite(string hlsl, string? entryPoint, IReadOnlySet<int>? skippedLines, out IReadOnlyList<Alias> aliases) =>
+        Rewrite(hlsl, entryPoint, skippedLines, expandedView: null, out aliases);
+
+    /// <summary>
+    /// <see cref="Rewrite(string, string?, IReadOnlySet{int}?, out IReadOnlyList{Alias})"/>, with what each
+    /// function calls read from <paramref name="expandedView"/>: the managed preprocessor's compiler-input
+    /// view of <paramref name="hlsl"/> (<c>FxMacroPreprocessor.SkippedLines</c>), every macro expanded and
+    /// line N holding what line N of <paramref name="hlsl"/> holds. A helper called only through a macro
+    /// (<c>#define DO_SAMPLE(uv) Helper(uv)</c>, <c>#define FN Helper</c>, a name passed to a macro or
+    /// pasted with <c>##</c>) is a literal call there, so it is reachable; read off the raw text it looked
+    /// uncalled, its <c>Sample</c> call paired nothing, and its sampler was moved off its texture's binding.
+    /// <see langword="null"/> reads the calls off <paramref name="hlsl"/> itself (a text with no macros).
+    /// The caller passes an entry point only when that view is trusted: one built on a conditional over a
+    /// macro only DXC defines may not be the code DXC compiles, and the whole file then counts.
+    /// </summary>
+    internal static string Rewrite(string hlsl, string? entryPoint, IReadOnlySet<int>? skippedLines, string? expandedView, out IReadOnlyList<Alias> aliases)
     {
         aliases = Array.Empty<Alias>();
         hlsl = StripRegisterSpaces(hlsl);
@@ -247,7 +262,7 @@ internal static class VulkanTextureSamplerBindingRewriter
         // pairing must not decide the pair). StripRegisterSpaces keeps every line where it was, so
         // the skipped lines still number this text.
         Func<int, bool> liveLine = LiveLines(masked, skippedLines);
-        Func<int, bool> reachable = ReachableScope(masked, entryPoint, liveLine);
+        Func<int, bool> reachable = ReachableScope(masked, expandedView, entryPoint, skippedLines);
         Func<int, bool> inScope = offset => liveLine(offset) && reachable(offset);
 
         // First texture.Sample(sampler, ...) pairing wins per texture name. Alongside the
@@ -400,6 +415,7 @@ internal static class VulkanTextureSamplerBindingRewriter
         // was rejected above with SD0028, so it can never reach this assignment.)
         var indexPairSampler = new Dictionary<int, string?>();
         int next = 0;
+        var aliasOriginal = declaredAliases.ToDictionary(a => a.Name, a => a.Texture, StringComparer.Ordinal);
 
         // Textures whose register the SOURCE pins are assigned FIRST. Their index is
         // authoritative among textures, so a pair that INHERITS an index must be the one that
@@ -439,6 +455,12 @@ internal static class VulkanTextureSamplerBindingRewriter
             // so BOTH branches stay co-located — only one of them survives the compile.
             else if (samp is not null && registerIndex.TryGetValue(samp, out int assignedSamp))
                 (index, inherited) = (assignedSamp, true);
+            // An alias takes the lowest free index ABOVE its texture's: the texture's own slot stays
+            // its lowest (its DirectX register), and an alias never lands on slot 0, where SpriteBatch
+            // binds its sprite over whatever the effect parameter set (`Tex : register(t2)` read through
+            // three samplers used to put its aliases on slots 0 and 1).
+            else if (aliasOriginal.TryGetValue(tex, out string? original) && registerIndex.TryGetValue(original, out int originalIndex))
+                index = NextFreeAbove(originalIndex, reserved, registerIndex);
             else
                 index = NextFree(ref next, reserved, registerIndex);
 
@@ -538,56 +560,201 @@ internal static class VulkanTextureSamplerBindingRewriter
 
     /// <summary>
     /// Whether an offset is code the shader whose entry point is <paramref name="entryPoint"/>
-    /// can execute: outside every function body (declarations, techniques), or inside a function
-    /// reachable from the entry point through calls by name (every overload of a called name
-    /// counts, the conservative direction). With no entry point, or one the text does not
-    /// define, everything is in scope.
+    /// can execute: outside every function body (declarations, techniques, a <c>#define</c>), or inside
+    /// a function reachable from the entry point through calls by name (every overload of a called name
+    /// counts, the conservative direction). With no entry point, or one the view does not define,
+    /// everything is in scope.
+    ///
+    /// <para>The calls are read from <paramref name="expandedView"/> when there is one (see
+    /// <see cref="Rewrite(string, string?, IReadOnlySet{int}?, string?, out IReadOnlyList{Alias})"/>), where a
+    /// call a macro makes is literal; each function of <paramref name="masked"/> is then matched to the
+    /// view's function whose header is on the same line (the view keeps every line where it was). A
+    /// function the match cannot find counts as reachable. A member call (<c>h.Get(uv)</c>,
+    /// <c>S::Get(uv)</c>) reaches only struct methods of that name and a bare call only free functions
+    /// (and, from inside a method, methods too), so a dead free function named like a called method
+    /// stays dead.</para>
     /// </summary>
-    private static Func<int, bool> ReachableScope(string masked, string? entryPoint, Func<int, bool> live)
+    private static Func<int, bool> ReachableScope(string masked, string? expandedView, string? entryPoint, IReadOnlySet<int>? skippedLines)
     {
         if (entryPoint is null)
             return _ => true;
 
-        var bodies = new List<(string Name, int Start, int End)>();
-        foreach (Match m in FunctionHeader.Matches(masked))
-        {
-            int start = m.Index + m.Length - 1;
-            int end = MatchingBrace(masked, start);
-            if (end > start)
-                bodies.Add((m.Groups["fn"].Value, start, end));
-        }
-        if (!bodies.Any(b => b.Name == entryPoint))
+        string view = expandedView is null ? masked : ResourceArrayDiagnostics.MaskCommentsAndStrings(expandedView);
+        Func<int, bool> viewLive = LiveLines(view, skippedLines);
+        var viewBodies = Functions(view);
+        if (!viewBodies.Any(b => b.Name == entryPoint && !b.IsMethod))
             return _ => true;
 
-        var reachable = new HashSet<string>(StringComparer.Ordinal) { entryPoint };
-        var queue = new Queue<string>(reachable);
-        var names = bodies.Select(b => b.Name).ToHashSet(StringComparer.Ordinal);
-        while (queue.Count > 0)
+        var byName = new Dictionary<string, List<int>>(StringComparer.Ordinal);
+        for (int i = 0; i < viewBodies.Count; i++)
         {
-            string fn = queue.Dequeue();
-            foreach (var body in bodies.Where(b => b.Name == fn))
+            if (!byName.TryGetValue(viewBodies[i].Name, out var list))
+                byName[viewBodies[i].Name] = list = new List<int>();
+            list.Add(i);
+        }
+
+        var reached = new bool[viewBodies.Count];
+        var queue = new Queue<int>();
+        void Reach(string name, bool methods, bool freeFunctions)
+        {
+            if (!byName.TryGetValue(name, out var candidates))
+                return;
+            foreach (int i in candidates)
             {
-                foreach (Match call in CallName.Matches(masked.Substring(body.Start, body.End - body.Start)))
+                if (!reached[i] && (viewBodies[i].IsMethod ? methods : freeFunctions))
                 {
-                    if (!live(body.Start + call.Index))
-                        continue; // a call an untaken #if drops reaches nothing
-                    string callee = call.Groups["fn"].Value;
-                    if (names.Contains(callee) && reachable.Add(callee))
-                        queue.Enqueue(callee);
+                    reached[i] = true;
+                    queue.Enqueue(i);
                 }
             }
         }
 
-        // Only the outermost body counts for an offset (control-flow blocks match the header
-        // pattern too, but they sit inside a function and share its reachability).
-        var outer = bodies.Where(b => !bodies.Any(o => o.Start < b.Start && b.End < o.End)).ToList();
+        Reach(entryPoint, methods: false, freeFunctions: true);
+        while (queue.Count > 0)
+        {
+            var body = viewBodies[queue.Dequeue()];
+            foreach (Match call in CallName.Matches(view.Substring(body.Start, body.End - body.Start)))
+            {
+                int at = body.Start + call.Index;
+                if (!viewLive(at))
+                    continue; // a call an untaken #if drops reaches nothing
+                bool member = IsMemberAccess(view, at);
+                Reach(call.Groups["fn"].Value, methods: member || body.IsMethod, freeFunctions: !member);
+            }
+        }
+
+        // Each function of this text, matched to the view's by header line (then by name, then by
+        // position on the line).
+        var rawBodies = expandedView is null ? viewBodies : Functions(masked);
+        var rawReached = new bool[rawBodies.Count];
+        if (expandedView is null)
+        {
+            Array.Copy(reached, rawReached, reached.Length);
+        }
+        else
+        {
+            Func<int, int> rawLine = LineOf(masked);
+            Func<int, int> viewLine = LineOf(view);
+            var viewOnLine = viewBodies.Select((b, i) => (Line: viewLine(b.HeaderAt), Index: i))
+                .GroupBy(x => x.Line).ToDictionary(g => g.Key, g => g.Select(x => x.Index).ToList());
+            var rawOnLine = rawBodies.Select((b, i) => (Line: rawLine(b.HeaderAt), Index: i))
+                .GroupBy(x => x.Line).ToDictionary(g => g.Key, g => g.Select(x => x.Index).ToList());
+            for (int r = 0; r < rawBodies.Count; r++)
+            {
+                int line = rawLine(rawBodies[r].HeaderAt);
+                if (!viewOnLine.TryGetValue(line, out var candidates))
+                {
+                    rawReached[r] = true;
+                    continue;
+                }
+                var sameName = candidates.Where(v => viewBodies[v].Name == rawBodies[r].Name).ToList();
+                var onLine = rawOnLine[line];
+                rawReached[r] = sameName.Count > 0 ? sameName.Any(v => reached[v])
+                    : onLine.Count == candidates.Count ? reached[candidates[onLine.IndexOf(r)]]
+                    : candidates.Any(v => reached[v]);
+            }
+        }
+
+        var defines = DefineSpans(masked);
         return offset =>
         {
-            foreach (var b in outer)
-                if (offset > b.Start && offset < b.End)
-                    return reachable.Contains(b.Name);
+            foreach (var (start, end) in defines)
+            {
+                if (offset >= start && offset < end)
+                    return true; // a macro's body is used wherever the macro is
+            }
+            for (int i = 0; i < rawBodies.Count; i++)
+            {
+                if (offset > rawBodies[i].Start && offset < rawBodies[i].End)
+                    return rawReached[i];
+            }
             return true;
         };
+    }
+
+    // `struct S {` (and `class`/`interface`): the methods inside are reached only by a member call.
+    private static readonly Regex StructHeader =
+        new(@"\b(?:struct|class|interface)\s+[A-Za-z_]\w*\s*(?::\s*[A-Za-z_]\w*\s*)?\{", RegexOptions.Compiled);
+
+    // A #define directive's first line.
+    private static readonly Regex DefineDirective =
+        new(@"^[ \t]*#[ \t]*define\b", RegexOptions.Compiled | RegexOptions.Multiline);
+
+    /// <summary>
+    /// The outermost function bodies of <paramref name="masked"/>: name, offset of the name, the
+    /// braces, and whether it is a struct method (declared inside a <c>struct</c>, or as <c>S::Name</c>).
+    /// A header or a brace inside a <c>#define</c> is not one: a function a macro defines is expanded
+    /// wherever the macro is used.
+    /// </summary>
+    private static List<(string Name, int HeaderAt, int Start, int End, bool IsMethod)> Functions(string masked)
+    {
+        var structural = new System.Text.StringBuilder(masked);
+        foreach (var (start, end) in DefineSpans(masked))
+        {
+            for (int i = start; i < end; i++)
+            {
+                if (structural[i] is not ('\n' or '\r'))
+                    structural[i] = ' ';
+            }
+        }
+        string text = structural.ToString();
+
+        var structs = new List<(int Start, int End)>();
+        foreach (Match m in StructHeader.Matches(text))
+        {
+            int open = m.Index + m.Length - 1;
+            int close = MatchingBrace(text, open);
+            if (close > open)
+                structs.Add((open, close));
+        }
+
+        var bodies = new List<(string Name, int HeaderAt, int Start, int End, bool IsMethod)>();
+        foreach (Match m in FunctionHeader.Matches(text))
+        {
+            int start = m.Index + m.Length - 1;
+            int end = MatchingBrace(text, start);
+            if (end <= start)
+                continue;
+            int at = m.Groups["fn"].Index;
+            bool method = IsMemberAccess(text, at) || structs.Any(s => at > s.Start && at < s.End);
+            bodies.Add((m.Groups["fn"].Value, at, start, end, method));
+        }
+        return bodies.Where(b => !bodies.Any(o => o.Start < b.Start && b.End < o.End)).ToList();
+    }
+
+    // The [start, end) spans of every #define directive, backslash continuations included.
+    private static List<(int Start, int End)> DefineSpans(string text)
+    {
+        var spans = new List<(int, int)>();
+        foreach (Match m in DefineDirective.Matches(text))
+        {
+            int end;
+            int from = m.Index;
+            while (true)
+            {
+                int newline = text.IndexOfAny(['\n', '\r'], from);
+                if (newline < 0)
+                {
+                    end = text.Length;
+                    break;
+                }
+                end = newline;
+                if (newline == 0 || text[newline - 1] != '\\')
+                    break;
+                from = newline + (text[newline] == '\r' && newline + 1 < text.Length && text[newline + 1] == '\n' ? 2 : 1);
+            }
+            spans.Add((m.Index, end));
+        }
+        return spans;
+    }
+
+    // Whether the identifier at `at` follows a `.` or `::` (whitespace between allowed).
+    private static bool IsMemberAccess(string text, int at)
+    {
+        int i = at - 1;
+        while (i >= 0 && char.IsWhiteSpace(text[i]))
+            i--;
+        return i >= 0 && (text[i] == '.' || (text[i] == ':' && i > 0 && text[i - 1] == ':'));
     }
 
     /// <summary>
@@ -599,23 +766,31 @@ internal static class VulkanTextureSamplerBindingRewriter
         if (skippedLines is null || skippedLines.Count == 0)
             return _ => true;
 
-        // Lines numbered as FxMacroPreprocessor numbers them: a lone '\r' ends a line as '\n' and
-        // "\r\n" do, so a skipped line found there is the same line here.
+        Func<int, int> line = LineOf(text);
+        return offset => !skippedLines.Contains(line(offset));
+    }
+
+    /// <summary>
+    /// The 1-based line of an offset of <paramref name="text"/>, numbered as FxMacroPreprocessor
+    /// numbers them: a lone '\r' ends a line as '\n' and "\r\n" do, so a skipped line found there is
+    /// the same line here.
+    /// </summary>
+    private static Func<int, int> LineOf(string text)
+    {
         var lineStarts = new List<int> { 0 };
         for (int i = 0; i < text.Length; i++)
+        {
             if (text[i] == '\n' || (text[i] == '\r' && (i + 1 == text.Length || text[i + 1] != '\n')))
                 lineStarts.Add(i + 1);
+        }
         return offset =>
         {
             int index = lineStarts.BinarySearch(offset);
-            int line = (index >= 0 ? index : ~index - 1) + 1;
-            return !skippedLines.Contains(line);
+            return (index >= 0 ? index : ~index - 1) + 1;
         };
     }
 
-    // A call by name, a method call (`h.Get(uv)`, a struct method) included: reachability errs toward
-    // reaching more, so a method's Sample calls still pair (a member call such as `Tex.Sample(` only
-    // marks a same-named function reachable, the conservative direction).
+    // A call by name, a member call (`h.Get(uv)`) included: IsMemberAccess tells them apart.
     private static readonly Regex CallName = new(@"(?<!\w)(?<fn>[A-Za-z_]\w*)\s*\(", RegexOptions.Compiled);
 
     private static void Collect(
@@ -646,13 +821,22 @@ internal static class VulkanTextureSamplerBindingRewriter
         return next;
     }
 
+    // The lowest index above `floor` nobody has reserved or been given.
+    private static int NextFreeAbove(int floor, HashSet<int> reserved, Dictionary<string, int> assigned)
+    {
+        int index = floor + 1;
+        while (reserved.Contains(index) || assigned.ContainsValue(index))
+            index++;
+        return index;
+    }
+
     // ---- Helper-function pairing ----------------------------------------------------
 
     // A function definition: name, parameter list (no nested parentheses), an optional return
-    // semantic, then the opening brace. Control-flow statements (`if (x) {`) also match; they have
-    // no resource parameters, so they contribute nothing.
+    // semantic, then the opening brace. A control-flow statement (`if (x) {`) and a constant
+    // buffer's register clause (`cbuffer P : register(b0) {`) have the same shape and are not one.
     private static readonly Regex FunctionHeader =
-        new(@"(?<![\w.])(?<fn>[A-Za-z_]\w*)\s*\((?<params>[^()]*)\)\s*(?::\s*\w+\s*)?\{", RegexOptions.Compiled);
+        new(@"(?<![\w.])(?!(?:if|for|while|switch|register|packoffset)\b)(?<fn>[A-Za-z_]\w*)\s*\((?<params>[^()]*)\)\s*(?::\s*\w+\s*)?\{", RegexOptions.Compiled);
 
     // One parameter: optional modifiers, the type (with an optional template), the name.
     private static readonly Regex ParameterDecl =

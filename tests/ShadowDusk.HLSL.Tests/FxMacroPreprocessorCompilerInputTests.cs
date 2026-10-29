@@ -224,6 +224,25 @@ public sealed class FxMacroPreprocessorCompilerInputTests
     }
 
     [Fact]
+    public void SkippedLines_ReturnTheExpandedViewLineForLine()
+    {
+        // The Vulkan binding rewrite reads what each function calls from this view: a call that
+        // comes out of a macro is literal here, on the line the macro was used on.
+        const string src =
+            "#define DO_SAMPLE(uv) Helper(uv)\n" +                   // 1
+            "float4 Helper(float2 uv) { return 1; }\n" +           // 2
+            "float4 PS(float2 uv) { return DO_SAMPLE(uv); }\n";    // 3
+
+        var result = FxMacroPreprocessor.SkippedLines(src, "t.fx");
+
+        result.IsSuccess.ShouldBeTrue(result.IsFailure ? $"{result.Error.Code}: {result.Error.Message}" : "ok");
+        string[] lines = result.Value.View.Split('\n');
+        lines[0].Trim().ShouldBeEmpty();
+        lines[2].ShouldContain("Helper(uv)", Case.Sensitive);
+        lines[2].ShouldNotContain("DO_SAMPLE", Case.Sensitive);
+    }
+
+    [Fact]
     public void SkippedLines_ReportAConditionalOnACompilerPredefinedMacro()
     {
         var result = FxMacroPreprocessor.SkippedLines("#if __HLSL_VERSION >= 2021\nint a;\n#endif\n", "t.fx");
