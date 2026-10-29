@@ -25,7 +25,7 @@ namespace ShadowDusk.HLSL.Preprocessing;
 /// compiles from its raw source, DXC still preprocesses and compiles that raw source and this
 /// view only informs the decisions above (<see cref="Process(string, string)"/>). The one
 /// exception is the legacy-sampler recovery of issue #308
-/// (<see cref="ProcessForCompiler"/>): an effect DXC has already REJECTED, whose legacy
+/// (<see cref="ProcessForCompiler(string, string)"/>): an effect DXC has already REJECTED, whose legacy
 /// <c>sampler</c> / <c>tex2D</c> syntax the pre-parser could not rewrite because it lives in an
 /// <c>#include</c>d file or comes out of a macro, is pre-parsed again on this preprocessed text
 /// and that text is what DXC then compiles. That mode keeps the source's line structure and
@@ -57,10 +57,28 @@ internal sealed class FxMacroPreprocessor
     // know the value of (DXC defines it; nothing here does).
     private CompilerPredefinedMacroUse? _predefinedUse;
 
+    // Every name the source (with the compile's prepended -D macros) #defines anywhere, active or
+    // not: a reserved name among them (an include guard, #ifndef __MY_FXH__) is the author's.
+    private readonly HashSet<string> _definedAnywhere = new(StringComparer.Ordinal);
+
+    // For the caller that builds the view for both outcomes of every conditional on a macro only
+    // the compiler defines (the entry-point prototype proof, DxcSpirvEntryRedeclarations): the
+    // outcome it chose for each, by the physical line of the directive. Only that mode records them.
+    private readonly IReadOnlyDictionary<int, bool>? _forced;
+    private readonly List<UnknownConditional> _unknownConditionals = [];
+    private int _directivePhysicalLine;
+    private string? _directiveUnknownName;
+
     private FxMacroPreprocessor(string sourceFile, bool compilerInput = false)
     {
         _file = sourceFile;
         _compilerInput = compilerInput;
+    }
+
+    private FxMacroPreprocessor(string sourceFile, IReadOnlyDictionary<int, bool> forced)
+        : this(sourceFile, compilerInput: true)
+    {
+        _forced = forced;
     }
 
     /// <summary>
@@ -81,7 +99,26 @@ internal sealed class FxMacroPreprocessor
     /// The preprocessed source in the form that can be handed to the compiler (issue #308), and
     /// whether building it had to assume the value of a compiler-predefined macro.
     /// </summary>
-    internal sealed record CompilerInput(string Text, CompilerPredefinedMacroUse? PredefinedMacroUse);
+    /// <param name="Text">The preprocessed text.</param>
+    /// <param name="PredefinedMacroUse">The first conditional that tested a macro whose value is not known here.</param>
+    /// <param name="UnknownConditionals">
+    /// Every evaluated conditional that tested such a macro, in source order; recorded only by
+    /// <see cref="ProcessForCompiler(string, string, IReadOnlyDictionary{int, bool})"/>.
+    /// </param>
+    internal sealed record CompilerInput(
+        string Text,
+        CompilerPredefinedMacroUse? PredefinedMacroUse,
+        IReadOnlyList<UnknownConditional>? UnknownConditionals = null);
+
+    /// <summary>
+    /// A conditional (<c>#if</c>, <c>#ifdef</c>, <c>#ifndef</c>, <c>#elif</c>) that tested a macro
+    /// whose value is not known here.
+    /// </summary>
+    /// <param name="PhysicalLine">The 1-based physical line of the directive in the flattened input.</param>
+    /// <param name="Name">The first such macro it tested.</param>
+    /// <param name="Natural">What it evaluated to with that macro read as undefined.</param>
+    /// <param name="Taken">The outcome the view used: the caller's choice, else <paramref name="Natural"/>.</param>
+    internal sealed record UnknownConditional(int PhysicalLine, string Name, bool Natural, bool Taken);
 
     /// <summary>
     /// Builds the preprocessed view of <paramref name="flattenedSource"/> as COMPILER INPUT: the
@@ -112,6 +149,45 @@ internal sealed class FxMacroPreprocessor
         return view.IsFailure
             ? Result<CompilerInput, ShaderError>.Fail(view.Error)
             : Result<CompilerInput, ShaderError>.Ok(new CompilerInput(view.Value, preprocessor._predefinedUse));
+    }
+
+    /// <summary>
+    /// <see cref="ProcessForCompiler(string, string)"/> for a caller that must account for every
+    /// text the compiler could be compiling. A conditional that tests a macro only the compiler
+    /// defines (see <see cref="NoteCompilerPredefined"/>) takes the outcome <paramref name="forced"/> gives for its physical line, or,
+    /// when it gives none, what it evaluates to with the name undefined. Each such conditional is
+    /// reported in <see cref="CompilerInput.UnknownConditionals"/>, so the caller can build the
+    /// view for its other outcome too.
+    /// </summary>
+    internal static Result<CompilerInput, ShaderError> ProcessForCompiler(
+        string flattenedSource, string sourceFile, IReadOnlyDictionary<int, bool> forced)
+    {
+        var preprocessor = new FxMacroPreprocessor(sourceFile, forced);
+        Result<string, ShaderError> view = preprocessor.Run(flattenedSource);
+        return view.IsFailure
+            ? Result<CompilerInput, ShaderError>.Fail(view.Error)
+            : Result<CompilerInput, ShaderError>.Ok(
+                new CompilerInput(view.Value, preprocessor._predefinedUse, preprocessor._unknownConditionals));
+    }
+
+    private void BeginConditional(int physicalLine)
+    {
+        _directivePhysicalLine = physicalLine;
+        _directiveUnknownName = null;
+    }
+
+    /// <summary>
+    /// The outcome of the conditional just evaluated to <paramref name="natural"/>: when it tested
+    /// a macro whose value is not known and a caller enumerates the outcomes, the one the caller
+    /// chose (recorded either way).
+    /// </summary>
+    private bool Decide(bool natural)
+    {
+        if (_forced is null || _directiveUnknownName is null)
+            return natural;
+        bool taken = _forced.TryGetValue(_directivePhysicalLine, out bool chosen) ? chosen : natural;
+        _unknownConditionals.Add(new UnknownConditional(_directivePhysicalLine, _directiveUnknownName, natural, taken));
+        return taken;
     }
 
     /// <summary>
@@ -171,6 +247,8 @@ internal sealed class FxMacroPreprocessor
         var commentLineBreaks = new HashSet<int>();
         string text = StripComments(
             source.Replace("\r\n", "\n").Replace('\r', '\n'), keepWidth: _compilerInput, commentLineBreaks);
+        foreach (System.Text.RegularExpressions.Match m in DefineName.Matches(text))
+            _definedAnywhere.Add(m.Groups[1].Value);
         string[] physical = text.Split('\n');
 
         var output = new StringBuilder();
@@ -298,12 +376,13 @@ internal sealed class FxMacroPreprocessor
                     bool value = false;
                     if (parentActive)
                     {
+                        BeginConditional(physicalLine);
                         var eval = directive == "if"
                             ? EvaluateCondition(rest, lineNo)
                             : EvaluateDefinedTest(rest, directive == "ifndef", lineNo);
                         if (eval.IsFailure)
                             return Result<string, ShaderError>.Fail(eval.Error);
-                        value = eval.Value;
+                        value = Decide(eval.Value);
                     }
                     conds.Push(new CondFrame
                     {
@@ -325,11 +404,13 @@ internal sealed class FxMacroPreprocessor
                         frame.CurrentActive = false;
                         break;
                     }
+                    BeginConditional(physicalLine);
                     var eval = EvaluateCondition(rest, lineNo);
                     if (eval.IsFailure)
                         return Result<string, ShaderError>.Fail(eval.Error);
-                    frame.CurrentActive = eval.Value;
-                    frame.AnyTaken = eval.Value;
+                    bool taken = Decide(eval.Value);
+                    frame.CurrentActive = taken;
+                    frame.AnyTaken = taken;
                     break;
                 }
                 case "else":
@@ -889,21 +970,58 @@ internal sealed class FxMacroPreprocessor
     }
 
     /// <summary>
-    /// Records the first conditional that tests a macro the COMPILER predefines and the source
-    /// does not define itself. This preprocessor evaluates it as undefined (as <c>mgfxc</c>'s
-    /// does); DXC would not, so a text built on that assumption may not be the one DXC compiles.
+    /// Records a conditional that tests a macro the COMPILER may predefine and that is not
+    /// defined at that point: one DXC is known to define (<see cref="IsCompilerPredefined"/>), or
+    /// any other name in the reserved namespace (<c>__x</c>, <c>_X</c>) that the source, with the
+    /// compile's <c>-D</c> macros, never <c>#define</c>s anywhere (so an include guard such as
+    /// <c>#ifndef __MY_FXH__</c> / <c>#define __MY_FXH__</c> is the author's and does not count).
+    /// This preprocessor evaluates it as undefined (as <c>mgfxc</c>'s does); DXC may not, so a
+    /// text built on that assumption may not be the one DXC compiles.
     /// </summary>
     private void NoteCompilerPredefined(string name, int line)
     {
-        if (_predefinedUse is null && !_macros.ContainsKey(name) && IsCompilerPredefined(name))
-            _predefinedUse = new CompilerPredefinedMacroUse(name, _file, line);
+        if (_macros.ContainsKey(name)
+            || !(IsCompilerPredefined(name) || (IsReservedName(name) && !_definedAnywhere.Contains(name))))
+        {
+            return;
+        }
+        _predefinedUse ??= new CompilerPredefinedMacroUse(name, _file, line);
+        _directiveUnknownName ??= name;
     }
 
+    /// <summary>The name of each <c>#define</c> line (comments already stripped).</summary>
+    private static readonly System.Text.RegularExpressions.Regex DefineName = new(
+        @"^[ \t]*#[ \t]*define[ \t]+([A-Za-z_][A-Za-z0-9_]*)",
+        System.Text.RegularExpressions.RegexOptions.CultureInvariant | System.Text.RegularExpressions.RegexOptions.Multiline);
+
     /// <summary>
-    /// The macro names DXC (and the clang front end it is built on) defines without being asked:
-    /// <c>__hlsl_dx_compiler</c>, <c>__HLSL_VERSION</c>, <c>__SHADER_TARGET_*</c>,
-    /// <c>__DXC_VERSION_*</c>, <c>__spirv__</c> (with <c>-spirv</c>) and the standard
-    /// <c>__LINE__</c> / <c>__FILE__</c> family.
+    /// A name C reserves for the implementation (two leading underscores, or one and an
+    /// upper-case letter) that is not one of the effect toolchain's own macros. Those
+    /// (<c>__KNIFX__</c>, which KNI's compiler and ShadowDusk's KNIFX macro set define, and real
+    /// KNI shaders such as Apos.Shapes test) reach DXC as <c>-D</c> macros whenever the compile
+    /// defines them, and DXC never defines them itself (measured), so undefined is their value.
+    /// </summary>
+    internal static bool IsReservedName(string name) =>
+        name.Length >= 2 && name[0] == '_' && (name[1] == '_' || char.IsAsciiLetterUpper(name[1]))
+        && name is not "__KNIFX__";
+
+    /// <summary>
+    /// The macro names DXC (and the clang 3.7 front end it is built on) defines without being
+    /// asked. Measured on the pinned DXC (<c>dxcoob 1.7.2212.40</c>) with <c>-P</c> over a probe of
+    /// every candidate name, with the OpenGL (<c>-spirv</c>, and the <c>-Vd</c> reflection
+    /// companion) and Vulkan argument sets, 2026-10-29: <c>__hlsl_dx_compiler</c>,
+    /// <c>__HLSL_VERSION</c>, <c>__SHADER_TARGET_*</c>, <c>__SHADER_STAGE_*</c>,
+    /// <c>__DXC_VERSION_*</c>, <c>__spirv__</c> (with <c>-spirv</c>), <c>__llvm__</c>,
+    /// <c>__clang__</c> and <c>__clang_*</c>, <c>__GNUC__</c>, <c>__GNUC_MINOR__</c>,
+    /// <c>__GNUC_PATCHLEVEL__</c>, <c>__GXX_ABI_VERSION</c>, <c>__VERSION__</c>,
+    /// <c>__ORDER_LITTLE_ENDIAN__</c> / <c>_BIG_</c> / <c>_PDP_</c>, <c>__BYTE_ORDER__</c>,
+    /// <c>__LITTLE_ENDIAN__</c>, the <c>__FLT_*</c> and <c>__DBL_*</c> families,
+    /// <c>__DECIMAL_DIG__</c>, the <c>__has_*</c> and <c>__is_identifier</c> builtins, and the
+    /// standard <c>__LINE__</c> / <c>__FILE__</c> family. (It does NOT define <c>__STDC__</c>,
+    /// <c>__cplusplus</c>, <c>_WIN32</c>, <c>__x86_64__</c>, <c>__SIZEOF_*</c> or <c>__ATOMIC_*</c>;
+    /// the first two stay listed, harmlessly.) Listed by name so that a source that defines one of
+    /// them itself is still flagged; every other reserved name is caught by
+    /// <see cref="NoteCompilerPredefined"/>'s rule.
     /// </summary>
     internal static bool IsCompilerPredefined(string name) =>
         name.StartsWith("__SHADER_", StringComparison.Ordinal) ||
@@ -914,9 +1032,15 @@ internal sealed class FxMacroPreprocessor
         name.StartsWith("__spirv", StringComparison.Ordinal) ||
         name.StartsWith("__clang", StringComparison.Ordinal) ||
         name.StartsWith("__has_", StringComparison.Ordinal) ||
+        name.StartsWith("__GNUC", StringComparison.Ordinal) ||
+        name.StartsWith("__GXX_", StringComparison.Ordinal) ||
+        name.StartsWith("__ORDER_", StringComparison.Ordinal) ||
+        name.StartsWith("__FLT_", StringComparison.Ordinal) ||
+        name.StartsWith("__DBL_", StringComparison.Ordinal) ||
         name is "__LINE__" or "__FILE__" or "__COUNTER__" or "__DATE__" or "__TIME__" or "__TIMESTAMP__"
             or "__INCLUDE_LEVEL__" or "__BASE_FILE__" or "__cplusplus" or "__STDC__"
-            or "__STDC_VERSION__" or "__STDC_HOSTED__" or "__VERSION__";
+            or "__STDC_VERSION__" or "__STDC_HOSTED__" or "__VERSION__"
+            or "__llvm__" or "__BYTE_ORDER__" or "__LITTLE_ENDIAN__" or "__DECIMAL_DIG__" or "__is_identifier";
 
     /// <summary>Integer constant-expression evaluator over the C operator set.</summary>
     private sealed class ExpressionEvaluator
