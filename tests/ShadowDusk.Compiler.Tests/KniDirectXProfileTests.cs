@@ -65,23 +65,26 @@ public sealed class KniDirectXProfileTests
         KniDirectXProfile.Accepts(profile).ShouldBe(KniValidates(profile));
     }
 
+    /// <summary>The whole recognized set, so a profile added to it later is swept too.</summary>
     public static TheoryData<string> RecognizedProfiles()
     {
         var data = new TheoryData<string>();
-        foreach (string prefix in new[] { "vs", "ps" })
-        {
-            foreach (string suffix in new[]
-                     {
-                         "2_0", "2_a", "2_sw", "3_0", "3_sw", "4_0", "4_1",
-                         "4_0_level_9_0", "4_0_level_9_1", "4_0_level_9_3", "5_0",
-                         "6_0", "6_1", "6_2", "6_3", "6_4", "6_5", "6_6", "6_7", "6_8", "6_9",
-                     })
-                data.Add($"{prefix}_{suffix}");
-        }
-        data.Add("vs_1_1");
-        foreach (string ps in new[] { "ps_1_1", "ps_1_2", "ps_1_3", "ps_1_4", "ps_2_b" })
-            data.Add(ps);
+        foreach (string profile in Swept())
+            data.Add(profile);
         return data;
+    }
+
+    private static string[] Swept() =>
+        FxPreParser.KnownProfileNames.OrderBy(p => p, StringComparer.Ordinal).ToArray();
+
+    [Fact]
+    public void RecognizedProfiles_CoverTheSm2Sm3ProfilesKniMaps()
+    {
+        // Guards the sweep: the profiles this change accepts must be in it.
+        string[] swept = Swept();
+        swept.ShouldContain("ps_2_0");
+        swept.ShouldContain("vs_3_0");
+        swept.Length.ShouldBeGreaterThan(40);
     }
 
     private static readonly Regex KniVertex = new(

@@ -63,7 +63,8 @@ public sealed class KnifxDirectXSm2Sm3Tests
         {
             byte[] data = await CompileOk(source, PlatformTarget.DirectX, EffectContainer.Knifx);
 
-            data.ShouldBe(twin, $"KNI's own build of {vs}/{ps} is byte-identical to its {vsTwin}/{psTwin} build");
+            data.ShouldBe(twin, $"ShadowDusk's KNIFX DirectX build of {vs}/{ps} must equal its {vsTwin}/{psTwin} build, " +
+                                "as KNI's own MGCB output for the two is byte-identical");
             FirstBodyShaders(data).ShouldBe([("vs", vsBytes), ("ps", psBytes)]);
         }
     }

@@ -23,7 +23,9 @@
 // and Reach, ps_3_0 and vs_3_0 on HiDef, and the _3_0 ones must be refused on Reach. On DirectX each loading
 // row is also compared, every pixel, with KNI's own MGCB 4.2.9001 build of the same source
 // (tests/fixtures/golden/initializer-defaults/kni-4.2.9001-Windows), which must give the same verdicts; an
-// MGFX DirectX compile of ps_2_0 must still be refused with SD0015 (mgfxc's floor).
+// MGFX DirectX compile of ps_2_0 must still be refused with SD0015 (mgfxc's floor). The DirectX driver adds an
+// XNA-style textured effect (register(c#) constants, two samplers, tex2D) at ps_2_0 and ps_3_0, drawn with a
+// patterned sprite and overlay texture, which must match KNI's own build pixel for pixel.
 
 using System;
 using System.Collections.Generic;
@@ -194,6 +196,12 @@ public static class InitializerDefaultsProbe
 
         if (target == PlatformTarget.DirectX)
         {
+            jobs.Add(Compile(compiler, label, target, EffectContainer.Knifx, "XnaTextured.fx", XnaTextured("ps_2_0"),
+                "PS ps_2_0 XNA textured [Knifx] renders on Reach", red, setR: null)
+                with { Reference = Kni("XnaTextured_ps_2_0"), Textured = true });
+            jobs.Add(Compile(compiler, label, target, EffectContainer.Knifx, "XnaTextured.fx", XnaTextured("ps_3_0"),
+                "CONTROL PS ps_3_0 XNA textured [Knifx] refused on Reach", none, setR: null, expectRefusal: Refused("3.0")));
+
             // KNI's own build of the same sources gives the same verdicts on the same device.
             foreach ((string name, string row, string? refusal) in new[]
                      {
@@ -233,6 +241,15 @@ public static class InitializerDefaultsProbe
         };
         if (target == PlatformTarget.DirectX)
         {
+            // An XNA-style textured effect: register(c#) constants, SpriteBatch's texture on s0 and a
+            // sampler_state texture on s1, tex2D. Every pixel must match KNI's own build.
+            jobs.Add(Compile(compiler, label, target, EffectContainer.Knifx, "XnaTextured.fx", XnaTextured("ps_2_0"),
+                "PS ps_2_0 XNA textured [Knifx] renders on HiDef", red, setR: null)
+                with { Reference = Kni("XnaTextured_ps_2_0"), Textured = true });
+            jobs.Add(Compile(compiler, label, target, EffectContainer.Knifx, "XnaTextured.fx", XnaTextured("ps_3_0"),
+                "PS ps_3_0 XNA textured [Knifx] renders on HiDef", red, setR: null)
+                with { Reference = Kni("XnaTextured_ps_3_0"), Textured = true });
+
             Job mgfx = Compile(compiler, label, target, EffectContainer.Mgfx, path, TintAt(tint, "ps_2_0"),
                 "CONTROL PS ps_2_0 [Mgfx] refused at compile time (SD0015)", red, setR: null);
             jobs.Add(mgfx with { ExpectCompileError = "SD0015" });
@@ -284,6 +301,41 @@ public static class InitializerDefaultsProbe
         technique T { pass P0 { VertexShader = compile {{vsProfile}} MainVS(); PixelShader = compile {{psProfile}} MainPS(); } }
         """;
 
+    /// <summary>
+    /// An XNA-era textured sprite effect (the DirectX rows, vs KNI's own build): <c>register(c#)</c>
+    /// constants with initializers, SpriteBatch's texture through a texture-less <c>register(s0)</c>
+    /// sampler, a second texture through a <c>sampler_state</c> on <c>s1</c>, and <c>tex2D</c>. The
+    /// declarations are in slot order (s0's sampler before the <c>Overlay</c> texture): ShadowDusk's DX11
+    /// texture slots follow declaration order, a known gap fixed separately, so declaring
+    /// <c>texture Overlay;</c> first gives it t0 and the image diverges from KNI's (measured: maxd 209). The bytes in <c>kni-4.2.9001-Windows/XnaTextured_*.knifx</c> are KNI's MGCB build of
+    /// exactly this text (written with LF line endings; the endings do not reach the bytecode).
+    /// </summary>
+    private static string XnaTextured(string psProfile) => $$"""
+        #if defined(OPENGL)
+        #define SV_POSITION POSITION
+        #endif
+        float4 Tint : register(c0) = float4(1, 0.75, 0.5, 1);
+        float Mix : register(c1) = 0.375;
+        sampler SpriteSampler : register(s0);
+        texture Overlay;
+        sampler OverlaySampler : register(s1) = sampler_state
+        {
+            Texture = <Overlay>;
+            MinFilter = Point;
+            MagFilter = Point;
+            MipFilter = Point;
+            AddressU = Wrap;
+            AddressV = Wrap;
+        };
+        float4 MainPS(float4 pos : SV_POSITION, float4 color : COLOR0, float2 tc : TEXCOORD0) : COLOR0
+        {
+            float4 sprite = tex2D(SpriteSampler, tc) * Tint;
+            float4 overlay = tex2D(OverlaySampler, tc * 3);
+            return lerp(sprite, overlay, Mix) * color;
+        }
+        technique XnaTextured { pass P0 { PixelShader = compile {{psProfile}} MainPS(); } }
+        """;
+
     private sealed record Expect(byte R, byte G, byte B, byte A, int Tolerance);
 
     /// <param name="ExpectRefusal">When set, <c>new Effect()</c> must THROW with a message containing this text.</param>
@@ -294,6 +346,13 @@ public static class InitializerDefaultsProbe
 
         /// <summary>When set, the compile must FAIL with this diagnostic code (nothing is loaded).</summary>
         public string? ExpectCompileError { get; init; }
+
+        /// <summary>
+        /// Draw a patterned sprite texture (and bind the patterned <c>Overlay</c> parameter) instead of the
+        /// white one. The centre pixel is not checked; the image must have many distinct colours, no
+        /// unwritten (magenta) pixel, and match <see cref="Reference"/> exactly.
+        /// </summary>
+        public bool Textured { get; init; }
     }
 
     private sealed record JobResult(string Name, bool Ok, string Detail);
@@ -326,6 +385,8 @@ public static class InitializerDefaultsProbe
         private const int Size = 64;
         private readonly IReadOnlyList<Job> _jobs;
         private bool _done;
+        private Texture2D? _sprite;
+        private Texture2D? _overlay;
 
         public List<JobResult> Results { get; } = [];
 
@@ -355,6 +416,22 @@ public static class InitializerDefaultsProbe
             using var sb = new SpriteBatch(GraphicsDevice);
             using var white = new Texture2D(GraphicsDevice, 1, 1);
             white.SetData([Color.White]);
+
+            // The textured rows' inputs: an 8x8 gradient sprite (bilinearly stretched by SpriteBatch's
+            // LinearClamp on s0) and a 4x4 colour checker for the effect's Overlay (point, wrap, on s1).
+            using var sprite = new Texture2D(GraphicsDevice, 8, 8);
+            var spritePx = new Color[64];
+            for (int y = 0; y < 8; y++)
+                for (int x = 0; x < 8; x++)
+                    spritePx[y * 8 + x] = new Color(x * 36, y * 36, 255 - (x + y) * 16, 255);
+            sprite.SetData(spritePx);
+            using var overlay = new Texture2D(GraphicsDevice, 4, 4);
+            var overlayPx = new Color[16];
+            for (int k = 0; k < 16; k++)
+                overlayPx[k] = ((k + k / 4) % 2 == 0) ? new Color(255, 255, 0, 255) : new Color(0, 64, 255, 255);
+            overlay.SetData(overlayPx);
+            _sprite = sprite;
+            _overlay = overlay;
 
             foreach (Job job in _jobs)
             {
@@ -398,25 +475,47 @@ public static class InitializerDefaultsProbe
                     if (job.SetR is { } r)
                         effect.Parameters["R"]!.SetValue(r);
 
-                    Color[] px = Render(sb, white, effect);
+                    Texture2D drawn = job.Textured ? _sprite! : white;
+                    if (job.Textured)
+                        effect.Parameters["Overlay"]!.SetValue(_overlay);
+                    Color[] px = Render(sb, drawn, effect);
                     Color c = px[(Size / 2) * Size + Size / 2];
                     Expect e = job.Expected;
-                    bool ok = Math.Abs(c.R - e.R) <= e.Tolerance && Math.Abs(c.G - e.G) <= e.Tolerance
-                           && Math.Abs(c.B - e.B) <= e.Tolerance && Math.Abs(c.A - e.A) <= e.Tolerance;
-                    string detail = $"centre RGBA=({c.R},{c.G},{c.B},{c.A}) expected ({e.R},{e.G},{e.B},{e.A}) +-{e.Tolerance}";
+                    bool ok;
+                    string detail;
+                    if (job.Textured)
+                    {
+                        // The pattern must survive: many distinct colours and no unwritten pixel.
+                        int distinct = px.Distinct().Count();
+                        int magenta = px.Count(p => p == new Color(255, 0, 255, 255));
+                        ok = distinct >= 32 && magenta == 0 && job.Reference is not null;
+                        detail = $"{distinct} distinct colours, {magenta} unwritten";
+                    }
+                    else
+                    {
+                        ok = Math.Abs(c.R - e.R) <= e.Tolerance && Math.Abs(c.G - e.G) <= e.Tolerance
+                          && Math.Abs(c.B - e.B) <= e.Tolerance && Math.Abs(c.A - e.A) <= e.Tolerance;
+                        detail = $"centre RGBA=({c.R},{c.G},{c.B},{c.A}) expected ({e.R},{e.G},{e.B},{e.A}) +-{e.Tolerance}";
+                    }
 
                     if (job.Reference is { } reference)
                     {
                         // The reference build (KNI's own MGCB) must load on this device too and draw the same image.
                         using var refEffect = new Effect(GraphicsDevice, reference);
-                        Color[] want = Render(sb, white, refEffect);
+                        if (job.Textured)
+                            refEffect.Parameters["Overlay"]!.SetValue(_overlay);
+                        Color[] want = Render(sb, drawn, refEffect);
                         int maxd = 0;
                         for (int k = 0; k < px.Length; k++)
                         {
                             maxd = Math.Max(maxd, Math.Max(Math.Abs(px[k].R - want[k].R), Math.Abs(px[k].G - want[k].G)));
                             maxd = Math.Max(maxd, Math.Max(Math.Abs(px[k].B - want[k].B), Math.Abs(px[k].A - want[k].A)));
                         }
-                        ok &= maxd == 0;
+                        // Constant-colour rows must match exactly. The textured rows run filtered reads through
+                        // two different compilers' bytecode (fxc ps_4_0_level_9_x vs vkd3d SM5), so a one-LSB
+                        // rounding difference is allowed there (0 measured on an RTX 3080; the CI lane is WARP);
+                        // a wrong binding is far above it (the slot-order gap measured maxd 209).
+                        ok &= maxd <= (job.Textured ? 1 : 0);
                         detail += $"; vs KNI's own build: {px.Length} px, maxd {maxd}";
                     }
                     Results.Add(new JobResult(job.Name, ok, detail));

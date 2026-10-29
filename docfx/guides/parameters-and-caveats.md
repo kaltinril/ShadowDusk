@@ -90,7 +90,12 @@ This is the shape you hit when a shader written for DesktopGL or FNA — `PixelS
 
 The floor is **per target**, and only the DirectX one is enforced today: OpenGL caps at SM 3.0 and Vulkan requires exactly `*_6_0`, so a profile that is wrong for DirectX is often exactly right for another target. Do not "fix" an `SD0015` by raising the profile for every backend.
 
-**KNIFX on DirectX follows KNI, not `mgfxc`.** KNI's own DirectX pipeline also accepts `vs_2_0`, `ps_2_0`, `vs_3_0` and `ps_3_0`: it compiles them as `*_4_0_level_9_1` and `*_4_0_level_9_3`. A KNIFX DirectX compile does the same, so an XNA-era `compile ps_2_0` effect builds for KNI WinForms.DX11 with no header change. `ps_3_0` records shader model 3.0, so it loads on HiDef but not on Reach, exactly as KNI's own build. The profiles KNI refuses (`ps_2_a`, `ps_2_b`, the `*_sw` profiles, SM1, `*_4_0_level_9_0`, SM6) are still `SD0015`.
+**KNIFX on DirectX follows KNI, not `mgfxc`.** KNI's own DirectX pipeline also accepts `vs_2_0`, `ps_2_0`, `vs_3_0` and `ps_3_0`: it compiles them as `*_4_0_level_9_1` and `*_4_0_level_9_3`. A KNIFX DirectX compile does the same, so an XNA-era `compile ps_2_0` effect builds for KNI WinForms.DX11 with no header change. `ps_3_0` records shader model 3.0, so it loads on HiDef but not on Reach, exactly as KNI's own build. The profiles KNI refuses (`ps_2_a`, `ps_2_b`, the `*_sw` profiles, SM1, `*_4_0_level_9_0`, SM6) are still `SD0015`. Two known DirectX gaps still apply, both being fixed and neither specific to SM2/SM3:
+
+- **Texture slots follow declaration order on DirectX 11.** A `texture` declared above the `sampler … : register(s0)` that SpriteBatch's texture reaches takes slot `t0` instead, so the effect samples the wrong texture. Until the fix lands, declare samplers and their textures in slot order (`s0` first).
+- **`half` globals are refused on DirectX.** Declare the global as `float`.
+
+ShadowDusk compiles every DirectX 11 shader at SM5, so it is more lenient than KNI's fxc compile at `*_4_0_level_9_1` / `_9_3`: an effect that builds here can still fail in KNI's own content pipeline if it exceeds the feature-level-9 instruction or dependent-read limits, reads `VPOS` or `VFACE`, uses `ddx`/`ddy` at `ps_2_0`, or writes the profile in upper case (`PS_2_0`, which KNI's case-sensitive check refuses).
 
 ### KNIFX: the shader model KNI checks
 

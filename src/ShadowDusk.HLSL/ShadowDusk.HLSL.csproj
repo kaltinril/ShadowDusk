@@ -38,6 +38,8 @@
          call and the result accessors one step at a time, to prove which ones reach DXC's
          setlocale and so must sit inside DxcForkGate. -->
     <InternalsVisibleTo Include="ShadowDusk.Integration.Tests" />
+    <!-- KniDirectXProfileTests sweeps FxPreParser.KnownProfileNames, the whole recognized set. -->
+    <InternalsVisibleTo Include="ShadowDusk.Compiler.Tests" />
   </ItemGroup>
 
   <ItemGroup>
