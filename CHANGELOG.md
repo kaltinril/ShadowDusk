@@ -14,30 +14,6 @@ that loads and renders identically to `mgfxc`'s in the real MonoGame/KNI runtime
 
 ### Added
 
-- **The SkSL and raylib conversion results report each uniform's declared default (issue #435).**
-  `SkslConversion.Uniforms` (new, a list of the new `SkslUniform`: name, SkSL type, array length)
-  and `RaylibUniform` both gain `DefaultValue`: the default the HLSL declaration gives the uniform
-  (`float Thickness = 1.0;`), with the same values and layout as `ParameterReflection.DefaultValue`
-  on the MGFX route for the same source (row-major matrices, array element after element, `bool` 0
-  or 1, `uint` unsigned), or `null` when there is no initializer, it cannot be evaluated (with the
-  MGFX route's `SD0017` warning), or the uniform is synthesized (`ShadowDusk_Color`,
-  `ShadowDusk_Resolution`). Both converted shaders still declare every uniform without a value
-  (an unset uniform reads 0 in Skia and raylib), so a caller that wants the author's default sets
-  it from `DefaultValue`: on Skia the list goes straight to `SKRuntimeEffectUniforms` (DXC's
-  `matRxC` columns are the HLSL rows, so even a matrix needs no reordering). Reflection only: the
-  emitted SkSL and GLSL are byte-identical for every fixture (all 202 `.fx`/`.slang` fixtures
-  diffed against the previous build), and issue #424's "emit the initializer into the shader"
-  option is not taken. Proven in the real runtimes: `validation/SkiaVsKni` and
-  `validation/RaylibRoute` each gain an `UnsetDefaults` case drawn with the reported defaults set on
-  Skia / raylib and nothing set on KNI / MonoGame GL (the `.mgfx` defaults apply), plus a
-  `Defaults-zeros` match and a `control-unset-defaults` control that must diverge (and, on Skia, a
-  `control-transposed-matrix` control).
-  A uniform SPIRV-Cross renamed (`input` to `_input`, `a__b` to `a_b`, `gl_X`, a clash suffix) is paired
-  with its HLSL global through the SPIR-V member names, and a global with a default that no uniform
-  pairs with is an `SD0017` warning, never a silent `null`. The value is the MGFX route's for an
-  OpenGL build (the converters' macro set). **Record equality:** `RaylibUniform` and `SkslUniform`
-  equality now includes `DefaultValue` (compared element by element), so two entries for the same
-  uniform with different declared defaults are no longer equal.
 - **`vs_2_0`, `ps_2_0`, `vs_3_0` and `ps_3_0` compile for KNIFX on DirectX, as they do in KNI's own
   pipeline.** XNA-era effects, and every shader in KNI's own EffectTest suite, name SM 2.0 or 3.0;
   KNI's DirectX pipeline (4.2.9001 and 4.3.9001) builds them by compiling `*_2_0` as
@@ -87,22 +63,6 @@ that loads and renders identically to `mgfxc`'s in the real MonoGame/KNI runtime
 - **`SD0015` on a KNIFX DirectX compile applies KNI's profile rule, not `mgfxc`'s.** It refused
   `*_2_0` and `*_3_0`, which KNI's own pipeline builds (see Added); its message now names KNI and
   lists the profiles KNI's DirectX pipeline accepts. MGFX DirectX keeps `mgfxc`'s rule and message.
-- **KNIFX records the shader model KNI's own pipeline records for `*_4_0_level_9_1` and
-  `*_4_0_level_9_3`: 2.0 and 3.0, not 4.0.** ShadowDusk read the first `_N_N` of the profile, so a
-  KNIFX container always recorded 4.0 (version byte `08`) for a literal `ps_4_0_level_9_1`, which
-  KNI's runtime refuses on HiDef and Reach ("Shader model 4.0 is not supported by the current
-  graphics profile 'HiDef'"). Since the issue #407 fix below expanded macro `compile` targets, the
-  same happened to every MonoGame-template effect (`#define PS_SHADERMODEL ps_4_0_level_9_1`) built
-  as KNIFX for KNI DX, which was rejected on HiDef; before #407 those recorded 3.0 by accident.
-  Now `_level_9_1` is 2.0 (`04`) and `_level_9_3` is 3.0 (`06`), as measured with KNI's own MGCB
-  (Windows on 4.2.9001 and 4.3.9001, DesktopGL on 4.3.9001); every other profile is unchanged,
-  including the ones KNI's own pipeline refuses (`*_4_0_level_9_0`, SM6, `*_2_a`, `*_sw`), which
-  keep loading wherever they loaded before. Only KNIFX bytes change: one version byte per affected
-  shader record, plus each backend entry's 4-byte effect key; MGFX, FNA, DirectX 12 and Vulkan
-  output is untouched. `validation/InitializerDefaultsKniDx` and `InitializerDefaultsKniGl` now also
-  pin the version on a real Reach device. CI's DX WARP job reported the DX driver green while it
-  failed, because a multi-command `pwsh` step only reports its last command's exit code; every
-  such step now checks each command.
 - **`half` globals compile on DirectX 11, as they do with `mgfxc`.** An XNA-era uniform declared
   with a `half` type (`half4 Tint = half4(1, 0.5, 0, 1);`, and every `half`/`halfN`/`halfNxM`
   global or cbuffer member, `static` ones included) failed on the DirectX target, in both the MGFX
@@ -122,6 +82,62 @@ that loads and renders identically to `mgfxc`'s in the real MonoGame/KNI runtime
   still refuses a `half` global (`E5002` at the declaration), as its reference `fxc /T fx_2_0`
   does (`X3650`).
 - **`tex2Dlod`, `tex2Dbias` and `tex2Dproj` compile on DirectX 11, DirectX 12, Vulkan and OpenGL.** The XNA spellings of explicit-LOD, biased and projective sampling on a legacy `sampler`/`sampler2D` (vertex texture fetch included) were refused with `FX0012`, while `mgfxc` 3.8.4.1 compiles them at `vs_4_0`/`ps_4_0`. The pre-parser now turns each call into a call of a helper it defines on the line of the calling declaration, returning `T.SampleLevel(s, t.xy, t.w)` / `T.SampleBias(s, t.xy, t.w)` / `T.Sample(s, t.xy / t.w)`: the arguments are copied verbatim and evaluated once, and no line moves. The helper goes on a free (blank or comment) line above the declaration, or after the `;`/`}` that ended the previous one, so the declaration's own columns do not move; it is placed before an `[attribute]` list and never inside a function annotation. A compiler error that names the helper names the intrinsic instead (the compiler's text stays in `RawDiagnostics`). Rendered in real MonoGame WindowsDX against the `mgfxc` golden, and in WindowsDX12 and DesktopVK against `mgfxc` 3.8.5's build of the same shader in `Texture2D` syntax, all pixel-identical, with positive controls (`validation/DxModernFeatures`, `VsDrivenDx12 -- legacy-lod`, `VsDrivenVulkan -- legacy-lod`). MonoGame's own `VertexTextureEffect.fx` now compiles on all three and renders like `mgfxc`'s build. On OpenGL a vertex-stage fetch is still `SD0210`, as `mgfxc` refuses it; in a pixel shader the LOD is honored (`mgfxc`'s MojoShader output drops it). A body under two `#if`-selected headers, or a texture declared with a different type per branch, is rewritten from the preprocessed source (the legacy-sampler recovery; DirectX 11 takes it up front, and falls back to its normal path when that call is compiled out or an include is missing). A call with other than two arguments is `FX0012`; the 1D, 3D and cube intrinsic families (`tex1D…`, `tex3D…`, `texCUBE…`) stay `FX0012` with a message naming the modern form. FNA is unchanged. No previously compiling effect's bytes moved.
+- **The FNA defaults gate failed on devices that round 0.5 down.** `FnaValidation -- defaults`
+  failed `DefaultsScale`, `DefaultsIntBool` and `DefaultsArray` on an RTX 3080 (D3D11 and OpenGL)
+  although ShadowDusk's build matched `fxc`'s exactly: those fixtures put 0.5 in a channel
+  (127.5/255), which the device rendered as 127 against a pin of 128. The reference-centre vs
+  pin sanity check now allows +-1 per channel, as the `InitializerDefaults*` drivers do; the
+  ShadowDusk vs `fxc` comparison (parameters and every pixel) is still exact. Validation only,
+  no output change.
+## [0.22.1] - 2026-10-29
+
+### Added
+
+- **The SkSL and raylib conversion results report each uniform's declared default (issue #435).**
+  `SkslConversion.Uniforms` (new, a list of the new `SkslUniform`: name, SkSL type, array length)
+  and `RaylibUniform` both gain `DefaultValue`: the default the HLSL declaration gives the uniform
+  (`float Thickness = 1.0;`), with the same values and layout as `ParameterReflection.DefaultValue`
+  on the MGFX route for the same source (row-major matrices, array element after element, `bool` 0
+  or 1, `uint` unsigned), or `null` when there is no initializer, it cannot be evaluated (with the
+  MGFX route's `SD0017` warning), or the uniform is synthesized (`ShadowDusk_Color`,
+  `ShadowDusk_Resolution`). Both converted shaders still declare every uniform without a value
+  (an unset uniform reads 0 in Skia and raylib), so a caller that wants the author's default sets
+  it from `DefaultValue`: on Skia the list goes straight to `SKRuntimeEffectUniforms` (DXC's
+  `matRxC` columns are the HLSL rows, so even a matrix needs no reordering). Reflection only: the
+  emitted SkSL and GLSL are byte-identical for every fixture (all 202 `.fx`/`.slang` fixtures
+  diffed against the previous build), and issue #424's "emit the initializer into the shader"
+  option is not taken. Proven in the real runtimes: `validation/SkiaVsKni` and
+  `validation/RaylibRoute` each gain an `UnsetDefaults` case drawn with the reported defaults set on
+  Skia / raylib and nothing set on KNI / MonoGame GL (the `.mgfx` defaults apply), plus a
+  `Defaults-zeros` match and a `control-unset-defaults` control that must diverge (and, on Skia, a
+  `control-transposed-matrix` control).
+  A uniform SPIRV-Cross renamed (`input` to `_input`, `a__b` to `a_b`, `gl_X`, a clash suffix) is paired
+  with its HLSL global through the SPIR-V member names, and a global with a default that no uniform
+  pairs with is an `SD0017` warning, never a silent `null`. The value is the MGFX route's for an
+  OpenGL build (the converters' macro set). **Record equality:** `RaylibUniform` and `SkslUniform`
+  equality now includes `DefaultValue` (compared element by element), so two entries for the same
+  uniform with different declared defaults are no longer equal.
+
+### Changed
+
+### Fixed
+
+- **KNIFX records the shader model KNI's own pipeline records for `*_4_0_level_9_1` and
+  `*_4_0_level_9_3`: 2.0 and 3.0, not 4.0.** ShadowDusk read the first `_N_N` of the profile, so a
+  KNIFX container always recorded 4.0 (version byte `08`) for a literal `ps_4_0_level_9_1`, which
+  KNI's runtime refuses on HiDef and Reach ("Shader model 4.0 is not supported by the current
+  graphics profile 'HiDef'"). Since the issue #407 fix below expanded macro `compile` targets, the
+  same happened to every MonoGame-template effect (`#define PS_SHADERMODEL ps_4_0_level_9_1`) built
+  as KNIFX for KNI DX, which was rejected on HiDef; before #407 those recorded 3.0 by accident.
+  Now `_level_9_1` is 2.0 (`04`) and `_level_9_3` is 3.0 (`06`), as measured with KNI's own MGCB
+  (Windows on 4.2.9001 and 4.3.9001, DesktopGL on 4.3.9001); every other profile is unchanged,
+  including the ones KNI's own pipeline refuses (`*_4_0_level_9_0`, SM6, `*_2_a`, `*_sw`), which
+  keep loading wherever they loaded before. Only KNIFX bytes change: one version byte per affected
+  shader record, plus each backend entry's 4-byte effect key; MGFX, FNA, DirectX 12 and Vulkan
+  output is untouched. `validation/InitializerDefaultsKniDx` and `InitializerDefaultsKniGl` now also
+  pin the version on a real Reach device. CI's DX WARP job reported the DX driver green while it
+  failed, because a multi-command `pwsh` step only reports its last command's exit code; every
+  such step now checks each command.
 - **Techniques are read from the preprocessed source, like `mgfxc` (issue #407).** A technique
   inside a false `#if` (or behind an unset `/Defines` value) was still compiled, a technique in an
   `#include`d file was not found (`SD0010`, or dropped beside the main file's own), and a macro
@@ -228,13 +244,6 @@ that loads and renders identically to `mgfxc`'s in the real MonoGame/KNI runtime
   `L_RowMajorTallAsymmetric`, `M_RowMajorTallFourthRow` and `N_RowMajorTallArray` cases of the `InitializerDefaults*` drivers; KNIFX on DX
   is byte-tested only, its real-engine proof waits for the separate KNIFX `_level_9_x` shader-model fix (the KNIFX
   arm of `InitializerDefaultsKniDx` is red on `main` for that reason).
-- **The FNA defaults gate failed on devices that round 0.5 down.** `FnaValidation -- defaults`
-  failed `DefaultsScale`, `DefaultsIntBool` and `DefaultsArray` on an RTX 3080 (D3D11 and OpenGL)
-  although ShadowDusk's build matched `fxc`'s exactly: those fixtures put 0.5 in a channel
-  (127.5/255), which the device rendered as 127 against a pin of 128. The reference-centre vs
-  pin sanity check now allows +-1 per channel, as the `InitializerDefaults*` drivers do; the
-  ShadowDusk vs `fxc` comparison (parameters and every pixel) is still exact. Validation only,
-  no output change.
 
 ## [0.22.0] - 2026-10-28
 
@@ -3813,7 +3822,8 @@ WASM-capable build — the same pipeline on every host, with no substitute compi
 - **The MGCB content-processor plugin** is a scaffold; the PATH-based `mgfxc` override is the
   shipping MGCB integration path.
 
-[Unreleased]: https://github.com/kaltinril/ShadowDusk/compare/v0.22.0...HEAD
+[Unreleased]: https://github.com/kaltinril/ShadowDusk/compare/v0.22.1...HEAD
+[0.22.1]: https://github.com/kaltinril/ShadowDusk/compare/v0.22.0...v0.22.1
 [0.22.0]: https://github.com/kaltinril/ShadowDusk/compare/v0.21.0...v0.22.0
 [0.21.0]: https://github.com/kaltinril/ShadowDusk/compare/v0.20.0...v0.21.0
 [0.20.0]: https://github.com/kaltinril/ShadowDusk/compare/v0.19.0...v0.20.0
