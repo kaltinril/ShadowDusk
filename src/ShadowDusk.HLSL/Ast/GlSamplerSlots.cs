@@ -47,13 +47,17 @@ public sealed record GlSamplerSlots(
         new Dictionary<string, string>(StringComparer.Ordinal);
 
     /// <summary>
-    /// TEXTURE name (as the preprocessed view spells it) -> the explicit <c>register(tN)</c> on its
-    /// declaration, for every texture declared with one (any <c>texture*</c> type, legacy
-    /// <c>texture</c>/<c>texture2D</c> and modern <c>Texture2D</c> alike, read or not). The DirectX
-    /// 11 texture slot assignment keeps each of these at its register and allocates around them:
-    /// fxc takes an explicit texture register out of circulation even when nothing reads the
-    /// texture, and the SM4 rewrite drops the clause from a legacy declaration.
+    /// Every declaration (as the preprocessed view spells it) of a resource that lives in a
+    /// <c>t</c> register and carries an explicit <c>register(tN)</c>, read or not: any
+    /// <c>texture*</c> type (legacy <c>texture</c>/<c>texture2D</c> and modern <c>Texture2D</c>
+    /// alike), <c>Buffer</c>, <c>StructuredBuffer</c>, <c>ByteAddressBuffer</c>, <c>tbuffer</c>; a
+    /// stage-qualified <c>register(ps, tN)</c> applies to that stage only. fxc takes every one of
+    /// these registers out of circulation, and keeps a directly read resource on its register; the
+    /// DirectX 11 texture slot assignment allocates legacy samplers' textures around them.
     /// </summary>
-    public IReadOnlyDictionary<string, int> ExplicitTextureRegisters { get; init; } =
-        new Dictionary<string, int>(StringComparer.Ordinal);
+    public IReadOnlyList<ExplicitTextureRegister> ExplicitTextureRegisters { get; init; } = [];
 }
+
+/// <summary>An explicit <c>t</c> register on a declaration: name, register, and the stage
+/// (<c>"vs"</c>/<c>"ps"</c>) when the clause is stage-qualified, else <c>null</c>.</summary>
+public sealed record ExplicitTextureRegister(string Name, int Slot, string? Stage);

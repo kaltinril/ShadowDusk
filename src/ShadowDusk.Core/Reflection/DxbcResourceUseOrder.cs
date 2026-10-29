@@ -17,8 +17,9 @@ namespace ShadowDusk.Core.Reflection;
 /// the compiler evaluates the reads in (an argument before the call that takes it, an inner
 /// read before the dependent read around it). ShadowDusk compiles the SM4 rewrite of such a
 /// shader, whose backend numbers the rewritten <c>Texture2D</c> declarations in declaration
-/// order instead; the instruction stream of that first compile carries the evaluation order
-/// the backend emitted, which is what the DirectX 11 slot re-assignment reads.</para>
+/// order instead. A vkd3d-shader compile's instruction stream keeps evaluation order, which is
+/// what the DirectX 11 slot re-assignment reads; <c>d3dcompiler_47</c>'s does NOT (it schedules
+/// its reads), so the caller always walks a vkd3d compile.</para>
 ///
 /// <para>Only the texture-reading opcodes are decoded, operand by operand, so a declaration's
 /// raw payload is never mistaken for an operand; every other instruction is skipped by its
@@ -31,6 +32,7 @@ internal static class DxbcResourceUseOrder
     private const uint DxbcFourcc = 0x43425844; // 'DXBC'
     private const uint ShdrFourcc = 0x52444853; // 'SHDR'
     private const uint ShexFourcc = 0x58454853; // 'SHEX'
+    private const uint RdefFourcc = 0x46454452; // 'RDEF'
 
     private const int OpcodeCustomData = 53;
 
@@ -199,7 +201,79 @@ internal static class DxbcResourceUseOrder
         return true;
     }
 
+    /// <summary>One RDEF binding that occupies <c>t</c> registers.</summary>
+    public readonly record struct TRegisterBinding(string Name, int Slot, int Count);
+
+    /// <summary>
+    /// Every RDEF binding of <paramref name="dxbc"/> that occupies <c>t</c> registers (textures and
+    /// typed buffers, <c>tbuffer</c>s, structured and byte-address buffers), in RDEF order;
+    /// <c>null</c> when the container or its RDEF cannot be read.
+    /// </summary>
+    public static IReadOnlyList<TRegisterBinding>? TRegisterBindings(ReadOnlySpan<byte> dxbc)
+    {
+        ReadOnlySpan<byte> rdef = FindChunk(dxbc, RdefFourcc);
+        if (rdef.Length < 16)
+            return null;
+        uint count = ReadU32(rdef, 8);
+        uint offset = ReadU32(rdef, 12);
+        if (count > 4096 || offset + count * 32L > rdef.Length)
+            return null;
+        var bindings = new List<TRegisterBinding>();
+        for (int i = 0; i < count; i++)
+        {
+            int rec = (int)offset + i * 32;
+            uint nameOffset = ReadU32(rdef, rec);
+            uint inputType = ReadU32(rdef, rec + 4);
+            uint bindPoint = ReadU32(rdef, rec + 20);
+            uint bindCount = ReadU32(rdef, rec + 24);
+            // D3D_SIT_TBUFFER 1, TEXTURE 2, STRUCTURED 5, BYTEADDRESS 7: the t-register kinds.
+            if (inputType is not (1 or 2 or 5 or 7))
+                continue;
+            if (nameOffset >= rdef.Length)
+                return null;
+            int end = rdef.Slice((int)nameOffset).IndexOf((byte)0);
+            if (end < 0)
+                return null;
+            string name = System.Text.Encoding.UTF8.GetString(rdef.Slice((int)nameOffset, end));
+            bindings.Add(new TRegisterBinding(name, (int)bindPoint, (int)bindCount));
+        }
+        return bindings;
+    }
+
+    /// <summary>
+    /// The names of the <c>t</c>-register resources <paramref name="dxbc"/> reads, in order of first
+    /// read (<see cref="TextureRegistersInFirstReadOrder"/> mapped through
+    /// <see cref="TRegisterBindings"/>); <c>null</c> when either cannot be read.
+    /// </summary>
+    public static IReadOnlyList<string>? NamesInFirstReadOrder(ReadOnlySpan<byte> dxbc)
+    {
+        IReadOnlyList<TRegisterBinding>? bindings = TRegisterBindings(dxbc);
+        IReadOnlyList<int>? order = TextureRegistersInFirstReadOrder(dxbc);
+        if (bindings is null || order is null)
+            return null;
+        var names = new List<string>();
+        foreach (int register in order)
+        {
+            foreach (TRegisterBinding b in bindings)
+            {
+                if (register >= b.Slot && register < b.Slot + Math.Max(1, b.Count))
+                {
+                    if (!names.Contains(b.Name))
+                        names.Add(b.Name);
+                    break;
+                }
+            }
+        }
+        return names;
+    }
+
     private static ReadOnlySpan<byte> FindShaderChunk(ReadOnlySpan<byte> dxbc)
+    {
+        ReadOnlySpan<byte> shdr = FindChunk(dxbc, ShdrFourcc);
+        return shdr.IsEmpty ? FindChunk(dxbc, ShexFourcc) : shdr;
+    }
+
+    private static ReadOnlySpan<byte> FindChunk(ReadOnlySpan<byte> dxbc, uint wanted)
     {
         if (dxbc.Length < 32 || ReadU32(dxbc, 0) != DxbcFourcc)
             return default;
@@ -215,7 +289,7 @@ internal static class DxbcResourceUseOrder
             uint size = ReadU32(dxbc, (int)offset + 4);
             if (offset + 8L + size > dxbc.Length)
                 return default;
-            if (fourcc is ShdrFourcc or ShexFourcc)
+            if (fourcc == wanted)
                 return dxbc.Slice((int)offset + 8, (int)size);
         }
         return default;

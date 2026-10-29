@@ -2,25 +2,29 @@
 
 Each `<Shape>.fx` puts LEGACY samplers (`sampler2D A;`, `sampler A : register(sN);`, a
 `sampler_state` block naming a declared or undeclared texture) beside each other and beside
-MODERN `Texture2D` declarations, read in a different order from the one they are declared in;
+MODERN resources, read in a different order from the one they are declared in;
 `<Shape>.DirectX_11.mgfx` is what the pinned reference compiler, `mgfxc` 3.8.4.1 (the
-`dotnet-mgcb` version in `.config/dotnet-tools.json`), emits for it (measured 2026-10-28).
+`dotnet-mgcb` version in `.config/dotnet-tools.json`), emits for it (measured 2026-10-28). The
+`S*`, `D*` and `A*` shapes came from the independent review of the fix (evaluation-order shapes,
+dead-code shapes, and declaration forms the re-pin must handle).
 
-What they pin (fxc's rule, per compiled shader): an explicit `register(tN)` on a texture keeps
-`tN` and takes it out of circulation even when nothing reads the texture; then every legacy
-sampler's texture in the order the shader FIRST READS it (evaluation order: an argument before
-the call that takes it, an inner read before the dependent read around it, a dropped read takes
-no slot); then every modern texture without a register, in declaration order. A legacy
-sampler's own `register(sN)` decides its sampler slot only.
+What they pin (fxc's rule, per compiled shader): every explicit `register(tN)` on a `t`-register
+declaration takes `tN` out of circulation even when nothing reads the resource, and a modern
+resource read directly keeps it; then every legacy sampler's texture in the order the shader FIRST
+READS it (evaluation order: an argument before the call that takes it, an inner read before the
+dependent read around it); then every modern resource without a register, in declaration order. A
+register on the `texture2D` a `sampler_state` names only reserves it, and a legacy sampler's own
+`register(sN)` decides its sampler slot only.
 
-`mgfxc` deviates from XNA in one case these shapes cover, and ShadowDusk follows XNA there: a
-`texture2D T : register(tN)` that a `sampler_state` names is NOT bound at `tN` by `mgfxc` (fxc
-reserves `tN` for the unread texture object and gives the sampler's texture the next free slot);
-`DirectX11TextureSlotOrderTests` reads those registers from the source and expects them honoured.
-`TwoSamplersShareOneTexture` is an open divergence (two `mgfxc` records, one in ShadowDusk).
+`DirectX11TextureSlotOrderTests` compiles every shape with BOTH DXBC backends (vkd3d, and the
+`d3dcompiler_47` option on Windows) and expects `mgfxc`'s table, except the shapes it lists as
+known divergences (one texture behind two samplers, declarator-list sampler slots, a resource array,
+and on vkd3d the reads fxc folds away).
 
-Consumer: `tests/ShadowDusk.Integration.Tests/Reflection/DirectX11TextureSlotOrderTests.cs`. The
-folder sits outside `tests/fixtures/shaders/` so the shapes do not join the corpus sweeps.
+Consumers: `tests/ShadowDusk.Integration.Tests/Reflection/DirectX11TextureSlotOrderTests.cs`, the
+"texture-slots" arm of `validation/DxModernFeatures` and the texture-slot rows of
+`validation/KniWinFormsDX`. The folder sits outside `tests/fixtures/shaders/` so the shapes do not
+join the corpus sweeps.
 
 ## Regenerating
 

@@ -658,12 +658,31 @@ internal sealed class CompilationPipeline
                 // rewrite in declaration order. Each DX11 shader whose slots differ is recompiled
                 // with them pinned. Left null on every other target and for an effect with no
                 // legacy sampler, so those bytes cannot move.
+                // The evaluation order is always read from a vkd3d compile: the d3dcompiler_47
+                // oracle schedules its reads. An injected backend (the browser's vkd3d) is used as is.
                 if (directX && view.Value.LegacySamplerTextures.Count > 0)
                 {
                     dxTextureSlots = new DxTextureSlotInputs(
                         new HashSet<string>(view.Value.LegacySamplerTextures.Values, StringComparer.Ordinal),
-                        view.Value.ExplicitTextureRegisters);
+                        view.Value.ExplicitTextureRegisters,
+                        _dxbcCompilerFactory is null && options.DxbcBackend == DxbcBackend.D3DCompiler
+                            ? WithDxbcMemo(new Vkd3dShaderCompiler(), options)
+                            : null);
                 }
+            }
+            else if (directX && fxParsed.LegacySamplerTextures.Count > 0)
+            {
+                // Fail loudly: without the view the DirectX 11 texture slots cannot be checked.
+                runWarnings.Add(new ShaderError(
+                    File: sourceFileName,
+                    Line: 0,
+                    Column: 0,
+                    Code: "SD0230",
+                    Message: "DirectX 11: the legacy samplers' textures could not be checked against the slots fxc (and so " +
+                             $"mgfxc) gives them: the preprocessed view could not be built ({view.Error.Code}: {view.Error.Message}). " +
+                             "They keep the backend's declaration-order slots, so GraphicsDevice.Textures[N] and SpriteBatch's " +
+                             "texture (slot 0) can reach a different texture than in mgfxc's build.",
+                    Severity: ShaderErrorSeverity.Warning));
             }
         }
 
@@ -3002,20 +3021,22 @@ internal sealed class CompilationPipeline
     }
 
     /// <summary>
-    /// What the DirectX 11 texture slot re-assignment (<see cref="DxTextureSlotOrder"/>) needs from
-    /// the preprocessed view: the textures legacy samplers sample through, and every explicit
-    /// texture register.
+    /// What the DirectX 11 texture slot re-assignment (<see cref="DxTextureSlotOrder"/>) needs: the
+    /// textures legacy samplers sample through and every explicit <c>t</c> register (both from the
+    /// preprocessed view), and the vkd3d compiler that supplies the evaluation order when the
+    /// shipping backend is not vkd3d (<c>null</c>: the shipping compile is vkd3d's own).
     /// </summary>
     private sealed record DxTextureSlotInputs(
         IReadOnlySet<string> LegacyTextures,
-        IReadOnlyDictionary<string, int> ExplicitRegisters);
+        IReadOnlyList<ExplicitTextureRegister> ExplicitRegisters,
+        IDxbcShaderCompiler? OrderCompiler);
 
     /// <summary>
-    /// DirectX 11: when the first compile's texture slots differ from fxc's
-    /// (<see cref="DxTextureSlotOrder"/>), recompiles with each texture pinned to its fxc slot.
-    /// <c>null</c> when nothing needs to move (the first compile's bytes stand, unchanged). A
-    /// pinned compile that cannot be produced, or does not land on the plan, keeps the first
-    /// compile and reports <c>SD0230</c> instead of shipping slots nobody chose.
+    /// DirectX 11: when the shipped compile's <c>t</c> slots differ from fxc's
+    /// (<see cref="DxTextureSlotOrder"/>), recompiles with each resource pinned to its fxc slot.
+    /// <c>null</c> when nothing needs to move (the first compile's bytes stand, unchanged). Every
+    /// case where the slots cannot be checked or applied keeps the first compile and reports
+    /// <c>SD0230</c>, never silently.
     /// </summary>
     private static (ReadOnlyMemory<byte>? Bytes, ShaderError? Warning)? ReorderDirectX11TextureSlots(
         IDxbcShaderCompiler dxbcCompiler,
@@ -3026,32 +3047,55 @@ internal sealed class CompilationPipeline
     {
         if (inputs.LegacyTextures.Count == 0)
             return null;
-        var reflected = RdefReader.Read(dxbc.Span, request.SourceFileName);
-        if (reflected.IsFailure)
-            return null;
-        IReadOnlyList<int>? readOrder = DxbcResourceUseOrder.TextureRegistersInFirstReadOrder(dxbc.Span);
-        if (readOrder is null)
-            return null;
-        IReadOnlyDictionary<string, int>? plan = DxTextureSlotOrder.Plan(
-            reflected.Value.Textures, readOrder, inputs.LegacyTextures, inputs.ExplicitRegisters);
-        if (plan is null)
-            return null;
 
-        string described = string.Join(", ", plan.OrderBy(p => p.Value).Select(p => $"{p.Key} t{p.Value}"));
+        string described = "";
         ShaderError Unplaced(string why) => new(
             File: request.SourceFileName,
             Line: 0,
             Column: 0,
             Code: "SD0230",
             Message: $"DirectX 11: the textures of '{request.EntryPoint}' could not be put on the slots fxc (and so mgfxc) " +
-                     $"gives them ({described}): {why}. They keep the backend's declaration-order slots, so " +
-                     "GraphicsDevice.Textures[N] and SpriteBatch's texture (slot 0) reach a different texture than in " +
+                     $"gives them{described}: {why}. They keep the backend's declaration-order slots, so " +
+                     "GraphicsDevice.Textures[N] and SpriteBatch's texture (slot 0) can reach a different texture than in " +
                      "mgfxc's build; setting each texture through its effect parameter is unaffected.",
             Severity: ShaderErrorSeverity.Warning);
 
+        IReadOnlyList<DxbcResourceUseOrder.TRegisterBinding>? bindings = DxbcResourceUseOrder.TRegisterBindings(dxbc.Span);
+        if (bindings is null)
+            return (null, Unplaced("the compiled shader's resource table could not be read"));
+        if (!bindings.Any(b => inputs.LegacyTextures.Contains(b.Name)))
+            return null;
+        if (bindings.Any(b => b.Count != 1 || b.Name.Contains('[', StringComparison.Ordinal)))
+            return (null, Unplaced("the shader also declares an array of resources, whose slots this check does not model"));
+
+        // The evaluation order always comes from vkd3d (see DxTextureSlotOrder): d3dcompiler_47
+        // schedules its reads, so its own instruction stream does not carry fxc's numbering order.
+        ReadOnlyMemory<byte> orderDxbc = dxbc;
+        if (inputs.OrderCompiler is { } orderCompiler)
+        {
+            var orderCompile = orderCompiler.Compile(request, ct);
+            if (orderCompile.IsFailure)
+                return (null, Unplaced($"the vkd3d compile that supplies the read order failed ({orderCompile.Error.Code}: {orderCompile.Error.Message})"));
+            orderDxbc = orderCompile.Value.Bytes;
+        }
+        IReadOnlyList<string>? readOrder = DxbcResourceUseOrder.NamesInFirstReadOrder(orderDxbc.Span);
+        if (readOrder is null)
+            return (null, Unplaced("the compiled shader's instruction stream could not be walked"));
+
+        string stage = request.Stage == ShaderStage.Vertex ? "vs" : "ps";
+        var registers = inputs.ExplicitRegisters
+            .Where(r => r.Stage is null || string.Equals(r.Stage, stage, StringComparison.Ordinal))
+            .Select(r => (r.Name, r.Slot))
+            .ToList();
+        var resources = bindings.Select(b => (b.Name, b.Slot)).ToList();
+        IReadOnlyDictionary<string, int>? plan = DxTextureSlotOrder.Plan(resources, readOrder, inputs.LegacyTextures, registers);
+        if (plan is null)
+            return null;
+
+        described = " (" + string.Join(", ", plan.OrderBy(p => p.Value).Select(p => $"{p.Key} t{p.Value}")) + ")";
         string? pinnedText = DxTextureSlotOrder.Pin(request.HlslSource, plan);
         if (pinnedText is null)
-            return (null, Unplaced("a texture declaration could not be given an explicit register (declared through a macro, in a declarator list, or already on another register)"));
+            return (null, Unplaced("a declaration could not be given an explicit register (declared through a macro, in a declarator list, as an array, or with an annotation)"));
 
         var pinnedRequest = new D3DCompileRequest
         {
@@ -3066,8 +3110,8 @@ internal sealed class CompilationPipeline
         var pinned = dxbcCompiler.Compile(pinnedRequest, ct);
         if (pinned.IsFailure)
             return (null, Unplaced($"the pinned compile failed ({pinned.Error.Code}: {pinned.Error.Message})"));
-        var pinnedReflection = RdefReader.Read(pinned.Value.Bytes.Span, request.SourceFileName);
-        if (pinnedReflection.IsFailure || !DxTextureSlotOrder.Matches(pinnedReflection.Value.Textures, plan))
+        var pinnedBindings = DxbcResourceUseOrder.TRegisterBindings(pinned.Value.Bytes.Span);
+        if (pinnedBindings is null || !DxTextureSlotOrder.Matches(pinnedBindings.Select(b => (b.Name, b.Slot)).ToList(), plan))
             return (null, Unplaced("the pinned compile did not land on those slots"));
         return (pinned.Value.Bytes, null);
     }

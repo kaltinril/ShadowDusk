@@ -1935,13 +1935,15 @@ public sealed class FxPreParser
     }
 
     /// <summary>
-    /// Every <c>texture* [&lt;…&gt;] Name : register(tN)</c> declaration in <paramref name="tokens"/>
-    /// (any case of the <c>texture</c> type prefix, optional template arguments), as
-    /// texture name -> N. See <see cref="GlSamplerSlots.ExplicitTextureRegisters"/>.
+    /// Every declaration of a resource that lives in a <c>t</c> register (any <c>texture*</c>
+    /// type in any case, <c>Buffer</c>, <c>StructuredBuffer</c>, <c>ByteAddressBuffer</c>,
+    /// <c>tbuffer</c>; optional template arguments) with an explicit
+    /// <c>register([vs|ps,] tN [, spaceM])</c>, in declaration order. See
+    /// <see cref="GlSamplerSlots.ExplicitTextureRegisters"/>.
     /// </summary>
-    private static Dictionary<string, int> CollectTextureRegisters(IReadOnlyList<Token> tokens)
+    private static List<ExplicitTextureRegister> CollectTextureRegisters(IReadOnlyList<Token> tokens)
     {
-        var registers = new Dictionary<string, int>(StringComparer.Ordinal);
+        var registers = new List<ExplicitTextureRegister>();
 
         var code = new List<Token>(tokens.Count);
         foreach (Token t in tokens)
@@ -1952,11 +1954,8 @@ public sealed class FxPreParser
 
         for (int i = 0; i < code.Count; i++)
         {
-            if (code[i].Kind != TokenKind.Identifier
-                || !code[i].Text.StartsWith("texture", StringComparison.OrdinalIgnoreCase))
-            {
+            if (code[i].Kind != TokenKind.Identifier || !IsTRegisterResourceType(code[i].Text))
                 continue;
-            }
 
             int k = i + 1;
             if (k < code.Count && code[k].Kind == TokenKind.LAngle)
@@ -1968,8 +1967,8 @@ public sealed class FxPreParser
                 k++;
             }
 
-            // The lexer drops ':', so the declaration reads `Type Name register ( tN )`.
-            if (k + 4 >= code.Count) continue;
+            // The lexer drops ':', so the declaration reads `Type Name register ( [ps ,] tN [, spaceM] )`.
+            if (k + 3 >= code.Count) continue;
             if (code[k].Kind != TokenKind.Identifier) continue;
             if (code[k + 1].Kind != TokenKind.Identifier ||
                 !string.Equals(code[k + 1].Text, "register", StringComparison.OrdinalIgnoreCase))
@@ -1978,7 +1977,18 @@ public sealed class FxPreParser
             }
             if (code[k + 2].Kind != TokenKind.LParen) continue;
 
-            Token slotTok = code[k + 3];
+            int r = k + 3;
+            string? stage = null;
+            if (r + 1 < code.Count && code[r].Kind == TokenKind.Identifier && code[r + 1].Kind == TokenKind.Comma
+                && (string.Equals(code[r].Text, "ps", StringComparison.OrdinalIgnoreCase)
+                    || string.Equals(code[r].Text, "vs", StringComparison.OrdinalIgnoreCase)))
+            {
+                stage = code[r].Text.ToLowerInvariant();
+                r += 2;
+            }
+            if (r >= code.Count) continue;
+
+            Token slotTok = code[r];
             if (slotTok.Kind != TokenKind.Identifier ||
                 slotTok.Text.Length < 2 ||
                 (slotTok.Text[0] != 't' && slotTok.Text[0] != 'T') ||
@@ -1987,14 +1997,25 @@ public sealed class FxPreParser
             {
                 continue;
             }
-            if (code[k + 4].Kind != TokenKind.RParen) continue;
+            r++;
+            if (r + 1 < code.Count && code[r].Kind == TokenKind.Comma && code[r + 1].Kind == TokenKind.Identifier
+                && code[r + 1].Text.StartsWith("space", StringComparison.OrdinalIgnoreCase))
+            {
+                r += 2;
+            }
+            if (r >= code.Count || code[r].Kind != TokenKind.RParen) continue;
 
             if (slot is >= 0 and <= 127)
-                registers[code[k].Text] = slot;
+                registers.Add(new ExplicitTextureRegister(code[k].Text, slot, stage));
         }
 
         return registers;
     }
+
+    /// <summary>The declaration types whose resource occupies a <c>t</c> register.</summary>
+    private static bool IsTRegisterResourceType(string type) =>
+        type.StartsWith("texture", StringComparison.OrdinalIgnoreCase)
+        || type is "Buffer" or "StructuredBuffer" or "ByteAddressBuffer" or "tbuffer";
 
     // -------------------------------------------------------------------------
     // Legacy-sampler recovery on the preprocessed source (issue #308)

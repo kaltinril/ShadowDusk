@@ -457,6 +457,17 @@ jobs:
           dotnet run --project validation/CandidateDx -c Release --no-build
           python validation/compare_dx.py
 
+      # The same corpus through the public d3dcompiler_47 oracle backend (CompilerOptions.DxbcBackend):
+      # its scheduled instruction stream must not drive the DirectX 11 texture slots. A step of its
+      # own so the compare's exit code is the step's (pwsh reports only the last command's).
+      - name: Run MonoGame WindowsDX corpus, d3dcompiler backend (ShadowDusk vs mgfxc DirectX_11 golden)
+        env:
+          SHADOWDUSK_DX_WARP: "1"
+        run: |
+          dotnet run --project validation/CandidateDx -c Release --no-build -- d3dcompiler
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          python validation/compare_dx.py
+
       # Global-initializer defaults (owner directive 2026-10-28): `float R = 1;` is the default in the
       # real engine with no Set call, for MonoGame WindowsDX, KNI WinForms.DX11 (MGFX and KNIFX) and
       # MonoGame WindowsDX12, each with a no-initializer control that must render black.

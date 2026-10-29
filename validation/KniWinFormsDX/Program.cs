@@ -118,21 +118,20 @@ internal static class Program
         // slot of its first read (ahead of unregistered modern textures, around explicit texture
         // registers); ShadowDusk used to number the SM4 rewrite in declaration order, and in the
         // BloomCombine shape SpriteBatch's scene (t0) reached the wrong sampler (maxd 188 here).
-        // Each shape is compiled into the MGFX v10 container, drawn through SpriteBatch with the
-        // sprite on t0 and the other textures set through their parameters, and must match the
-        // mgfxc 3.8.4.1 golden exactly; the positive control redraws the golden with the sprite's
-        // texture and one parameter's exchanged. (KNIFX carries the same DXBC and sampler table,
-        // but a KNIFX DirectX effect at ps_4_0_level_9_1 does not load on this HiDef device at
-        // all: "Shader model 4.0 is not supported by the current graphics profile 'HiDef'",
-        // measured 2026-10-28 on main too, validation/InitializerDefaultsKniDx's KNIFX rows;
-        // fixed by PR #430, after which the KNIFX container can be added here.)
+        // Each shape is compiled into BOTH containers KNI loads (MGFX v10 and KNIFX), drawn through
+        // SpriteBatch with the sprite on t0 and the other textures (all distinct) set through their
+        // parameters, and must match the mgfxc 3.8.4.1 golden exactly; the positive control redraws
+        // the golden with the sprite's texture and one parameter's exchanged. These rows run on a
+        // second device at GraphicsProfile.FL10_0: KNI 4.2.9001 refuses a KNIFX DirectX effect
+        // recording shader model 4.0 on HiDef ("Shader model 4.0 is not supported by the current
+        // graphics profile 'HiDef'"; PR #430 records `_level_9_x` as 2.0/3.0, as KNI does).
         string slotsDir = Path.Combine(repoRoot, "tests", "fixtures", "golden", "dx11-texture-slots");
         var slotRows = new List<SlotRow>();
         foreach ((string shape, Dictionary<string, string> parameters, string? control) in SlotRow.Cases)
         {
             string src = File.ReadAllText(Path.Combine(slotsDir, shape + ".fx"));
             byte[] golden = File.ReadAllBytes(Path.Combine(slotsDir, shape + ".DirectX_11.mgfx"));
-            foreach (EffectContainer container in new[] { EffectContainer.Mgfx })
+            foreach (EffectContainer container in new[] { EffectContainer.Mgfx, EffectContainer.Knifx })
             {
                 var result = compiler.Compile(src, new CompilerOptions
                 {
@@ -146,18 +145,27 @@ internal static class Program
             }
         }
 
-        using var game = new KniDxCompareGame(catPath, outDir, rows, tolerance, slotRows);
-        game.Run();
+        var outcomes = new List<DxOutcome>();
+        using (var game = new KniDxCompareGame(catPath, outDir, rows, tolerance, [], GraphicsProfile.HiDef))
+        {
+            game.Run();
+            outcomes.AddRange(game.Outcomes);
+        }
+        using (var slotGame = new KniDxCompareGame(catPath, outDir, [], tolerance, slotRows, GraphicsProfile.FL10_0))
+        {
+            slotGame.Run();
+            outcomes.AddRange(slotGame.Outcomes);
+        }
 
         int ok = 0;
         Console.WriteLine("\n[kni-dx] load + render results (real KNI WinForms.DX11):");
-        foreach (var o in game.Outcomes)
+        foreach (var o in outcomes)
         {
             if (o.Pass) ok++;
             Console.WriteLine($"  [{(o.Pass ? "PASS" : "FAIL")}] {o.Name,-12} {o.Detail}");
         }
-        Console.WriteLine($"\n[kni-dx] {ok}/{game.Outcomes.Count} loaded + rendered + matched mgfxc in real KNI v{xna.Version}.");
-        return ok == game.Outcomes.Count && game.Outcomes.Count == rows.Count + slotRows.Count ? 0 : 1;
+        Console.WriteLine($"\n[kni-dx] {ok}/{outcomes.Count} loaded + rendered + matched mgfxc in real KNI v{xna.Version}.");
+        return ok == outcomes.Count && outcomes.Count == rows.Count + slotRows.Count ? 0 : 1;
     }
 }
 
@@ -170,18 +178,21 @@ internal sealed record SlotRow(
     string Name, byte[]? CandidateBytes, string? CompileError, byte[] GoldenBytes,
     Dictionary<string, string> Parameters, string? ControlParameter)
 {
-    public const string Red = "red", Green = "green", Blue = "blue", Sprite = "sprite";
+    public const string Red = "red", Green = "green", Blue = "blue", White = "white";
 
-    /// <summary>The same five shapes as validation/DxModernFeatures' "texture-slots" arm.</summary>
+    /// <summary>The same shapes as validation/DxModernFeatures' "texture-slots" arm.</summary>
     public static readonly (string Shape, Dictionary<string, string> Parameters, string? Control)[] Cases =
     {
         ("BloomCombineUndeclaredTexture", new() { ["Tex2"] = Green }, "Tex2"),
         ("DeclaredTextureAboveSpriteSampler", new() { ["Tex2"] = Green }, "Tex2"),
         ("ModernReadFirstStillAfterLegacy", new() { ["A"] = Green, ["T"] = Blue }, "A"),
         ("ModernExplicitT1BetweenLegacy", new() { ["A"] = Green, ["T"] = Blue }, "A"),
-        // Explicit registers on sampler_state textures: honoured by ShadowDusk (XNA), moved by
-        // mgfxc; set through their parameters (Spec = the sprite's own texture) both agree.
-        ("ExplicitTextureRegistersReversed", new() { ["Diffuse"] = Green, ["Spec"] = Sprite }, null),
+        // Explicit registers on sampler_state textures only reserve (mgfxc: t2/t3).
+        ("ExplicitTextureRegistersReversed", new() { ["Diffuse"] = Green, ["Spec"] = Blue }, "Spec"),
+        ("ExplicitStateTextureT0BesideSpriteSampler", new() { ["Tex2"] = Green }, "Tex2"),
+        // Evaluation-order shapes d3dcompiler_47 would schedule differently.
+        ("S10_ClipFirst", new() { ["B"] = Green }, "B"),
+        ("D14_PrecedenceMulLeft", new() { ["B"] = White, ["C"] = Blue }, "C"),
     };
 }
 
@@ -207,7 +218,7 @@ internal sealed class KniDxCompareGame : Game
 
     public List<DxOutcome> Outcomes { get; } = new();
 
-    public KniDxCompareGame(string catPath, string outDir, IReadOnlyList<DxRow> rows, int tolerance, IReadOnlyList<SlotRow> slotRows)
+    public KniDxCompareGame(string catPath, string outDir, IReadOnlyList<DxRow> rows, int tolerance, IReadOnlyList<SlotRow> slotRows, GraphicsProfile profile)
     {
         _catPath = catPath;
         _outDir = outDir;
@@ -218,7 +229,7 @@ internal sealed class KniDxCompareGame : Game
         {
             PreferredBackBufferWidth = 64,
             PreferredBackBufferHeight = 64,
-            GraphicsProfile = GraphicsProfile.HiDef,
+            GraphicsProfile = profile,
         };
         // Issue #204: KNI carries the WARP knob on PresentationParameters (not a static
         // like MonoGame's GraphicsAdapter.UseDriverType, see SharedDx/DxHeadlessRasterizer.cs),
@@ -261,19 +272,20 @@ internal sealed class KniDxCompareGame : Game
             using var red = Solid(new Color(200, 0, 0));
             using var green = Solid(new Color(0, 200, 0));
             using var blue = Solid(new Color(0, 0, 200));
+            using var white = Solid(new Color(255, 255, 255));
             foreach (SlotRow row in _slotRows)
-                Outcomes.Add(RunSlotRow(row, red, green, blue));
+                Outcomes.Add(RunSlotRow(row, red, green, blue, white));
         }
 
         _done = true;
         Exit();
     }
 
-    private DxOutcome RunSlotRow(SlotRow row, Texture2D red, Texture2D green, Texture2D blue)
+    private DxOutcome RunSlotRow(SlotRow row, Texture2D red, Texture2D green, Texture2D blue, Texture2D white)
     {
         if (row.CandidateBytes is null)
             return new DxOutcome(row.Name, false, $"compile failure: {row.CompileError}");
-        Texture2D Named(string n) => n switch { SlotRow.Green => green, SlotRow.Blue => blue, _ => red };
+        Texture2D Named(string n) => n switch { SlotRow.Green => green, SlotRow.Blue => blue, SlotRow.White => white, _ => red };
         var parameters = row.Parameters.ToDictionary(p => p.Key, p => Named(p.Value));
 
         Color[]? Render(byte[] bytes, Texture2D sprite, IReadOnlyDictionary<string, Texture2D> values, out string? error)

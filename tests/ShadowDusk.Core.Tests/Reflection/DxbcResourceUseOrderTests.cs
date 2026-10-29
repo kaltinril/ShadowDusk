@@ -106,6 +106,32 @@ public sealed class DxbcResourceUseOrderTests
     }
 
     [Fact]
+    public void TRegisterBindings_KeepEveryTRegisterKind_AndDropSamplersAndCbuffers()
+    {
+        byte[] rdef = Rdef(Ps50Target,
+            [
+                new SynthBinding("S", BindSampler, 0, 0),
+                new SynthBinding("A", BindTexture, 4, 1),
+                new SynthBinding("Structured", 5, 1, 2),
+                new SynthBinding("Raw", 7, 1, 3),
+                new SynthBinding("B", BindTexture, 4, 0),
+            ],
+            []);
+        var bindings = DxbcResourceUseOrder.TRegisterBindings(Container(("RDEF", rdef))).ShouldNotBeNull();
+        bindings.Select(b => $"{b.Name}@{b.Slot}").ShouldBe(["A@1", "Structured@2", "Raw@3", "B@0"]);
+    }
+
+    [Fact]
+    public void NamesInFirstReadOrder_MapsTheReadRegistersThroughTheRdef()
+    {
+        byte[] rdef = Rdef(Ps50Target, [new SynthBinding("A", BindTexture, 4, 0), new SynthBinding("B", BindTexture, 4, 1)], []);
+        byte[] shdr = Shader(DclResource(0), DclResource(1), Sample(t: 1, s: 0), Sample(t: 0, s: 0), [Opcode(62, 1)]);
+        // Re-wrap the SHDR payload of Shader() beside the RDEF.
+        byte[] payload = shdr[(BitConverter.ToInt32(shdr, 32) + 8)..];
+        DxbcResourceUseOrder.NamesInFirstReadOrder(Container(("RDEF", rdef), ("SHDR", payload))).ShouldBe(["B", "A"]);
+    }
+
+    [Fact]
     public void NotADxbcContainer_OrNoShaderChunk_IsUnreadable()
     {
         DxbcResourceUseOrder.TextureRegistersInFirstReadOrder(new byte[64]).ShouldBeNull();

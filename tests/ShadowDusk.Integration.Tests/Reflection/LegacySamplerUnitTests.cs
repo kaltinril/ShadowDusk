@@ -91,6 +91,24 @@ public sealed class LegacySamplerUnitTests
         }
     }
 
+    [ShadowDusk.Integration.Tests.Dxc.WindowsTheory]
+    [MemberData(nameof(AllShapes))]
+    [Trait("Platform", "DirectX")]
+    public async Task DirectX11_D3DCompilerBackend_WholeTable_MatchesMgfxc(string shape)
+    {
+        // The public d3dcompiler_47 oracle backend schedules its reads, so the texture slot check
+        // takes the evaluation order from vkd3d; the shipped table must still be mgfxc's.
+        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(120));
+        var result = await new EffectCompiler().CompileAsync(
+            await File.ReadAllTextAsync(SourcePath(shape), cts.Token),
+            new CompilerOptions { Target = PlatformTarget.DirectX, DxbcBackend = DxbcBackend.D3DCompiler, SourceFileName = shape + ".fx" },
+            cts.Token);
+        result.IsSuccess.ShouldBeTrue(result.IsFailure ? string.Join(" | ", result.Error.Select(e => e.FxcFormattedMessage)) : "");
+        Records(MgfxBlobReader.Parse(result.Value.Data)).ShouldBe(Records(Golden(shape, "DirectX_11")),
+            customMessage: "the whole DirectX 11 sampler table must be mgfxc's under the d3dcompiler backend too");
+        result.Value.Warnings.ShouldNotContain(w => w.Code == "SD0230");
+    }
+
     [Theory]
     [MemberData(nameof(AllShapes))]
     [Trait("Platform", "DirectX")]

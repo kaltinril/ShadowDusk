@@ -24,7 +24,9 @@
   Gates (all default ON except FNA). Each entry below is only the what-and-versus; per-gate
   history and evidence detail lives in docs/validation-matrix.md section 6.
     * MonoGame WindowsDX corpus  - validation/BaselineDx + CandidateDx + compare_dx.py
-                                   (ShadowDusk DX vs mgfxc DX golden, real MonoGame WindowsDX).
+                                   (ShadowDusk DX vs mgfxc DX golden, real MonoGame WindowsDX),
+                                   once on the default vkd3d backend and once with
+                                   `CandidateDx -- d3dcompiler` (the d3dcompiler_47 option).
     * DX modern features (VTF)   - validation/DxModernFeatures (vkd3d vs fxc oracle, maxd 0), plus
                                    its legacy-register and legacy texture-slot arms (SpriteBatch,
                                    vs the committed mgfxc DirectX_11 goldens, maxd 0).
@@ -240,6 +242,10 @@ $gates.Add(@{
     Action = {
         Invoke-Checked 'dotnet' @('run', '--project', 'validation/BaselineDx', '-c', 'Release')
         Invoke-Checked 'dotnet' @('run', '--project', 'validation/CandidateDx', '-c', 'Release')
+        Invoke-Checked 'python' @('validation/compare_dx.py')
+        # The same corpus through the public d3dcompiler_47 oracle backend (CompilerOptions.DxbcBackend),
+        # whose scheduled instruction stream must not drive the DirectX 11 texture slots.
+        Invoke-Checked 'dotnet' @('run', '--project', 'validation/CandidateDx', '-c', 'Release', '--', 'd3dcompiler')
         Invoke-Checked 'python' @('validation/compare_dx.py')
     }
 })

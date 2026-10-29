@@ -29,9 +29,10 @@
 // on t0, the other textures through their parameters) with ShadowDusk's build and the committed
 // mgfxc 3.8.4.1 golden, which must match (maxd 0); the positive control renders the golden again
 // with the sprite's texture and one parameter's exchanged (what a build with those two slots
-// swapped draws) and must differ. ExplicitTextureRegistersReversed covers the one recorded mgfxc
-// deviation (registers on sampler_state textures, honoured here as in XNA): set through their
-// parameters, both layouts draw the same picture.
+// swapped draws) and must differ. Every texture is distinct, so any layout difference shows. Each
+// shape is compiled with BOTH DXBC backends (vkd3d and the public d3dcompiler_47 option, whose
+// scheduled instruction stream does not carry fxc's evaluation order; S10_ClipFirst and
+// D14_PrecedenceMulLeft are the shapes where it differs) and must not warn SD0230.
 
 using System;
 using System.Linq;
@@ -138,27 +139,42 @@ var slotCases = new TextureSlotCase[]
     new("ModernReadFirstStillAfterLegacy", new() { ["A"] = TextureSlotHarness.Green, ["T"] = TextureSlotHarness.Blue }, ControlParameter: "A"),
     // An explicit `Texture2D T : register(t1)` between two legacy samplers read in reverse.
     new("ModernExplicitT1BetweenLegacy", new() { ["A"] = TextureSlotHarness.Green, ["T"] = TextureSlotHarness.Blue }, ControlParameter: "A"),
-    // Explicit registers on the textures sampler_state blocks name: honoured by ShadowDusk (XNA),
-    // moved to t2/t3 by mgfxc. Set through their parameters (Spec to the sprite's own texture, which
-    // ShadowDusk reads from t0) both builds draw the same picture; no swap control, since the point
-    // is that the two layouts agree here.
-    new("ExplicitTextureRegistersReversed", new() { ["Diffuse"] = TextureSlotHarness.Green, ["Spec"] = TextureSlotHarness.SpriteTexture }, ControlParameter: null),
+    // Explicit registers on the textures sampler_state blocks name (`texture2D Diffuse :
+    // register(t1)`, `Spec : register(t0)`): they only RESERVE t0/t1, and the samplers' textures
+    // take t2/t3, as mgfxc does. Every texture distinct, so a layout difference shows.
+    new("ExplicitTextureRegistersReversed", new() { ["Diffuse"] = TextureSlotHarness.Green, ["Spec"] = TextureSlotHarness.Blue }, ControlParameter: "Spec"),
+    // `texture Tex2 : register(t0)` named by S1's sampler_state beside the sprite sampler S0: t0 is
+    // reserved, the sprite sampler's texture is t1 and SpriteBatch's sprite (t0) reaches nothing.
+    new("ExplicitStateTextureT0BesideSpriteSampler", new() { ["Tex2"] = TextureSlotHarness.Green }, ControlParameter: "Tex2"),
+    // Evaluation order where d3dcompiler_47 schedules: a read feeding clip() first in its stream,
+    // and `tex2D(A) * tex2D(B) + tex2D(C) * 2` emitted C first.
+    new("S10_ClipFirst", new() { ["B"] = TextureSlotHarness.Green }, ControlParameter: "B"),
+    new("D14_PrecedenceMulLeft", new() { ["B"] = TextureSlotHarness.White, ["C"] = TextureSlotHarness.Blue }, ControlParameter: "C"),
 };
+// Each shape through BOTH DXBC backends: the default vkd3d and the public d3dcompiler_47 oracle
+// option (whose own instruction stream is scheduled, so the slot check reads vkd3d's order).
 var slotInputs = new System.Collections.Generic.List<(TextureSlotCase Case, byte[] Candidate, byte[] Golden)>();
 foreach (TextureSlotCase c in slotCases)
+foreach (DxbcBackend backend in new[] { DxbcBackend.Vkd3d, DxbcBackend.D3DCompiler })
 {
     string src = await System.IO.File.ReadAllTextAsync(System.IO.Path.Combine(slotsDir, c.Shape + ".fx"));
-    var r = await new EffectCompiler().CompileAsync(src, new CompilerOptions { Target = PlatformTarget.DirectX, SourceFileName = c.Shape + ".fx" });
+    var r = await new EffectCompiler().CompileAsync(src, new CompilerOptions { Target = PlatformTarget.DirectX, DxbcBackend = backend, SourceFileName = c.Shape + ".fx" });
     if (r.IsFailure)
     {
-        Console.WriteLine($"[dx-modern] texture-slots {c.Shape}: COMPILE FAIL: " + string.Join(" | ", r.Error.Select(e => $"{e.Code}: {e.Message}")));
+        Console.WriteLine($"[dx-modern] texture-slots {c.Shape} [{backend}]: COMPILE FAIL: " + string.Join(" | ", r.Error.Select(e => $"{e.Code}: {e.Message}")));
         return 1;
     }
-    slotInputs.Add((c, r.Value.Data, await System.IO.File.ReadAllBytesAsync(System.IO.Path.Combine(slotsDir, c.Shape + ".DirectX_11.mgfx"))));
+    foreach (ShaderError w in r.Value.Warnings.Where(w => w.Code == "SD0230"))
+    {
+        Console.WriteLine($"[dx-modern] texture-slots {c.Shape} [{backend}]: unexpected {w.Code}: {w.Message}");
+        return 1;
+    }
+    slotInputs.Add((c with { Backend = backend.ToString() }, r.Value.Data,
+                    await System.IO.File.ReadAllBytesAsync(System.IO.Path.Combine(slotsDir, c.Shape + ".DirectX_11.mgfx"))));
 }
 using var slotGame = new TextureSlotHarness(slotInputs);
 slotGame.Run();
-bool slotsOk = slotGame.Results.Count == slotCases.Length;
+bool slotsOk = slotGame.Results.Count == slotInputs.Count;
 foreach (var res in slotGame.Results)
 {
     bool caseOk = res.Rendered && res.MaxDelta == 0 && (res.ControlDelta is null || res.ControlDelta > 16);
@@ -264,11 +280,11 @@ sealed class LegacyRegisterHarness : Game
 // ---- Arm "texture-slots": SpriteBatch puts the sprite on t0; the rest come from parameters ----
 
 /// <summary>One texture-slot shape: the parameter textures it sets, and which one the control swaps with the sprite.</summary>
-sealed record TextureSlotCase(string Shape, System.Collections.Generic.Dictionary<string, string> Parameters, string? ControlParameter);
+sealed record TextureSlotCase(string Shape, System.Collections.Generic.Dictionary<string, string> Parameters, string? ControlParameter, string Backend = "");
 
 sealed class TextureSlotHarness : Game
 {
-    public const string Red = "red", Green = "green", Blue = "blue", SpriteTexture = "sprite";
+    public const string Red = "red", Green = "green", Blue = "blue", White = "white";
     private const int W = 32, H = 32;
     private readonly GraphicsDeviceManager _gdm;
     private readonly System.Collections.Generic.IReadOnlyList<(TextureSlotCase Case, byte[] Candidate, byte[] Golden)> _cases;
@@ -300,7 +316,8 @@ sealed class TextureSlotHarness : Game
         using var red = Solid(new Color(200, 0, 0));
         using var green = Solid(new Color(0, 200, 0));
         using var blue = Solid(new Color(0, 0, 200));
-        Texture2D Named(string n) => n switch { Red => red, Green => green, Blue => blue, _ => red };
+        using var white = Solid(new Color(255, 255, 255));
+        Texture2D Named(string n) => n switch { Red => red, Green => green, Blue => blue, White => white, _ => red };
 
         Color[]? Render(byte[] effectBytes, Texture2D sprite, System.Collections.Generic.IReadOnlyDictionary<string, Texture2D> parameters)
         {
@@ -344,7 +361,7 @@ sealed class TextureSlotHarness : Game
 
         foreach ((TextureSlotCase c, byte[] candidateBytes, byte[] goldenBytes) in _cases)
         {
-            var parameters = c.Parameters.ToDictionary(p => p.Key, p => p.Value == SpriteTexture ? red : Named(p.Value));
+            var parameters = c.Parameters.ToDictionary(p => p.Key, p => Named(p.Value));
             Color[]? candidate = Render(candidateBytes, red, parameters);
             Color[]? golden = Render(goldenBytes, red, parameters);
             int? control = null;
@@ -359,11 +376,11 @@ sealed class TextureSlotHarness : Game
                     control = MaxD(golden, goldenSwapped);
             }
             bool rendered = candidate is not null && golden is not null;
-            Results.Add((c.Shape, rendered, rendered ? MaxD(candidate!, golden!) : -1, control, c.ControlParameter));
+            Results.Add(($"{c.Shape} [{c.Backend}]", rendered, rendered ? MaxD(candidate!, golden!) : -1, control, c.ControlParameter));
             if (rendered)
             {
                 Color k = candidate![(H / 2) * W + W / 2], g = golden![(H / 2) * W + W / 2];
-                Console.WriteLine($"  texture-slots {c.Shape}: candidate ({k.R},{k.G},{k.B}) mgfxc ({g.R},{g.G},{g.B})");
+                Console.WriteLine($"  texture-slots {c.Shape} [{c.Backend}]: candidate ({k.R},{k.G},{k.B}) mgfxc ({g.R},{g.G},{g.B})");
             }
         }
         _done = true;
