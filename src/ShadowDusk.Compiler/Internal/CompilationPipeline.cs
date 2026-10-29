@@ -532,12 +532,6 @@ internal sealed class CompilationPipeline
         // Content Pipeline build. DirectX only — see DirectX11FloorCheck's remarks for why
         // the OpenGL/Vulkan/DX12 equivalents are deliberately not enforced here.
         bool enforceDx11Floor = directX;
-        // KNIFX records a shader model KNI's runtime checks against the graphics profile, read
-        // off the RESOLVED profile (pass.*Profile, macro already expanded) by KnifxShaderModel.
-        // A profile KNI's own processor calls invalid (*_4_0_level_9_0) is SD0018, never a guessed
-        // version. Only the targets that can write KNIFX; Vulkan/DX12 + KNIFX are SD0025/SD0027.
-        bool enforceKnifxProfiles = effectiveContainer == EffectContainer.Knifx
-            && options.Target is PlatformTarget.OpenGL or PlatformTarget.DirectX;
         // A profile a macro produced is validated through the macro name the author wrote, so DXC
         // expands it with -P as before issue #407. (The Android emulator hangs the first SPIR-V
         // compile after the corpus' effects stop making those -P calls: a DXC-spawned thread is
@@ -558,11 +552,6 @@ internal sealed class CompilationPipeline
                         enforceDirectX11Floor: enforceDx11Floor, entryPoint: pass.VertexEntryPoint);
                     if (v is { } vErr)
                         return Fail(vErr);
-                    if (enforceKnifxProfiles
-                        && KnifxShaderModel.ProfileCheck(
-                            pass.VertexProfile, ShaderStage.Vertex, pass.VertexProfileSpan, sourceFileName,
-                            pass.VertexEntryPoint) is { } vKni)
-                        return Fail(vKni);
                 }
                 if (pass.PixelEntryPoint is not null)
                 {
@@ -574,11 +563,6 @@ internal sealed class CompilationPipeline
                         enforceDirectX11Floor: enforceDx11Floor, entryPoint: pass.PixelEntryPoint);
                     if (p is { } pErr)
                         return Fail(pErr);
-                    if (enforceKnifxProfiles
-                        && KnifxShaderModel.ProfileCheck(
-                            pass.PixelProfile, ShaderStage.Pixel, pass.PixelProfileSpan, sourceFileName,
-                            pass.PixelEntryPoint) is { } pKni)
-                        return Fail(pKni);
                 }
             }
         }

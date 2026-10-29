@@ -11,13 +11,14 @@ namespace ShadowDusk.Integration.Tests.Tests;
 /// <summary>
 /// The per-shader <c>ShaderVersion</c> bytes a KNIFX container records for each profile, written
 /// literally and through a macro, on the DirectX 11 body and the desktop OpenGL body. KNI's own
-/// effect processor (<c>nkast.Xna.Framework.Content.Pipeline.Builder</c> 4.2.9001 and 4.3.9001,
-/// <c>/platform:Windows</c> and <c>/platform:DesktopGL</c>, measured 2026-10-28) writes exactly
-/// these zigzag-packed pairs: <c>*_4_0_level_9_1</c> is 2.0 (<c>04 00</c>), <c>*_4_0_level_9_3</c>
+/// effect processor (<c>nkast.Xna.Framework.Content.Pipeline.Builder</c>, <c>/platform:Windows</c>
+/// on 4.2.9001 and 4.3.9001 and <c>/platform:DesktopGL</c> on 4.3.9001, measured 2026-10-28) writes
+/// exactly these zigzag-packed pairs: <c>*_4_0_level_9_1</c> is 2.0 (<c>04 00</c>), <c>*_4_0_level_9_3</c>
 /// is 3.0 (<c>06 00</c>), <c>*_4_0</c> is 4.0 (<c>08 00</c>), <c>*_5_0</c> is 5.0 (<c>0a 00</c>).
 /// ShadowDusk wrote 4.0 for both feature-level-9 forms, which KNI's runtime refuses on the HiDef
 /// profile ("Shader model 4.0 is not supported by the current graphics profile 'HiDef'").
-/// <c>*_4_0_level_9_0</c> is not a profile KNI reads at all, and is refused.
+/// <c>*_4_0_level_9_0</c>, which KNI's processor refuses, keeps ShadowDusk's existing 4.0 (a known
+/// divergence: that output loads on KNI GL from FL10_0 up, so it is not changed here).
 /// </summary>
 [Trait("Category", "Integration")]
 public sealed class KnifxLevel9ShaderModelTests
@@ -63,17 +64,18 @@ public sealed class KnifxLevel9ShaderModelTests
     }
 
     [Fact]
-    public async Task Knifx_OpenGl_Level90_IsRefusedAsKniRefusesIt()
+    public async Task Knifx_OpenGl_Level90_KeepsItsExistingShaderModel()
     {
+        // KNI's own processor refuses *_4_0_level_9_0, but ShadowDusk's GL KNIFX output for it
+        // (desktop body 4.0) loads on KNI SDL2.GL at FL10_0 and up, and its GLES/WebGL body (0.0)
+        // at every profile, so it stays as it was before the feature-level-9 fix.
         foreach (string source in new[] { Literal("4_0_level_9_0"), Macro("4_0_level_9_0") })
         {
             var result = await Compile(source, PlatformTarget.OpenGL, EffectContainer.Knifx);
 
-            result.IsFailure.ShouldBeTrue();
-            ShaderError error = result.Error.ShouldHaveSingleItem();
-            error.Code.ShouldBe("SD0018");
-            error.Message.ShouldContain("Invalid profile 'vs_4_0_level_9_0'. Vertex shader 'V'.", Case.Sensitive);
-            error.Line.ShouldBeGreaterThan(0);
+            result.IsSuccess.ShouldBeTrue(
+                result.IsFailure ? string.Join("; ", result.Error.Select(e => $"{e.Code}: {e.Message}")) : "ok");
+            FirstBodyVersionBytes(result.Value.Data).ShouldBe(["0800", "0800"]);
         }
     }
 
@@ -89,8 +91,7 @@ public sealed class KnifxLevel9ShaderModelTests
     [Fact]
     public async Task Mgfx_OpenGl_Level90_IsUnchanged()
     {
-        // The refusal is the KNIFX container's: an MGFX OpenGL compile of the same profile is
-        // untouched (it records no shader model).
+        // An MGFX OpenGL compile of the same profile records no shader model and is untouched.
         var result = await Compile(Literal("4_0_level_9_0"), PlatformTarget.OpenGL, EffectContainer.Mgfx);
 
         result.IsSuccess.ShouldBeTrue(
@@ -107,7 +108,9 @@ public sealed class KnifxLevel9ShaderModelTests
             Container = container,
             SourceFileName = "KnifxLevel9.fx",
         }, cts.Token);
-        if (container == EffectContainer.Knifx && !source.Contains("level_9_0", StringComparison.Ordinal))
+        // Only DirectX refuses *_4_0_level_9_0 (SD0015, below mgfxc's DirectX_11 floor).
+        bool expectsFailure = target == PlatformTarget.DirectX && source.Contains("level_9_0", StringComparison.Ordinal);
+        if (!expectsFailure)
             result.IsSuccess.ShouldBeTrue(
                 result.IsFailure ? string.Join("; ", result.Error.Select(e => $"{e.Code}: {e.Message}")) : "ok");
         return result;

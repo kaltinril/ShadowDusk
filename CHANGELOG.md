@@ -20,18 +20,19 @@ that loads and renders identically to `mgfxc`'s in the real MonoGame/KNI runtime
 
 - **KNIFX records the shader model KNI's own pipeline records for `*_4_0_level_9_1` and
   `*_4_0_level_9_3`: 2.0 and 3.0, not 4.0.** ShadowDusk read the first `_N_N` of the profile, so a
-  KNIFX container always recorded 4.0 (version bytes `08 00`) for a literal `ps_4_0_level_9_1`,
-  which KNI's runtime refuses on HiDef and Reach ("Shader model 4.0 is not supported by the current
+  KNIFX container always recorded 4.0 (version byte `08`) for a literal `ps_4_0_level_9_1`, which
+  KNI's runtime refuses on HiDef and Reach ("Shader model 4.0 is not supported by the current
   graphics profile 'HiDef'"). Since the issue #407 fix below expanded macro `compile` targets, the
   same happened to every MonoGame-template effect (`#define PS_SHADERMODEL ps_4_0_level_9_1`) built
   as KNIFX for KNI DX, which was rejected on HiDef; before #407 those recorded 3.0 by accident.
-  Now `_level_9_1` is 2.0 (`04 00`) and `_level_9_3` is 3.0 (`06 00`), as measured on KNI 4.2.9001
-  and 4.3.9001's own MGCB; `_4_0`, `_5_0` and every other profile are unchanged. A KNIFX compile of
-  `*_4_0_level_9_0`, which KNI's pipeline calls an invalid profile, is now refused with `SD0018`
-  (DirectX already refused it with `SD0015`). Only KNIFX bytes change (two bytes per affected
-  shader); MGFX, FNA, DirectX 12 and Vulkan output is untouched. `validation/InitializerDefaultsKniDx`
-  now also pins the version on a real Reach device. CI's DX WARP job reported that driver green while
-  it failed, because a multi-command `pwsh` step only reports its last command's exit code; every
+  Now `_level_9_1` is 2.0 (`04`) and `_level_9_3` is 3.0 (`06`), as measured with KNI's own MGCB
+  (Windows on 4.2.9001 and 4.3.9001, DesktopGL on 4.3.9001); every other profile is unchanged,
+  including the ones KNI's own pipeline refuses (`*_4_0_level_9_0`, SM6, `*_2_a`, `*_sw`), which
+  keep loading wherever they loaded before. Only KNIFX bytes change: one version byte per affected
+  shader record, plus each backend entry's 4-byte effect key; MGFX, FNA, DirectX 12 and Vulkan
+  output is untouched. `validation/InitializerDefaultsKniDx` and `InitializerDefaultsKniGl` now also
+  pin the version on a real Reach device. CI's DX WARP job reported the DX driver green while it
+  failed, because a multi-command `pwsh` step only reports its last command's exit code; every
   such step now checks each command.
 - **Techniques are read from the preprocessed source, like `mgfxc` (issue #407).** A technique
   inside a false `#if` (or behind an unset `/Defines` value) was still compiled, a technique in an

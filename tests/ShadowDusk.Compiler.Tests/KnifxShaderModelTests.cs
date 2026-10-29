@@ -1,8 +1,6 @@
 #nullable enable
 
 using ShadowDusk.Compiler.Internal;
-using ShadowDusk.Core;
-using ShadowDusk.HLSL.Ast;
 using Shouldly;
 using Xunit;
 
@@ -11,8 +9,9 @@ namespace ShadowDusk.Compiler.Tests;
 /// <summary>
 /// The KNIFX per-shader <c>ShaderVersion</c> is read from the resolved profile the way KNI's own
 /// effect processor reads it (<c>ShaderVersion.ParseShaderModel</c>, KNI 4.2.9001 and 4.3.9001):
-/// the feature-level-9 forms are 2.0 and 3.0, not 4.0. Every expected value here was measured by
-/// running KNI's own MGCB on the profile and reading the version it wrote.
+/// the feature-level-9 forms are 2.0 and 3.0, not 4.0. The values in the first theory were measured by
+/// running KNI's own MGCB on the profile (Windows on 4.2.9001 and 4.3.9001, DesktopGL on 4.3.9001)
+/// and reading the version it wrote.
 /// </summary>
 public sealed class KnifxShaderModelTests
 {
@@ -43,31 +42,20 @@ public sealed class KnifxShaderModelTests
         KnifxShaderModel.Parse(profile).ShouldBe((3, 0));
     }
 
+    /// <summary>
+    /// Profiles KNI's own processor refuses as invalid keep the reading ShadowDusk always gave
+    /// them: their output already loads somewhere (a 4.0 desktop GL body on FL10_0 and up; the
+    /// GLES/WebGL body records 0.0), so they are pinned here as known divergences, not fixed.
+    /// </summary>
     [Theory]
-    [InlineData("vs_4_0_level_9_0", ShaderStage.Vertex, "V")]
-    [InlineData("ps_4_0_level_9_0", ShaderStage.Pixel, "P")]
-    public void ProfileCheck_Level90_IsRefusedAsKniDoes(string profile, ShaderStage stage, string entry)
+    [InlineData("ps_4_0_level_9_0", 4, 0)]
+    [InlineData("vs_4_0_level_9_0", 4, 0)]
+    [InlineData("ps_6_0", 6, 0)]
+    [InlineData("ps_2_a", 3, 0)]
+    [InlineData("ps_3_sw", 3, 0)]
+    [InlineData("ps_1_1", 1, 1)]
+    public void Parse_ProfilesKniRefuses_KeepTheirExistingReading(string profile, int major, int minor)
     {
-        ShaderError? error = KnifxShaderModel.ProfileCheck(
-            profile, stage, new SourceSpan(7, 12, 7, 28), "a.fx", entry);
-
-        error.ShouldNotBeNull();
-        error.Code.ShouldBe("SD0018");
-        error.File.ShouldBe("a.fx");
-        error.Line.ShouldBe(7);
-        error.Column.ShouldBe(12);
-        string stageWord = stage == ShaderStage.Vertex ? "Vertex" : "Pixel";
-        error.Message.ShouldContain($"Invalid profile '{profile}'. {stageWord} shader '{entry}'.", Case.Sensitive);
-    }
-
-    [Theory]
-    [InlineData("ps_4_0_level_9_1")]
-    [InlineData("ps_4_0_level_9_3")]
-    [InlineData("ps_4_0")]
-    [InlineData("ps_3_0")]
-    [InlineData(null)]
-    public void ProfileCheck_ProfilesKniReads_PassUntouched(string? profile)
-    {
-        KnifxShaderModel.ProfileCheck(profile, ShaderStage.Pixel, null, "a.fx", "P").ShouldBeNull();
+        KnifxShaderModel.Parse(profile).ShouldBe((major, minor));
     }
 }
