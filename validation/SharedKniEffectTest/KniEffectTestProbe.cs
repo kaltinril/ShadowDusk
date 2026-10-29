@@ -120,14 +120,18 @@ public static class KniEffectTestProbe
     internal sealed record Expectation(Kind Kind, string Reason, IReadOnlyList<string>? Signatures = null);
 
     // Known ShadowDusk bugs (fixed on other branches). A row tagged with one must still FAIL.
-    // None is listed now: every one the suite exposed is fixed and its rows are GATE (2026-10-29):
-    // KNIFX DirectX ps_2_0/ps_3_0 (SD0015), KNIFX DirectX *_4_0_level_9_x recorded as SM 4.0
-    // (PR #430), KNIFX texture-less legacy sampler exposed as a parameter, OpenGL BINORMAL/TANGENT
-    // vertex inputs (SD0210), tex2Dlod (FX0012), Vulkan ignoring an explicit register(tN) (whose
-    // rows read "centre (0,0,0,0)"). A new one is added as a constant here, with its signature below.
+    // Fixed and flipped to GATE (2026-10-29): KNIFX DirectX ps_2_0/ps_3_0 (SD0015), KNIFX DirectX
+    // *_4_0_level_9_x recorded as SM 4.0 (PR #430), KNIFX texture-less legacy sampler exposed as a
+    // parameter, OpenGL BINORMAL/TANGENT vertex inputs (SD0210), tex2Dlod (FX0012), Vulkan
+    // ignoring an explicit register(tN) (whose rows read "centre (0,0,0,0)").
+    private const string KfVsPositionOutputSm6 =
+        "known bug (issue #446): a vertex shader output declared `: POSITION0` (XNA spelling) is not mapped to SV_Position on the DXC targets: MonoGame 3.8.5 WindowsDX12 throws creating the pipeline (SEHException 0x80070057) and DesktopVK draws nothing; tex2Dlod itself works there";
 
     /// <summary>What each listed bug's failure looks like in a row's detail (any one must appear).</summary>
-    private static readonly Dictionary<string, string[]> KnownSignatures = new(StringComparer.Ordinal);
+    private static readonly Dictionary<string, string[]> KnownSignatures = new(StringComparer.Ordinal)
+    {
+        [KfVsPositionOutputSm6] = ["SEHException", "centre (255,0,255,255)"],
+    };
 
     // Informational reasons.
     private const string InfoRuntimeOnly =
@@ -235,6 +239,8 @@ public static class KniEffectTestProbe
             case "VertexTextureTex2Dlod":
                 if (gl) return new(Kind.Info, InfoGlTex2Dlod);
                 if (rt == "kni-dx") return new(Kind.Info, knifx ? InfoKnifxSm4HiDef : InfoKniDxVtf);
+                // The companion's VS writes `: POSITION0`, which the DXC targets do not map (issue #446).
+                if (rt is "mg-dx12" or "mg-vk") known.Add(KfVsPositionOutputSm6);
                 break;
         }
 

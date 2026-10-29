@@ -39,7 +39,9 @@ that loads and renders identically to `mgfxc`'s in the real MonoGame/KNI runtime
   first CI run pending) and into `run-windows-render-gates.ps1`; measured green locally. Test and validation only: no package changes.
   The fixes in this release flip the known-failing rows of KNIFX DirectX `ps_2_0`/`ps_3_0`, KNIFX `_level_9_x`,
   the KNIFX texture-less sampler, OpenGL `BINORMAL`/`TANGENT`, `tex2Dlod` and Vulkan's explicit `register(tN)`
-  to gated; no known-failing row is left. On DirectX 11, `OldSyntax_t1t0`'s texture binding and
+  to gated. One row is known-failing for a different, pre-existing bug: on DirectX 12 and Vulkan the
+  `VertexTextureTex2Dlod` companion's VS writes `: POSITION0`, which is not mapped to the system position there
+  (issue #446). On DirectX 11, `OldSyntax_t1t0`'s texture binding and
   `DeferredBasicEffect` are informational: with the texture-slot fix ShadowDusk binds them as `mgfxc` and KNI's
   own `.xnb` do, not in the XNA layout KNI's test asserts.
 - **`ConstantBufferReflection.RawDescriptorSet`** (`ShadowDusk.Core.Reflection`): the raw SPIR-V
