@@ -108,6 +108,11 @@ internal static class VulkanTextureSamplerBindingRewriter
     private static readonly Regex SampleCall =
         new(@"(\w+)\s*\.\s*(?:Sample|Gather)\w*\s*\(\s*(\w+)\s*[,)]", RegexOptions.Compiled);
 
+    // SampleCall, and an identifier, starting exactly at a given offset.
+    private static readonly Regex SampleCallAt =
+        new(@"\G(\w+)\s*\.\s*(?:Sample|Gather)\w*\s*\(\s*(\w+)\s*[,)]", RegexOptions.Compiled);
+    private static readonly Regex IdentifierAt = new(@"\G[A-Za-z_]\w*", RegexOptions.Compiled);
+
     // Preprocessor conditionals, tracked so the shared-sampler diagnostic below can tell
     // "two textures + one sampler in ONE live code path" (broken on Vulkan, SD0028) apart
     // from "the same sampler re-paired across mutually-exclusive #if branches" (legal —
@@ -210,11 +215,13 @@ internal static class VulkanTextureSamplerBindingRewriter
     /// gives a texture its sampler (it used to win the pairing as the first call in the file, leaving
     /// the live pairing on a second, aliased descriptor away from slot 0).</param>
     /// <param name="aliases">The aliases the rewrite declared.</param>
-    internal static string Rewrite(string hlsl, string? entryPoint, IReadOnlySet<int>? skippedLines, out IReadOnlyList<Alias> aliases) =>
-        Rewrite(hlsl, entryPoint, skippedLines, expandedView: null, out aliases);
+    /// <param name="textureSlots">The compiled stage's texture-slot count: no alias is put past it.</param>
+    internal static string Rewrite(string hlsl, string? entryPoint, IReadOnlySet<int>? skippedLines, out IReadOnlyList<Alias> aliases,
+        int textureSlots = MaxPixelTextureSlots) =>
+        Rewrite(hlsl, entryPoint, skippedLines, expandedView: null, out aliases, textureSlots);
 
     /// <summary>
-    /// <see cref="Rewrite(string, string?, IReadOnlySet{int}?, out IReadOnlyList{Alias})"/>, with what each
+    /// <see cref="Rewrite(string, string?, IReadOnlySet{int}?, out IReadOnlyList{Alias}, int)"/>, with what each
     /// function calls read from <paramref name="expandedView"/>: the managed preprocessor's compiler-input
     /// view of <paramref name="hlsl"/> (<c>FxMacroPreprocessor.SkippedLines</c>), every macro expanded and
     /// line N holding what line N of <paramref name="hlsl"/> holds. A helper called only through a macro
@@ -224,8 +231,11 @@ internal static class VulkanTextureSamplerBindingRewriter
     /// <see langword="null"/> reads the calls off <paramref name="hlsl"/> itself (a text with no macros).
     /// The caller passes an entry point only when that view is trusted: one built on a conditional over a
     /// macro only DXC defines may not be the code DXC compiles, and the whole file then counts.
+    /// <paramref name="textureSlots"/> is the compiled stage's texture-slot count
+    /// (<see cref="MaxPixelTextureSlots"/> or <see cref="MaxVertexTextureSlots"/>): no alias is put past it.
     /// </summary>
-    internal static string Rewrite(string hlsl, string? entryPoint, IReadOnlySet<int>? skippedLines, string? expandedView, out IReadOnlyList<Alias> aliases)
+    internal static string Rewrite(string hlsl, string? entryPoint, IReadOnlySet<int>? skippedLines, string? expandedView, out IReadOnlyList<Alias> aliases,
+        int textureSlots = MaxPixelTextureSlots)
     {
         aliases = Array.Empty<Alias>();
         hlsl = StripRegisterSpaces(hlsl);
@@ -459,8 +469,11 @@ internal static class VulkanTextureSamplerBindingRewriter
             // its lowest (its DirectX register), and an alias never lands on slot 0, where SpriteBatch
             // binds its sprite over whatever the effect parameter set (`Tex : register(t2)` read through
             // three samplers used to put its aliases on slots 0 and 1).
+            // Never past the stage's last texture slot (see MaxPixelTextureSlots): a texture on t15 read
+            // through a second sampler used to put its alias on slot 16, which no texture collection has.
             else if (aliasOriginal.TryGetValue(tex, out string? original) && registerIndex.TryGetValue(original, out int originalIndex))
-                index = NextFreeAbove(originalIndex, reserved, registerIndex);
+                index = AliasSlot(originalIndex, textureSlots, reserved, registerIndex)
+                        ?? ThrowNoAliasSlot(hlsl, declaredAliases.First(a => a.Name == tex), textureSlots);
             else
                 index = NextFree(ref next, reserved, registerIndex);
 
@@ -560,19 +573,21 @@ internal static class VulkanTextureSamplerBindingRewriter
 
     /// <summary>
     /// Whether an offset is code the shader whose entry point is <paramref name="entryPoint"/>
-    /// can execute: outside every function body (declarations, techniques, a <c>#define</c>), or inside
+    /// can execute: outside every function body (declarations, techniques), or inside
     /// a function reachable from the entry point through calls by name (every overload of a called name
     /// counts, the conservative direction). With no entry point, or one the view does not define,
     /// everything is in scope.
     ///
     /// <para>The calls are read from <paramref name="expandedView"/> when there is one (see
-    /// <see cref="Rewrite(string, string?, IReadOnlySet{int}?, string?, out IReadOnlyList{Alias})"/>), where a
+    /// <see cref="Rewrite(string, string?, IReadOnlySet{int}?, string?, out IReadOnlyList{Alias}, int)"/>), where a
     /// call a macro makes is literal; each function of <paramref name="masked"/> is then matched to the
     /// view's function whose header is on the same line (the view keeps every line where it was). A
-    /// function the match cannot find counts as reachable. A member call (<c>h.Get(uv)</c>,
-    /// <c>S::Get(uv)</c>) reaches only struct methods of that name and a bare call only free functions
-    /// (and, from inside a method, methods too), so a dead free function named like a called method
-    /// stays dead.</para>
+    /// function the match cannot find counts as reachable. A member call (<c>h.Get(uv)</c>) reaches only
+    /// the methods of that name (of any struct, class or interface, anonymous included) and a bare call
+    /// from a free function only non-methods, so a dead free function named like a called method stays
+    /// dead; a qualified call (<c>Lib::H(uv)</c>, <c>S::Get(uv)</c>, <c>::F(uv)</c>) and a bare call from
+    /// inside a method reach every definition of the name. A <c>#define</c>'s body counts where the view
+    /// expands it in code this shader reaches.</para>
     /// </summary>
     private static Func<int, bool> ReachableScope(string masked, string? expandedView, string? entryPoint, IReadOnlySet<int>? skippedLines)
     {
@@ -582,7 +597,7 @@ internal static class VulkanTextureSamplerBindingRewriter
         string view = expandedView is null ? masked : ResourceArrayDiagnostics.MaskCommentsAndStrings(expandedView);
         Func<int, bool> viewLive = LiveLines(view, skippedLines);
         var viewBodies = Functions(view);
-        if (!viewBodies.Any(b => b.Name == entryPoint && !b.IsMethod))
+        if (!viewBodies.Any(b => b.Name == entryPoint && b.Kind != FunctionKind.Method))
             return _ => true;
 
         var byName = new Dictionary<string, List<int>>(StringComparer.Ordinal);
@@ -595,13 +610,28 @@ internal static class VulkanTextureSamplerBindingRewriter
 
         var reached = new bool[viewBodies.Count];
         var queue = new Queue<int>();
-        void Reach(string name, bool methods, bool freeFunctions)
+        // Which definitions a call can resolve to. Only a member call (`h.Get(uv)`) is narrowed, to
+        // methods (and out-of-line qualified definitions, which may be methods); a bare call from a free
+        // function is narrowed to non-methods, so a dead free function named like a called method stays
+        // dead, and the reverse. A qualified call (`Lib::H(uv)`, `S::Get(uv)`, `::F(uv)`) and a bare
+        // call from inside a method reach every definition of the name: a namespace's function and a
+        // static method are both spelled `X::Name`, and a method may call a free function or a sibling.
+        // When in doubt a definition is reached, the safe direction (a reached function's Sample calls
+        // pair; an unreached one's are ignored).
+        void Reach(string name, Qualifier call, FunctionKind caller)
         {
             if (!byName.TryGetValue(name, out var candidates))
                 return;
             foreach (int i in candidates)
             {
-                if (!reached[i] && (viewBodies[i].IsMethod ? methods : freeFunctions))
+                FunctionKind kind = viewBodies[i].Kind;
+                bool resolves = call switch
+                {
+                    Qualifier.Member => kind != FunctionKind.Free,
+                    Qualifier.Scope => true,
+                    _ => caller != FunctionKind.Free || kind != FunctionKind.Method,
+                };
+                if (!reached[i] && resolves)
                 {
                     reached[i] = true;
                     queue.Enqueue(i);
@@ -609,7 +639,7 @@ internal static class VulkanTextureSamplerBindingRewriter
             }
         }
 
-        Reach(entryPoint, methods: false, freeFunctions: true);
+        Reach(entryPoint, Qualifier.None, FunctionKind.Free);
         while (queue.Count > 0)
         {
             var body = viewBodies[queue.Dequeue()];
@@ -618,8 +648,7 @@ internal static class VulkanTextureSamplerBindingRewriter
                 int at = body.Start + call.Index;
                 if (!viewLive(at))
                     continue; // a call an untaken #if drops reaches nothing
-                bool member = IsMemberAccess(view, at);
-                Reach(call.Groups["fn"].Value, methods: member || body.IsMethod, freeFunctions: !member);
+                Reach(call.Groups["fn"].Value, QualifierOf(view, at), body.Kind);
             }
         }
 
@@ -655,13 +684,56 @@ internal static class VulkanTextureSamplerBindingRewriter
             }
         }
 
+        // A #define's body is code wherever the macro is used, and the view holds every use expanded. So
+        // a Sample call in a body counts only when the view samples that texture through that sampler on
+        // a line this shader can run (live, outside every #define, and outside every function the entry
+        // point does not reach), and any other name in a body only when the view names it on such a line.
+        // A macro used only by another entry point's code (`#define SAMPLE_POINT(uv) Tex.Sample(Point, uv)`
+        // called only by PS_Point) then pairs nothing for PS_Linear, which used to alias its own sampler
+        // away from slot 0. With no view (a text with no macros to expand) a body counts everywhere.
         var defines = DefineSpans(masked);
+        Func<int, bool> defineBodyUsed = _ => true;
+        if (expandedView is not null && defines.Count > 0)
+        {
+            var viewDefines = DefineSpans(view);
+            bool ViewInScope(int at)
+            {
+                if (!viewLive(at) || viewDefines.Any(d => at >= d.Start && at < d.End))
+                    return false;
+                for (int i = 0; i < viewBodies.Count; i++)
+                {
+                    if (at > viewBodies[i].Start && at < viewBodies[i].End)
+                        return reached[i];
+                }
+                return true;
+            }
+
+            var viewPairs = new HashSet<(string, string)>(
+                SampleCall.Matches(view).Where(m => ViewInScope(m.Index)).Select(m => (m.Groups[1].Value, m.Groups[2].Value)));
+            var viewNames = new Dictionary<string, bool>(StringComparer.Ordinal);
+            defineBodyUsed = offset =>
+            {
+                Match sample = SampleCallAt.Match(masked, offset);
+                if (sample.Success)
+                    return viewPairs.Contains((sample.Groups[1].Value, sample.Groups[2].Value));
+                Match name = IdentifierAt.Match(masked, offset);
+                if (!name.Success)
+                    return true;
+                if (!viewNames.TryGetValue(name.Value, out bool used))
+                {
+                    used = Regex.Matches(view, $@"\b{Regex.Escape(name.Value)}\b").Any(m => ViewInScope(m.Index));
+                    viewNames[name.Value] = used;
+                }
+                return used;
+            };
+        }
+
         return offset =>
         {
             foreach (var (start, end) in defines)
             {
                 if (offset >= start && offset < end)
-                    return true; // a macro's body is used wherever the macro is
+                    return defineBodyUsed(offset);
             }
             for (int i = 0; i < rawBodies.Count; i++)
             {
@@ -672,21 +744,23 @@ internal static class VulkanTextureSamplerBindingRewriter
         };
     }
 
-    // `struct S {` (and `class`/`interface`): the methods inside are reached only by a member call.
+    // `struct S {` (and `class`/`interface`, with or without a base), or an anonymous `struct {`
+    // (`typedef struct { ... } H;`): the methods inside are not reached by a bare call from a free function.
     private static readonly Regex StructHeader =
-        new(@"\b(?:struct|class|interface)\s+[A-Za-z_]\w*\s*(?::\s*[A-Za-z_]\w*\s*)?\{", RegexOptions.Compiled);
+        new(@"\b(?:struct|class|interface)\b\s*(?:[A-Za-z_]\w*\s*)?(?::\s*[A-Za-z_]\w*\s*)?\{", RegexOptions.Compiled);
 
-    // A #define directive's first line.
+    // A #define directive's first line. A line starts after '\n' (Multiline's `^`) or after a lone
+    // '\r', which ends a line as LineOf and FxMacroPreprocessor count them (a CR-only file).
     private static readonly Regex DefineDirective =
-        new(@"^[ \t]*#[ \t]*define\b", RegexOptions.Compiled | RegexOptions.Multiline);
+        new(@"(?:^|(?<=\r))[ \t]*#[ \t]*define\b", RegexOptions.Compiled | RegexOptions.Multiline);
 
     /// <summary>
     /// The outermost function bodies of <paramref name="masked"/>: name, offset of the name, the
-    /// braces, and whether it is a struct method (declared inside a <c>struct</c>, or as <c>S::Name</c>).
+    /// braces, and where it is defined (<see cref="FunctionKind"/>).
     /// A header or a brace inside a <c>#define</c> is not one: a function a macro defines is expanded
     /// wherever the macro is used.
     /// </summary>
-    private static List<(string Name, int HeaderAt, int Start, int End, bool IsMethod)> Functions(string masked)
+    private static List<(string Name, int HeaderAt, int Start, int End, FunctionKind Kind)> Functions(string masked)
     {
         var structural = new System.Text.StringBuilder(masked);
         foreach (var (start, end) in DefineSpans(masked))
@@ -708,7 +782,7 @@ internal static class VulkanTextureSamplerBindingRewriter
                 structs.Add((open, close));
         }
 
-        var bodies = new List<(string Name, int HeaderAt, int Start, int End, bool IsMethod)>();
+        var bodies = new List<(string Name, int HeaderAt, int Start, int End, FunctionKind Kind)>();
         foreach (Match m in FunctionHeader.Matches(text))
         {
             int start = m.Index + m.Length - 1;
@@ -716,8 +790,10 @@ internal static class VulkanTextureSamplerBindingRewriter
             if (end <= start)
                 continue;
             int at = m.Groups["fn"].Index;
-            bool method = IsMemberAccess(text, at) || structs.Any(s => at > s.Start && at < s.End);
-            bodies.Add((m.Groups["fn"].Value, at, start, end, method));
+            FunctionKind kind = QualifierOf(text, at) != Qualifier.None ? FunctionKind.Qualified
+                : structs.Any(s => at > s.Start && at < s.End) ? FunctionKind.Method
+                : FunctionKind.Free;
+            bodies.Add((m.Groups["fn"].Value, at, start, end, kind));
         }
         return bodies.Where(b => !bodies.Any(o => o.Start < b.Start && b.End < o.End)).ToList();
     }
@@ -748,14 +824,29 @@ internal static class VulkanTextureSamplerBindingRewriter
         return spans;
     }
 
-    // Whether the identifier at `at` follows a `.` or `::` (whitespace between allowed).
-    private static bool IsMemberAccess(string text, int at)
+    // What the identifier at `at` follows: a `.` (a member call), a `::` (a qualified name: a namespace's
+    // function, a static method, a global `::F`) or neither (whitespace between allowed).
+    private static Qualifier QualifierOf(string text, int at)
     {
         int i = at - 1;
         while (i >= 0 && char.IsWhiteSpace(text[i]))
             i--;
-        return i >= 0 && (text[i] == '.' || (text[i] == ':' && i > 0 && text[i - 1] == ':'));
+        if (i >= 0 && text[i] == '.')
+            return Qualifier.Member;
+        if (i > 0 && text[i] == ':' && text[i - 1] == ':')
+            return Qualifier.Scope;
+        return Qualifier.None;
     }
+
+    private enum Qualifier { None, Member, Scope }
+
+    /// <summary>
+    /// Where a function is defined: inside the braces of a struct, class or interface (named or
+    /// anonymous), out of line under a qualified name (<c>float4 H::Get(...)</c>, <c>float4 Lib::F(...)</c>:
+    /// a method or a namespace's function, not decidable here), or anywhere else (a free function, a
+    /// namespace's included).
+    /// </summary>
+    private enum FunctionKind { Free, Method, Qualified }
 
     /// <summary>
     /// Whether an offset of <paramref name="text"/> is on a line the compile keeps: false only on a
@@ -821,14 +912,60 @@ internal static class VulkanTextureSamplerBindingRewriter
         return next;
     }
 
-    // The lowest index above `floor` nobody has reserved or been given.
-    private static int NextFreeAbove(int floor, HashSet<int> reserved, Dictionary<string, int> assigned)
+    /// <summary>
+    /// The slot for an alias of the texture on <paramref name="floor"/>: the lowest free one above it, so
+    /// the texture's own slot stays its lowest (its DirectX register) and an alias keeps off slot 0, where
+    /// SpriteBatch binds its sprite over whatever the effect parameter set. Above the stage's last slot
+    /// (<paramref name="slots"/>) it falls back to the lowest free slot below the texture's, slot 0 last;
+    /// null when every slot is taken.
+    /// </summary>
+    private static int? AliasSlot(int floor, int slots, HashSet<int> reserved, Dictionary<string, int> assigned)
     {
-        int index = floor + 1;
-        while (reserved.Contains(index) || assigned.ContainsValue(index))
-            index++;
-        return index;
+        bool Free(int index) => !reserved.Contains(index) && !assigned.ContainsValue(index);
+        for (int index = floor + 1; index < slots; index++)
+        {
+            if (Free(index))
+                return index;
+        }
+        for (int index = 1; index < Math.Min(floor, slots); index++)
+        {
+            if (Free(index))
+                return index;
+        }
+        return floor > 0 && Free(0) ? 0 : null;
     }
+
+    private static int ThrowNoAliasSlot(string hlsl, (string Texture, string Sampler, string Name, int TexAt) alias, int slots)
+    {
+        var (file, line, column) = Locate(hlsl, alias.TexAt);
+        throw new VulkanSamplerSharingException(new ShaderError(
+            File:    file,
+            Line:    line,
+            Column:  column,
+            Code:    NoAliasSlotCode,
+            Message: $"Vulkan: texture '{alias.Texture}' is sampled through a second sampler, '{alias.Sampler}', and every one of "
+                   + $"the stage's {slots} texture slots is already taken. MonoGame's DesktopVK binds a texture and a sampler as "
+                   + $"one combined descriptor, so this pairing needs a second descriptor holding the same texture on a slot of "
+                   + $"its own, and its texture collection has no slot past {slots - 1}. Sample '{alias.Texture}' through one "
+                   + $"sampler in this shader, or free a texture slot."));
+    }
+
+    /// <summary>The diagnostic for a texture alias no texture slot is left for.</summary>
+    internal const string NoAliasSlotCode = "SD0237";
+
+    /// <summary>
+    /// The texture slots of a pixel shader in MonoGame's DesktopVK: <c>MaxTextureSlots</c> is 16
+    /// (<c>MG_GraphicsDevice_GetCaps</c> in 3.8.5's <c>native/monogame/vulkan/MGG_Vulkan.cpp</c>, which
+    /// also sizes the native <c>textures[stage][MAX_TEXTURE_SLOTS]</c> table at 16), and so is the Vulkan
+    /// shader header's texture-type table (<see cref="ShadowDusk.Core.VulkanShaderCodeWrapper"/>).
+    /// </summary>
+    internal const int MaxPixelTextureSlots = 16;
+
+    /// <summary>
+    /// The texture slots of a vertex shader in MonoGame's DesktopVK: <c>MaxVertexTextureSlots</c> is 8
+    /// (same source), the size of <c>GraphicsDevice.VertexTextures</c>.
+    /// </summary>
+    internal const int MaxVertexTextureSlots = 8;
 
     // ---- Helper-function pairing ----------------------------------------------------
 

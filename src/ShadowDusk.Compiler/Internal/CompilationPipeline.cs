@@ -615,7 +615,7 @@ internal sealed class CompilationPipeline
         var runWarnings  = new List<ShaderError>(preprocessWarnings);
         var seenWarnings = new HashSet<(string File, int Line, int Column, string Code, string Message)>();
 
-        var vulkanSources = new Dictionary<string, PreprocessedSource>(StringComparer.Ordinal);
+        var vulkanSources = new Dictionary<(string, ShaderStage), PreprocessedSource>();
         // The lines an untaken #if drops from the text DXC compiles, and the macro-expanded view the
         // rewrite reads each function's calls from, both from the managed preprocessor with this
         // compile's macros (they head the flattened text). Unknown (null) when the view cannot be
@@ -625,9 +625,11 @@ internal sealed class CompilationPipeline
         // released rewrite did.
         (IReadOnlySet<int> Lines, string View)? vulkanLiveCode = null;
         bool vulkanLiveCodeRead = false;
-        PreprocessedSource VulkanShaderSource(string entryPoint)
+        // Keyed by stage too: a vertex shader has fewer texture slots than a pixel shader
+        // (VulkanTextureSamplerBindingRewriter.MaxVertexTextureSlots), and no alias goes past them.
+        PreprocessedSource VulkanShaderSource(string entryPoint, ShaderStage stage)
         {
-            if (vulkanSources.TryGetValue(entryPoint, out PreprocessedSource? cached))
+            if (vulkanSources.TryGetValue((entryPoint, stage), out PreprocessedSource? cached))
                 return cached;
             if (!vulkanLiveCodeRead)
             {
@@ -637,9 +639,12 @@ internal sealed class CompilationPipeline
                     vulkanLiveCode = (skipped.Value.Lines, skipped.Value.View);
             }
             IReadOnlyList<VulkanTextureSamplerBindingRewriter.Alias> aliases;
+            int textureSlots = stage == ShaderStage.Vertex
+                ? VulkanTextureSamplerBindingRewriter.MaxVertexTextureSlots
+                : VulkanTextureSamplerBindingRewriter.MaxPixelTextureSlots;
             string text = vulkanLiveCode is { } live
-                ? VulkanTextureSamplerBindingRewriter.Rewrite(preprocessed.Text, entryPoint, live.Lines, live.View, out aliases)
-                : VulkanTextureSamplerBindingRewriter.Rewrite(preprocessed.Text, entryPoint: null, skippedLines: null, out aliases);
+                ? VulkanTextureSamplerBindingRewriter.Rewrite(preprocessed.Text, entryPoint, live.Lines, live.View, out aliases, textureSlots)
+                : VulkanTextureSamplerBindingRewriter.Rewrite(preprocessed.Text, entryPoint: null, skippedLines: null, out aliases, textureSlots);
             foreach (var alias in aliases)
             {
                 var (file, line, column) = VulkanTextureSamplerBindingRewriter.Locate(text, alias.Offset);
@@ -656,7 +661,7 @@ internal sealed class CompilationPipeline
                               "the first sampler.",
                     Severity: ShaderErrorSeverity.Warning)]);
             }
-            return vulkanSources[entryPoint] = preprocessed with { Text = text };
+            return vulkanSources[(entryPoint, stage)] = preprocessed with { Text = text };
         }
 
         // OpenGL sampler-register reservations (issue #283): which modern
@@ -809,7 +814,7 @@ internal sealed class CompilationPipeline
                         dxcCompiler,
                         dxbcCompiler,
                         glslTranspiler,
-                        vulkan ? VulkanShaderSource(pass.VertexEntryPoint) : glCompileSource,
+                        vulkan ? VulkanShaderSource(pass.VertexEntryPoint, ShaderStage.Vertex) : glCompileSource,
                         pass.VertexEntryPoint,
                         ShaderStage.Vertex,
                         options.Target,
@@ -870,7 +875,7 @@ internal sealed class CompilationPipeline
                         dxcCompiler,
                         dxbcCompiler,
                         glslTranspiler,
-                        vulkan ? VulkanShaderSource(pass.PixelEntryPoint) : glCompileSource,
+                        vulkan ? VulkanShaderSource(pass.PixelEntryPoint, ShaderStage.Pixel) : glCompileSource,
                         pass.PixelEntryPoint,
                         ShaderStage.Pixel,
                         options.Target,
@@ -999,7 +1004,7 @@ internal sealed class CompilationPipeline
 
                     // The text this stage was compiled from (on Vulkan its own per-shader rewrite), for locating diagnostics.
                     string stageSource = vulkan
-                        ? VulkanShaderSource(blobIndex == vsIndex ? pass.VertexEntryPoint! : pass.PixelEntryPoint!).Text
+                        ? VulkanShaderSource(blobIndex == vsIndex ? pass.VertexEntryPoint! : pass.PixelEntryPoint!, blobIndex == vsIndex ? ShaderStage.Vertex : ShaderStage.Pixel).Text
                         : glCompileSource.Text;
 
                     // Issue #324: an ARRAY of textures or samplers has no representation in

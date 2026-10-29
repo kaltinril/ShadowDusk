@@ -810,6 +810,200 @@ public sealed class VulkanTextureSamplerBindingRewriterTests
         aliases.ShouldBeEmpty();
     }
 
+    [Theory]
+    [InlineData("namespace Lib { float4 Get(float2 uv) { return SpriteTexture.Sample(S, uv); } }", "Lib::Get(uv)")]
+    [InlineData("struct Helper { static float4 Get(float2 uv) { return SpriteTexture.Sample(S, uv); } };", "Helper::Get(uv)")]
+    [InlineData("namespace Lib { struct Helper { static float4 Get(float2 uv) { return SpriteTexture.Sample(S, uv); } }; }", "Lib::Helper::Get(uv)")]
+    [InlineData("typedef struct { float4 Get(float2 uv) { return SpriteTexture.Sample(S, uv); } } Helper;", "h.Get(uv)")]
+    [InlineData("class Helper : Base { float4 Get(float2 uv) { return SpriteTexture.Sample(S, uv); } };", "h.Get(uv)")]
+    public void Rewrite_AHelperReachedByAQualifiedOrAMemberCall_IsReachable(string helper, string call)
+    {
+        // A `::` call reaches a namespace's function and a static method alike, and a member call reaches
+        // the method of an anonymous struct. `Lib::Get` used to be read as a member call that reaches
+        // methods only, and an anonymous struct's method as a free function no member call reaches: the
+        // helper was dead, S was moved off SpriteTexture's register, and DXC split the pair (SD0232).
+        string hlsl = "Texture2D SpriteTexture; SamplerState U; SamplerState S;\n" +
+                      helper + "\n" +
+                      "float4 Unused(float2 uv) { return SpriteTexture.Sample(U, uv); }\n" +
+                      $"float4 MainPS(float2 uv : TEXCOORD0) : SV_Target0 {{ Helper h; return {call}; }}\n";
+
+        string result = RewriteFor(hlsl, "MainPS", out var aliases);
+
+        result.ShouldContain("Texture2D SpriteTexture : register(t0);", Case.Sensitive);
+        result.ShouldContain("SamplerState S : register(s0);", Case.Sensitive);
+        result.ShouldNotContain("_SDVkAlias", Case.Sensitive);
+        aliases.ShouldBeEmpty();
+    }
+
+    [Fact]
+    public void Rewrite_ASecondTextureOnASharedSamplerInANamespaceHelper_IsSD0028()
+    {
+        // The unreached helper used to drop B's pairing: A + S on one descriptor, B a lone image, while
+        // the shader samples B through S (a silent wrong render; 0.22.1 refused it).
+        const string hlsl = """
+            Texture2D A; Texture2D B; SamplerState S;
+            namespace Lib { float4 H(float2 uv) { return B.Sample(S, uv); } }
+            float4 PS(float2 uv : TEXCOORD0) : SV_Target { return A.Sample(S, uv) + Lib::H(uv); }
+            """;
+
+        var ex = Should.Throw<VulkanSamplerSharingException>(() => RewriteFor(hlsl, "PS", out _));
+
+        ex.Error.Code.ShouldBe("SD0028");
+    }
+
+    [Fact]
+    public void Rewrite_AMemberCall_DoesNotReachANamespacesFreeFunctionOfTheSameName()
+    {
+        // Only `.` is narrowed: `h.Get(uv)` reaches the method, not the namespace's free Get.
+        const string hlsl = """
+            Texture2D SpriteTexture; SamplerState S; SamplerState U;
+            struct Helper { float4 Get(float2 uv) { return SpriteTexture.Sample(S, uv); } };
+            namespace Lib { float4 Get(float2 uv) { return SpriteTexture.Sample(U, uv); } }
+            float4 MainPS(float2 uv : TEXCOORD0) : SV_Target0 { Helper h; return h.Get(uv); }
+            """;
+
+        string result = RewriteFor(hlsl, "MainPS", out var aliases);
+
+        result.ShouldContain("SamplerState S : register(s0);", Case.Sensitive);
+        result.ShouldNotContain("_SDVkAlias", Case.Sensitive);
+        aliases.ShouldBeEmpty();
+    }
+
+    [Theory]
+    [InlineData("\n")]
+    [InlineData("\r\n")]
+    [InlineData("\r")]
+    public void Rewrite_AMacroBodyNoReachableCodeExpands_PairsNothing(string newline)
+    {
+        // SAMPLE_POINT is used only by PS_Point; for PS_Linear its body is not code. It used to count
+        // everywhere: its Tex-through-PointSampler came first and PS_Linear's own sampler went to an
+        // alias on slot 1, which SpriteBatch never fills. A CR-only file's #define is a #define too.
+        string hlsl = string.Join(newline,
+            "Texture2D SpriteTexture; SamplerState PointSampler; SamplerState SpriteSampler;",
+            "#define SAMPLE_POINT(uv) SpriteTexture.Sample(PointSampler, uv)",
+            "float4 PS_Linear(float2 uv : TEXCOORD0) : SV_Target { return SpriteTexture.Sample(SpriteSampler, uv); }",
+            "float4 PS_Point(float2 uv : TEXCOORD0) : SV_Target { return SAMPLE_POINT(uv); }",
+            "");
+        string view = string.Join(newline,
+            "Texture2D SpriteTexture; SamplerState PointSampler; SamplerState SpriteSampler;",
+            "",
+            "float4 PS_Linear(float2 uv : TEXCOORD0) : SV_Target { return SpriteTexture.Sample(SpriteSampler, uv); }",
+            "float4 PS_Point(float2 uv : TEXCOORD0) : SV_Target { return SpriteTexture.Sample(PointSampler, uv); }",
+            "");
+
+        string linear = VulkanTextureSamplerBindingRewriter.Rewrite(hlsl, "PS_Linear", new HashSet<int>(), view, out var linearAliases);
+        string point = VulkanTextureSamplerBindingRewriter.Rewrite(hlsl, "PS_Point", new HashSet<int>(), view, out var pointAliases);
+
+        linear.ShouldContain("Texture2D SpriteTexture : register(t0);", Case.Sensitive);
+        linear.ShouldContain("SamplerState SpriteSampler : register(s0);", Case.Sensitive);
+        linear.ShouldNotContain("_SDVkAlias", Case.Sensitive);
+        linearAliases.ShouldBeEmpty();
+        point.ShouldContain("Texture2D SpriteTexture : register(t0);", Case.Sensitive);
+        point.ShouldContain("SamplerState PointSampler : register(s0);", Case.Sensitive);
+        point.ShouldNotContain("_SDVkAlias", Case.Sensitive);
+        pointAliases.ShouldBeEmpty();
+    }
+
+    [Fact]
+    public void Rewrite_AMacroBodyOnlyTheVertexShaderReaches_PairsNothingForThePixelShader()
+    {
+        const string hlsl = """
+            Texture2D Tex; SamplerState A; SamplerState B;
+            #define VSAMP(uv) Tex.SampleLevel(B, uv, 0)
+            float4 HV(float2 uv) { return VSAMP(uv); }
+            float4 HP(float2 uv) { return Tex.Sample(A, uv); }
+            #define CALLV HV
+            float4 VS(float2 uv : TEXCOORD0) : SV_Position { return CALLV(uv); }
+            float4 PS(float2 uv : TEXCOORD0) : SV_Target { return HP(uv); }
+            """;
+        const string view = """
+            Texture2D Tex; SamplerState A; SamplerState B;
+
+            float4 HV(float2 uv) { return Tex.SampleLevel(B, uv, 0); }
+            float4 HP(float2 uv) { return Tex.Sample(A, uv); }
+
+            float4 VS(float2 uv : TEXCOORD0) : SV_Position { return HV(uv); }
+            float4 PS(float2 uv : TEXCOORD0) : SV_Target { return HP(uv); }
+            """;
+
+        string ps = VulkanTextureSamplerBindingRewriter.Rewrite(hlsl, "PS", new HashSet<int>(), view, out var psAliases);
+        string vs = VulkanTextureSamplerBindingRewriter.Rewrite(hlsl, "VS", new HashSet<int>(), view, out var vsAliases);
+
+        ps.ShouldContain("SamplerState A : register(s0);", Case.Sensitive);
+        ps.ShouldNotContain("_SDVkAlias", Case.Sensitive);
+        psAliases.ShouldBeEmpty();
+        vs.ShouldContain("SamplerState B : register(s0);", Case.Sensitive);
+        vs.ShouldNotContain("_SDVkAlias", Case.Sensitive);
+        vsAliases.ShouldBeEmpty();
+    }
+
+    [Fact]
+    public void Rewrite_AMacroBodyAReachableFunctionExpands_StillPairs()
+    {
+        // The safe direction: a macro the shader does use is code, its pairing counts (first in the
+        // file, it decides Tex's sampler), and a second sampler on a direct call is aliased.
+        const string hlsl = """
+            Texture2D Tex; SamplerState A; SamplerState B;
+            #define SAMPLE_B(uv) Tex.Sample(B, uv)
+            float4 PS(float2 uv : TEXCOORD0) : SV_Target { return SAMPLE_B(uv) + Tex.Sample(A, uv); }
+            """;
+        const string view = """
+            Texture2D Tex; SamplerState A; SamplerState B;
+
+            float4 PS(float2 uv : TEXCOORD0) : SV_Target { return Tex.Sample(B, uv) + Tex.Sample(A, uv); }
+            """;
+
+        string result = VulkanTextureSamplerBindingRewriter.Rewrite(hlsl, "PS", new HashSet<int>(), view, out var aliases);
+
+        result.ShouldContain("SamplerState B : register(s0);", Case.Sensitive);
+        result.ShouldContain("SamplerState A : register(s1);", Case.Sensitive);
+        aliases.ShouldHaveSingleItem().Sampler.ShouldBe("A");
+    }
+
+    [Theory]
+    [InlineData(15, 2, 16, new[] { 1 })]
+    [InlineData(14, 3, 16, new[] { 15, 1 })]
+    [InlineData(7, 2, 8, new[] { 1 })]
+    [InlineData(2, 3, 16, new[] { 3, 4 })]
+    public void Rewrite_AnAlias_StaysInsideTheStagesTextureSlots(int register, int samplers, int slots, int[] expected)
+    {
+        // MonoGame's DesktopVK has 16 pixel and 8 vertex texture slots. Past the last one an alias takes
+        // the lowest free slot below its texture, slot 0 last (SpriteBatch binds its sprite there).
+        string[] names = ["A", "B", "C"];
+        string hlsl = $"Texture2D Tex : register(t{register}); " + string.Join(" ", names.Take(samplers).Select(n => $"SamplerState {n};")) + "\n" +
+                      "float4 MainPS(float2 uv : TEXCOORD0) : SV_Target0 { return " +
+                      string.Join(" + ", names.Take(samplers).Select(n => $"Tex.Sample({n}, uv)")) + "; }\n";
+
+        string result = VulkanTextureSamplerBindingRewriter.Rewrite(hlsl, "MainPS", null, out var aliases, slots);
+
+        aliases.Count.ShouldBe(expected.Length);
+        for (int i = 0; i < expected.Length; i++)
+            result.ShouldContain($"Texture2D Tex_SDVkAlias{i + 1} : register(t{expected[i]});", Case.Sensitive);
+        result.ShouldContain($"SamplerState A : register(s{register});", Case.Sensitive);
+    }
+
+    [Fact]
+    public void Rewrite_AnAliasNoTextureSlotIsLeftFor_IsSD0237()
+    {
+        // Eight textures fill a vertex shader's eight slots; Tex's second sampler has nowhere to go.
+        string declarations = string.Concat(Enumerable.Range(1, 7).Select(i => $"Texture2D T{i} : register(t{i}); SamplerState S{i};"));
+        string reads = string.Concat(Enumerable.Range(1, 7).Select(i => $" + T{i}.SampleLevel(S{i}, uv, 0)"));
+        string hlsl = "Texture2D Tex : register(t0); SamplerState A; SamplerState B; " + declarations + "\n" +
+                      "float4 MainVS(float2 uv : TEXCOORD0) : SV_Position { return Tex.SampleLevel(A, uv, 0) + Tex.SampleLevel(B, uv, 0)" + reads + "; }\n";
+
+        var ex = Should.Throw<VulkanSamplerSharingException>(() =>
+            VulkanTextureSamplerBindingRewriter.Rewrite(hlsl, "MainVS", null, out _, VulkanTextureSamplerBindingRewriter.MaxVertexTextureSlots));
+
+        ex.Error.Code.ShouldBe("SD0237");
+        ex.Error.Message.ShouldContain("texture 'Tex' is sampled through a second sampler, 'B'", Case.Sensitive);
+        ex.Error.Line.ShouldBe(2);
+
+        // The same shader as a pixel shader has slots to spare.
+        VulkanTextureSamplerBindingRewriter.Rewrite(hlsl, "MainVS", null, out var aliases)
+            .ShouldContain("Texture2D Tex_SDVkAlias1 : register(t8);", Case.Sensitive);
+        aliases.ShouldHaveSingleItem();
+    }
+
     [Fact]
     public void Rewrite_AnAlias_TakesAnIndexAboveItsTexture()
     {

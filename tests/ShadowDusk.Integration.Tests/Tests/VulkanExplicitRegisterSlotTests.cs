@@ -775,18 +775,226 @@ public sealed class VulkanExplicitRegisterSlotTests
             .Select(b => b.DescriptorType).ShouldBe([CombinedImageSampler]);
     }
 
-    [DxcPredefinesGnucFact]
-    public async Task Vulkan_APairingUnderIfdefGnuc_IsTheOneDxcCompiles()
+    // ---- Qualified calls and anonymous structs reach the helper (review of cb0fda33) ----------------
+
+    // A helper that makes one Sample call (%SAMPLE%), defined so that only a qualified call or a member call on an
+    // anonymous struct reaches it, and how the pixel shader calls it (%LOCAL%: `H h; ... h.Get(uv)`).
+    public static TheoryData<string, string, string> QualifiedHelpers() => new()
     {
-        // DXC predefines __GNUC__ (measured with `dxc -P`), so it compiles the first branch. Until the
-        // managed preprocessor knows that, its view drops that branch as skipped and the pairing reads
-        // the #else branch's texture instead. Skipped until FxMacroPreprocessor.IsCompilerPredefined
-        // lists __GNUC__ (see DxcPredefinesGnucFactAttribute); then the whole file is paired and the
-        // texture DXC samples is the one bound.
+        { "namespace", "namespace Lib { float4 H(float2 uv) { return %SAMPLE%; } }", "Lib::H(uv)" },
+        { "anonymous struct", "typedef struct { float4 Get(float2 uv) { return %SAMPLE%; } } H;", "%LOCAL%" },
+        { "static method", "struct H { static float4 Get(float2 uv) { return %SAMPLE%; } };", "H::Get(uv)" },
+    };
+
+    private static string QualifiedProbe(string helper, string call, string sample, string declarations, string extra = "")
+    {
+        string body = call == "%LOCAL%"
+            ? "{ H h; return " + extra + "h.Get(uv); }"
+            : "{ return " + extra + call + "; }";
+        return declarations + "\n" +
+               helper.Replace("%SAMPLE%", sample, StringComparison.Ordinal) + "\n" +
+               "float4 PS(float4 p : SV_Position, float2 uv : TEXCOORD0) : SV_Target " + body + "\n" +
+               "technique T { pass P { PixelShader = compile ps_4_0 PS(); } }\n";
+    }
+
+    [Theory]
+    [MemberData(nameof(QualifiedHelpers))]
+    public async Task Vulkan_ASecondTextureOnASharedSamplerInAQualifiedOrAnonymousStructHelper_IsSD0028(string name, string helper, string call)
+    {
+        // `Lib::H(uv)` was read as a member call and reached only struct methods, and an anonymous
+        // struct's method counted as a free function a member call never reaches: either way the helper
+        // was dead, B's pairing was dropped, and the shader compiled A + S at binding 32 with B a lone
+        // SAMPLED_IMAGE at 33 (sampler slot 255) while it samples B through S, a silent wrong render.
+        // 0.22.1 refuses it.
+        string source = QualifiedProbe(helper, call, "B.Sample(S, uv)", "Texture2D A; Texture2D B; SamplerState S;", extra: "A.Sample(S, uv) + ");
+
+        var result = await CompileSourceAsync(source, "Qualified.fx");
+
+        result.IsFailure.ShouldBeTrue($"{name}: compiled where it must be SD0028");
+        result.Error.ShouldHaveSingleItem().Code.ShouldBe("SD0028", name);
+    }
+
+    [Theory]
+    [MemberData(nameof(QualifiedHelpers))]
+    public async Task Vulkan_APairInAQualifiedOrAnonymousStructHelper_IsOneCombinedDescriptorAtSlot0(string name, string helper, string call)
+    {
+        // The helper's Sample is the pairing (0.22.1 compiled it to one descriptor at slot 0; the
+        // unreached helper used to leave Smp a standalone sampler, SD0232). A dead free function samples
+        // Tex through U first in the file: reached by name it would alias Tex.
+        foreach (string registers in new[] { "", " : register(t0)|: register(s0)" })
+        {
+            string[] r = registers.Length == 0 ? ["", ""] : registers.Split('|');
+            string declarations = $"Texture2D Tex{r[0]}; SamplerState Smp{r[1]}; SamplerState U;\n" +
+                                  "float4 Dead(float2 uv) { return Tex.Sample(U, uv); }";
+            string source = QualifiedProbe(helper, call, "Tex.Sample(Smp, uv)", declarations);
+
+            var result = await CompileSourceAsync(source, "QualifiedPair.fx");
+
+            result.IsSuccess.ShouldBeTrue(result.IsFailure ? $"{name} '{registers}': " + string.Join("; ", result.Error.Select(e => $"{e.Code}: {e.Message}")) : "ok");
+            var subject = MgfxBlobReader.Parse(result.Value.Data);
+            MgfxSamplerRecord record = subject.Samplers.ShouldHaveSingleItem(name);
+            (subject.ParameterNames[record.Parameter], record.TextureSlot, record.SamplerSlot).ShouldBe(("Tex", (byte)0, (byte)0), name);
+            VulkanShaderCodeReader.Parse(subject.Shaders.Single().Bytecode).Bindings
+                .Select(b => (b.Binding, b.DescriptorType)).ShouldBe([(32u, CombinedImageSampler)], name);
+            result.Value.Warnings.ShouldNotContain(w => w.Code == "SD0235", name);
+        }
+    }
+
+    [Fact]
+    public async Task Vulkan_ATextureReadThroughASecondSamplerInANamespaceHelper_GetsItsAlias()
+    {
+        // A direct call through A and `Lib::H` through B: two combined descriptors bound to Tex (the
+        // unreached helper used to leave B a standalone sampler, SD0232).
         const string source = """
+            Texture2D Tex; SamplerState A; SamplerState B;
+            namespace Lib { float4 H(float2 uv) { return Tex.Sample(B, uv); } }
+            float4 PS(float4 p : SV_Position, float2 uv : TEXCOORD0) : SV_Target { return Tex.Sample(A, uv) + Lib::H(uv); }
+            technique T { pass P { PixelShader = compile ps_4_0 PS(); } }
+            """;
+
+        var result = await CompileSourceAsync(source, "NamespaceAlias.fx");
+
+        result.IsSuccess.ShouldBeTrue(result.IsFailure ? string.Join("; ", result.Error.Select(e => $"{e.Code}: {e.Message}")) : "ok");
+        var subject = MgfxBlobReader.Parse(result.Value.Data);
+        subject.Samplers.Select(s => (subject.ParameterNames[s.Parameter], s.TextureSlot, s.SamplerSlot))
+            .ShouldBe([("Tex", (byte)0, (byte)0), ("Tex", (byte)1, (byte)1)]);
+        VulkanShaderCodeReader.Parse(subject.Shaders.Single().Bytecode).Bindings
+            .Select(b => (b.Binding, b.DescriptorType)).ShouldBe([(32u, CombinedImageSampler), (33u, CombinedImageSampler)]);
+    }
+
+    // ---- An alias stays inside the stage's texture slots -----------------------------------------------
+
+    [Theory]
+    [InlineData("register(t15)", 2, new byte[] { 1, 15 })]
+    [InlineData("register(t14)", 3, new byte[] { 1, 14, 15 })]
+    public async Task Vulkan_AnAliasOfATextureNearTheLastSlot_FallsBackBelowIt_NotPastSlot15(string register, int samplers, byte[] slots)
+    {
+        // MonoGame's DesktopVK has 16 pixel texture slots; an alias used to land on slot 16 (binding 48),
+        // past every texture collection. It takes the lowest free slot below its texture instead, never 0.
+        string[] names = ["A", "B", "C"];
+        string source =
+            $"Texture2D Tex : {register}; " + string.Join(" ", names.Take(samplers).Select(n => $"SamplerState {n};")) + "\n" +
+            "float4 PS(float4 p : SV_Position, float2 uv : TEXCOORD0) : SV_Target { return " +
+            string.Join(" + ", names.Take(samplers).Select(n => $"Tex.Sample({n}, uv)")) + "; }\n" +
+            "technique T { pass P { PixelShader = compile ps_4_0 PS(); } }\n";
+
+        var result = await CompileSourceAsync(source, "AliasNearLastSlot.fx");
+
+        result.IsSuccess.ShouldBeTrue(result.IsFailure ? string.Join("; ", result.Error.Select(e => $"{e.Code}: {e.Message}")) : "ok");
+        var subject = MgfxBlobReader.Parse(result.Value.Data);
+        subject.Samplers.Select(s => s.TextureSlot).OrderBy(s => s).ShouldBe(slots);
+        subject.Samplers.ShouldAllBe(s => subject.ParameterNames[s.Parameter] == "Tex");
+        VulkanShaderCodeReader.Parse(subject.Shaders.Single().Bytecode).Bindings
+            .Select(b => (b.Binding, b.DescriptorType)).OrderBy(b => b.Binding)
+            .ShouldBe(slots.Select(s => (32u + s, CombinedImageSampler)));
+    }
+
+    // ---- A #define body counts only where its expansion is reachable ----------------------------------
+
+    [Fact]
+    public async Task Vulkan_AMacroOnlyAnotherTechniqueUses_DoesNotMoveThisShadersSpriteTexture()
+    {
+        // SAMPLE_POINT is used only by PS_Point. Its body used to count in PS_Linear too, so PS_Linear's
+        // SpriteTexture went to slot 1 behind an alias (SD0235) and SpriteBatch, which fills slot 0, drew
+        // nothing. mgfxc puts it on slot 0 in both shaders.
+        const string source = """
+            Texture2D SpriteTexture; SamplerState PointSampler; SamplerState SpriteSampler;
+            #define SAMPLE_POINT(uv) SpriteTexture.Sample(PointSampler, uv)
+            float4 PS_Linear(float4 p : SV_Position, float4 c : COLOR0, float2 uv : TEXCOORD0) : SV_Target { return SpriteTexture.Sample(SpriteSampler, uv) * c; }
+            float4 PS_Point(float4 p : SV_Position, float4 c : COLOR0, float2 uv : TEXCOORD0) : SV_Target { return SAMPLE_POINT(uv) * c; }
+            technique Linear { pass P { PixelShader = compile ps_4_0 PS_Linear(); } }
+            technique Point { pass P { PixelShader = compile ps_4_0 PS_Point(); } }
+            """;
+
+        var result = await CompileSourceAsync(source, "DefineTwoTechniques.fx");
+
+        result.IsSuccess.ShouldBeTrue(result.IsFailure ? string.Join("; ", result.Error.Select(e => $"{e.Code}: {e.Message}")) : "ok");
+        result.Value.Warnings.ShouldNotContain(w => w.Code == "SD0235");
+        var subject = MgfxBlobReader.Parse(result.Value.Data);
+        subject.Samplers.Count.ShouldBe(2);
+        subject.Samplers.ShouldAllBe(s => subject.ParameterNames[s.Parameter] == "SpriteTexture" && s.TextureSlot == 0 && s.SamplerSlot == 0);
+        foreach (var shader in subject.Shaders)
+        {
+            VulkanShaderCodeReader.Parse(shader.Bytecode).Bindings
+                .Select(b => (b.Binding, b.DescriptorType)).ShouldBe([(32u, CombinedImageSampler)]);
+        }
+    }
+
+    [Fact]
+    public async Task Vulkan_AMacroOnlyTheVertexShaderReaches_DoesNotAliasThePixelShadersTexture()
+    {
+        // VSAMP's Tex-through-B is in HV, which only the vertex shader calls (through another macro). The
+        // pixel shader samples Tex through A alone: one descriptor at slot 0 in each stage, no alias.
+        const string source = """
+            Texture2D Tex; SamplerState A; SamplerState B;
+            #define VSAMP(uv) Tex.SampleLevel(B, uv, 0)
+            float4 HV(float2 uv) { return VSAMP(uv); }
+            float4 HP(float2 uv) { return Tex.Sample(A, uv); }
+            #define CALLV HV
+            void VS(float4 p : POSITION0, float2 uv : TEXCOORD0, out float4 op : SV_Position, out float4 c : COLOR0) { op = p; c = CALLV(uv); }
+            float4 PS(float4 p : SV_Position, float4 c : COLOR0, float2 uv : TEXCOORD0) : SV_Target { return HP(uv) * c; }
+            technique T { pass P { VertexShader = compile vs_4_0 VS(); PixelShader = compile ps_4_0 PS(); } }
+            """;
+
+        var result = await CompileSourceAsync(source, "DefineVertexOnly.fx");
+
+        result.IsSuccess.ShouldBeTrue(result.IsFailure ? string.Join("; ", result.Error.Select(e => $"{e.Code}: {e.Message}")) : "ok");
+        result.Value.Warnings.ShouldNotContain(w => w.Code == "SD0235");
+        var subject = MgfxBlobReader.Parse(result.Value.Data);
+        subject.Samplers.Count.ShouldBe(2);
+        subject.Samplers.ShouldAllBe(s => subject.ParameterNames[s.Parameter] == "Tex" && s.TextureSlot == 0 && s.SamplerSlot == 0);
+        foreach (var shader in subject.Shaders)
+        {
+            VulkanShaderCodeReader.Parse(shader.Bytecode).Bindings
+                .Select(b => (b.Binding, b.DescriptorType)).ShouldBe([(32u, CombinedImageSampler)]);
+        }
+    }
+
+    [Fact]
+    public async Task Vulkan_ASharedSamplerOnlyAnUnusedMacroPairs_IsNotSD0028()
+    {
+        // SAMPLE_B is never used, so B is not sampled through S: one pair, A + S at slot 0.
+        const string source = """
+            Texture2D A; Texture2D B; SamplerState S;
+            #define SAMPLE_B(uv) B.Sample(S, uv)
+            float4 PS(float4 p : SV_Position, float2 uv : TEXCOORD0) : SV_Target { return A.Sample(S, uv); }
+            technique T { pass P { PixelShader = compile ps_4_0 PS(); } }
+            """;
+
+        var result = await CompileSourceAsync(source, "DefineUnused.fx");
+
+        result.IsSuccess.ShouldBeTrue(result.IsFailure ? string.Join("; ", result.Error.Select(e => $"{e.Code}: {e.Message}")) : "ok");
+        var subject = MgfxBlobReader.Parse(result.Value.Data);
+        MgfxSamplerRecord record = subject.Samplers.ShouldHaveSingleItem();
+        (subject.ParameterNames[record.Parameter], record.TextureSlot, record.SamplerSlot).ShouldBe(("A", (byte)0, (byte)0));
+        VulkanShaderCodeReader.Parse(subject.Shaders.Single().Bytecode).Bindings
+            .Select(b => (b.Binding, b.DescriptorType)).ShouldBe([(32u, CombinedImageSampler)]);
+    }
+
+    // ---- A conditional on a macro DXC predefines ------------------------------------------------------
+
+    [Theory(Skip = "Needs the DXC predefined-macro list from fix/gl-prototype-crash; un-skip when the batch merges it")]
+    [InlineData("__GNUC__")]
+    [InlineData("__GNUC_MINOR__")]
+    [InlineData("__GNUC_PATCHLEVEL__")]
+    [InlineData("__GXX_ABI_VERSION")]
+    [InlineData("__llvm__")]
+    [InlineData("__BYTE_ORDER__")]
+    [InlineData("__ORDER_LITTLE_ENDIAN__")]
+    [InlineData("__LITTLE_ENDIAN__")]
+    [InlineData("__FLT_MAX__")]
+    [InlineData("__DBL_MAX__")]
+    public async Task Vulkan_APairingUnderIfdefOfAMacroDxcPredefines_IsTheOneDxcCompiles(string macro)
+    {
+        // DXC predefines each of these (measured with `dxc -P`), so it compiles the first branch. While
+        // the managed preprocessor does not know that, its view drops that branch as skipped and the
+        // pairing reads the #else branch's texture: TexA is bound at slot 0 while DXC samples TexB, a
+        // SILENT wrong render. Once FxMacroPreprocessor.IsCompilerPredefined lists the macro the whole
+        // file is paired and the texture DXC samples is the one bound.
+        string source = $$"""
             Texture2D TexA; Texture2D TexB; SamplerState S;
             float4 MainPS(float4 pos : SV_Position, float2 uv : TEXCOORD0) : SV_Target0 {
-            #ifdef __GNUC__
+            #ifdef {{macro}}
               return TexB.Sample(S, uv);
             #else
               return TexA.Sample(S, uv);
@@ -795,7 +1003,7 @@ public sealed class VulkanExplicitRegisterSlotTests
             technique T { pass P { PixelShader = compile ps_4_0 MainPS(); } }
             """;
 
-        var result = await CompileSourceAsync(source, "Gnuc.fx");
+        var result = await CompileSourceAsync(source, "Predefined.fx");
 
         result.IsSuccess.ShouldBeTrue(result.IsFailure ? string.Join("; ", result.Error.Select(e => $"{e.Code}: {e.Message}")) : "ok");
         var subject = MgfxBlobReader.Parse(result.Value.Data);
@@ -897,21 +1105,5 @@ public sealed class VulkanExplicitRegisterSlotTests
         string path = Path.Combine(dir.FullName, "tests", "fixtures", "golden", "Vulkan", stem + ".mgfx");
         File.Exists(path).ShouldBeTrue($"mgfxc 3.8.5 /Profile:Vulkan golden must exist at {path}");
         return path;
-    }
-}
-
-/// <summary>
-/// Runs a test only once the managed preprocessor knows DXC predefines <c>__GNUC__</c> (measured with
-/// <c>dxc -P</c>). Until then the test's shape is a known gap: a conditional on that macro is evaluated as
-/// false, so its lines count as skipped although DXC compiles them. Self-activating: when
-/// <c>FxMacroPreprocessor.IsCompilerPredefined</c> lists <c>__GNUC__</c>, the test runs.
-/// </summary>
-internal sealed class DxcPredefinesGnucFactAttribute : FactAttribute
-{
-    public DxcPredefinesGnucFactAttribute()
-    {
-        var probe = ShadowDusk.HLSL.Preprocessing.FxMacroPreprocessor.SkippedLines("#ifdef __GNUC__\n#endif\n", "probe.fx");
-        if (probe.IsFailure || probe.Value.PredefinedMacroUse is null)
-            Skip = "FxMacroPreprocessor.IsCompilerPredefined does not list __GNUC__ yet, which DXC predefines.";
     }
 }
