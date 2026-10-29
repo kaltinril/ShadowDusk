@@ -3606,7 +3606,9 @@ internal sealed class CompilationPipeline
             .Select(r => (r.Name, r.Slot))
             .ToList();
         var resources = bindings.Select(b => (b.Name, b.Slot)).ToList();
-        IReadOnlyDictionary<string, int>? plan = DxTextureSlotOrder.Plan(resources, readOrder, legacyNames, registers);
+        IReadOnlyDictionary<string, int>? plan = DxTextureSlotOrder.Plan(resources, readOrder, legacyNames, registers, out string? planRefusal);
+        if (planRefusal is not null)
+            return (null, Unplaced(planRefusal));
         if (plan is null)
             return null;
 

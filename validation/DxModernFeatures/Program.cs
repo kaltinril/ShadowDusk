@@ -217,7 +217,7 @@ var slotCases = new TextureSlotCase[]
     new("G04_Le", new() { ["SB"] = TextureSlotHarness.Blue }, ControlParameter: "SB"),
 };
 // Each shape through BOTH DXBC backends: the default vkd3d and the public d3dcompiler_47 oracle
-// option (whose own instruction stream is scheduled, so the slot check reads vkd3d's order).
+// option (whose own instruction stream is scheduled, so the slot check reads the order from the source).
 var slotInputs = new System.Collections.Generic.List<(TextureSlotCase Case, byte[] Candidate, byte[] Golden)>();
 foreach (TextureSlotCase c in slotCases)
 foreach (DxbcBackend backend in new[] { DxbcBackend.Vkd3d, DxbcBackend.D3DCompiler })

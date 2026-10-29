@@ -1,0 +1,4 @@
+sampler2D A; sampler2D B;
+int mode;
+float4 P(float2 uv : TEXCOORD0) : COLOR0 { float4 c = 0; switch (mode) { case 0: case 1: c = tex2D(B, uv); break; default: c = tex2D(A, uv); break; } return c + tex2D(A, uv*2) + tex2D(B, uv * 2); }
+technique T { pass P0 { PixelShader = compile ps_4_0 P(); } }

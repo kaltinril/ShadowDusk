@@ -44,22 +44,39 @@ internal static class DxTextureSlotOrder
 {
     /// <summary>
     /// The slot each <c>t</c>-register resource of the shipped compile should take, or <c>null</c>
-    /// when the backend's slots already follow the rule (or the shader has no legacy texture).
+    /// when the backend's slots already follow the rule (or the shader has no legacy texture), or
+    /// <c>null</c> with <paramref name="refusal"/> set when the rule cannot be applied: two
+    /// resources under one name, or a legacy texture missing from <paramref name="firstReadOrder"/>
+    /// (never placed by guess).
     /// </summary>
     /// <param name="resources">The shipped compile's <c>t</c>-register bindings (name, slot).</param>
     /// <param name="firstReadOrder">Resource names in evaluation (first-read) order.</param>
     /// <param name="legacyTextures">Names of the textures legacy samplers sample through.</param>
     /// <param name="explicitRegisters">Every explicit <c>t</c> register that applies to this stage, by name.</param>
+    /// <param name="refusal">Why no plan could be made, when the result is <c>null</c> for that reason.</param>
     public static IReadOnlyDictionary<string, int>? Plan(
         IReadOnlyList<(string Name, int Slot)> resources,
         IReadOnlyList<string> firstReadOrder,
         IReadOnlySet<string> legacyTextures,
-        IReadOnlyList<(string Name, int Slot)> explicitRegisters)
+        IReadOnlyList<(string Name, int Slot)> explicitRegisters,
+        out string? refusal)
     {
+        refusal = null;
         if (!resources.Any(r => legacyTextures.Contains(r.Name)))
             return null;
-        if (resources.Select(r => r.Name).Distinct(StringComparer.Ordinal).Count() != resources.Count)
+        string? duplicate = resources.GroupBy(r => r.Name, StringComparer.Ordinal).FirstOrDefault(g => g.Count() > 1)?.Key;
+        if (duplicate is not null)
+        {
+            refusal = $"the compiled shader binds two resources named '{duplicate}'";
             return null;
+        }
+        string? unread = resources.Select(r => r.Name)
+            .FirstOrDefault(n => legacyTextures.Contains(n) && !firstReadOrder.Contains(n, StringComparer.Ordinal));
+        if (unread is not null)
+        {
+            refusal = $"no first read of '{unread}' was found";
+            return null;
+        }
 
         var plan = new Dictionary<string, int>(StringComparer.Ordinal);
         var taken = new HashSet<int>(explicitRegisters.Select(r => r.Slot));
@@ -76,22 +93,17 @@ internal static class DxTextureSlotOrder
 
         int ReadRank(string name)
         {
-            int i = -1;
             for (int k = 0; k < firstReadOrder.Count; k++)
             {
                 if (string.Equals(firstReadOrder[k], name, StringComparison.Ordinal))
-                {
-                    i = k;
-                    break;
-                }
+                    return k;
             }
-            return i < 0 ? int.MaxValue : i;
+            throw new InvalidOperationException($"'{name}' has no read rank"); // excluded above
         }
 
         var legacy = resources
             .Where(r => legacyTextures.Contains(r.Name))
-            .OrderBy(r => ReadRank(r.Name))
-            .ThenBy(r => r.Slot);
+            .OrderBy(r => ReadRank(r.Name));
         var modern = resources
             .Where(r => !legacyTextures.Contains(r.Name) && !plan.ContainsKey(r.Name))
             .OrderBy(r => r.Slot);

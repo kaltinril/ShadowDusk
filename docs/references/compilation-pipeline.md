@@ -317,7 +317,11 @@ the evaluation order from the preprocessed source (`HlslReadOrder`; no compiled 
 it: `d3dcompiler_47` schedules its reads and vkd3d swaps the operands of `>` and `<=`) and the
 surviving resources off the shipped compile's RDEF, and when the slots differ recompiles with every
 resource pinned by an explicit `register(tN)`; a shader whose slots already agree is not
-recompiled. What it cannot check or pin keeps the old slots and warns `SD0230`.
+recompiled. The walk follows straight-line evaluation order (a `switch`'s `default` arm last, a read
+after an unconditional `return`/`break`/`continue` removed, as fxc does) and never evaluates a
+condition: when a read fxc might fold away (under an `if`, a `switch` arm, a loop that may not run,
+a later iteration, after a `return` that may not run) could change the order, it warns `SD0230`.
+What it cannot check or pin keeps the old slots and warns `SD0230`.
 
 **Every host passes the same list.** The options are chosen in one place
 (`Vkd3dCompileContract.ResolveCompileOptions`): the desktop backend marshals the list into the
