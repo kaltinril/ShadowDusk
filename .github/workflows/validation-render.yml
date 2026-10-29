@@ -52,6 +52,14 @@
 #                              SDL2.GL, untinted and tinted, tol 2/255, three positive controls
 #                              that must diverge. Single process; the KNI arm needs the GL context.
 #                              With RaylibRoute, the only gates that drive a non-MonoGame runtime.
+#   * VertexSemanticsGl / VertexSemanticsKniGl — vertex inputs beyond POSITION/COLOR/
+#                              TEXCOORD/NORMAL (BINORMAL, TANGENT, BLENDINDICES as Byte4,
+#                              BLENDWEIGHT 0+1, PSIZE, FOG, DEPTH, TEXCOORD3) and a float3x3
+#                              interpolant, through a custom VertexDeclaration in REAL MonoGame
+#                              DesktopGL and REAL KNI SDL2.GL (MGFX v10 + KNIFX): each element's
+#                              render vs the committed mgfxc OpenGL build in the same process
+#                              (maxd <= 1) AND the element's CPU-known value, plus a relabelled
+#                              BINORMAL0 record that must diverge (positive control).
 #   * Baseline+Candidate+compare.py — the 10-shader GL corpus, ShadowDusk vs the
 #                              committed mgfxc OpenGL goldens, real MonoGame DesktopGL. The
 #                              GL twin of the DX job's BaselineDx pair. Its distinct value is a
@@ -254,6 +262,8 @@ jobs:
           dotnet build validation/SkiaVsKni/SkiaVsKni.csproj -c Release
           dotnet build validation/InitializerDefaultsGl/InitializerDefaultsGl.csproj -c Release
           dotnet build validation/InitializerDefaultsKniGl/InitializerDefaultsKniGl.csproj -c Release
+          dotnet build validation/VertexSemanticsGl/VertexSemanticsGl.csproj -c Release
+          dotnet build validation/VertexSemanticsKniGl/VertexSemanticsKniGl.csproj -c Release
 
       # Each driver self-asserts (exit 0 iff every row loaded + matched its reference
       # within tolerance). Run all of them even if an earlier one fails, then fail the job
@@ -271,7 +281,7 @@ jobs:
         run: |
           set +e
           rc=0
-          for proj in StateFidelity CbufferModel TextureBreadthValidation ReservedWordGl SamplerPairsGl SamplerRegisterOrderGl DeferredSpriteMrtGl ShaderToyRouteGl RaylibRoute SkiaVsKni InitializerDefaultsGl InitializerDefaultsKniGl; do
+          for proj in StateFidelity CbufferModel TextureBreadthValidation ReservedWordGl SamplerPairsGl SamplerRegisterOrderGl DeferredSpriteMrtGl ShaderToyRouteGl RaylibRoute SkiaVsKni InitializerDefaultsGl InitializerDefaultsKniGl VertexSemanticsGl VertexSemanticsKniGl; do
             echo "::group::$proj"
             xvfb-run -a dotnet run --project "validation/$proj" -c Release --no-build
             this=$?

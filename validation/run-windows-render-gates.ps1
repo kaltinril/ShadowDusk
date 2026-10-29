@@ -79,6 +79,13 @@
                                    KNIFX output. Each driver has a no-initializer control that must
                                    render black, and the GL ones render the real mgfxc OpenGL build
                                    (zeros) as a second control. Dx12 and Vulkan are MonoGame 3.8.5.
+    * GL vertex semantics        - validation/VertexSemantics{Gl,KniGl}: a custom VertexDeclaration
+                                   with BINORMAL / TANGENT / BLENDINDICES (Byte4) / BLENDWEIGHT 0+1 /
+                                   PSIZE / FOG / DEPTH / TEXCOORD3 / COLOR, each element shown alone
+                                   through the effect's `Pick`, plus a float3x3 TEXCOORD2
+                                   interpolant; vs the mgfxc OpenGL build (maxd <= 1) and the
+                                   element's CPU value, MGFX v10 on MonoGame, v10 + KNIFX on KNI. A
+                                   relabelled BINORMAL0 record must diverge (positive control).
     * Apos.Shapes GL render-proof - validation/VsDriven -- apos: a single shape plus a needle-thin
                                    ellipse vs the mgfxc OpenGL golden, tol 2/255. Uses the older
                                    apos-shapes.fx pin - the current revision's mgfxc GL compile is
@@ -332,6 +339,19 @@ foreach ($drv in @(
     $gates.Add(@{
         Name   = "Initializer defaults ($($drv[1]): a global initializer is the parameter's default with no Set call, vs no-initializer and mgfxc-GL controls)"
         # [scriptblock]::Create, not GetNewClosure(): a closure runs in a module scope that cannot see Invoke-Checked.
+        Action = [scriptblock]::Create("Invoke-Checked 'dotnet' @('run', '--project', '$project', '-c', 'Release')")
+    })
+}
+# GL vertex-input semantics beyond POSITION/COLOR/TEXCOORD/NORMAL (BINORMAL, TANGENT,
+# BLENDINDICES, BLENDWEIGHT, PSIZE, FOG, DEPTH, non-zero indices) and float3x3 interpolants:
+# each element of a custom VertexDeclaration drives the colour, vs the mgfxc OpenGL build in the
+# same process AND the CPU-known element value, with a relabelled-record control that must diverge.
+foreach ($drv in @(
+    @('VertexSemanticsGl',    'MonoGame DesktopGL'),
+    @('VertexSemanticsKniGl', 'KNI SDL2.GL, MGFX v10 and KNIFX'))) {
+    $project = "validation/$($drv[0])"
+    $gates.Add(@{
+        Name   = "GL vertex semantics + matrix interpolants ($($drv[1]): every VertexElementUsage binds, vs mgfxc OpenGL build, relabelled-record control)"
         Action = [scriptblock]::Create("Invoke-Checked 'dotnet' @('run', '--project', '$project', '-c', 'Release')")
     })
 }

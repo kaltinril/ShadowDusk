@@ -1,0 +1,39 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- Rung-4 vertex-semantic + matrix-interpolant proof on real KNI SDL2.GL (nkast 4.2.9001, the line Gum uses), for BOTH
+       containers: MGFX v10 and KNIFX v11. KNI reuses the Microsoft.Xna.Framework API, so the shared probe
+       compiles against it verbatim. Not in ShadowDusk.slnx; nkast pins stay local (see KniDesktopGL). -->
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net8.0</TargetFramework>
+    <RollForward>Major</RollForward>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <IsPackable>false</IsPackable>
+    <TreatWarningsAsErrors>false</TreatWarningsAsErrors>
+    <RootNamespace>ShadowDusk.Validation.VertexSemantics.KniGl</RootNamespace>
+    <DefineConstants>$(DefineConstants);DESKTOPGL</DefineConstants>
+    <KniPlatform>DesktopGL</KniPlatform>
+    <ManagePackageVersionsCentrally>false</ManagePackageVersionsCentrally>
+  </PropertyGroup>
+
+  <ItemGroup Label="KNI (nkast) - SDL2 desktop OpenGL runtime, v4.2.9001">
+    <PackageReference Include="nkast.Xna.Framework" Version="4.2.9001.*" />
+    <PackageReference Include="nkast.Xna.Framework.Content" Version="4.2.9001.*" />
+    <PackageReference Include="nkast.Xna.Framework.Graphics" Version="4.2.9001.*" />
+    <PackageReference Include="nkast.Xna.Framework.Audio" Version="4.2.9001.*" />
+    <PackageReference Include="nkast.Xna.Framework.Media" Version="4.2.9001.*" />
+    <PackageReference Include="nkast.Xna.Framework.Input" Version="4.2.9001.*" />
+    <PackageReference Include="nkast.Xna.Framework.Game" Version="4.2.9001.*" />
+    <PackageReference Include="nkast.Kni.Platform.SDL2.GL" Version="4.2.9001.*" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\ShadowDusk.Compiler\ShadowDusk.Compiler.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Compile Include="..\SharedVertexSemantics\*.cs" />
+  </ItemGroup>
+
+</Project>
