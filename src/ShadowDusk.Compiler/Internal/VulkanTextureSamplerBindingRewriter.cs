@@ -638,7 +638,8 @@ internal static class VulkanTextureSamplerBindingRewriter
         // call from inside a method reach every definition of the name: a namespace's function and a
         // static method are both spelled `X::Name`, and a method may call a free function or a sibling.
         // When in doubt a definition is reached, the safe direction (a reached function's Sample calls
-        // pair; an unreached one's are ignored).
+        // pair; an unreached one's are ignored): a function inside braces Functions cannot classify
+        // (FunctionKind.Unknown) resolves for every call.
         void Reach(string name, Qualifier call, FunctionKind caller)
         {
             if (!byName.TryGetValue(name, out var candidates))
@@ -648,6 +649,7 @@ internal static class VulkanTextureSamplerBindingRewriter
                 FunctionKind kind = viewBodies[i].Kind;
                 bool resolves = call switch
                 {
+                    _ when kind == FunctionKind.Unknown => true,
                     Qualifier.Member => kind != FunctionKind.Free,
                     Qualifier.Scope => true,
                     _ => caller != FunctionKind.Free || kind != FunctionKind.Method,
@@ -765,10 +767,15 @@ internal static class VulkanTextureSamplerBindingRewriter
         };
     }
 
-    // `struct S {` (and `class`/`interface`, with or without a base), or an anonymous `struct {`
-    // (`typedef struct { ... } H;`): the methods inside are not reached by a bare call from a free function.
+    // `struct S {` (and `class`/`interface`), with or without a base clause of any spelling (`: Base`,
+    // `: N::Base`, `: I, J`, `: public Base`), or an anonymous `struct {` (`typedef struct { ... } H;`):
+    // the methods inside are not reached by a bare call from a free function.
     private static readonly Regex StructHeader =
-        new(@"\b(?:struct|class|interface)\b\s*(?:[A-Za-z_]\w*\s*)?(?::\s*[A-Za-z_]\w*\s*)?\{", RegexOptions.Compiled);
+        new(@"\b(?:struct|class|interface)\b\s*(?:[A-Za-z_]\w*\s*)?(?::[^{};()]*)?\{", RegexOptions.Compiled);
+
+    // `namespace N {` (or `namespace A::B {`): a function inside is a free function.
+    private static readonly Regex NamespaceHeader =
+        new(@"\bnamespace\b\s*(?:[A-Za-z_]\w*(?:\s*::\s*[A-Za-z_]\w*)*\s*)?\{", RegexOptions.Compiled);
 
     // A #define directive's first line. A line starts after '\n' (Multiline's `^`) or after a lone
     // '\r', which ends a line as LineOf and FxMacroPreprocessor count them (a CR-only file).
@@ -794,13 +801,18 @@ internal static class VulkanTextureSamplerBindingRewriter
         }
         string text = structural.ToString();
 
-        var structs = new List<(int Start, int End)>();
-        foreach (Match m in StructHeader.Matches(text))
+        // Every brace pair, and what opened it: a struct (class, interface), a namespace, or anything
+        // else (a function body, or a header this does not recognise).
+        var structOpens = new HashSet<int>(StructHeader.Matches(text).Select(m => m.Index + m.Length - 1));
+        var namespaceOpens = new HashSet<int>(NamespaceHeader.Matches(text).Select(m => m.Index + m.Length - 1));
+        var scopes = new List<(int Open, int Close)>();
+        var open = new Stack<int>();
+        for (int i = 0; i < text.Length; i++)
         {
-            int open = m.Index + m.Length - 1;
-            int close = MatchingBrace(text, open);
-            if (close > open)
-                structs.Add((open, close));
+            if (text[i] == '{')
+                open.Push(i);
+            else if (text[i] == '}' && open.Count > 0)
+                scopes.Add((open.Pop(), i));
         }
 
         var bodies = new List<(string Name, int HeaderAt, int Start, int End, FunctionKind Kind)>();
@@ -811,9 +823,20 @@ internal static class VulkanTextureSamplerBindingRewriter
             if (end <= start)
                 continue;
             int at = m.Groups["fn"].Index;
+            // The innermost enclosing brace pair that is not a namespace's decides: none is a free
+            // function, a struct's is a method, and any other is a function this cannot classify,
+            // which every call reaches (the safe direction: a struct header spelled in a way the
+            // pattern above misses must not leave its methods unreachable).
+            int enclosing = -1;
+            foreach (var (o, c) in scopes)
+            {
+                if (o < at && at < c && o > enclosing && !namespaceOpens.Contains(o))
+                    enclosing = o;
+            }
             FunctionKind kind = QualifierOf(text, at) != Qualifier.None ? FunctionKind.Qualified
-                : structs.Any(s => at > s.Start && at < s.End) ? FunctionKind.Method
-                : FunctionKind.Free;
+                : enclosing < 0 ? FunctionKind.Free
+                : structOpens.Contains(enclosing) ? FunctionKind.Method
+                : FunctionKind.Unknown;
             bodies.Add((m.Groups["fn"].Value, at, start, end, kind));
         }
         return bodies.Where(b => !bodies.Any(o => o.Start < b.Start && b.End < o.End)).ToList();
@@ -864,10 +887,11 @@ internal static class VulkanTextureSamplerBindingRewriter
     /// <summary>
     /// Where a function is defined: inside the braces of a struct, class or interface (named or
     /// anonymous), out of line under a qualified name (<c>float4 H::Get(...)</c>, <c>float4 Lib::F(...)</c>:
-    /// a method or a namespace's function, not decidable here), or anywhere else (a free function, a
+    /// a method or a namespace's function, not decidable here), inside braces this cannot classify
+    /// (reached by every call, and calling as a method does), or anywhere else (a free function, a
     /// namespace's included).
     /// </summary>
-    private enum FunctionKind { Free, Method, Qualified }
+    private enum FunctionKind { Free, Method, Qualified, Unknown }
 
     /// <summary>
     /// Whether an offset of <paramref name="text"/> is on a line the compile keeps: false only on a
@@ -937,8 +961,8 @@ internal static class VulkanTextureSamplerBindingRewriter
     /// The slot for an alias of the texture on <paramref name="floor"/>: the lowest free one above it, so
     /// the texture's own slot stays its lowest (its DirectX register) and an alias keeps off slot 0, where
     /// SpriteBatch binds its sprite over whatever the effect parameter set. Above the stage's last slot
-    /// (<paramref name="slots"/>) it falls back to the lowest free slot below the texture's, slot 0 last;
-    /// null when every slot is taken.
+    /// (<paramref name="slots"/>) it falls back to the lowest free slot below the texture's, never slot 0
+    /// (an alias there would read SpriteBatch's sprite, not the texture); null when no other slot is free.
     /// </summary>
     private static int? AliasSlot(int floor, int slots, HashSet<int> reserved, Dictionary<string, int> assigned)
     {
@@ -953,7 +977,7 @@ internal static class VulkanTextureSamplerBindingRewriter
             if (Free(index))
                 return index;
         }
-        return floor > 0 && Free(0) ? 0 : null;
+        return null;
     }
 
     private static int ThrowNoAliasSlot(string hlsl, (string Texture, string Sampler, string Name, int TexAt) alias, int slots)
@@ -964,11 +988,13 @@ internal static class VulkanTextureSamplerBindingRewriter
             Line:    line,
             Column:  column,
             Code:    NoAliasSlotCode,
-            Message: $"Vulkan: texture '{alias.Texture}' is sampled through a second sampler, '{alias.Sampler}', and every one of "
-                   + $"the stage's {slots} texture slots is already taken. MonoGame's DesktopVK binds a texture and a sampler as "
-                   + $"one combined descriptor, so this pairing needs a second descriptor holding the same texture on a slot of "
-                   + $"its own, and its texture collection has no slot past {slots - 1}. Sample '{alias.Texture}' through one "
-                   + $"sampler in this shader, or free a texture slot."));
+            Message: $"Vulkan: texture '{alias.Texture}' is sampled through a second sampler, '{alias.Sampler}', and no texture "
+                   + $"slot of the stage is left for it: slots 1 to {slots - 1} are all taken, and slot 0 is never used for it. "
+                   + $"MonoGame's DesktopVK binds a texture and a sampler as one combined descriptor, so this pairing needs a second "
+                   + $"descriptor holding the same texture on a slot of its own; its texture collection has no slot past {slots - 1}, "
+                   + $"and on slot 0 SpriteBatch binds its sprite over whatever the effect parameter set, so the second sampler would "
+                   + $"read the sprite instead of '{alias.Texture}'. Sample '{alias.Texture}' through one sampler in this shader, or "
+                   + $"free a texture slot other than slot 0."));
     }
 
     /// <summary>The diagnostic for a texture alias no texture slot is left for.</summary>

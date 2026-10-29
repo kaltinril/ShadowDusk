@@ -12,7 +12,8 @@ namespace ShadowDusk.Compiler.Internal;
 /// textures on one binding — leaving the second texture unbound and rendering silently wrong
 /// on DesktopVK (bug-hunt 2026-07-27 M5). Failing loudly here upholds design constraint 5.
 /// Also thrown (<c>SD0237</c>) when ONE texture read through a second sampler needs a second
-/// descriptor and no texture slot of the stage is left for it.
+/// descriptor and no texture slot of the stage is left for it (slot 0, where SpriteBatch binds its sprite,
+/// is never one).
 ///
 /// <para>Mirrors the <c>MonoGameGlslRewriteException</c> pattern: the rewriter's
 /// <c>string → string</c> signature is fixed by its <c>CompilationPipeline</c> call site, so
