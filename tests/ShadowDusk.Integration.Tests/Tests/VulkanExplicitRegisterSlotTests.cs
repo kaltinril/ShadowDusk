@@ -30,9 +30,12 @@ public sealed class VulkanExplicitRegisterSlotTests
     private const uint SampledImage = 2;
     private const uint SamplerOnly = 0;
 
-    public static TheoryData<string> GoldenMatched() => new() { "RegisterLoneT1", "RegisterGapT0T2", "RegisterTexture2DArrayT1" };
+    // RegisterSpace0 and RegisterDeadSampler: the golden is mgfxc on the shape as MonoGame can run it
+    // (spaces removed; the DirectX-equivalent t0/s0), because mgfxc's build of the file as written
+    // draws nothing (see each fixture's header).
+    public static TheoryData<string> GoldenMatched() => new() { "RegisterLoneT1", "RegisterGapT0T2", "RegisterTexture2DArrayT1", "RegisterSpace0", "RegisterDeadSampler" };
 
-    public static TheoryData<string> AllShapes() => new() { "RegisterLoneT1", "RegisterGapT0T2", "RegisterMismatchedTS", "RegisterTexture2DArrayT1" };
+    public static TheoryData<string> AllShapes() => new() { "RegisterLoneT1", "RegisterGapT0T2", "RegisterMismatchedTS", "RegisterTexture2DArrayT1", "RegisterSpace0", "RegisterDeadSampler" };
 
     [Theory]
     [MemberData(nameof(GoldenMatched))]
@@ -227,6 +230,89 @@ public sealed class VulkanExplicitRegisterSlotTests
         reader.ParameterNames[record.Parameter].ShouldBe("MaskTex");
         VulkanShaderCodeReader.Parse(reader.Shaders.Single().Bytecode).Bindings
             .Select(b => (b.Binding, b.DescriptorType)).ShouldBe([(32u, CombinedImageSampler)]);
+    }
+
+    [Fact]
+    public async Task Vulkan_AnExplicitRegisterSpace_IsDropped_SoEveryResourceIsInThePixelStagesSet()
+    {
+        // register(t1, space0) / (s1, space0) / (b0, space0) in a pixel shader: mgfxc 3.8.5 keeps
+        // DescriptorSet 0 (measured from its build of this file) and that build draws (0,0,0,0) in
+        // DesktopVK, which binds a pixel shader's resources from set 1 only.
+        var subject = MgfxBlobReader.Parse(await CompileAsync("RegisterSpace0", PlatformTarget.Vulkan));
+        var header = VulkanShaderCodeReader.Parse(subject.Shaders.Single().Bytecode);
+
+        var reflected = new ShadowDusk.Core.Reflection.SpirvReflector().Reflect(header.Spirv).Value;
+        reflected.Textures.ShouldHaveSingleItem().RawDescriptorSet.ShouldBe(1);
+        reflected.Samplers.ShouldHaveSingleItem().RawDescriptorSet.ShouldBe(1);
+        reflected.ConstantBuffers.ShouldHaveSingleItem().RawDescriptorSet.ShouldBe(1);
+        subject.Samplers.ShouldHaveSingleItem().TextureSlot.ShouldBe((byte)1);
+    }
+
+    [Fact]
+    public async Task Vulkan_ARegisterSpaceFromAMacro_IsDroppedThroughThePreprocessedRetry()
+    {
+        // The rewrite cannot see `space0` behind a macro on the raw text, so the first attempt puts
+        // the texture in set 0 (SD0229); the retry from the preprocessed source drops it.
+        const string source = """
+            #if SM6
+            #define PS_SHADERMODEL ps_6_0
+            #else
+            #define PS_SHADERMODEL ps_4_0
+            #endif
+            #define SPACE space0
+            Texture2D Tex : register(t1, SPACE);
+            SamplerState TexSampler : register(s1, SPACE);
+            float4 MainPS(float4 pos : SV_Position, float4 color : COLOR0, float2 uv : TEXCOORD0) : SV_Target0 { return Tex.Sample(TexSampler, uv) * color; }
+            technique T { pass P { PixelShader = compile PS_SHADERMODEL MainPS(); } }
+            """;
+        using var cts = new CancellationTokenSource(TestBudget.Compile);
+        var result = await new EffectCompiler().CompileAsync(source, new CompilerOptions
+        {
+            Target = PlatformTarget.Vulkan,
+            SourceFileName = "MacroSpace.fx",
+        }, cts.Token);
+
+        result.IsSuccess.ShouldBeTrue(result.IsFailure ? string.Join("; ", result.Error.Select(e => $"{e.Code}: {e.Message}")) : "ok");
+        var reader = MgfxBlobReader.Parse(result.Value.Data);
+        reader.Samplers.ShouldHaveSingleItem().TextureSlot.ShouldBe((byte)1);
+        var spirv = VulkanShaderCodeReader.Parse(reader.Shaders.Single().Bytecode).Spirv;
+        new ShadowDusk.Core.Reflection.SpirvReflector().Reflect(spirv).Value.Textures.ShouldHaveSingleItem().RawDescriptorSet.ShouldBe(1);
+    }
+
+    [Fact]
+    public async Task SD0228AfterTheRetry_NamesOnlyWhatTheRetryCouldNotPin_AtItsLine()
+    {
+        // MainTex comes out of a macro (the retry pins it); `Texture2D A, B;` is a form neither
+        // pass models. The error must name A, at its line, not the macro-declared MainTex.
+        const string source = """
+            #if SM6
+            #define PS_SHADERMODEL ps_6_0
+            #else
+            #define PS_SHADERMODEL ps_4_0
+            #endif
+            #define DECL_TEX(x) Texture2D x##Tex;
+            DECL_TEX(Main)
+            Texture2D A, B;
+            SamplerState S;
+            SamplerState S2;
+            float4 MainPS(float4 p : SV_Position, float2 uv : TEXCOORD0) : SV_Target0 { return MainTex.Sample(S, uv) + A.Sample(S2, uv); }
+            technique T { pass P { PixelShader = compile PS_SHADERMODEL MainPS(); } }
+            """;
+        using var cts = new CancellationTokenSource(TestBudget.Compile);
+        var result = await new EffectCompiler().CompileAsync(source, new CompilerOptions
+        {
+            Target = PlatformTarget.Vulkan,
+            SourceFileName = "MacroThenMulti.fx",
+        }, cts.Token);
+
+        result.IsFailure.ShouldBeTrue();
+        ShaderError error = result.Error.ShouldHaveSingleItem();
+        error.Code.ShouldBe("SD0228");
+        error.Message.ShouldContain("texture 'A' (binding", Case.Sensitive);
+        error.Message.ShouldNotContain("MainTex", Case.Sensitive);
+        error.File.ShouldBe("MacroThenMulti.fx");
+        error.Line.ShouldBe(8);
+        error.Column.ShouldBe("Texture2D ".Length + 1);
     }
 
     // ---- Corpus-wide: a texture parameter's Vulkan slot is its DirectX 12 slot ------------------

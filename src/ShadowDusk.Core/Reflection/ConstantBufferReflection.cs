@@ -18,6 +18,8 @@ public sealed record ConstantBufferReflection
     /// other resource. Default 0 for non-Vulkan.
     /// </summary>
     public int RawBinding { get; init; }
+    /// <summary>The raw SPIR-V <c>DescriptorSet</c> decoration. See <see cref="RawBinding"/>.</summary>
+    public int RawDescriptorSet { get; init; }
     /// <summary>The variables packed into the buffer, in offset order.</summary>
     public required IReadOnlyList<VariableReflection> Variables { get; init; }
 }

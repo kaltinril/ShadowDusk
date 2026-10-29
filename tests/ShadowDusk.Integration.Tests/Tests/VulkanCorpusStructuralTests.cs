@@ -152,6 +152,20 @@ public sealed class VulkanCorpusStructuralTests
                     customMessage: $"{who}: sampler record '{record.Name}' binds its texture to slot {record.TextureSlot}, which no descriptor reads (slots read: {string.Join(", ", imageSlots.Order())})");
             }
 
+            // DesktopVK binds ONE descriptor set per stage: the vertex shader's resources from set
+            // 0, the pixel shader's from set 1. A resource in any other set is read from a
+            // descriptor the runtime never writes (an explicit `register(t1, space0)` in a pixel
+            // shader drew (0,0,0,0), in mgfxc's build too).
+            var reflected = new ShadowDusk.Core.Reflection.SpirvReflector().Reflect(vk.Spirv);
+            reflected.IsSuccess.ShouldBeTrue($"{who}: the shipped SPIR-V must reflect");
+            int set = shader.IsVertex ? 0 : 1;
+            foreach (var (kind, name, actual) in reflected.Value.Textures.Select(t => ("texture", t.Name, t.RawDescriptorSet))
+                         .Concat(reflected.Value.Samplers.Select(s => ("sampler", s.Name, s.RawDescriptorSet)))
+                         .Concat(reflected.Value.ConstantBuffers.Select(c => ("constant buffer", c.Name, c.RawDescriptorSet))))
+            {
+                actual.ShouldBe(set, customMessage: $"{who}: {kind} '{name}' must be in descriptor set {set}, the only one DesktopVK binds for this stage");
+            }
+
             SpirvDecorationScanner.EntryPointName(vk.Spirv).ShouldBe("main", customMessage: $"{who}: MonoGame's native Vulkan pipeline creation expects the entry point to be main");
 
             SpirvDecorationScanner.Extensions(vk.Spirv).ShouldNotContain(

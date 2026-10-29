@@ -41,7 +41,11 @@ namespace ShadowDusk.Compiler.Internal;
 /// was taken from the binding, an unregistered texture INHERITED its sampler's register; the
 /// record still said slot 0 but the descriptor read slot 2, and neither matched DirectX.)
 /// Indices that must stay free: every explicit texture register, and the explicit register of
-/// a sampler no texture is sampled through (it keeps its own binding). Two
+/// a sampler no texture is sampled through but that the shader still REFERENCES (it keeps its
+/// own binding). A sampler named nowhere but its own declaration is dead code DXC removes and
+/// reserves nothing. So an unregistered texture's index equals its DirectX t register except in
+/// one case: a live, unpaired sampler holds that number (DirectX keeps t and s registers apart,
+/// while Vulkan's bindings are one space, so the texture moves past it). Two
 /// descriptor-set-layout bindings at the same binding number is invalid regardless of shape,
 /// so an index is only shared deliberately, by the two halves of a pair. Note
 /// <c>-fvk-t-shift</c> and <c>-fvk-s-shift</c> both add 32, so <c>t2</c> and <c>s2</c> occupy
@@ -127,8 +131,43 @@ internal static class VulkanTextureSamplerBindingRewriter
     /// </summary>
     private const string SynthesizedTextureSuffix = "_SDTexture";
 
+    // `register(t1, space0)`: the register clause of a texture, sampler or constant buffer with an
+    // explicit register SPACE. A space is a Vulkan descriptor set, and MonoGame's DesktopVK has
+    // exactly one per stage (the vertex shader's set 0, the pixel shader's set 1, the
+    // -auto-binding-space DxcFlagBuilder passes), so an explicit space can only put a resource in
+    // a set the runtime never binds.
+    private static readonly Regex RegisterSpace =
+        new(@"\bregister\s*\(\s*(?<reg>[tsb]\d+)\s*,\s*space\d+\s*\)", RegexOptions.Compiled);
+
+    /// <summary>
+    /// Drops the <c>, spaceN</c> from every texture, sampler and constant-buffer register clause,
+    /// so DXC puts the resource in the stage's own descriptor set. <c>mgfxc</c> 3.8.5 keeps the
+    /// space: <c>register(t1, space0)</c> in a pixel shader lands in set 0, and both its build and
+    /// ShadowDusk's earlier one loaded into real DesktopVK and drew (0,0,0,0) (measured
+    /// 2026-10-28). Returns the text unchanged when no clause names a space.
+    /// </summary>
+    internal static string StripRegisterSpaces(string hlsl)
+    {
+        string masked = ResourceArrayDiagnostics.MaskCommentsAndStrings(hlsl);
+        MatchCollection clauses = RegisterSpace.Matches(masked);
+        if (clauses.Count == 0)
+            return hlsl;
+
+        var result = new System.Text.StringBuilder(hlsl.Length);
+        int copied = 0;
+        foreach (Match m in clauses)
+        {
+            result.Append(hlsl, copied, m.Index - copied).Append("register(").Append(m.Groups["reg"].Value).Append(')');
+            copied = m.Index + m.Length;
+        }
+        result.Append(hlsl, copied, hlsl.Length - copied);
+        return result.ToString();
+    }
+
     public static string Rewrite(string hlsl)
     {
+        hlsl = StripRegisterSpaces(hlsl);
+
         var textureNames = new List<string>();
         var samplerNames = new List<string>();
 
@@ -200,10 +239,26 @@ internal static class VulkanTextureSamplerBindingRewriter
         // binding). A PAIRED sampler's register reserves nothing: the sampler moves onto its
         // texture's index, so its own number never reaches a binding. (Reserving it used to
         // push an unregistered texture off the t-register DirectX gives it.)
+        // An unpaired sampler only needs its binding kept free when the shader REFERENCES it
+        // (passed to a helper, say): one named nowhere but in its declaration is dead code that
+        // DXC removes, and reserving its register would push a texture off the t-register
+        // DirectX gives it (`Texture2D A; SamplerState S : register(s1);` beside an unused
+        // `SamplerState U : register(s0)` is slot 0 on DirectX 11 and 12, where SpriteBatch binds).
         var pairedSamplers = new HashSet<string>(pairedSampler.Values, StringComparer.Ordinal);
+        var deadSamplers = new HashSet<string>(StringComparer.Ordinal);
+        foreach (string samp in samplerNames)
+        {
+            if (pairedSamplers.Contains(samp))
+                continue;
+            int declarations = samplerDecls.Count(d => d.Groups["name"].Value == samp);
+            int mentions = Regex.Matches(masked, $@"\b{Regex.Escape(samp)}\b").Count;
+            if (mentions <= declarations)
+                deadSamplers.Add(samp);
+        }
+
         var reserved = new HashSet<int>();
         foreach (var (name, index) in explicitDecls)
-            if (textureNames.Contains(name) || !pairedSamplers.Contains(name))
+            if (textureNames.Contains(name) || (!pairedSamplers.Contains(name) && !deadSamplers.Contains(name)))
                 reserved.Add(index);
 
         // Assign a shared index per pair (or a fresh one for an unpaired resource) in
@@ -285,7 +340,11 @@ internal static class VulkanTextureSamplerBindingRewriter
             if (registerIndex.ContainsKey(samp))
                 continue;
 
+            // A dead sampler's register was not reserved, so a texture may now hold it; move the
+            // dead declaration to a free index rather than leave two declarations on one register
+            // (it never reaches the SPIR-V either way).
             registerIndex[samp] = explicitIndex.TryGetValue(samp, out int fixedSamp)
+                                  && !(deadSamplers.Contains(samp) && registerIndex.ContainsValue(fixedSamp))
                 ? fixedSamp
                 : NextFree(ref next, reserved, registerIndex);
         }

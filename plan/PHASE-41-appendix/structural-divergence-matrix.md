@@ -25,7 +25,7 @@
   - Structurally **clean**: **87**
   - **Divergent** (>=1 level): **21**
   - Compile/parse **failures**: **10**
-- Non-golden census cells: **234** (**170** compile, **64** fail with a code)
+- Non-golden census cells: **238** (**174** compile, **64** fail with a code)
 
 ## Golden-backed fixtures — per-level structural verdict
 
@@ -377,12 +377,16 @@ is a CORRECT result, not a defect.
 | raylib/CrtFilter.fx | OpenGL | PASS |  |  |
 | raylib/RetroHandheld.fx | DirectX_11 | PASS |  |  |
 | raylib/RetroHandheld.fx | OpenGL | PASS |  |  |
+| register-slots/RegisterDeadSampler.fx | DirectX_11 | PASS |  |  |
+| register-slots/RegisterDeadSampler.fx | OpenGL | PASS |  |  |
 | register-slots/RegisterGapT0T2.fx | DirectX_11 | PASS |  |  |
 | register-slots/RegisterGapT0T2.fx | OpenGL | PASS |  |  |
 | register-slots/RegisterLoneT1.fx | DirectX_11 | PASS |  |  |
 | register-slots/RegisterLoneT1.fx | OpenGL | PASS |  |  |
 | register-slots/RegisterMismatchedTS.fx | DirectX_11 | PASS |  |  |
 | register-slots/RegisterMismatchedTS.fx | OpenGL | PASS |  |  |
+| register-slots/RegisterSpace0.fx | DirectX_11 | PASS |  |  |
+| register-slots/RegisterSpace0.fx | OpenGL | PASS |  |  |
 | register-slots/RegisterTexture2DArrayT1.fx | DirectX_11 | PASS |  |  |
 | register-slots/RegisterTexture2DArrayT1.fx | OpenGL | FAIL | SD0210 | Unsupported sampler type for the MonoGame/KNI GL target: 'sampler2DArray'. The MojoShader-dialect rewrite models 'sampler2D', 'samplerCube' and 'sampler3D'; a '... |
 | texture-arrays/SamplerArray2.fx | DirectX_11 | FAIL | SD0224 | DirectX 11 target: 'Samplers' is an array of 2 samplers ('SamplerState Samplers[2]'). Real mgfxc (3.8.4.1 and 3.8.5) refuses an array of samplers on every profi... |

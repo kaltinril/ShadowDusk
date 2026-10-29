@@ -475,16 +475,18 @@ public sealed class VulkanTextureSamplerBindingRewriterTests
     }
 
     [Fact]
-    public void Rewrite_AnUnpairedSamplersExplicitRegister_StaysReserved()
+    public void Rewrite_AReferencedUnpairedSamplersExplicitRegister_StaysReserved()
     {
-        // A sampler no texture is sampled through keeps its own binding, so an auto-assigned
-        // texture must not land on it (two descriptors at one binding).
+        // A sampler no texture is sampled through, but that the shader still uses (here passed
+        // to a helper), keeps its own binding, so an auto-assigned texture must not land on it
+        // (two descriptors at one binding).
         const string hlsl = """
             SamplerState Loose : register(s0);
             Texture2D Tex;
             SamplerState Samp;
 
-            float4 PS() : SV_Target { return Tex.Sample(Samp, float2(0, 0)); }
+            float4 Helper(SamplerState s) { return 0; }
+            float4 PS() : SV_Target { return Tex.Sample(Samp, float2(0, 0)) + Helper(Loose); }
             """;
 
         string result = VulkanTextureSamplerBindingRewriter.Rewrite(hlsl);
@@ -492,6 +494,60 @@ public sealed class VulkanTextureSamplerBindingRewriterTests
         result.ShouldContain("SamplerState Loose : register(s0);", Case.Sensitive);
         result.ShouldContain("Texture2D Tex : register(t1);", Case.Sensitive);
         result.ShouldContain("SamplerState Samp : register(s1);", Case.Sensitive);
+    }
+
+    [Fact]
+    public void Rewrite_ADeadSamplersExplicitRegister_DoesNotMoveATextureOffItsDirectXRegister()
+    {
+        // `U` is named only in its declaration: dead code DXC removes. DirectX 11 and 12 put the
+        // unregistered `A` at t0, and so must this (it used to be pushed to t1 by U's s0).
+        const string hlsl = """
+            Texture2D A;
+            SamplerState S : register(s1);
+            SamplerState U : register(s0);
+
+            float4 PS(float2 uv : TEXCOORD0) : SV_Target { return A.Sample(S, uv); }
+            """;
+
+        string result = VulkanTextureSamplerBindingRewriter.Rewrite(hlsl);
+
+        result.ShouldContain("Texture2D A : register(t0);", Case.Sensitive);
+        result.ShouldContain("SamplerState S : register(s0);", Case.Sensitive);
+        // The dead declaration moves off the register its texture now holds.
+        result.ShouldContain("SamplerState U : register(s1);", Case.Sensitive);
+    }
+
+    [Theory]
+    [InlineData("Texture2D A : register(t1, space0);", "SamplerState S : register(s1, space0);")]
+    [InlineData("Texture2D A : register(t1,space1);", "SamplerState S : register( s1 , space3 );")]
+    public void Rewrite_DropsAnExplicitRegisterSpace(string texture, string sampler)
+    {
+        // A register space is a Vulkan descriptor set; MonoGame's DesktopVK has one per stage, so
+        // an explicit space can only park the resource in a set the runtime never binds (the
+        // pixel shader's resources must be in set 1). mgfxc 3.8.5 keeps it and its build draws
+        // (0,0,0,0) for `register(t1, space0)` in a pixel shader.
+        string hlsl = $$"""
+            {{texture}}
+            {{sampler}}
+            cbuffer P : register(b0, space0) { float4 Tint; };
+
+            float4 PS(float2 uv : TEXCOORD0) : SV_Target { return A.Sample(S, uv) * Tint; }
+            """;
+
+        string result = VulkanTextureSamplerBindingRewriter.Rewrite(hlsl);
+
+        result.ShouldContain("Texture2D A : register(t1);", Case.Sensitive);
+        result.ShouldContain("SamplerState S : register(s1);", Case.Sensitive);
+        result.ShouldContain("cbuffer P : register(b0) {", Case.Sensitive);
+        result.ShouldNotContain("space", Case.Sensitive);
+    }
+
+    [Fact]
+    public void StripRegisterSpaces_WithNoSpace_ReturnsTheSameText()
+    {
+        const string hlsl = "Texture2D A : register(t1); // register(t2, space0) in a comment stays\n";
+
+        VulkanTextureSamplerBindingRewriter.StripRegisterSpaces(hlsl).ShouldBeSameAs(hlsl);
     }
 
     [Fact]

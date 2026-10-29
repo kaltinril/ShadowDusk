@@ -223,8 +223,8 @@ internal sealed class SpirvReflectionParser
 
         var constantBuffers = new List<ConstantBufferReflection>();
         int cbufferSlot = 0;
-        foreach (var (id, st, rawBinding, _) in cbufferVars.OrderBy(c => c.RawBinding))
-            constantBuffers.Add(BuildConstantBuffer(id, st, cbufferSlot++, rawBinding));
+        foreach (var (id, st, rawBinding, rawSet) in cbufferVars.OrderBy(c => c.RawBinding))
+            constantBuffers.Add(BuildConstantBuffer(id, st, cbufferSlot++, rawBinding) with { RawDescriptorSet = rawSet });
 
         return (constantBuffers, textures, samplers);
     }

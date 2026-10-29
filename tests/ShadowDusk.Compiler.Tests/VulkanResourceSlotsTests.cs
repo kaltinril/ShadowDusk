@@ -2,6 +2,7 @@
 
 using Shouldly;
 using ShadowDusk.Compiler.Internal;
+using ShadowDusk.Core;
 using ShadowDusk.Core.Reflection;
 using Xunit;
 
@@ -40,7 +41,7 @@ public sealed class VulkanResourceSlotsTests
         ReflectedEffect reflected = Effect([("Tex1", 33)], [("Tex1Sampler", 33)]);
         reflected.Textures[0].BindSlot.ShouldBe(0, "the reflector's ordinal, the pre-fix slot");
 
-        var result = VulkanResourceSlots.FromBindings(reflected, "", "x.fx");
+        var result = VulkanResourceSlots.FromBindings(reflected, ShaderStage.Pixel, "", "x.fx");
 
         result.IsSuccess.ShouldBeTrue();
         result.Value.Textures.Single().BindSlot.ShouldBe(1);
@@ -52,7 +53,7 @@ public sealed class VulkanResourceSlotsTests
     {
         ReflectedEffect reflected = Effect([("Base", 32), ("Overlay", 34)], [("BaseSampler", 32), ("OverlaySampler", 34)]);
 
-        var result = VulkanResourceSlots.FromBindings(reflected, "", "x.fx");
+        var result = VulkanResourceSlots.FromBindings(reflected, ShaderStage.Pixel, "", "x.fx");
 
         result.IsSuccess.ShouldBeTrue();
         result.Value.Textures.Select(t => (t.Name, t.BindSlot)).ShouldBe([("Base", 0), ("Overlay", 2)]);
@@ -65,7 +66,7 @@ public sealed class VulkanResourceSlotsTests
         // Every shape the binding rewriter numbers itself: the fix is a no-op there.
         ReflectedEffect reflected = Effect([("A", 32), ("B", 33), ("C", 34)], [("SA", 32), ("SB", 33), ("SC", 34)]);
 
-        var result = VulkanResourceSlots.FromBindings(reflected, "", "x.fx");
+        var result = VulkanResourceSlots.FromBindings(reflected, ShaderStage.Pixel, "", "x.fx");
 
         result.IsSuccess.ShouldBeTrue();
         result.Value.Textures.Select(t => t.BindSlot).ShouldBe(reflected.Textures.Select(t => t.BindSlot));
@@ -77,7 +78,7 @@ public sealed class VulkanResourceSlotsTests
     {
         ReflectedEffect reflected = Effect([("Tex1", 33)], [("Tex1Sampler", 33)]);
 
-        var result = VulkanResourceSlots.FromBindings(reflected, "", "x.fx");
+        var result = VulkanResourceSlots.FromBindings(reflected, ShaderStage.Pixel, "", "x.fx");
 
         result.Value.Textures.Single().ShouldBe(reflected.Textures.Single() with { BindSlot = 1 });
         result.Value.Samplers.Single().ShouldBe(reflected.Samplers.Single() with { BindSlot = 1 });
@@ -91,7 +92,7 @@ public sealed class VulkanResourceSlotsTests
         const string source = "#line 1 \"effect.fx\"\n// Texture2D Commented;\nfloat4 x;\nTexture2D A, B;\n";
         ReflectedEffect reflected = Effect([("A", 0)], []);
 
-        var result = VulkanResourceSlots.FromBindings(reflected, source, "fallback.fx");
+        var result = VulkanResourceSlots.FromBindings(reflected, ShaderStage.Pixel, source, "fallback.fx");
 
         result.IsFailure.ShouldBeTrue();
         result.Error.Code.ShouldBe("SD0228");
@@ -108,12 +109,70 @@ public sealed class VulkanResourceSlotsTests
     {
         ReflectedEffect reflected = Effect([("Tex", 32)], [("Tex", 32), ("Loose", 1)]);
 
-        var result = VulkanResourceSlots.FromBindings(reflected, "", "fallback.fx");
+        var result = VulkanResourceSlots.FromBindings(reflected, ShaderStage.Pixel, "", "fallback.fx");
 
         result.IsFailure.ShouldBeTrue();
         result.Error.Code.ShouldBe("SD0228");
         result.Error.File.ShouldBe("fallback.fx");
         result.Error.Message.ShouldContain("sampler 'Loose'", Case.Sensitive);
         result.Error.Message.ShouldContain("register(s0)", Case.Sensitive);
+    }
+    [Fact]
+    public void EveryResourceBelow32_IsNamed_AndTheErrorSitsAtTheFirstOneDeclaredLiterally()
+    {
+        // MainTex comes out of a macro (not literal in the text), A does not: the error names both
+        // and is located at A, the one the author can see.
+        const string source = "#line 1 \"effect.fx\"\nDECL_TEX(Main)\nTexture2D A, B;\n";
+        ReflectedEffect reflected = Effect([("MainTex", 0), ("A", 1)], []);
+
+        var result = VulkanResourceSlots.FromBindings(reflected, ShaderStage.Pixel, source, "fallback.fx");
+
+        result.IsFailure.ShouldBeTrue();
+        result.Error.Code.ShouldBe("SD0228");
+        result.Error.Message.ShouldContain("texture 'MainTex' (binding 0), texture 'A' (binding 1) were numbered", Case.Sensitive);
+        result.Error.File.ShouldBe("effect.fx");
+        result.Error.Line.ShouldBe(2);
+        result.Error.Column.ShouldBe("Texture2D ".Length + 1);
+    }
+
+    [Fact]
+    public void AResourceOutsideThePixelStagesDescriptorSet_IsRefusedWithSD0229()
+    {
+        // MonoGame's DesktopVK binds a pixel shader's resources from set 1 only; set 0 is the
+        // vertex stage's. An explicit `space0` puts a pixel-shader texture there.
+        const string source = "#line 1 \"effect.fx\"\nTexture2D A : register(t1, MACRO_SPACE);\n";
+        ReflectedEffect reflected = Effect([("A", 33)], [("A", 33)]);
+        reflected = reflected with { Textures = [reflected.Textures[0] with { RawDescriptorSet = 0 }] };
+
+        var result = VulkanResourceSlots.FromBindings(reflected, ShaderStage.Pixel, source, "fallback.fx");
+
+        result.IsFailure.ShouldBeTrue();
+        result.Error.Code.ShouldBe("SD0229");
+        result.Error.Message.ShouldContain("texture 'A' is in descriptor set 0", Case.Sensitive);
+        result.Error.Message.ShouldContain("pixel shader's resources from set 1", Case.Sensitive);
+        result.Error.Line.ShouldBe(1);
+    }
+
+    [Fact]
+    public void AConstantBufferOutsideItsStagesSet_IsRefusedWithSD0229_AndTheVertexStageUsesSet0()
+    {
+        var cbuffer = new ConstantBufferReflection { Name = "P", SizeBytes = 16, BindSlot = 0, Variables = [], RawDescriptorSet = 1 };
+        ReflectedEffect vs = Effect([("T", 32)], [("T", 32)]);
+        vs = vs with
+        {
+            Textures = [vs.Textures[0] with { RawDescriptorSet = 0 }],
+            Samplers = [vs.Samplers[0] with { RawDescriptorSet = 0 }],
+            ConstantBuffers = [cbuffer],
+        };
+
+        var result = VulkanResourceSlots.FromBindings(vs, ShaderStage.Vertex, "", "x.fx");
+
+        result.IsFailure.ShouldBeTrue();
+        result.Error.Code.ShouldBe("SD0229");
+        result.Error.Message.ShouldContain("constant buffer 'P' is in descriptor set 1", Case.Sensitive);
+        result.Error.Message.ShouldContain("vertex shader's resources from set 0", Case.Sensitive);
+
+        VulkanResourceSlots.FromBindings(vs with { ConstantBuffers = [cbuffer with { RawDescriptorSet = 0 }] }, ShaderStage.Vertex, "", "x.fx")
+            .IsSuccess.ShouldBeTrue("a vertex shader's resources in set 0 are where DesktopVK binds them");
     }
 }

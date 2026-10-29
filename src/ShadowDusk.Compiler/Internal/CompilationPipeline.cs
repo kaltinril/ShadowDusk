@@ -70,10 +70,10 @@ internal sealed class CompilationPipeline
             return first;
 
         // Vulkan: a texture or sampler the binding rewrite could not see on the raw text (its
-        // declaration comes out of a macro) was auto-numbered below binding 32 (SD0228). Compile
+        // declaration comes out of a macro) was auto-numbered below binding 32 (SD0228), or a register space it could not see put a
+        // resource outside the stage's descriptor set (SD0229). Compile
         // once more from the preprocessed source, where the declaration is literal. Only after
-        // that failure, so an effect that compiles from its raw source keeps exactly its bytes;
-        // if the retry fails too, the first attempt's SD0228 stands.
+        // that failure, so an effect that compiles from its raw source keeps exactly its bytes.
         if (compileFailure.UnpinnedVulkanResource)
         {
             LegacySamplerRecovery.Outcome.Retry? retry = LegacySamplerRecovery.PreprocessedRetry(
@@ -85,7 +85,13 @@ internal sealed class CompilationPipeline
             if (retry is null)
                 return first;
             Result<CompiledShader, ShaderError[]> second = RunCore(hlslSource, options, retry, out _, cancellationToken);
-            return second.IsSuccess ? second : first;
+            // A retry that still fails with SD0228 (or SD0229) names what the preprocessed source could not pin
+            // either, located through its #line map (the first attempt may name a resource the
+            // retry already pinned, a macro-declared one, with no line). Any other retry failure is
+            // the retry's own, so the first attempt's diagnostics stand.
+            if (second.IsSuccess || second.Error.Any(e => e.Code is VulkanResourceSlots.BelowOffsetCode or VulkanResourceSlots.WrongDescriptorSetCode))
+                return second;
+            return first;
         }
 
         // Legacy-sampler recovery (issue #308). A DXC shader compile failed. If the text DXC was
@@ -117,7 +123,7 @@ internal sealed class CompilationPipeline
         MacroSet Macros,
         IIncludeResolver IncludeResolver)
     {
-        /// <summary>The failure is a Vulkan <c>SD0228</c> (see <see cref="Run"/>), not a DXC compile failure.</summary>
+        /// <summary>The failure is a Vulkan <c>SD0228</c> or <c>SD0229</c> (see <see cref="Run"/>), not a DXC compile failure.</summary>
         public bool UnpinnedVulkanResource { get; init; }
     }
 
@@ -976,7 +982,7 @@ internal sealed class CompilationPipeline
                     if (options.Target == PlatformTarget.Vulkan)
                     {
                         Result<ReflectedEffect, ShaderError> slotted =
-                            VulkanResourceSlots.FromBindings(reflected, glCompileSource.Text, sourceFileName);
+                            VulkanResourceSlots.FromBindings(reflected, compiledShaderBlobs[blobIndex].Stage, glCompileSource.Text, sourceFileName);
                         if (slotted.IsFailure)
                         {
                             // A first pass only: the retry from the preprocessed source (Run)
