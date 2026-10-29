@@ -43,8 +43,9 @@ public enum FxParseErrorCode
     /// texture method: one of the 1D, 3D or cube families (<c>tex1D</c>, <c>tex3Dlod</c>,
     /// <c>texCUBE</c>, …), whose resource type the rewrite does not synthesize, or a
     /// <c>tex2Dlod</c> / <c>tex2Dbias</c> / <c>tex2Dproj</c> call it cannot place its helper for
-    /// (a wrong argument count, or a conditional directive splitting the declaration that
-    /// calls it). (The FNA target compiles these natively and never raises this.)
+    /// (a wrong argument count; or a shape whose rewrite depends on the #if branch, such as one
+    /// body under two conditional headers, when even the preprocessed re-parse cannot resolve it).
+    /// (The FNA target compiles these natively and never raises this.)
     /// </summary>
     UnsupportedLegacyIntrinsic = 12,
 

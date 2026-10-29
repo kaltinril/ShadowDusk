@@ -67,7 +67,7 @@ internal sealed class CompilationPipeline
         Result<CompiledShader, ShaderError[]> first = RunCore(
             hlslSource, options, recovered: null, out ShaderCompileFailure? compileFailure, cancellationToken);
         if (first.IsSuccess || compileFailure is null)
-            return first;
+            return NameRestructuredHelpersAsWritten(first, hlslSource);
 
         // Legacy-sampler recovery (issue #308). A DXC shader compile failed. If the text DXC was
         // given still holds legacy D3D9 sampler syntax once preprocessed (a declaration in an
@@ -85,8 +85,40 @@ internal sealed class CompilationPipeline
         // The outcome handling is LegacySamplerRecovery.Apply, shared with the raylib and SkSL
         // converters (issue #327). A retry that still fails with legacy syntax left in the
         // compiler's input gets SD0016 appended after the compiler's own verbatim diagnostics.
-        return LegacySamplerRecovery.Apply(
-            first, outcome, retry => RunCore(hlslSource, options, retry, out _, cancellationToken));
+        return NameRestructuredHelpersAsWritten(
+            LegacySamplerRecovery.Apply(
+                first, outcome, retry => RunCore(hlslSource, options, retry, out _, cancellationToken)),
+            hlslSource);
+    }
+
+    // FxPreParser rewrites tex2Dlod / tex2Dbias / tex2Dproj to a call of a helper it names
+    // `tex2Dlod_SD<n>` (a name the source never uses), so a compiler error about the call names
+    // a function the author never wrote ("no matching function for call to 'tex2Dproj_SD0'").
+    private static readonly Regex RestructuredHelperName =
+        new(@"\b(tex2D(?:lod|bias|proj))_SD\d+\b", RegexOptions.Compiled);
+
+    /// <summary>
+    /// Names the intrinsic the author wrote in place of the pre-parser's helper name in each
+    /// error's <see cref="ShaderError.Message"/>. The compiler's own text is kept, unchanged, in
+    /// <see cref="ShaderError.RawDiagnostics"/>. A name the SOURCE itself uses is the author's and
+    /// is left alone (the pre-parser never picks one).
+    /// </summary>
+    private static Result<CompiledShader, ShaderError[]> NameRestructuredHelpersAsWritten(
+        Result<CompiledShader, ShaderError[]> result, string source)
+    {
+        if (result.IsSuccess || !result.Error.Any(e => RestructuredHelperName.IsMatch(e.Message)))
+            return result;
+
+        string Rename(string text) => RestructuredHelperName.Replace(text, m =>
+            Regex.IsMatch(source, $@"\b{Regex.Escape(m.Value)}\b") ? m.Value : m.Groups[1].Value);
+
+        return Result<CompiledShader, ShaderError[]>.Fail(result.Error.Select(e =>
+        {
+            string renamed = Rename(e.Message);
+            return string.Equals(renamed, e.Message, StringComparison.Ordinal)
+                ? e
+                : e with { Message = renamed, RawDiagnostics = e.RawDiagnostics ?? e.FxcFormattedMessage };
+        }).ToArray());
     }
 
     /// <summary>
@@ -203,6 +235,19 @@ internal sealed class CompilationPipeline
         // must see one call per include, not one per pass.
         IIncludeResolver includeResolver = MemoizingIncludeResolver.Wrap(options.IncludeResolver ?? new FileSystemIncludeResolver());
         var preprocessor = new Preprocessor();
+
+        // A tex2Dlod / tex2Dbias / tex2Dproj call the raw pre-parse left verbatim because its
+        // rewrite depends on the #if branch that compiles. The DXC targets fail on it and recover
+        // from the preprocessed source as for any legacy residue; DirectX 11's compiler would take
+        // the unrewritten call silently (measured: vkd3d compiled one to an effect with no texture
+        // parameter), so it goes to the same recovery up front. Its FX0012 is the error when the
+        // recovery cannot apply.
+        if (recovered is null && options.Target == PlatformTarget.DirectX &&
+            fxParsed.DeferredLegacyIntrinsicCalls.Count > 0)
+        {
+            compileFailure = new ShaderCompileFailure(sourceFileName, macros, includeResolver);
+            return Fail(FromFxParseError(fxParsed.DeferredLegacyIntrinsicCalls[0]));
+        }
 
         PreprocessedSource preprocessed;
         if (recovered is not null)

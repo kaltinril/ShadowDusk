@@ -1874,12 +1874,15 @@ public sealed class FxPreParserTests
         result.Error.Message.ShouldContain($"'{intrinsic}'", Case.Sensitive);
     }
 
-    [Fact]
-    public void Parse_IdentifierNamedLikeIntrinsic_ButNotACall_DoesNotFail()
+    [Theory]
+    [InlineData("texCUBE")]   // still refused when CALLED: the case that exercises the guard
+    [InlineData("tex3D")]
+    [InlineData("tex2Dlod")]  // rewritten when called since 2026-10-28; kept: a variable is left alone too
+    public void Parse_IdentifierNamedLikeIntrinsic_ButNotACall_DoesNotFail(string intrinsic)
     {
-        // Only a CALL trips FX0012; a variable merely named tex2Dlod does not.
-        const string source = """
-            float tex2Dlod;
+        // Only a CALL trips FX0012; a variable merely named like the intrinsic does not.
+        string source = $$"""
+            float {{intrinsic}};
             technique T
             {
                 pass P { PixelShader = compile ps_3_0 PSMain(); }
@@ -1889,6 +1892,7 @@ public sealed class FxPreParserTests
         var result = FxPreParser.Parse(source, sourceFile: "test.fx");
 
         result.IsSuccess.ShouldBeTrue();
+        result.Value.StrippedHlsl.ShouldContain($"float {intrinsic};", Case.Sensitive);
     }
 
     // =========================================================================

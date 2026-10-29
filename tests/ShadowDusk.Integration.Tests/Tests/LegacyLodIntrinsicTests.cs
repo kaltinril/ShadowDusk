@@ -234,4 +234,137 @@ public sealed class LegacyLodIntrinsicTests
         error.Line.ShouldBe(6, error.FxcFormattedMessage);
         error.Message.ShouldContain("notDeclared", Case.Sensitive);
     }
+
+    [Theory]
+    [InlineData(PlatformTarget.OpenGL)]
+    [InlineData(PlatformTarget.DirectX)]
+    [InlineData(PlatformTarget.DirectX12)]
+    [InlineData(PlatformTarget.Vulkan)]
+    public async Task ErrorBeforeTheCall_OnTheDeclarationsLine_KeepsItsColumn(PlatformTarget target)
+    {
+        // A free line above the declaration takes the helper, so the declaration's own line keeps
+        // every column up to the call (the call's rename then shifts what follows it on that line,
+        // as tex2D's rename to T.Sample always has).
+        const string declaration = "float4 Get(float2 uv) { return notDeclared + tex2Dlod(S, float4(uv, 0, 1)); }";
+        string source =
+            Header +                                                                     // 1-5
+            "sampler2D S;\n" +                                                           // 6
+            "\n" +                                                                       // 7
+            declaration + "\n" +                                                         // 8
+            "float4 MainPS(float2 uv : TEXCOORD0) : COLOR0 { return Get(uv); }\n" +
+            "technique T { pass P { PixelShader = compile PS_SHADERMODEL MainPS(); } }\n";
+
+        var result = await CompileAsync(source, target, "col.fx");
+
+        result.IsFailure.ShouldBeTrue();
+        ShaderError error = result.Error.First(e => e.Severity == ShaderErrorSeverity.Error);
+        error.Line.ShouldBe(8, error.FxcFormattedMessage);
+        error.Column.ShouldBe(declaration.IndexOf("notDeclared", StringComparison.Ordinal) + 1, error.FxcFormattedMessage);
+    }
+
+    [Theory]
+    [InlineData(PlatformTarget.OpenGL)]
+    [InlineData(PlatformTarget.DirectX)]
+    [InlineData(PlatformTarget.DirectX12)]
+    [InlineData(PlatformTarget.Vulkan)]
+    public async Task WrongCoordinateType_TheErrorNamesTheIntrinsic_TheRawTextKeepsTheCompilers(PlatformTarget target)
+    {
+        const string source =
+            Header +
+            "sampler2D S;\n" +
+            "float4 MainPS(float2 uv : TEXCOORD0) : COLOR0 { return tex2Dproj(S, float3(uv, 2)); }\n" +
+            "technique T { pass P { PixelShader = compile PS_SHADERMODEL MainPS(); } }\n";
+
+        var result = await CompileAsync(source, target, "type.fx");
+
+        result.IsFailure.ShouldBeTrue();
+        ShaderError error = result.Error.First(e => e.Severity == ShaderErrorSeverity.Error);
+        error.Message.ShouldContain("tex2Dproj", Case.Sensitive);
+        error.Message.ShouldNotContain("tex2Dproj_SD", Case.Sensitive);
+        error.RawDiagnostics.ShouldNotBeNull().ShouldContain("tex2Dproj_SD0", Case.Sensitive);
+    }
+
+    // ---- Shapes whose rewrite depends on the #if branch: the preprocessed re-parse ------------
+
+    [Theory]
+    [InlineData(PlatformTarget.OpenGL)]
+    [InlineData(PlatformTarget.DirectX)]
+    [InlineData(PlatformTarget.DirectX12)]
+    [InlineData(PlatformTarget.Vulkan)]
+    public async Task OneBodyUnderTwoConditionalHeaders_Compiles(PlatformTarget target)
+    {
+        // fxc compiles it. The raw parse cannot place the helper (no position before the
+        // declaration is in both branches), so it leaves the call to the preprocessed re-parse;
+        // DirectX 11 takes that route up front. It was FX0012.
+        const string source =
+            Header +
+            "texture Tex;\n" +
+            "sampler S = sampler_state { Texture = <Tex>; };\n" +
+            "#ifdef FOO\n" +
+            "float4 MainPS(float4 position : SV_Position, float4 color : COLOR0, float2 uv : TEXCOORD0) : COLOR0\n" +
+            "#else\n" +
+            "float4 MainPS(float4 position : SV_Position, float4 color : COLOR0, float2 uv : TEXCOORD0) : COLOR0\n" +
+            "#endif\n" +
+            "{ return tex2Dlod(S, float4(uv, 0, 1)) * color; }\n" +
+            "technique T { pass P { PixelShader = compile PS_SHADERMODEL MainPS(); } }\n";
+
+        MgfxBlobReader effect = await CompileSuccessAsync(source, target, "split.fx");
+        effect.Parameters.Select(p => p.Name).ShouldContain("Tex");
+        effect.Samplers.ShouldNotBeEmpty();
+    }
+
+    [Theory]
+    [InlineData(PlatformTarget.OpenGL)]
+    [InlineData(PlatformTarget.DirectX)]
+    [InlineData(PlatformTarget.DirectX12)]
+    [InlineData(PlatformTarget.Vulkan)]
+    public async Task TextureTypedDifferentlyPerBranch_CompilesWithTheTexture(PlatformTarget target)
+    {
+        // Measured on DirectX 11 with the call left verbatim and no re-parse: vkd3d compiled it
+        // to an effect with NO 'Tex' parameter. The re-parse resolves the branch first.
+        const string source =
+            Header +
+            "#ifdef FOO\n" +
+            "Texture2D<float> Tex;\n" +
+            "#else\n" +
+            "Texture2D Tex;\n" +
+            "#endif\n" +
+            "sampler S = sampler_state { Texture = <Tex>; };\n" +
+            "float4 MainPS(float4 position : SV_Position, float4 color : COLOR0, float2 uv : TEXCOORD0) : COLOR0 { return tex2Dlod(S, float4(uv, 0, 1)) * color; }\n" +
+            "technique T { pass P { PixelShader = compile PS_SHADERMODEL MainPS(); } }\n";
+
+        MgfxBlobReader effect = await CompileSuccessAsync(source, target, "typed.fx");
+        effect.Parameters.Select(p => p.Name).ShouldContain("Tex");
+        effect.Samplers.ShouldAllBe(s => effect.Parameters[s.Parameter].Name == "Tex");
+    }
+
+    [Theory]
+    [InlineData(PlatformTarget.OpenGL)]
+    [InlineData(PlatformTarget.DirectX)]
+    [InlineData(PlatformTarget.DirectX12)]
+    [InlineData(PlatformTarget.Vulkan)]
+    public async Task AttributedPixelShader_Compiles(PlatformTarget target)
+    {
+        // The helper used to land inside the brackets of the attribute ('[float4 tex2Dlod_SD0(...)
+        // {...} earlydepthstencil]': DX11 E5000, DXC "expected ']'").
+        const string source =
+            "#if OPENGL\n#define PS_SHADERMODEL ps_3_0\n#else\n#define PS_SHADERMODEL ps_5_0\n#endif\n" +
+            "sampler2D S;\n" +
+            "static const float k = 1;\n" +
+            "[earlydepthstencil]\n" +
+            "float4 MainPS(float4 position : SV_Position, float4 color : COLOR0, float2 uv : TEXCOORD0) : COLOR0 { return tex2Dlod(S, float4(uv, 0, k)) * color; }\n" +
+            "technique T { pass P { PixelShader = compile PS_SHADERMODEL MainPS(); } }\n";
+
+        MgfxBlobReader effect = await CompileSuccessAsync(source, target, "attr.fx");
+        effect.Samplers.ShouldNotBeEmpty();
+    }
+
+    private static async Task<MgfxBlobReader> CompileSuccessAsync(string source, PlatformTarget target, string name)
+    {
+        var result = await CompileAsync(source, target, name);
+        result.IsSuccess.ShouldBeTrue(result.IsFailure
+            ? string.Join(" | ", result.Error.Select(e => e.FxcFormattedMessage))
+            : "");
+        return MgfxBlobReader.Parse(result.Value.Data);
+    }
 }

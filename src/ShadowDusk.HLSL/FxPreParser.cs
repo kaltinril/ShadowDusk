@@ -341,6 +341,11 @@ public sealed class FxPreParser
     // second call in the same declaration reuses it, and a declaration in another #if branch
     // gets its own, so no configuration ever sees two definitions of one name.
     private readonly Dictionary<int, StringBuilder> _restructuredHelperText = new();
+    // Declaration start -> the end offset of the top-level ';' / '}' that precedes it (-1 at the
+    // start of the file): the helper's second-choice position (see the placement in ParseFile).
+    private readonly Dictionary<int, int> _restructuredBoundaryEnd = new();
+    // Calls left verbatim for the preprocessed re-parse (FxParseResult.DeferredLegacyIntrinsicCalls).
+    private readonly List<FxParseError> _deferredRestructuredCalls = new();
     private readonly Dictionary<(int DeclStart, string Intrinsic, string TextureType), string> _restructuredHelperNames = new();
     private int _restructuredHelperCount;
 
@@ -993,11 +998,18 @@ public sealed class FxPreParser
                 TryMatchTexSampleArgument(out string restructuredSampler) &&
                 _samplerTextureBindings.TryGetValue(restructuredSampler, out string? restructuredTexture))
             {
-                Result<(int Start, int End, string Replacement), FxParseError> call =
+                Result<(int Start, int End, string Replacement)?, FxParseError> call =
                     RewriteRestructuredIntrinsic(tok, restructuredTexture, braceDepth);
                 if (call.IsFailure)
                     return Result<FxParseResult, FxParseError>.Fail(call.Error);
-                replacedRanges.Add(call.Value);
+
+                // A null rewrite leaves the call verbatim, exactly as an unbound sampler's is
+                // left: a shape whose answer depends on which #if branch compiles (see
+                // RewriteRestructuredIntrinsic). On the raw text the compile then fails and the
+                // legacy-sampler recovery rewrites the PREPROCESSED source, where every
+                // conditional is resolved.
+                if (call.Value is { } rewrite)
+                    replacedRanges.Add(rewrite);
 
                 Consume();
                 SkipNonCodeTokens();
@@ -1089,12 +1101,28 @@ public sealed class FxPreParser
         // keeps its number; only that line's columns move, as a tex2D rewrite moves its own.
         foreach ((int declStart, StringBuilder helpers) in _restructuredHelperText)
         {
-            // Defensive: the declaration start is the first code token after a top-level ';'
-            // or '}', which no erasure or replacement spans. Should the brace tracking ever
+            bool Inside(int offset) =>
+                erasedRanges.Exists(r => r.Start < offset && offset < r.End) ||
+                replacedRanges.Exists(r => r.Start < offset && offset < r.End);
+
+            // Preferred position: the start of the line ABOVE the declaration, when that line
+            // holds nothing but whitespace or comments (the usual blank or comment line between
+            // functions), so not one column of the author's code moves. That line holds no
+            // directive, so it sits in the same conditional branch as the declaration. Otherwise
+            // the helper goes right before the declaration, on its first line.
+            // Second choice: right after the ';' / '}' that ended the previous declaration, when
+            // only whitespace and comments (no directive) lie between it and this declaration's
+            // line: the helper then shares the end of that line, again moving no code column.
+            int boundaryEnd = _restructuredBoundaryEnd.GetValueOrDefault(declStart, -1);
+            int insertAt =
+                LineAboveIfFree(declStart) is int above && !Inside(above) ? above :
+                boundaryEnd >= 0 && OnlyTriviaAcrossALine(boundaryEnd, declStart) && !Inside(boundaryEnd) ? boundaryEnd :
+                declStart;
+
+            // Defensive: the declaration start is the first code character after a top-level
+            // ';' or '}', which no erasure or replacement spans. Should the brace tracking ever
             // place it inside one, the insertion would be lost or duplicated, so refuse.
-            bool inside = erasedRanges.Exists(r => r.Start < declStart && declStart < r.End) ||
-                          replacedRanges.Exists(r => r.Start < declStart && declStart < r.End);
-            if (inside)
+            if (Inside(insertAt))
             {
                 int atIndex = Array.IndexOf(_tokenCharOffset, declStart);
                 Token at = atIndex >= 0 ? _tokens[atIndex] : _tokens[^1];
@@ -1103,7 +1131,7 @@ public sealed class FxPreParser
                     "helper its tex2Dlod / tex2Dbias / tex2Dproj call is rewritten to. Use the modern " +
                     "form instead (tex2Dlod(s, t) becomes T.SampleLevel(s, t.xy, t.w)).", at);
             }
-            replacedRanges.Add((declStart, declStart, helpers.ToString()));
+            replacedRanges.Add((insertAt, insertAt, insertAt == boundaryEnd ? " " + helpers : helpers.ToString()));
         }
 
         string strippedHlsl = BuildStrippedOutput(erasedRanges, replacedRanges);
@@ -1130,6 +1158,7 @@ public sealed class FxPreParser
             SynthesizedSamplerTextures = new Dictionary<string, string>(_synthesizedSamplerTextures, StringComparer.Ordinal),
             UndeclaredStateTextures = new Dictionary<string, string>(_undeclaredStateTextures, StringComparer.Ordinal),
             ReservedGlSamplerSlots = CollectReservedSamplerRegisters(),
+            DeferredLegacyIntrinsicCalls = _deferredRestructuredCalls.ToArray(),
         });
     }
 
@@ -3067,12 +3096,14 @@ public sealed class FxPreParser
     /// before the enclosing top-level declaration. Returns the replacement for the span from
     /// the intrinsic name through its <c>(</c>: <c>tex2Dlod (</c> becomes
     /// <c>tex2Dlod_SD0(T, </c>, so <c>tex2Dlod(s, t)</c> reads <c>tex2Dlod_SD0(T, s, t)</c> with
-    /// both arguments untouched. Every newline in the replaced span is kept.
+    /// both arguments untouched. Every newline in the replaced span is kept. Returns a null rewrite
+    /// (the call stays verbatim) when the right answer depends on which conditional branch
+    /// compiles; see the two cases below.
     /// </summary>
     /// <param name="intrinsic">The intrinsic-name token at <c>_pos</c>.</param>
     /// <param name="texture">The texture the sampler argument is bound to.</param>
     /// <param name="braceDepth">The main loop's brace depth at the call (0 at global scope).</param>
-    private Result<(int Start, int End, string Replacement), FxParseError> RewriteRestructuredIntrinsic(
+    private Result<(int Start, int End, string Replacement)?, FxParseError> RewriteRestructuredIntrinsic(
         Token intrinsic, string texture, int braceDepth)
     {
         // The call must have exactly two arguments, the sampler and the float4 coordinate:
@@ -3096,27 +3127,56 @@ public sealed class FxPreParser
         }
         if (Peek(off).Kind != TokenKind.RParen || commas != 1)
         {
-            return Fail<(int, int, string)>(FxParseErrorCode.UnsupportedLegacyIntrinsic,
+            return Fail<(int, int, string)?>(FxParseErrorCode.UnsupportedLegacyIntrinsic,
                 $"'{intrinsic.Text}' takes two arguments, a sampler and a float4 coordinate " +
                 $"({intrinsic.Text}(s, t)); this call has {(Peek(off).Kind == TokenKind.RParen ? (commas + 1).ToString(System.Globalization.CultureInfo.InvariantCulture) : "an unterminated list of")} " +
                 "arguments, so ShadowDusk cannot rewrite it to the modern Texture2D method.", intrinsic);
         }
 
-        int declIndex = TopLevelDeclarationStartIndex(braceDepth);
+        (int declStart, int declIndex, int boundaryEnd) = TopLevelDeclarationStart(braceDepth);
+        _restructuredBoundaryEnd[declStart] = boundaryEnd;
+
+        // A conditional directive that closes or switches the branch the declaration starts in
+        // before the call (one body under two #if-selected headers): no single position before
+        // the declaration serves every configuration. Only the preprocessed source can say which
+        // header compiles, so the call is left for the recovery. Measured: fxc compiles the
+        // shape, and so does this route on OpenGL, Vulkan and DirectX 12; on that preprocessed
+        // text the conditionals are gone, so this can only fire on raw text.
         if (FindConditionalBoundary(declIndex, _pos) is { } boundary)
         {
-            return Fail<(int, int, string)>(FxParseErrorCode.UnsupportedLegacyIntrinsic,
+            FxParseError split = MakeError(FxParseErrorCode.UnsupportedLegacyIntrinsic,
                 $"ShadowDusk rewrites '{intrinsic.Text}' to a helper function it defines right before " +
                 "the declaration that calls it, but a conditional directive ('" + boundary.Text.Trim() +
                 $"', line {boundary.Line.ToString(System.Globalization.CultureInfo.InvariantCulture)}) " +
                 "closes or switches the branch that declaration starts in before the call, so no single " +
-                "position serves every configuration. Use the modern form for this call (tex2Dlod(s, t) " +
+                "position serves every configuration, and the effect could not be re-parsed from its " +
+                "preprocessed source either. Use the modern form for this call (tex2Dlod(s, t) " +
                 "becomes T.SampleLevel(s, t.xy, t.w); tex2Dbias(s, t) becomes T.SampleBias(s, t.xy, t.w); " +
                 "tex2Dproj(s, t) becomes T.Sample(s, t.xy / t.w)).", intrinsic);
+            if (!_preprocessed)
+            {
+                _deferredRestructuredCalls.Add(split);
+                return Result<(int, int, string)?, FxParseError>.Ok(null);
+            }
+            return Result<(int, int, string)?, FxParseError>.Fail(split);
         }
 
-        int declStart = _tokenCharOffset[declIndex];
-        string textureType = ResolveTextureParameterType(texture);
+        // A texture declared with a different type in different #if branches: the helper's
+        // parameter type depends on the branch, which only the preprocessed source knows.
+        if (ResolveTextureParameterType(texture) is not { } textureType)
+        {
+            if (!_preprocessed)
+            {
+                _deferredRestructuredCalls.Add(MakeError(FxParseErrorCode.UnsupportedLegacyIntrinsic,
+                    $"The texture '{texture}' that '{intrinsic.Text}' samples is declared with different " +
+                    "types in different conditional branches, so the type of the helper ShadowDusk " +
+                    "rewrites the call to depends on the branch that compiles, and the effect could not be " +
+                    "re-parsed from its preprocessed source either. Use the modern form for this call " +
+                    $"({texture}.SampleLevel(s, t.xy, t.w) for tex2Dlod).", intrinsic));
+                return Result<(int, int, string)?, FxParseError>.Ok(null);
+            }
+            textureType = "Texture2D";
+        }
         if (!_restructuredHelperNames.TryGetValue((declStart, intrinsic.Text, textureType), out string? helper))
         {
             do
@@ -3137,36 +3197,156 @@ public sealed class FxPreParser
 
         int start = _tokenCharOffset[_pos];
         int end = _tokenCharOffset[_pos + lparen] + 1;
-        return Result<(int, int, string), FxParseError>.Ok(
+        return Result<(int, int, string)?, FxParseError>.Ok(
             (start, end, BuildDeclReplacement(start, end, $"{helper}({texture}, ")));
     }
 
     /// <summary>
-    /// The index of the first code token of the top-level declaration that contains the token
-    /// at <c>_pos</c>: walking back, the token after the nearest <c>;</c> or <c>}</c> that sits at
-    /// global scope (or the first code token of the file). <paramref name="braceDepth"/> is how
-    /// many braces enclose <c>_pos</c>; technique, pass and sampler-state blocks are balanced, so
-    /// they read as whole top-level blocks on the way.
+    /// Where the top-level declaration that contains the token at <c>_pos</c> starts: walking
+    /// back, the nearest <c>;</c> or <c>}</c> at global scope (or the start of the file), then
+    /// forward past whitespace, comments and preprocessor lines to the first character of code.
+    /// Returns that character offset and the index of the first token at or after it.
+    ///
+    /// <para>Character-level on purpose: the lexer drops <c>[</c> and <c>]</c>, so an attribute
+    /// list (<c>[earlydepthstencil]</c>, <c>[numthreads(8, 8, 1)]</c>, several, on their own
+    /// lines) is invisible as tokens, and the first TOKEN would be the attribute's name; the
+    /// declaration starts at the <c>[</c>. A <c>;</c> inside an FX annotation block
+    /// (<c>float4 PS(…) : COLOR0 &lt; string s = "x"; &gt;</c>) is not a terminator: at global
+    /// scope the walk keeps an angle-bracket depth and only a <c>;</c> outside every <c>&lt; &gt;</c>
+    /// ends the previous declaration. <paramref name="braceDepth"/> is how many braces enclose
+    /// <c>_pos</c>; technique, pass and sampler-state blocks are balanced, so they read as whole
+    /// top-level blocks on the way.</para>
     /// </summary>
-    private int TopLevelDeclarationStartIndex(int braceDepth)
+    private (int Offset, int TokenIndex, int BoundaryEnd) TopLevelDeclarationStart(int braceDepth)
     {
         int level = braceDepth;
+        int angle = 0;
         int i = _pos - 1;
         for (; i >= 0; i--)
         {
             TokenKind k = _tokens[i].Kind;
-            if (level == 0 && k is TokenKind.Semicolon or TokenKind.RBrace)
-                break;
+            if (level == 0)
+            {
+                if (k == TokenKind.RBrace || (k == TokenKind.Semicolon && angle == 0))
+                    break;
+                if (k == TokenKind.RAngle)
+                    angle++;
+                else if (k == TokenKind.LAngle && angle > 0)
+                    angle--;
+            }
             if (k == TokenKind.RBrace)
                 level++;
             else if (k == TokenKind.LBrace && level > 0)
                 level--;
         }
 
+        int offset = i >= 0 ? _tokenCharOffset[i] + _tokens[i].Text.Length : 0;
         int j = i + 1;
-        while (j < _pos && _tokens[j].Kind is TokenKind.LineComment or TokenKind.BlockComment or TokenKind.Preprocessor)
-            j++;
-        return j;
+        while (true)
+        {
+            while (offset < _source.Length && char.IsWhiteSpace(_source[offset]))
+                offset++;
+            while (j < _pos && _tokenCharOffset[j] < offset)
+                j++;
+            if (j < _pos && _tokenCharOffset[j] == offset &&
+                _tokens[j].Kind is TokenKind.LineComment or TokenKind.BlockComment or TokenKind.Preprocessor)
+            {
+                offset += _tokens[j].Text.Length;
+                j++;
+                continue;
+            }
+            break;
+        }
+
+        return (offset, j, i >= 0 ? _tokenCharOffset[i] + _tokens[i].Text.Length : -1);
+    }
+
+    /// <summary>
+    /// Whether <c>[from, to)</c> holds only whitespace and comments (no code, no directive, no
+    /// character the lexer drops) and at least one line break.
+    /// </summary>
+    private bool OnlyTriviaAcrossALine(int from, int to)
+    {
+        bool lineBreak = false;
+        for (int c = from; c < to; c++)
+        {
+            char ch = _source[c];
+            if (ch == '\n')
+            {
+                lineBreak = true;
+                continue;
+            }
+            if (char.IsWhiteSpace(ch))
+                continue;
+            int t = TokenStartingAt(c);
+            if (t < 0 || _tokens[t].Kind is not (TokenKind.LineComment or TokenKind.BlockComment))
+                return false;
+            string text = _tokens[t].Text;
+            if (text.Contains('\n'))
+                lineBreak = true;
+            c += text.Length - 1;
+        }
+        return lineBreak;
+    }
+
+    private int TokenStartingAt(int offset)
+    {
+        for (int t = 0; t < _tokens.Count; t++)
+        {
+            if (_tokens[t].Kind != TokenKind.EOF && _tokenCharOffset[t] == offset)
+                return t;
+        }
+        return -1;
+    }
+
+    /// <summary>
+    /// The start of the line above the one <paramref name="offset"/> is on, when that line holds
+    /// only whitespace and comments and its first character is not inside a token (a block
+    /// comment or a continued directive running through it); otherwise <c>null</c>.
+    /// </summary>
+    private int? LineAboveIfFree(int offset)
+    {
+        int lineStart = offset;
+        while (lineStart > 0 && _source[lineStart - 1] != '\n')
+            lineStart--;
+        if (lineStart == 0)
+            return null;
+
+        int above = lineStart - 1;            // the '\n' ending the line above
+        while (above > 0 && _source[above - 1] != '\n')
+            above--;
+
+        for (int t = 0; t < _tokens.Count; t++)
+        {
+            int ts = _tokenCharOffset[t];
+            int te = ts + _tokens[t].Text.Length;
+            if (_tokens[t].Kind == TokenKind.EOF || te <= above || ts >= lineStart)
+                continue;
+            if (ts < above)
+                return null;                  // a token runs into the line from above
+            if (_tokens[t].Kind is not (TokenKind.LineComment or TokenKind.BlockComment))
+                return null;                  // code or a directive on the line
+            if (te > lineStart)
+                return null;                  // a block comment runs on into the declaration's line
+        }
+
+        // A character the lexer drops (']', ':', '+', ...) is code, though it is no token.
+        for (int c = above; c < lineStart; c++)
+        {
+            if (char.IsWhiteSpace(_source[c]))
+                continue;
+            bool inComment = false;
+            for (int t = 0; t < _tokens.Count && !inComment; t++)
+            {
+                int ts = _tokenCharOffset[t];
+                inComment = _tokens[t].Kind is TokenKind.LineComment or TokenKind.BlockComment &&
+                            ts <= c && c < ts + _tokens[t].Text.Length;
+            }
+            if (!inComment)
+                return null;
+        }
+
+        return above;
     }
 
     /// <summary>
@@ -3216,9 +3396,24 @@ public sealed class FxPreParser
     /// spelled as written, a legacy <c>texture</c> keyword as the type it is rewritten to), or
     /// <c>Texture2D</c> when the text does not declare it (a synthesized texture, or one an
     /// <c>#include</c> declares). A typed texture must keep its type: DXC and vkd3d refuse to pass
-    /// a <c>Texture2D&lt;float&gt;</c> to a <c>Texture2D</c> parameter.
+    /// a <c>Texture2D&lt;float&gt;</c> to a <c>Texture2D</c> parameter. <c>null</c> when the text
+    /// declares the texture with DIFFERENT types (one per <c>#if</c> branch): the right type then
+    /// depends on the branch that compiles.
     /// </summary>
-    private string ResolveTextureParameterType(string texture)
+    private string? ResolveTextureParameterType(string texture)
+    {
+        var types = new HashSet<string>(StringComparer.Ordinal);
+        foreach (string type in DeclaredTextureTypes(texture))
+            types.Add(type);
+        return types.Count switch
+        {
+            0 => "Texture2D",
+            1 => types.First(),
+            _ => null,
+        };
+    }
+
+    private IEnumerable<string> DeclaredTextureTypes(string texture)
     {
         for (int i = 1; i < _tokens.Count; i++)
         {
@@ -3235,9 +3430,9 @@ public sealed class FxPreParser
             if (prev.Kind == TokenKind.Identifier)
             {
                 if (LegacyTextureTypeKeywords.TryGetValue(prev.Text, out string? modern))
-                    return modern;
-                if (IsModernTextureType(prev.Text))
-                    return prev.Text;
+                    yield return modern;
+                else if (IsModernTextureType(prev.Text))
+                    yield return prev.Text;
                 continue;
             }
 
@@ -3260,12 +3455,10 @@ public sealed class FxPreParser
                 {
                     int typeStart = _tokenCharOffset[q];
                     int typeEnd = _tokenCharOffset[p] + 1;
-                    return CollapseToOneLine(typeStart, typeEnd);
+                    yield return CollapseToOneLine(typeStart, typeEnd);
                 }
             }
         }
-
-        return "Texture2D";
     }
 
     private static bool IsModernTextureType(string text) =>

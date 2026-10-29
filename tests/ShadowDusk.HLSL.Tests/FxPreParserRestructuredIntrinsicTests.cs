@@ -45,11 +45,14 @@ public sealed class FxPreParserRestructuredIntrinsicTests
             "}\n" + Technique;
 
         string stripped = Rewrite(source);
+        string[] lines = stripped.Split('\n');
 
         stripped.ShouldContain($"return {intrinsic}_SD0(SpriteTexture, TexSampler, t);", Case.Sensitive);
-        stripped.ShouldContain(
-            $"float4 {intrinsic}_SD0(Texture2D sdTexture, SamplerState sdSampler, float4 sdCoord) {{ return {body}; }} float4 PSMain(",
-            Case.Sensitive);
+        // The helper ends the line of the ';' that closed the previous declaration, so the
+        // function's own first line keeps every column.
+        lines[1].ShouldBe(
+            $"SamplerState TexSampler; float4 {intrinsic}_SD0(Texture2D sdTexture, SamplerState sdSampler, float4 sdCoord) {{ return {body}; }} ");
+        lines[2].ShouldBe("float4 PSMain(float4 t : TEXCOORD0) : SV_Target0");
         stripped.ShouldNotContain($"{intrinsic}(", Case.Sensitive);
         stripped.ShouldContain("SamplerState TexSampler;", Case.Sensitive);
         LineCount(stripped).ShouldBe(LineCount(source), "no line may move: diagnostics keep their line numbers");
@@ -115,8 +118,8 @@ public sealed class FxPreParserRestructuredIntrinsicTests
         string[] lines = stripped.Split('\n');
 
         LineCount(stripped).ShouldBe(LineCount(source));
-        lines[1].ShouldStartWith("float4 tex2Dlod_SD0(Texture2D sdTexture", Case.Sensitive);
-        lines[1].ShouldEndWith("float4 PSMain(float2 uv : TEXCOORD0) : SV_Target0", Case.Sensitive);
+        lines[0].ShouldStartWith("Texture2D S_SDTexture; SamplerState S; float4 tex2Dlod_SD0(Texture2D sdTexture", Case.Sensitive);
+        lines[1].ShouldBe("float4 PSMain(float2 uv : TEXCOORD0) : SV_Target0");
         lines[3].ShouldBe("    return tex2Dlod_SD0(S_SDTexture, ");
         lines[4].ShouldBe("");
         lines[5].ShouldBe("        S,");
@@ -184,8 +187,8 @@ public sealed class FxPreParserRestructuredIntrinsicTests
         string[] lines = stripped.Split('\n');
         lines[1].Trim().ShouldBe("", "the technique block is erased");
         lines[2].ShouldStartWith("struct VOut", Case.Sensitive);
-        lines[3].ShouldStartWith("float4 tex2Dlod_SD0(", Case.Sensitive);
-        lines[3].ShouldContain("} float4 PSMain(VOut i)", Case.Sensitive);
+        lines[2].ShouldContain("}; float4 tex2Dlod_SD0(", Case.Sensitive);
+        lines[3].ShouldStartWith("float4 PSMain(VOut i) : SV_Target0 { return tex2Dlod_SD0(", Case.Sensitive);
     }
 
     [Fact]
@@ -245,11 +248,13 @@ public sealed class FxPreParserRestructuredIntrinsicTests
     }
 
     [Fact]
-    public void ConditionalSplittingTheFunctionHeader_FailsWithFX0012_AtTheCall()
+    public void ConditionalSplittingTheFunctionHeader_LeavesTheCallForThePreprocessedReparse()
     {
         // One body, two headers: no single position before "the declaration" is in both
-        // branches, so the shape is refused instead of compiled in one configuration only.
-        var result = FxPreParser.Parse(
+        // branches. fxc compiles the shape, so it is not refused: the raw parse leaves the call
+        // verbatim (like an unbound sampler's) and records it, and the preprocessed re-parse,
+        // where the conditional is resolved, rewrites it. It used to be FX0012 here.
+        const string source =
             "sampler2D S;\n" +
             "#if A\n" +
             "float4 PSMain(float2 uv : TEXCOORD0) : COLOR0\n" +
@@ -257,14 +262,139 @@ public sealed class FxPreParserRestructuredIntrinsicTests
             "float4 PSMain(float2 uv : TEXCOORD1) : COLOR0\n" +
             "#endif\n" +
             "{\n" +
-            "    return tex2Dlod(S, float4(uv, 0, 1));\n" +
-            "}" + Technique,
-            sourceFile: "test.fx");
+            "    return tex2Dlod(S, float4(uv, 0, 1));\n" +   // line 8
+            "}" + Technique;
 
-        result.IsFailure.ShouldBeTrue();
-        result.Error.Code.ShouldBe(FxParseErrorCode.UnsupportedLegacyIntrinsic);
-        result.Error.Message.ShouldContain("'#else', line 4", Case.Sensitive);
-        result.Error.Line.ShouldBe(8);
+        var result = FxPreParser.Parse(source, sourceFile: "test.fx");
+
+        result.IsSuccess.ShouldBeTrue();
+        result.Value.StrippedHlsl.ShouldContain("return tex2Dlod(S, float4(uv, 0, 1));", Case.Sensitive);
+        result.Value.StrippedHlsl.ShouldNotContain("tex2Dlod_SD", Case.Sensitive);
+        FxParseError deferred = result.Value.DeferredLegacyIntrinsicCalls.ShouldHaveSingleItem();
+        deferred.Code.ShouldBe(FxParseErrorCode.UnsupportedLegacyIntrinsic);
+        deferred.Line.ShouldBe(8);
+        deferred.Message.ShouldContain("'#else', line 4", Case.Sensitive);
+
+        var preprocessed = FxPreParser.ParsePreprocessed(source, "test.fx");
+        preprocessed.IsSuccess.ShouldBeTrue(preprocessed.IsFailure ? preprocessed.Error.Message : "");
+        preprocessed.Value.Parsed.StrippedHlsl.ShouldContain("return tex2Dlod_SD0(S_SDTexture, S, float4(uv, 0, 1));", Case.Sensitive);
+        preprocessed.Value.Parsed.DeferredLegacyIntrinsicCalls.ShouldBeEmpty();
+    }
+
+    [Fact]
+    public void TextureTypedDifferentlyPerBranch_LeavesTheCallForThePreprocessedReparse()
+    {
+        // The helper's texture parameter would need the type of the branch that compiles.
+        const string source =
+            "#ifdef FOO\n" +
+            "Texture2D<float> Tex;\n" +
+            "#else\n" +
+            "Texture2D Tex;\n" +
+            "#endif\n" +
+            "sampler S = sampler_state { Texture = <Tex>; };\n" +
+            "float4 PSMain(float2 uv : TEXCOORD0) : COLOR0 { return tex2Dlod(S, float4(uv, 0, 1)); }" + Technique;
+
+        var result = FxPreParser.Parse(source, sourceFile: "test.fx");
+
+        result.IsSuccess.ShouldBeTrue();
+        result.Value.StrippedHlsl.ShouldContain("return tex2Dlod(S, float4(uv, 0, 1));", Case.Sensitive);
+        result.Value.DeferredLegacyIntrinsicCalls.ShouldHaveSingleItem().Message.ShouldContain("different types", Case.Sensitive);
+
+        var preprocessed = FxPreParser.ParsePreprocessed(source, "test.fx");
+        preprocessed.IsSuccess.ShouldBeTrue(preprocessed.IsFailure ? preprocessed.Error.Message : "");
+        preprocessed.Value.Parsed.StrippedHlsl.ShouldContain(
+            "float4 tex2Dlod_SD0(Texture2D sdTexture, SamplerState sdSampler, float4 sdCoord)", Case.Sensitive);
+    }
+
+    [Fact]
+    public void AttributeOnItsOwnLine_TheHelperGoesBeforeIt_NotInsideTheBrackets()
+    {
+        // The lexer drops '[' and ']', so the attribute's NAME used to read as the declaration's
+        // first token and the helper landed inside the brackets:
+        // [float4 tex2Dlod_SD0(...) {...} earlydepthstencil].
+        string stripped = Rewrite(
+            "sampler2D S;\n" +
+            "static const float k = 1;\n" +
+            "[earlydepthstencil]\n" +
+            "float4 PSMain(float2 uv : TEXCOORD0) : COLOR0 { return tex2Dlod(S, float4(uv, 0, k)); }" + Technique);
+
+        string[] lines = stripped.Split('\n');
+        lines[1].ShouldStartWith("static const float k = 1; float4 tex2Dlod_SD0(", Case.Sensitive);
+        lines[2].ShouldBe("[earlydepthstencil]");
+        stripped.ShouldNotContain("[float4", Case.Sensitive);
+    }
+
+    [Theory]
+    [InlineData("[earlydepthstencil]")]
+    [InlineData("[numthreads(8, 8, 1)]")]
+    [InlineData("[A(1, 2)] [B]")]
+    public void AttributesOnTheDeclarationsLine_TheHelperGoesBeforeTheFirstBracket(string attributes)
+    {
+        string stripped = Rewrite(
+            "sampler2D S; static const float k = 1; " + attributes +
+            " float4 PSMain(float2 uv : TEXCOORD0) : COLOR0 { return tex2Dlod(S, float4(uv, 0, k)); }" + Technique);
+
+        stripped.ShouldContain("; } " + attributes + " float4 PSMain(", Case.Sensitive);
+        stripped.ShouldNotContain("[float4", Case.Sensitive);
+    }
+
+    [Fact]
+    public void AttributesOnTheirOwnLinesAfterAFreeLine_TheHelperTakesTheFreeLine()
+    {
+        string stripped = Rewrite(
+            "sampler2D S;\n" +
+            "\n" +
+            "[A]\n" +
+            "[B(1, 2)]\n" +
+            "float4 PSMain(float2 uv : TEXCOORD0) : COLOR0 { return tex2Dlod(S, float4(uv, 0, 1)); }" + Technique);
+
+        string[] lines = stripped.Split('\n');
+        lines[1].ShouldStartWith("float4 tex2Dlod_SD0(", Case.Sensitive);
+        lines[2].ShouldBe("[A]");
+        lines[3].ShouldBe("[B(1, 2)]");
+    }
+
+    [Fact]
+    public void FunctionAnnotation_ItsSemicolonDoesNotEndTheDeclaration()
+    {
+        // `< string s = "x"; >` after the semantic: the ';' inside the angle brackets used to be
+        // read as the top-level terminator, putting the helper inside the annotation.
+        string stripped = Rewrite(
+            "sampler2D S;\n" +
+            "float4 PSMain(float2 uv : TEXCOORD0) : COLOR0 < string s = \"x\"; > { return tex2Dlod(S, float4(uv, 0, 1)); }" + Technique);
+
+        string[] lines = stripped.Split('\n');
+        lines[0].ShouldStartWith("Texture2D S_SDTexture; SamplerState S; float4 tex2Dlod_SD0(", Case.Sensitive);
+        lines[1].ShouldStartWith("float4 PSMain(float2 uv : TEXCOORD0) : COLOR0 < string s = \"x\"; > { return tex2Dlod_SD0(", Case.Sensitive);
+    }
+
+    [Theory]
+    [InlineData("")]
+    [InlineData("// the pixel shader")]
+    [InlineData("/* the pixel shader */")]
+    public void FreeLineAbove_TheHelperTakesIt_AndTheDeclarationsLineIsUntouched(string lineAbove)
+    {
+        const string declaration = "float4 PSMain(float2 uv : TEXCOORD0) : SV_Target0 { return tex2Dlod(S, float4(uv, 0, 1)) + 0; }";
+        string stripped = Rewrite("sampler2D S;\n#define X 1\n" + lineAbove + "\n" + declaration + Technique);
+
+        string[] lines = stripped.Split('\n');
+        lines[2].ShouldStartWith("float4 tex2Dlod_SD0(", Case.Sensitive);
+        lines[2].ShouldEndWith(lineAbove, Case.Sensitive);
+        // Only the call itself is renamed on the declaration's line: every column before it holds.
+        lines[3].ShouldStartWith("float4 PSMain(float2 uv : TEXCOORD0) : SV_Target0 { return tex2Dlod_SD0(S_SDTexture, S, ", Case.Sensitive);
+    }
+
+    [Fact]
+    public void DirectiveBetween_AndNoFreeLine_TheHelperGoesOnTheDeclarationsLine()
+    {
+        // The line above is a directive and the previous ';' sits behind it: neither is a
+        // position in the declaration's own branch, so the helper takes the declaration's line.
+        string stripped = Rewrite(
+            "sampler2D S;\n#define X 1\nfloat4 PSMain(float2 uv : TEXCOORD0) : SV_Target0 { return tex2Dlod(S, float4(uv, 0, X)); }" + Technique);
+
+        string line = stripped.Split('\n')[2];
+        line.ShouldStartWith("float4 tex2Dlod_SD0(", Case.Sensitive);
+        line.ShouldContain("} float4 PSMain(", Case.Sensitive);
     }
 
     [Theory]
