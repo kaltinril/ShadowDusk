@@ -25,6 +25,16 @@ that loads and renders identically to `mgfxc`'s in the real MonoGame/KNI runtime
   passes in one technique compile (`mgfxc` accepts them). On FNA the anonymous technique's name is now
   the one-byte empty string `fxc` writes, so FNA reports `EffectTechnique.Name == ""` instead of
   `null`. Passes are still applied by index; only those names change in the output bytes.
+- **KNIFX: a legacy sampler that binds no texture is no effect parameter, as in KNI's own build.**
+  For `sampler s0;`, `sampler2D S : register(s0);` or a `sampler_state` without `Texture =`, the
+  `.knifx` carried a Texture2D parameter named after the sampler (`mgfxc`'s MGFX shape). KNI's
+  pipeline (4.2.9001 and 4.3.9001, DesktopGL and Windows) writes none and binds the sampler to no
+  parameter, and in KNI's runtime the extra parameter made `EffectPass.Apply` replace a texture the
+  game bound directly through `GraphicsDevice.Textures[n]` with null (KNI's EffectTest
+  `OldSyntax_x`/`OldSyntax_s0s1` failed; they pass now, as with KNI's own `.xnb`). **Consumer-visible
+  for KNIFX only:** `effect.Parameters["s0"]` is now null for such a sampler, as with KNI's build, so
+  bind that texture through `GraphicsDevice.Textures[n]` (SpriteBatch already does for unit 0).
+  MGFX output is unchanged (byte-identical on every MGFX target).
 - **Techniques are read from the preprocessed source, like `mgfxc` (issue #407).** A technique
   inside a false `#if` (or behind an unset `/Defines` value) was still compiled, a technique in an
   `#include`d file was not found (`SD0010`, or dropped beside the main file's own), and a macro
