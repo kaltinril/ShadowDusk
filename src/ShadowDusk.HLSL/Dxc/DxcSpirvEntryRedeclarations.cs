@@ -19,66 +19,59 @@ namespace ShadowDusk.HLSL.Dxc;
 /// function is fine, and the same source compiles to DXIL (<c>-Vd</c>) without complaint. The
 /// fault is not catchable in .NET, so it took the whole process down: a consumer's game, the
 /// MGCB build, the test host. That is the OpenGL and Vulkan targets, and the raylib and SkSL
-/// converters. (The browser's DXC build does not fault on it; it fails the compile with
-/// "generated SPIR-V is invalid: 2 Entry points cannot share the same name". The same
-/// preparation runs there, so both hosts compile the same text.)</para>
+/// converters. A preprocess-only run (<c>-P</c>) never reaches the back end and does not fault,
+/// whatever the source declares.</para>
 ///
 /// <para><b>Why removing the prototype is faithful.</b> DXC's own DXIL path takes the entry's
 /// semantics from the definition and never from a prototype, and fxc (<c>mgfxc</c> 3.8.4.1)
 /// compiles these shapes. So a prototype whose return type and parameter types match the single
 /// definition, and that says nothing the definition does not, is blanked from the compile's
-/// input: replaced by spaces, keeping every line break, so no diagnostic line or column moves.
-/// DXC then sees one declaration and compiles the definition it would have compiled. A
-/// prototype that says MORE than its definition (an attribute, a leading modifier such as
-/// <c>precise</c>, <c>inline</c> or <c>static</c>, a parameter's interpolation modifier or default
-/// value) is refused instead, because DXC's front end may merge that into the definition (and
-/// answers an <c>inline</c>/<c>static</c> entry with "cannot find entry function"), so removing
-/// it could change the shader without a word. An overload prototype (different parameters, no
-/// definition of its own) of an entry function nothing calls is inert, fxc compiles past it, and
-/// it is blanked too.</para>
+/// input: replaced by spaces (as many as its UTF-8 bytes), keeping every line break, so no
+/// diagnostic line or column moves. DXC then sees one declaration and compiles the definition it
+/// would have compiled. A prototype that says MORE than its definition (an attribute, a leading
+/// modifier such as <c>precise</c>, <c>inline</c> or <c>static</c>, a parameter's interpolation
+/// modifier or default value) is refused instead, because DXC's front end may merge that into the
+/// definition (and answers an <c>inline</c>/<c>static</c> entry with "cannot find entry
+/// function"), so removing it could change the shader without a word. An overload prototype
+/// (different parameters, no definition of its own) of an entry function nothing calls is inert,
+/// fxc compiles past it, and it is blanked too.</para>
 ///
-/// <para><b>Decided on the preprocessed text, removed from the raw text by proof.</b> DXC
-/// compiles the text after its preprocessor, so every decision is made on the managed
-/// preprocessed view (<see cref="FxMacroPreprocessor.ProcessForCompiler(string, string, IReadOnlyDictionary{int, bool})"/>:
-/// conditionals evaluated, macros expanded, comments replaced by spaces, one output line per input
-/// line): which declarations of the entry exist, which are prototypes, and which tokens each is.
-/// The raw range to blank runs between exact raw token boundaries on the prototype's first and
-/// last lines, and is accepted only when the source with that range blanked preprocesses to
-/// exactly the original view's tokens minus the prototype's (see <see cref="Search"/>). So a
-/// macro call before the prototype on its line (<c>DECL_PARAM(Unused) float4 PS(...);</c>)
-/// stays, a prototype a macro completes (<c>: POS_OUT</c>) or writes whole (<c>DECLARE(PS)</c>)
-/// is removed exactly, and one no range can remove alone (a macro writing it with other code) is
-/// refused.</para>
+/// <para><b>DXC's own preprocessor decides, and proves.</b> DXC compiles the text after its
+/// preprocessor, so every decision is made on what DXC's preprocessor itself produces: a
+/// <c>-P</c> run with the compile's own arguments (its <c>-D</c> macros, <c>-T</c> profile and
+/// <c>-spirv</c>, so <c>__spirv__</c>, <c>__SHADER_TARGET_*</c> and every macro DXC predefines take
+/// the values the compile sees). Nothing here models DXC's preprocessor (its conditionals, its
+/// arithmetic, its predefined macros). When that text declares the entry once, the source goes to
+/// DXC unchanged, so a prototype in a branch DXC does not compile changes nothing. When it
+/// declares it more than once, ranges of the RAW source are chosen to blank (between exact raw
+/// token boundaries on the prototype's first and last lines, found through DXC's <c>#line</c>
+/// markers), and each is accepted only when DXC's preprocessor, run again on the source with that
+/// range blanked, produces exactly the original token stream minus the prototype's tokens (see
+/// <see cref="Locate"/>). So a macro call before the prototype on its line
+/// (<c>DECL_PARAM(Unused) float4 PS(...);</c>) stays, a prototype a macro completes
+/// (<c>: POS_OUT</c>) or writes whole (<c>DECLARE(PS)</c>) is removed exactly, and one no range can
+/// remove alone (a macro writing it with other code) is refused. A source DXC's preprocessor
+/// rejects is handed to DXC unchanged: the compile fails on the same diagnostic, in the front end,
+/// before the back end runs.</para>
 ///
-/// <para><b>Every text DXC could be compiling.</b> The managed preprocessor does not define
-/// DXC's own macros. A conditional that tests one (anything DXC was measured to predefine, see
-/// <see cref="FxMacroPreprocessor.IsCompilerPredefined"/>, and any other reserved name the
-/// source never <c>#define</c>s) is therefore evaluated BOTH ways: the view is built once per combination of
-/// outcomes (at most <see cref="MaxViews"/>), DXC's real text is one of them, and the decision
-/// must hold in all of them. A source none of whose views declares the entry twice is returned
-/// unchanged; a blanked range must be proven in every view. A source whose view cannot be built
-/// at all is read from its raw text (see <see cref="FromRawText"/>), which refuses whatever it
-/// cannot pin down but only on evidence of a second declaration.</para>
-///
-/// <para><b>Fail-safe.</b> The crash kills the consumer's process, so no possibly-redeclared
-/// entry reaches the SPIR-V back end. Two or more declaration-shaped uses of the entry name at
-/// global scope, any of which cannot be read as a plain declaration (a parenthesised declarator,
-/// <c>float4 (PS)(...)</c>, among them), are refused with <c>SD0236</c>. So is a call to the
-/// entry function between its prototype and its definition (without the prototype the call has
-/// no declaration; fxc compiles it), an overload prototype of an entry function the source
-/// calls, a prototype whose return type is spelled differently from the definition's in a way
-/// that cannot be told apart from DXC's own type identity, a declaration shape the reading does
-/// not model (a second declarator, <c>float4 A(), PS(...);</c>, or a directive between the name
-/// and its parameters), and (when the preprocessed view cannot be built) any prototype with a
-/// macro in or around it, since no edit can be proven then. No definition or several, and a
-/// prototype whose return type is a different BUILT-IN type, reach DXC, whose front end reports
-/// them cleanly (<c>missing entry point definition</c>, <c>ambiguous entry point function</c>,
-/// <c>functions that differ only in their return type</c>) before the back end runs.</para>
+/// <para><b>Fail-safe.</b> The crash kills the consumer's process, so no redeclared entry reaches
+/// the SPIR-V back end. Two or more declaration-shaped uses of the entry name at global scope in
+/// DXC's preprocessed text, any of which cannot be read as a plain declaration (a parenthesised
+/// declarator, <c>float4 (PS)(...)</c>, among them), are refused with <c>SD0236</c>. So is a call to
+/// the entry function between its prototype and its definition (without the prototype the call
+/// has no declaration; fxc compiles it), an overload prototype of an entry function the source
+/// calls, a prototype whose return type is spelled differently from the definition's in a way that
+/// cannot be told apart from DXC's own type identity, a declaration shape the reading does not
+/// model (a second declarator, <c>float4 A(), PS(...);</c>), and a prototype no proven range
+/// removes. No definition or several, and a prototype whose return type is a different BUILT-IN
+/// type, reach DXC, whose front end reports them cleanly (<c>missing entry point definition</c>,
+/// <c>ambiguous entry point function</c>, <c>functions that differ only in their return type</c>)
+/// before the back end runs.</para>
 ///
 /// <para>The validated DXIL of DirectX 12 and the DXBC of DirectX 11 and FNA never had the
 /// fault and keep their input as is (see <see cref="AppliesTo"/>). The input is changed only
 /// when a prototype of the entry point is blanked; otherwise it is handed to DXC as it was (or
-/// refused, which happens only where DXC may see the entry declared twice).</para>
+/// refused, which happens only where DXC's preprocessed text declares the entry twice).</para>
 /// </remarks>
 internal static partial class DxcSpirvEntryRedeclarations
 {
@@ -88,361 +81,170 @@ internal static partial class DxcSpirvEntryRedeclarations
     /// <summary>
     /// True for a DXC compile that emits SPIR-V, the only output with the fault, and for an
     /// unvalidated (<c>-Vd</c>) DXIL compile: that is the OpenGL target's reflection companion,
-    /// whose blob is discarded and which must read the same text as the SPIR-V compile it
+    /// whose blob is discarded and which should read the same text as the SPIR-V compile it
     /// describes (otherwise an unused overload prototype fxc accepts compiles to SPIR-V and is
-    /// "ambiguous" to the companion). Shipped DXIL (DirectX 12) is always validated, so it
-    /// never comes through here.
+    /// "ambiguous" to the companion). Shipped DXIL (DirectX 12) is always validated, so it never
+    /// comes through here. A preprocess-only run (<c>-P</c>) never reaches a back end.
     /// </summary>
     public static bool AppliesTo(IReadOnlyList<string> arguments) =>
         !arguments.Contains("-P", StringComparer.Ordinal)
         && (arguments.Contains("-spirv", StringComparer.Ordinal) || arguments.Contains("-Vd", StringComparer.Ordinal));
+
+    /// <summary>True when the compile with <paramref name="arguments"/> reaches DXC's SPIR-V back end (the one with the fault).</summary>
+    public static bool EmitsSpirv(IReadOnlyList<string> arguments) => arguments.Contains("-spirv", StringComparer.Ordinal);
+
+    /// <summary>
+    /// The arguments of a DXC preprocess-only run that sees exactly what the compile with
+    /// <paramref name="compileArguments"/> sees: the same <c>-D</c> macros, profile, <c>-spirv</c>
+    /// and input name (so every macro DXC predefines, <c>__FILE__</c> included, takes the value the
+    /// compile gives it), without the code-generation and validation switches no preprocessor
+    /// reads, plus <c>-P</c>.
+    /// </summary>
+    public static IReadOnlyList<string> PreprocessArguments(IReadOnlyList<string> compileArguments)
+    {
+        var arguments = new List<string>(compileArguments.Count + 1);
+        foreach (string argument in compileArguments)
+        {
+            if (argument is "-Zi" or "-Qembed_debug" or "-Vd")
+                continue;
+            arguments.Add(argument);
+        }
+        arguments.Add("-P");
+        return arguments;
+    }
+
+    /// <summary>What a DXC preprocess-only run produced.</summary>
+    /// <param name="Succeeded">False when DXC's preprocessor reported an error (the compile fails on it too, before the back end).</param>
+    /// <param name="Text">The preprocessed text, with DXC's <c>#line</c> markers.</param>
+    internal readonly record struct PreprocessedText(bool Succeeded, string Text);
 
     /// <summary>
     /// The text DXC's SPIR-V compile of <paramref name="entryPoint"/> should be handed: the
     /// source unchanged, the source with the entry function's redundant prototypes blanked, or
     /// an <see cref="ErrorCode"/> refusal.
     /// </summary>
-    /// <param name="source">The HLSL compiler input (flattened; macros not yet expanded).</param>
-    /// <param name="entryPoint">The entry function DXC is asked to compile (after any macro: DXC's <c>-E</c>).</param>
+    /// <param name="source">The HLSL compiler input, exactly as it would be handed to DXC.</param>
+    /// <param name="entryPoint">The entry function DXC is asked to compile (DXC's <c>-E</c>).</param>
     /// <param name="sourceFileName">Display name used in diagnostics.</param>
-    /// <param name="macros">The <c>-D</c> macros the compile passes to DXC, so the view sees the same conditionals.</param>
+    /// <param name="macros">The <c>-D</c> macros the compile passes to DXC (only read by the cheap
+    /// gate that skips the preprocess run when the entry's name cannot reach DXC twice).</param>
+    /// <param name="preprocess">
+    /// Runs DXC's preprocessor on a text with the compile's own arguments
+    /// (<see cref="PreprocessArguments"/>): the only judge of what DXC compiles.
+    /// </param>
     public static Result<string, ShaderError> Prepare(
         string source,
         string entryPoint,
         string? sourceFileName,
-        IReadOnlyList<(string Name, string? Value)>? macros = null)
+        IReadOnlyList<(string Name, string? Value)>? macros,
+        Func<string, PreprocessedText> preprocess)
     {
         ArgumentNullException.ThrowIfNull(source);
+        ArgumentNullException.ThrowIfNull(preprocess);
         string file = sourceFileName ?? string.Empty;
 
-        // `-D` macros come before the text, on lines of their own that are dropped from the view.
+        // `-D` macros come before the text, so the gate sees a macro that names the entry.
         string prefix = string.Concat((macros ?? []).Select(m => $"#define {m.Name} {m.Value ?? "1"}\n"));
-        // Line breaks as the preprocessor reads them (a lone '\r' is one), for the line-anchored searches.
         string lines = (prefix + source).Replace("\r\n", "\n", StringComparison.Ordinal).Replace('\r', '\n');
         if (string.IsNullOrEmpty(entryPoint) || CannotBeDeclaredTwice(lines, entryPoint))
+            return Ok(source);
+
+        PreprocessedText original = preprocess(source);
+        if (!original.Succeeded)
+            return Ok(source);
+
+        Analysis analysis = Analyze(original.Text, entryPoint);
+        if (analysis.DeclarationShaped < 2)
+            return Ok(source);
+
+        var locator = new Locator(source, original.Text, file, entryPoint);
+        if (analysis.Unread.Count > 0)
+            return Fail(locator.Fix(Unread(original.Text, file, entryPoint, analysis.Unread[0])));
+
+        Result<IReadOnlyList<Declaration>, ShaderError> plan = Plan(analysis, original.Text, file, entryPoint);
+        if (plan.IsFailure)
+            return Fail(locator.Fix(plan.Error));
+        if (plan.Value.Count == 0)
             return Ok(source);
 
         var macroNames = new HashSet<string>(StringComparer.Ordinal);
         foreach (Match m in DefinedName().Matches(lines))
             macroNames.Add(m.Groups[1].Value);
 
-        Result<IReadOnlyList<View>, string> views = ViewsOf(prefix, source, file);
-        return views.IsSuccess
-            ? FromViews(source, views.Value, prefix, entryPoint, file, macroNames)
-            : FromRawText(source, prefix, entryPoint, file, views.Error, macroNames);
+        Result<string, Declaration> located = Locate(source, original.Text, plan.Value, locator, macroNames, preprocess);
+        return located.IsSuccess
+            ? Ok(located.Value)
+            : Fail(locator.Fix(NotLocated(original.Text, file, entryPoint, located.Error)));
     }
 
-    // ---- The views: one per outcome of each conditional on a macro only DXC defines ---------
+    // ---- Locating the prototypes in the raw source, and proving the edit -------------------
 
-    /// <summary>The most views (combinations of outcomes of conditionals on DXC's macros) built for one source.</summary>
-    private const int MaxViews = 16;
-
-    /// <summary>
-    /// One text DXC could be compiling: the preprocessed source (the <c>-D</c> lines dropped) with
-    /// every conditional on a macro only DXC defines taking the outcome in <see cref="Outcomes"/>.
-    /// </summary>
-    /// <param name="Text">The preprocessed text, one line per source line.</param>
-    /// <param name="Outcomes">The outcome of each such conditional, by its physical line in the prefixed input.</param>
-    private sealed record View(string Text, IReadOnlyDictionary<int, bool> Outcomes);
-
-    /// <summary>
-    /// Every view of <paramref name="source"/> (see <see cref="View"/>), or why there is none to
-    /// trust: the managed preprocessor failed on it, or too many combinations.
-    /// </summary>
-    private static Result<IReadOnlyList<View>, string> ViewsOf(string prefix, string source, string file)
-    {
-        string input = prefix + source;
-        lock (ViewCache)
-        {
-            int hit = ViewCache.FindIndex(e => string.Equals(e.Input, input, StringComparison.Ordinal) && string.Equals(e.File, file, StringComparison.Ordinal));
-            if (hit >= 0)
-                return ViewCache[hit].Views;
-        }
-
-        int prefixLines = prefix.Count(c => c == '\n');
-
-        Result<IReadOnlyList<View>, string> result = Enumerate();
-        lock (ViewCache)
-        {
-            ViewCache.Insert(0, (input, file, result));
-            if (ViewCache.Count > ViewCacheSize)
-                ViewCache.RemoveAt(ViewCache.Count - 1);
-        }
-        return result;
-
-        Result<IReadOnlyList<View>, string> Enumerate()
-        {
-            var views = new List<View>();
-            var pending = new Stack<Dictionary<int, bool>>();
-            pending.Push([]);
-            var tested = new List<string>();
-            while (pending.Count > 0)
-            {
-                Dictionary<int, bool> forced = pending.Pop();
-                Result<FxMacroPreprocessor.CompilerInput, ShaderError> view =
-                    FxMacroPreprocessor.ProcessForCompiler(input, file, forced);
-                if (view.IsFailure)
-                {
-                    return Result<IReadOnlyList<View>, string>.Fail(
-                        $"the preprocessed view could not be built: {view.Error.Code} at line {view.Error.Line} of {view.Error.File}");
-                }
-
-                // Each conditional on DXC's macros the view did not choose an outcome for took its
-                // natural one; the views where it takes the other are still to be built (with the
-                // ones before it fixed, so no combination is built twice).
-                var outcomes = new Dictionary<int, bool>(forced);
-                foreach (FxMacroPreprocessor.UnknownConditional c in view.Value.UnknownConditionals ?? [])
-                {
-                    if (!tested.Contains(c.Name))
-                        tested.Add(c.Name);
-                    if (!forced.ContainsKey(c.PhysicalLine))
-                    {
-                        pending.Push(new Dictionary<int, bool>(outcomes) { [c.PhysicalLine] = !c.Natural });
-                        outcomes[c.PhysicalLine] = c.Natural;
-                    }
-                }
-                views.Add(new View(DropLines(view.Value.Text, prefixLines), outcomes));
-                if (views.Count + pending.Count > MaxViews)
-                {
-                    return Result<IReadOnlyList<View>, string>.Fail(
-                        $"conditionals on {string.Join(", ", tested.Select(n => $"'{n}'"))}, which only the compiler defines, " +
-                        $"select among more than {MaxViews} texts");
-                }
-            }
-            return Result<IReadOnlyList<View>, string>.Ok(views);
-        }
-    }
-
-    /// <summary>The last few sources' views: an OpenGL compile prepares the same input for its SPIR-V compile and its reflection companion, per stage.</summary>
-    private static readonly List<(string Input, string File, Result<IReadOnlyList<View>, string> Views)> ViewCache = [];
-
-    private const int ViewCacheSize = 4;
-
-    // ---- The decision on the views ----------------------------------------------------------
-
-    private static Result<string, ShaderError> FromViews(
-        string source, IReadOnlyList<View> views, string prefix, string entryPoint, string file, IReadOnlySet<string> macroNames)
-    {
-        // What each view needs: nothing (fewer than two declarations, or a shape DXC's front end
-        // reports itself), its prototypes blanked, or a refusal.
-        var plans = new List<(View View, IReadOnlyList<Declaration> Plan)>();
-        foreach (View view in views)
-        {
-            Analysis analysis = Analyze(view.Text, entryPoint, rawText: false);
-            if (analysis.DeclarationShaped < 2)
-            {
-                plans.Add((view, []));
-                continue;
-            }
-            if (analysis.Unread.Count > 0)
-                return Fail(Unread(view.Text, file, entryPoint, analysis.Unread[0]));
-
-            Result<IReadOnlyList<Declaration>, ShaderError> plan = Plan(analysis, view.Text, file, entryPoint);
-            if (plan.IsFailure)
-                return Fail(plan.Error);
-            plans.Add((view, plan.Value));
-        }
-        if (plans.All(p => p.Plan.Count == 0))
-            return Ok(source);
-
-        var raw = new LineIndex(source);
-        ILookup<int, Tok> rawByLine = Tokenize(source, rawText: true)
-            .Where(t => t.Kind is not (TokKind.Comment or TokKind.Directive))
-            .ToLookup(t => raw.Position(t.Offset).Line);
-        var located = new List<Located>();
-        foreach ((View view, IReadOnlyList<Declaration> plan) in plans)
-        {
-            var expanded = new LineIndex(view.Text);
-            List<Tok> viewTokens = Tokenize(view.Text, rawText: false);
-            located.Add(new Located(view, plan, viewTokens, Without(viewTokens, plan), []));
-            if (plan.Count == 0)
-                continue;
-            if (raw.LineCount != expanded.LineCount)
-                return Fail(NotLocated(view.Text, file, entryPoint, plan[0]));
-            Dictionary<int, int> viewIndex = viewTokens.Select((t, i) => (t.Offset, i)).ToDictionary(p => p.Offset, p => p.i);
-            ILookup<int, (Tok Token, int Index)> viewByLine = viewTokens.Select((t, i) => (t, i)).ToLookup(p => expanded.Position(p.t.Offset).Line);
-            foreach (Declaration prototype in plan)
-                located[^1].Candidates.Add(Candidates(rawByLine, viewTokens, viewIndex, viewByLine, expanded, prototype, entryPoint, macroNames));
-        }
-
-        // The common case first, proven with one preprocess per view: every prototype's lines
-        // untouched by any macro, so each range is the positional one.
-        if (located.SelectMany(l => l.Candidates).All(c => c.Positional) && TryAll(source, prefix, file, located, l => l.Candidates.Select(c => c.Ranges[0])) is { } fast)
-            return Ok(fast);
-
-        // Otherwise each prototype's range is searched for on its own view (a range another view
-        // already chose first), then all of them proven together in every view (DXC gets them at
-        // once). The positional range may suit one view and not another (a macro on the
-        // prototype's line that expands to code in one view only), so a second pass tries the
-        // narrowest ranges first.
-        Located firstPlanned = located.First(l => l.Plan.Count > 0);
-        foreach (bool narrowestFirst in new[] { false, true })
-        {
-            var spans = new List<(int Start, int End)>();
-            foreach (Located l in located)
-            {
-                var inView = new List<(int Start, int End)>();
-                for (int i = 0; i < l.Plan.Count; i++)
-                {
-                    IEnumerable<(int Start, int End)> ordered = narrowestFirst
-                        ? l.Candidates[i].Ranges.OrderByDescending(r => r.Start).ThenBy(r => r.End)
-                        : l.Candidates[i].Ranges;
-                    List<(int Start, int End)> ranges = ordered.OrderBy(r => spans.Contains(r) ? 0 : 1).ToList();
-                    (int Start, int End)? span = Search(source, prefix, file, l, l.Plan[i], ranges, inView);
-                    if (span is null)
-                        return Fail(NotLocated(l.View.Text, file, entryPoint, l.Plan[i]));
-                    inView.Add(span.Value);
-                }
-                spans.AddRange(inView);
-            }
-            if (TryAll(source, prefix, file, located, _ => spans) is { } blanked)
-                return Ok(blanked);
-            if (views.Count == 1)
-                break;
-        }
-        return Fail(NotLocated(firstPlanned.View.Text, file, entryPoint, firstPlanned.Plan[0]));
-    }
-
-    /// <summary>A view, the prototypes to blank in it, its tokens, the tokens it must have once they are blanked, and each prototype's candidate ranges.</summary>
-    private sealed record Located(
-        View View, IReadOnlyList<Declaration> Plan, List<Tok> ViewTokens, List<Tok> Expected, List<CandidateRanges> Candidates);
-
-    /// <summary>The raw ranges that could be a prototype, most likely first; <see cref="Positional"/> when the first is the positional one.</summary>
-    private sealed record CandidateRanges(List<(int Start, int End)> Ranges, bool Positional);
-
-    /// <summary>
-    /// The source with every range the views' prototypes select blanked, when that is proven in
-    /// every view to remove exactly that view's prototypes; null otherwise.
-    /// </summary>
-    private static string? TryAll(
-        string source, string prefix, string file, List<Located> located, Func<Located, IEnumerable<(int Start, int End)>> ranges)
-    {
-        List<(int Start, int End)> spans = located.SelectMany(ranges).Distinct().ToList();
-        if (spans.Count == 0)
-            return null;
-        string blanked = Blank(source, spans);
-        return located.All(l => Verify(blanked, prefix, file, l.View, l.Expected)) ? blanked : null;
-    }
-
-    private static ShaderError NotLocated(string text, string file, string entryPoint, Declaration prototype) =>
-        Refuse(text, file, prototype.NameLine, prototype.NameColumn,
-            $"entry point '{entryPoint}' is declared more than once, and this declaration cannot be removed from the " +
-            "source as written without changing anything else the compiler sees: a macro writes, renames or moves part " +
-            "of it together with other code, or a conditional on a macro only the compiler defines changes what the " +
-            "edit would take. " + CrashSentence + $" Write the prototype of '{entryPoint}' out on lines of its own " +
-            "(macros inside it are fine), or remove it.");
-
-    /// <summary>The most raw ranges <see cref="Search"/> tries for one prototype before refusing.</summary>
+    /// <summary>The most raw ranges tried for one prototype before refusing.</summary>
     private const int MaxLocateAttempts = 32;
 
+    /// <summary>The most DXC preprocess runs one <see cref="Prepare"/> spends proving ranges.</summary>
+    private const int MaxProofRuns = 64;
+
     /// <summary>
-    /// The candidate raw ranges for <paramref name="prototype"/> (read off a view): each runs from
-    /// the start of a raw token on the prototype's first line to the end of a raw token on its last
-    /// line (exact token boundaries, never part of a token). The positional candidate (the two
-    /// lines untouched by any macro, so the prototype's first and last tokens sit at the same token
-    /// positions in the raw lines as in the expanded ones) comes first, then every plausible pair,
-    /// narrowest first: a start that is the prototype's first token or a macro name, an end that is
-    /// its last token, a macro name, or a macro call's ')'. Starts at or before the last raw spelling
-    /// of the entry's name on that line come first: one after it (a macro name after the prototype)
-    /// can begin it only if a macro writes the name, so it is tried last rather than spending the
-    /// attempts.
+    /// The source with every prototype in <paramref name="plan"/> blanked, each range proven by
+    /// DXC's preprocessor (see <see cref="Proves"/>); or the first prototype no candidate range
+    /// removes alone. All positional ranges are tried together first (one run); otherwise each
+    /// prototype in turn, with the ranges already proven blanked too, so the last proof covers the
+    /// whole edit.
     /// </summary>
-    private static CandidateRanges Candidates(
-        ILookup<int, Tok> rawByLine, List<Tok> viewTokens, Dictionary<int, int> viewIndex,
-        ILookup<int, (Tok Token, int Index)> viewByLine, LineIndex expanded,
-        Declaration prototype, string entryPoint, IReadOnlySet<string> macroNames)
+    private static Result<string, Declaration> Locate(
+        string source, string preprocessed, IReadOnlyList<Declaration> plan, Locator locator,
+        IReadOnlySet<string> macroNames, Func<string, PreprocessedText> preprocess)
     {
-        var candidates = new List<(int Start, int End)>();
-        int first = viewIndex.TryGetValue(prototype.Start, out int f) ? f : -1;
-        int last = first;
-        while (last + 1 < viewTokens.Count && viewTokens[last + 1].Offset < prototype.End)
-            last++;
-        // A compiler-counted macro would count differently once part of the text is gone.
-        if (first < 0 || last < first || viewTokens.Skip(first).Take(last - first + 1).Any(t => t.IsWord("__COUNTER__")))
-            return new CandidateRanges(candidates, false);
+        List<Tok> significant = Significant(preprocessed);
+        List<CandidateRanges> candidates = plan.Select(p => locator.Candidates(p, significant, macroNames)).ToList();
+        int runs = 0;
 
-        int startLine = expanded.Position(viewTokens[first].Offset).Line;
-        int endLine = expanded.Position(viewTokens[last].Offset).Line;
-        List<Tok> onStartLine = rawByLine[startLine].ToList();
-        List<Tok> onEndLine = rawByLine[endLine].ToList();
-
-        int firstInLine = viewByLine[startLine].Count(p => p.Index < first);
-        int lastInLine = viewByLine[endLine].Count(p => p.Index < last);
-        bool positional = firstInLine < onStartLine.Count && lastInLine < onEndLine.Count;
-        if (positional)
-            candidates.Add((onStartLine[firstInLine].Offset, onEndLine[lastInLine].Offset + onEndLine[lastInLine].Text.Length));
-
-        int bound = prototype.NameLine == startLine && onStartLine.LastOrDefault(t => t.IsWord(entryPoint)) is { Text: not null } name
-            ? name.Offset
-            : int.MaxValue;
-        bool IsMacro(Tok t) => t.Kind == TokKind.Identifier && macroNames.Contains(t.Text);
-        foreach (Tok s in onStartLine.Where(t => SameToken(t, viewTokens[first]) || IsMacro(t)).OrderBy(t => t.Offset <= bound ? 0 : 1).ThenByDescending(t => t.Offset))
+        if (candidates.All(c => c.Positional))
         {
-            foreach (Tok e in onEndLine.Where(t => t.Offset >= s.Offset && (SameToken(t, viewTokens[last]) || t.Is(")") || IsMacro(t))))
-                candidates.Add((s.Offset, e.Offset + e.Text.Length));
+            string blanked = Blank(source, candidates.Select(c => c.Ranges[0]).ToList());
+            runs++;
+            if (Proves(blanked, Without(significant, plan), preprocess))
+                return Result<string, Declaration>.Ok(blanked);
         }
 
-        List<(int Start, int End)> usable = candidates.Distinct()
-            .Where(c => c.End > c.Start && !Enumerable.Range(startLine, endLine - startLine + 1).SelectMany(l => rawByLine[l]).Any(t => t.Offset >= c.Start && t.Offset < c.End && t.IsWord("__COUNTER__")))
-            .ToList();
-        return new CandidateRanges(usable, positional && usable.Count > 0 && usable[0] == candidates[0]);
+        var chosen = new List<(int Start, int End)>();
+        for (int i = 0; i < plan.Count; i++)
+        {
+            List<Tok> expected = Without(significant, plan.Take(i + 1).ToList());
+            (int Start, int End)? found = null;
+            // Two prototypes with the same tokens prove each other's range: one already taken is not this one's.
+            foreach ((int Start, int End) range in candidates[i].Ranges
+                         .Where(c => !chosen.Any(t => c.Start < t.End && t.Start < c.End))
+                         .Take(MaxLocateAttempts))
+            {
+                if (runs++ >= MaxProofRuns)
+                    break;
+                if (Proves(Blank(source, [.. chosen, range]), expected, preprocess))
+                {
+                    found = range;
+                    break;
+                }
+            }
+            if (found is null)
+                return Result<string, Declaration>.Fail(plan[i]);
+            chosen.Add(found.Value);
+        }
+        return Result<string, Declaration>.Ok(Blank(source, chosen));
     }
 
     /// <summary>
-    /// The first of <paramref name="candidates"/> whose removal takes exactly
-    /// <paramref name="prototype"/>'s tokens out of its view and nothing else, proven by
-    /// preprocessing the source with the range blanked (the same <c>-D</c> macros, the same
-    /// outcomes of the conditionals on DXC's macros); null when none is. So a range that would
-    /// also take a macro call before the prototype (<c>DECL_PARAM(Unused) float4 PS(...);</c>: the
-    /// call's <c>float4 Unused;</c> would vanish with it), a directive, or another part of a
-    /// macro's arguments is never accepted, while a prototype that a macro completes
-    /// (<c>: POS_OUT</c>) or writes whole (a <c>DECLARE(PS)</c> call that produces nothing else) is.
+    /// True when DXC's preprocessor turns <paramref name="candidate"/> into exactly the
+    /// <paramref name="expected"/> token stream: the same kinds and spellings in the same order
+    /// (directives it passes through, <c>#pragma</c>, included; its <c>#line</c> markers, which
+    /// only say where a line came from, not).
     /// </summary>
-    private static (int Start, int End)? Search(
-        string source, string prefix, string file, Located located, Declaration prototype, IReadOnlyList<(int Start, int End)> candidates,
-        List<(int Start, int End)> taken)
+    private static bool Proves(string candidate, List<Tok> expected, Func<string, PreprocessedText> preprocess)
     {
-        List<Tok> expected = Without(located.ViewTokens, [prototype]);
-        // Two prototypes with the same tokens prove each other's range: one already taken is not this one's.
-        foreach ((int start, int end) in candidates.Where(c => !taken.Any(t => c.Start < t.End && t.Start < c.End)).Take(MaxLocateAttempts))
-        {
-            if (Verify(Blank(source, [(start, end)]), prefix, file, located.View, expected))
-                return (start, end);
-        }
-        return null;
-    }
-
-    private static bool SameToken(Tok a, Tok b) => a.Kind == b.Kind && string.Equals(a.Text, b.Text, StringComparison.Ordinal);
-
-    /// <summary>The preprocessed tokens with every listed declaration's tokens taken out.</summary>
-    private static List<Tok> Without(List<Tok> viewTokens, IReadOnlyList<Declaration> removed)
-    {
-        List<Declaration> spans = removed.OrderBy(d => d.Start).ToList();
-        var kept = new List<Tok>(viewTokens.Count);
-        int next = 0;
-        foreach (Tok t in viewTokens)
-        {
-            while (next < spans.Count && spans[next].End <= t.Offset)
-                next++;
-            if (next >= spans.Count || t.Offset < spans[next].Start)
-                kept.Add(t);
-        }
-        return kept;
-    }
-
-    /// <summary>
-    /// True when <paramref name="candidate"/> preprocesses, as <paramref name="view"/> was built
-    /// (the same conditionals on DXC's macros taking the same outcomes, and no other), to exactly
-    /// the <paramref name="expected"/> token stream: the same kinds and spellings in the same
-    /// order (directives the view passes through included).
-    /// </summary>
-    private static bool Verify(string candidate, string prefix, string file, View view, List<Tok> expected)
-    {
-        Result<FxMacroPreprocessor.CompilerInput, ShaderError> result =
-            FxMacroPreprocessor.ProcessForCompiler(prefix + candidate, file, view.Outcomes);
-        if (result.IsFailure || (result.Value.UnknownConditionals ?? []).Any(c => !view.Outcomes.ContainsKey(c.PhysicalLine)))
+        PreprocessedText result = preprocess(candidate);
+        if (!result.Succeeded)
             return false;
-        List<Tok> actual = Tokenize(DropLines(result.Value.Text, prefix.Count(c => c == '\n')), rawText: false);
+        List<Tok> actual = Significant(result.Text);
         if (actual.Count != expected.Count)
             return false;
         for (int i = 0; i < actual.Count; i++)
@@ -453,227 +255,193 @@ internal static partial class DxcSpirvEntryRedeclarations
         return true;
     }
 
-    // ---- Without a view: the raw text alone, refusing whatever it cannot pin down ----------
+    /// <summary>The tokens of a preprocessed text that reach the compiler: everything but DXC's line markers.</summary>
+    private static List<Tok> Significant(string preprocessed) =>
+        Tokenize(preprocessed, rawText: false).Where(t => !IsLineMarker(t)).ToList();
 
-    /// <summary>
-    /// The decision when no view can be trusted (<paramref name="why"/>): on the raw text, which
-    /// shows every declaration written out (in every branch) but not one a macro writes. A source
-    /// is refused only on evidence that DXC may see the entry declared twice: two declaration-shaped
-    /// uses, counting each use of a macro that may write the entry's name.
-    /// </summary>
-    private static Result<string, ShaderError> FromRawText(
-        string source, string prefix, string entryPoint, string file, string why, IReadOnlySet<string> macroNames)
+    private static bool IsLineMarker(Tok t) => t.Kind == TokKind.Directive && LineMarker().IsMatch(t.Text);
+
+    /// <summary>The raw ranges that could be a prototype, most likely first; <see cref="Positional"/> when the first is the positional one.</summary>
+    private sealed record CandidateRanges(List<(int Start, int End)> Ranges, bool Positional);
+
+    private static ShaderError NotLocated(string text, string file, string entryPoint, Declaration prototype) =>
+        Refuse(text, file, prototype.NameLine, prototype.NameColumn,
+            $"entry point '{entryPoint}' is declared more than once, and this declaration cannot be removed from the " +
+            "source as written without changing anything else the compiler sees: a macro writes, renames or moves part " +
+            "of it together with other code. " + CrashSentence + $" Write the prototype of '{entryPoint}' out on lines " +
+            "of its own (macros inside it are fine), or remove it.");
+
+    private static bool SameToken(Tok a, Tok b) => a.Kind == b.Kind && string.Equals(a.Text, b.Text, StringComparison.Ordinal);
+
+    /// <summary>The preprocessed tokens with every listed declaration's tokens taken out.</summary>
+    private static List<Tok> Without(List<Tok> tokens, IReadOnlyList<Declaration> removed)
     {
-        Analysis analysis = Analyze(source, entryPoint, rawText: true);
-        List<Tok> tokens = Tokenize(source, rawText: true).Where(t => t.Kind != TokKind.Comment).ToList();
-        List<Tok> defineTokens = Tokenize(prefix + source, rawText: true)
-            .Where(t => t.Kind == TokKind.Directive && string.Equals(DirectiveKeyword(t.Text), "define", StringComparison.Ordinal))
-            .ToList();
-        bool unbalancedMacro = defineTokens.Any(t => !Balanced(t.Text));
-
-        // Uses of a macro that may write the entry's name; one that may write it more than once counts twice.
-        (int writers, Token? firstWriter) = MacroWriters(source, tokens, defineTokens, entryPoint, unbalancedMacro);
-        if (analysis.DeclarationShaped + writers < 2)
-            return Ok(source);
-        if (firstWriter is not null)
+        List<Declaration> spans = removed.OrderBy(d => d.Start).ToList();
+        var kept = new List<Tok>(tokens.Count);
+        int next = 0;
+        foreach (Tok t in tokens)
         {
-            return Fail(Refuse(source, file, firstWriter.Line, firstWriter.Column,
-                $"entry point '{entryPoint}' may be declared more than once through this macro, and the source cannot be " +
-                $"preprocessed here to tell ({why}). {CrashSentence} Write the declarations of '{entryPoint}' out without " +
-                "a macro, or remove its prototypes."));
+            while (next < spans.Count && spans[next].End <= t.Offset)
+                next++;
+            if (next >= spans.Count || t.Offset < spans[next].Start)
+                kept.Add(t);
         }
-        if (analysis.Unread.Count > 0)
-            return Fail(Unread(source, file, entryPoint, analysis.Unread[0], why));
-        if (analysis.Prototypes.Count == 0)
-            return Ok(source);
-
-        // Several written definitions cannot be told apart without the view (one may sit in a
-        // dead #if branch, which would leave DXC one definition and the crash).
-        if (analysis.Definitions.Count > 1)
-        {
-            Declaration prototype = analysis.Prototypes[0];
-            return Fail(Refuse(source, file, prototype.NameLine, prototype.NameColumn,
-                $"entry point '{entryPoint}' has a prototype and more than one written definition, and which definition is " +
-                $"compiled cannot be read from this source ({why}). {CrashSentence} Remove the prototype of '{entryPoint}'."));
-        }
-
-        Result<IReadOnlyList<Declaration>, ShaderError> plan = Plan(analysis, source, file, entryPoint);
-        if (plan.IsFailure)
-            return Fail(plan.Error);
-        if (plan.Value.Count == 0)
-            return Ok(source);
-
-        // Without a view no edit can be proven, so a range is blanked only when its text reaches
-        // the compiler exactly as written: no macro name inside it, not inside a macro call's
-        // parentheses, and no macro body that could open or close one around it.
-        foreach (Declaration prototype in plan.Value)
-        {
-            int parens = 0;
-            foreach (Tok t in tokens.TakeWhile(t => t.Offset < prototype.Start))
-            {
-                if (t.Is("("))
-                    parens++;
-                else if (t.Is(")"))
-                    parens--;
-            }
-            bool macroInside = tokens.Any(t => t.Offset >= prototype.Start && t.Offset < prototype.End
-                && t.Kind == TokKind.Identifier && (macroNames.Contains(t.Text) || t.Text == "__COUNTER__"));
-            if (parens != 0 || macroInside || unbalancedMacro)
-            {
-                return Fail(Refuse(source, file, prototype.NameLine, prototype.NameColumn,
-                    $"entry point '{entryPoint}' is declared more than once, and this source cannot be preprocessed here " +
-                    $"({why}), so whether removing the prototype changes anything else cannot be proven: a macro is used in " +
-                    $"or around it. {CrashSentence} Write the prototype of '{entryPoint}' without macros, or remove it."));
-            }
-        }
-        return Ok(Blank(source, plan.Value.Select(d => (d.Start, d.End)).ToList()));
+        return kept;
     }
 
     /// <summary>
-    /// The uses, at global scope, of a macro that may write <paramref name="entryPoint"/>: one
-    /// whose body names it (or names such a macro), and one that pastes tokens (<c>##</c>) into a
-    /// name that could spell it (or such a macro) from the pieces it has at that use (its body's
-    /// words and the call's arguments). Each counts once, or twice when it may write the name
-    /// more than once. Returns the count and the first such use. With a macro body that opens or
-    /// closes a brace, uses at any depth count, since the depth cannot be read.
+    /// Where the lines of DXC's preprocessed text came from in the raw source. DXC marks them with
+    /// <c>#line N "file"</c>; the raw source names the same places with its own <c>#line</c>
+    /// directives (the flattener writes one per inlined <c>#include</c>), so a preprocessed line's
+    /// (file, line) leads back to the raw physical line(s) that carry it. This only proposes where
+    /// to look: every range it leads to is proven by DXC's preprocessor before it is used.
     /// </summary>
-    private static (int Count, Token? First) MacroWriters(
-        string source, List<Tok> tokens, List<Tok> defineTokens, string entryPoint, bool anyDepth)
+    private sealed class Locator
     {
-        var defines = new Dictionary<string, (bool FunctionLike, List<Tok> Body)>(StringComparer.Ordinal);
-        foreach (Tok d in defineTokens)
+        private readonly string _source;
+        private readonly string _preprocessed;
+        private readonly string _file;
+        private readonly string _entryPoint;
+        private readonly LineIndex _rawLines;
+        private readonly LineIndex _outLines;
+        private readonly (string File, int Line)[] _outPresumed;
+        private readonly Dictionary<(string File, int Line), List<int>> _rawByPresumed = [];
+        private readonly ILookup<int, Tok> _rawByLine;
+
+        public Locator(string source, string preprocessed, string file, string entryPoint)
         {
-            Match m = DefineParts().Match(d.Text.Replace("\\\r\n", " ", StringComparison.Ordinal).Replace("\\\n", " ", StringComparison.Ordinal).Replace("\\\r", " ", StringComparison.Ordinal));
-            if (m.Success)
-                defines[m.Groups[1].Value] = (m.Groups[2].Success, Tokenize(m.Groups[3].Value, rawText: true).Where(t => t.Kind != TokKind.Comment).ToList());
+            _source = source;
+            _preprocessed = preprocessed;
+            _file = file;
+            _entryPoint = entryPoint;
+            _rawLines = new LineIndex(source);
+            _outLines = new LineIndex(preprocessed);
+
+            // DXC's first marker names its main input; the raw source starts in it.
+            Match first = LineMarker().Match(preprocessed.TrimStart());
+            string main = first.Success && first.Groups[2].Success ? Unescape(first.Groups[2].Value) : string.Empty;
+            _outPresumed = Presumed(preprocessed, main);
+            (string File, int Line)[] raw = Presumed(source, main);
+            for (int i = 0; i < raw.Length; i++)
+            {
+                if (!_rawByPresumed.TryGetValue(raw[i], out List<int>? physical))
+                    _rawByPresumed[raw[i]] = physical = [];
+                physical.Add(i + 1);
+            }
+            _rawByLine = Tokenize(source, rawText: true)
+                .Where(t => t.Kind is not (TokKind.Comment or TokKind.Directive))
+                .ToLookup(t => _rawLines.Position(t.Offset).Line);
         }
 
-        // Naming: the body names the entry or a naming macro (to a fixed point). Pasting: `##`.
-        var naming = new HashSet<string>(StringComparer.Ordinal);
-        var pasting = new HashSet<string>(StringComparer.Ordinal);
-        foreach ((string name, (bool _, List<Tok> body)) in defines)
+        /// <summary>
+        /// The candidate raw ranges for <paramref name="prototype"/> (read off the preprocessed
+        /// text): each runs from the start of a raw token on a raw line the prototype's first token
+        /// came from to the end of a raw token on a line its last token came from (exact token
+        /// boundaries, never part of a token). The positional candidate (the prototype's first and
+        /// last tokens at the same token positions in the raw lines as in the preprocessed ones, as
+        /// when no macro touched them) comes first, then every plausible pair, narrowest first: a
+        /// start that is the prototype's first token or a macro name, an end that is its last token,
+        /// a macro name, or a macro call's ')'. Starts at or before the last raw spelling of the
+        /// entry's name on that line come first: one after it (a macro name after the prototype)
+        /// can begin it only if a macro writes the name.
+        /// </summary>
+        public CandidateRanges Candidates(Declaration prototype, List<Tok> significant, IReadOnlySet<string> macroNames)
         {
-            for (int i = 0; i + 1 < body.Count; i++)
+            var candidates = new List<(int Start, int End)>();
+            int first = significant.FindIndex(t => t.Offset >= prototype.Start);
+            int last = significant.FindLastIndex(t => t.Offset < prototype.End);
+            if (first < 0 || last < first)
+                return new CandidateRanges(candidates, false);
+
+            int firstOutLine = _outLines.Position(significant[first].Offset).Line;
+            int lastOutLine = _outLines.Position(significant[last].Offset).Line;
+            int firstInLine = significant.Take(first).Count(t => _outLines.Position(t.Offset).Line == firstOutLine && t.Kind != TokKind.Directive);
+            int lastInLine = significant.Take(last).Count(t => _outLines.Position(t.Offset).Line == lastOutLine && t.Kind != TokKind.Directive);
+
+            bool positional = false;
+            foreach (int startLine in RawLines(firstOutLine))
             {
-                if (body[i].Is("#") && body[i + 1].Is("#") && body[i + 1].Offset == body[i].Offset + 1)
-                    pasting.Add(name);
-            }
-        }
-        for (bool grew = true; grew;)
-        {
-            grew = false;
-            foreach ((string name, (bool _, List<Tok> body)) in defines)
-            {
-                if (!naming.Contains(name) && body.Any(t => t.Kind == TokKind.Identifier && (t.Text == entryPoint || naming.Contains(t.Text))))
-                    grew = naming.Add(name) | grew;
-            }
-        }
-        // A macro whose body uses a pasting one may paste anything: it counts as one that may write the name.
-        var indirect = new HashSet<string>(StringComparer.Ordinal);
-        for (bool grew = true; grew;)
-        {
-            grew = false;
-            foreach ((string name, (bool _, List<Tok> body)) in defines)
-            {
-                if (!naming.Contains(name) && !pasting.Contains(name) && !indirect.Contains(name)
-                    && body.Any(t => t.Kind == TokKind.Identifier && (pasting.Contains(t.Text) || indirect.Contains(t.Text))))
+                foreach (int endLine in RawLines(lastOutLine).Where(l => l >= startLine))
                 {
-                    grew = indirect.Add(name) | grew;
-                }
-            }
-        }
-        var targets = new HashSet<string>(naming.Concat(pasting).Concat(indirect), StringComparer.Ordinal) { entryPoint };
-
-        var lines = new LineIndex(source);
-        int count = 0;
-        Token? first = null;
-        int depth = 0;
-        for (int i = 0; i < tokens.Count; i++)
-        {
-            Tok t = tokens[i];
-            if (t.Is("{"))
-                depth++;
-            else if (t.Is("}"))
-                depth = Math.Max(0, depth - 1);
-            if (t.Kind != TokKind.Identifier || (depth > 0 && !anyDepth) || !defines.TryGetValue(t.Text, out var define))
-                continue;
-
-            int writes;
-            if (naming.Contains(t.Text))
-            {
-                writes = define.Body.Count(b => b.Kind == TokKind.Identifier && (b.Text == entryPoint || naming.Contains(b.Text))) > 1 ? 2 : 1;
-            }
-            else if (indirect.Contains(t.Text))
-            {
-                writes = 2;
-            }
-            else if (pasting.Contains(t.Text))
-            {
-                // The pieces a paste at this use can join: the body's words and the call's arguments.
-                var pieces = new HashSet<string>(define.Body.Where(b => b.Kind is TokKind.Identifier or TokKind.Number).Select(b => b.Text), StringComparer.Ordinal);
-                if (define.FunctionLike && i + 1 < tokens.Count && tokens[i + 1].Is("("))
-                {
-                    int parens = 0;
-                    for (int j = i + 1; j < tokens.Count; j++)
+                    List<Tok> onStartLine = _rawByLine[startLine].ToList();
+                    List<Tok> onEndLine = _rawByLine[endLine].ToList();
+                    if (firstInLine < onStartLine.Count && lastInLine < onEndLine.Count
+                        && onEndLine[lastInLine].Offset >= onStartLine[firstInLine].Offset)
                     {
-                        parens += tokens[j].Is("(") ? 1 : tokens[j].Is(")") ? -1 : 0;
-                        if (parens == 0)
-                            break;
-                        if (tokens[j].Kind is TokKind.Identifier or TokKind.Number)
-                            pieces.Add(tokens[j].Text);
+                        positional |= candidates.Count == 0;
+                        candidates.Add((onStartLine[firstInLine].Offset, onEndLine[lastInLine].Offset + onEndLine[lastInLine].Text.Length));
+                    }
+
+                    int bound = onStartLine.LastOrDefault(t => t.IsWord(_entryPoint)) is { Text: not null } name ? name.Offset : int.MaxValue;
+                    bool IsMacro(Tok t) => t.Kind == TokKind.Identifier && macroNames.Contains(t.Text);
+                    foreach (Tok s in onStartLine.Where(t => SameToken(t, significant[first]) || IsMacro(t)).OrderBy(t => t.Offset <= bound ? 0 : 1).ThenByDescending(t => t.Offset))
+                    {
+                        foreach (Tok e in onEndLine.Where(t => t.Offset >= s.Offset && (SameToken(t, significant[last]) || t.Is(")") || IsMacro(t))))
+                            candidates.Add((s.Offset, e.Offset + e.Text.Length));
                     }
                 }
-                writes = targets.Any(target => CanSpell(target, pieces)) ? 2 : 0;
-            }
-            else
-            {
-                continue;
             }
 
-            if (writes == 0)
-                continue;
-            count += writes;
-            if (first is null)
-            {
-                (int line, int column) = lines.Position(t.Offset);
-                first = new Token(line, column + 1, t.Offset);
-            }
+            List<(int Start, int End)> usable = candidates.Where(c => c.End > c.Start).Distinct().ToList();
+            return new CandidateRanges(usable, positional && usable.Count > 0 && usable[0] == candidates[0]);
         }
-        return (count, first);
-    }
 
-    /// <summary>True when <paramref name="word"/> is a concatenation of <paramref name="pieces"/> (each usable any number of times).</summary>
-    private static bool CanSpell(string word, IReadOnlySet<string> pieces)
-    {
-        var reachable = new bool[word.Length + 1];
-        reachable[0] = true;
-        for (int i = 0; i < word.Length; i++)
+        /// <summary>The raw physical lines (1-based) a line of the preprocessed text came from, nearest first.</summary>
+        private IEnumerable<int> RawLines(int outLine) =>
+            outLine >= 1 && outLine <= _outPresumed.Length && _rawByPresumed.TryGetValue(_outPresumed[outLine - 1], out List<int>? lines)
+                ? lines.Take(4)
+                : [];
+
+        /// <summary>
+        /// <paramref name="error"/> with its column moved onto the raw source: the column of the
+        /// entry's name on the raw line it came from (DXC's preprocessed text does not keep every
+        /// column), when that line can be found.
+        /// </summary>
+        public ShaderError Fix(ShaderError error)
         {
-            if (!reachable[i])
-                continue;
-            foreach (string piece in pieces)
+            // The error's line is the author's; the raw lines that carry it are the candidates.
+            foreach (KeyValuePair<(string File, int Line), List<int>> entry in _rawByPresumed)
             {
-                if (piece.Length > 0 && i + piece.Length <= word.Length && string.CompareOrdinal(word, i, piece, 0, piece.Length) == 0)
-                    reachable[i + piece.Length] = true;
+                if (entry.Key.Line != error.Line || !SameFile(entry.Key.File, error.File))
+                    continue;
+                foreach (int line in entry.Value)
+                {
+                    if (_rawByLine[line].FirstOrDefault(t => t.IsWord(_entryPoint)) is { Text: not null } name)
+                        return error with { Column = _rawLines.Position(name.Offset).Column + 1 };
+                }
             }
+            return error;
         }
-        return reachable[word.Length];
-    }
 
-    /// <summary>True when a <c>#define</c> line's parentheses and braces balance (a body that opens or closes one does not).</summary>
-    private static bool Balanced(string directive)
-    {
-        int parens = 0;
-        int braces = 0;
-        // Continuation lines joined, so a continued line starting with '#' is not read as a directive.
-        foreach (Tok t in Tokenize(directive.TrimStart().TrimStart('#').Replace('\n', ' ').Replace('\r', ' '), rawText: true))
+        private static bool SameFile(string a, string b) =>
+            string.Equals(a.Replace('\\', '/'), b.Replace('\\', '/'), StringComparison.Ordinal);
+
+        /// <summary>The (file, line) each physical line of <paramref name="text"/> stands for, as its <c>#line</c> directives say.</summary>
+        private static (string File, int Line)[] Presumed(string text, string startFile)
         {
-            parens += t.Is("(") ? 1 : t.Is(")") ? -1 : 0;
-            braces += t.Is("{") ? 1 : t.Is("}") ? -1 : 0;
-            if (parens < 0 || braces < 0)
-                return false;
+            var index = new LineIndex(text);
+            var presumed = new (string, int)[index.LineCount];
+            string file = startFile;
+            int line = 1;
+            for (int i = 0; i < presumed.Length; i++)
+            {
+                presumed[i] = (file, line);
+                Match marker = LineMarker().Match(index.Text(text, i + 1));
+                if (marker.Success && int.TryParse(marker.Groups[1].Value, System.Globalization.NumberStyles.None, System.Globalization.CultureInfo.InvariantCulture, out int next))
+                {
+                    line = next;
+                    if (marker.Groups[2].Success)
+                        file = Unescape(marker.Groups[2].Value);
+                }
+                else
+                {
+                    line++;
+                }
+            }
+            return presumed;
         }
-        return parens == 0 && braces == 0;
+
+        private static string Unescape(string name) => name.Replace("\\\\", "\\", StringComparison.Ordinal).Replace('\\', '/');
     }
 
     // ---- What to blank ----------------------------------------------------------------------
@@ -807,12 +575,17 @@ internal static partial class DxcSpirvEntryRedeclarations
     /// <summary>
     /// A cheap, exact gate: two declarations need the name written twice, or written once in a
     /// directive (an object-like macro used twice), or once as the argument of a function-like
-    /// macro (which may write its parameter twice), or a token paste.
+    /// macro (which may write its parameter twice), or a token paste. A line splice (a backslash
+    /// before a line break, which can join a name DXC then reads), a trigraph or a <c>%:</c> digraph
+    /// (a directive) defeats the reading, so any of them sends the source to DXC's preprocessor.
     /// </summary>
     private static bool CannotBeDeclaredTwice(string source, string name)
     {
-        if (source.Contains("##", StringComparison.Ordinal))
+        if (source.Contains("##", StringComparison.Ordinal) || LineSplice().IsMatch(source)
+            || source.Contains("??", StringComparison.Ordinal) || source.Contains("%:", StringComparison.Ordinal))
+        {
             return false;
+        }
         int first = IndexOfWord(source, name, 0);
         if (first < 0)
             return true;
@@ -832,14 +605,6 @@ internal static partial class DxcSpirvEntryRedeclarations
                 return i;
         }
         return -1;
-    }
-
-    private static string DropLines(string text, int count)
-    {
-        int offset = 0;
-        for (int i = 0; i < count && offset >= 0; i++)
-            offset = text.IndexOf('\n', offset) is int n and >= 0 ? n + 1 : -1;
-        return offset > 0 ? text[offset..] : text;
     }
 
     /// <summary>
@@ -902,9 +667,11 @@ internal static partial class DxcSpirvEntryRedeclarations
         public int DeclarationShaped => Prototypes.Count + Definitions.Count + Unread.Count;
     }
 
-    private static Analysis Analyze(string text, string name, bool rawText)
+    /// <summary>The declarations, calls and unread uses of <paramref name="name"/> in DXC's preprocessed text.</summary>
+    private static Analysis Analyze(string text, string name)
     {
-        List<Tok> tokens = Tokenize(text, rawText).Where(t => t.Kind != TokKind.Comment).ToList();
+        // DXC's line markers say where a line came from and are no code: a declaration may run across one.
+        List<Tok> tokens = Tokenize(text, rawText: false).Where(t => t.Kind != TokKind.Comment && !IsLineMarker(t)).ToList();
         var lines = new LineIndex(text);
         Dictionary<string, string> typedefs = Typedefs(tokens);
 
@@ -953,10 +720,8 @@ internal static partial class DxcSpirvEntryRedeclarations
                     continue;
                 }
 
-                // Otherwise, in the view every macro is expanded, so a use without '(' declares
-                // nothing. In raw text it may be a macro's argument (`DECLARE(PS)`).
-                if (rawText && depth == 0)
-                    unread.Add(at);
+                // Otherwise, every macro is expanded in DXC's preprocessed text, so a use without
+                // '(' declares nothing.
                 continue;
             }
             if (IsTechniqueReference(tokens, i))
@@ -1471,12 +1236,6 @@ internal static partial class DxcSpirvEntryRedeclarations
     private static bool IsLineBreak(string text, int i) =>
         text[i] == '\n' || (text[i] == '\r' && (i + 1 >= text.Length || text[i + 1] != '\n'));
 
-    private static string DirectiveKeyword(string directive)
-    {
-        Match m = DirectiveName().Match(directive);
-        return m.Success ? m.Groups[1].Value : string.Empty;
-    }
-
     /// <summary>
     /// Line starts of a text, for (line, column) positions, with line breaks counted as the
     /// managed preprocessor counts them (see <see cref="IsLineBreak"/>).
@@ -1496,6 +1255,16 @@ internal static partial class DxcSpirvEntryRedeclarations
 
         public int LineCount => _starts.Count;
 
+        /// <summary>The text of the 1-based physical <paramref name="line"/> of <paramref name="text"/>, without its line break.</summary>
+        public string Text(string text, int line)
+        {
+            int start = _starts[line - 1];
+            int end = line < _starts.Count ? _starts[line] : text.Length;
+            while (end > start && text[end - 1] is '\n' or '\r')
+                end--;
+            return text[start..end];
+        }
+
         /// <summary>The 1-based line and 0-based column of <paramref name="offset"/>.</summary>
         public (int Line, int Column) Position(int offset)
         {
@@ -1505,8 +1274,13 @@ internal static partial class DxcSpirvEntryRedeclarations
         }
     }
 
-    [GeneratedRegex(@"^\s*#\s*([A-Za-z_]+)", RegexOptions.CultureInvariant)]
-    private static partial Regex DirectiveName();
+    /// <summary>A <c>#line N "file"</c> directive (DXC's line marker, or the source's own): the line number, then the file if named.</summary>
+    [GeneratedRegex(@"^\s*#\s*line\s+(\d+)(?:\s+""((?:[^""\\]|\\.)*)"")?", RegexOptions.CultureInvariant)]
+    private static partial Regex LineMarker();
+
+    /// <summary>A backslash before a line break, spaces between allowed (clang splices it with a warning).</summary>
+    [GeneratedRegex(@"\\[ \t\f\v]*\n", RegexOptions.CultureInvariant)]
+    private static partial Regex LineSplice();
 
     [GeneratedRegex(@"^[ \t]*#[ \t]*define[ \t]+[A-Za-z_][A-Za-z0-9_]*\(", RegexOptions.CultureInvariant | RegexOptions.Multiline)]
     private static partial Regex FunctionLikeDefine();
@@ -1533,9 +1307,6 @@ internal static partial class DxcSpirvEntryRedeclarations
     [GeneratedRegex(@"^(?:linear|centroid|nointerpolation|noperspective|sample|precise)$", RegexOptions.CultureInvariant)]
     private static partial Regex InterpolationModifier();
 
-    /// <summary>A <c>#define</c> line (continuations joined): its name, its parameter list if function-like, its body.</summary>
-    [GeneratedRegex(@"^\s*#\s*define\s+([A-Za-z_][A-Za-z0-9_]*)(\([^)]*\))?(.*)$", RegexOptions.CultureInvariant | RegexOptions.Singleline)]
-    private static partial Regex DefineParts();
 
     /// <summary>The name of each <c>#define</c> (object-like or function-like).</summary>
     [GeneratedRegex(@"^[ \t]*#[ \t]*define[ \t]+([A-Za-z_][A-Za-z0-9_]*)", RegexOptions.CultureInvariant | RegexOptions.Multiline)]
