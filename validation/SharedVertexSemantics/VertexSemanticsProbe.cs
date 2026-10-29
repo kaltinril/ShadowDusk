@@ -139,6 +139,17 @@ public static class VertexSemanticsProbe
                         PackingStem = stem,
                     });
             }
+            foreach ((string stem, string[] techniques) in PackingTechniques)
+            {
+                var packed = Compile(compiler, label, container, Path.Combine(dir, "packing", stem + ".fx"));
+                byte[] golden = File.ReadAllBytes(Path.Combine(dir, "packing", stem + ".OpenGL.mgfx"));
+                foreach (string technique in techniques)
+                    jobs.Add(new Job($"packing {stem} technique {technique} [{container}]", packed, golden, null, 0, null, ControlKind.None)
+                    {
+                        PackingStem = stem,
+                        Technique = technique,
+                    });
+            }
 
             if (container == EffectContainer.Mgfx && semantics.Bytes is not null)
             {
@@ -225,6 +236,14 @@ public static class VertexSemanticsProbe
         ("MatToVec22", 2), ("RowMatToVec22", 2), ("VecToMat43", 3), ("VecToRowMat43", 3),
         ("VecToMat34", 3), ("VecToRowMat22", 3), ("TypedefRowMatToVec33", 3),
         ("PragmaRowMajorMatToVec33", 3), ("DuplicatePosition", 1),
+        ("RetValRowMatToVec33", 3), ("CommaDeclRowMat", 3), ("LeadingZeroRowMatToVec33", 3),
+        ("RowMatToColMat33", 3), ("NestedStructRowMatToVec33", 3), ("UnusedDegenerateStruct", 1),
+    ];
+
+    // Packing fixtures with more than one technique: fixture -> the techniques to draw.
+    private static readonly (string Stem, string[] Techniques)[] PackingTechniques =
+    [
+        ("TwoTechniques", ["A", "B"]),
     ];
 
     private enum ControlKind
@@ -252,6 +271,9 @@ public static class VertexSemanticsProbe
     {
         /// <summary>The packing fixture this case renders, or null for any other case.</summary>
         public string? PackingStem { get; init; }
+
+        /// <summary>The technique to draw, or null for the effect's first.</summary>
+        public string? Technique { get; init; }
     }
 
     private sealed record JobResult(string Name, bool Ok, string Detail)
@@ -551,7 +573,8 @@ public static class VertexSemanticsProbe
                             ok = false;
                         }
                         // A vacuous pass: both builds drawing nothing (or leaving the magenta clear).
-                        if (job.Expected is null && job.Control == ControlKind.None
+                        // A WrongPacking control that drew nothing would "diverge" vacuously, so it is checked too.
+                        if (job.Expected is null && job.Control != ControlKind.WrongElement
                             && candidate.All(px => (px.A == 0 && px.R == 0) || px == new Color(255, 0, 255, 255)))
                         {
                             notes.Add("nothing drawn");
@@ -578,6 +601,9 @@ public static class VertexSemanticsProbe
         private Color[] Render(byte[] bytes, Job job, Texture2D texture)
         {
             using var effect = new Effect(GraphicsDevice, bytes);
+            if (job.Technique is not null)
+                effect.CurrentTechnique = effect.Techniques[job.Technique]
+                    ?? throw new InvalidOperationException($"technique '{job.Technique}' not found");
             if (job.Selector is not null)
                 effect.Parameters[job.Selector]!.SetValue(job.SelectorValue);
             effect.Parameters["World"]?.SetValue(Matrix.Identity);

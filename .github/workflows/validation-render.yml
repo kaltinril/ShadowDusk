@@ -58,7 +58,7 @@
 #                              interpolant, through a custom VertexDeclaration in REAL MonoGame
 #                              DesktopGL and REAL KNI SDL2.GL (MGFX v10 + KNIFX): each element's
 #                              render vs the committed mgfxc OpenGL build in the same process
-#                              (maxd <= 1) AND the element's CPU-known value; 17 matrix-
+#                              (maxd <= 1) AND the element's CPU-known value; 24 matrix-
 #                              interpolant packing fixtures whose stages declare it differently
 #                              (column_major / row_major, square and non-square) vs mgfxc; three
 #                              positive controls that must diverge (a relabelled BINORMAL0

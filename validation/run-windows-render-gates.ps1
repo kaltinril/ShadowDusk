@@ -85,7 +85,7 @@
                                    through the effect's `Pick`, plus a float3x3 TEXCOORD2
                                    interpolant; vs the mgfxc OpenGL build (maxd <= 1) and the
                                    element's CPU value, MGFX v10 on MonoGame, v10 + KNIFX on KNI;
-                                   plus 17 matrix-interpolant packing fixtures whose stages declare
+                                   plus 24 matrix-interpolant packing fixtures whose stages declare
                                    the interpolant differently (column_major and row_major, 3x3 /
                                    4x3 / 3x4 / 2x2). Controls that must diverge: a relabelled
                                    BINORMAL0 record, and two row_major fixtures packed by columns.
