@@ -355,6 +355,14 @@ return texArrPass ? 0 : 1;
 //   RegisterTexture2DArrayT1  Texture2DArray on register(t1), sampling slice 1 (slice 0 red,
 //                             slice 1 blue), built with MonoGame 3.8.4.1+'s public
 //                             Texture2D(..., arraySize) constructor and SetData(level, slice, ...).
+//   RegisterSpace0            t1, s1 AND a cbuffer, each on an explicit "space0": a pixel shader
+//                             in set 0, where DesktopVK never binds (mgfxc's own build draws
+//                             (0,0,0,0)). Tex1 = solid colour, Tint = (1, 0.5, 1, 1). The golden
+//                             is mgfxc on the file with the spaces removed.
+//   RegisterDeadSampler       an unregistered SpriteTex beside a dead register(s0) sampler, drawn
+//                             by SpriteBatch alone (parameter never set): SpriteTex must be slot 0,
+//                             as on DirectX. The golden is mgfxc on the DirectX-equivalent form
+//                             (SpriteTex : register(t0)).
 //
 // Each arm (mgfxc 3.8.5 golden, ShadowDusk) is drawn through SpriteBatch on one device and
 // must (a) match the other within 1/255 and (b) show the colour the shader computes from the
@@ -376,7 +384,7 @@ if (control is not ("" or "ordinal-slots"))
 if (control != "")
     Console.WriteLine($"[regslots-vulkan] POSITIVE CONTROL ACTIVE: {control} (this run is expected to FAIL)");
 
-string[] fixtures = ["RegisterLoneT1", "RegisterGapT0T2", "RegisterTexture2DArrayT1"];
+string[] fixtures = ["RegisterLoneT1", "RegisterGapT0T2", "RegisterTexture2DArrayT1", "RegisterSpace0", "RegisterDeadSampler"];
 string regOut = Path.Combine(repoRoot, "validation", "output", "regslots-vulkan");
 Directory.CreateDirectory(regOut);
 
@@ -420,6 +428,7 @@ foreach (string name in fixtures)
 var lone   = new Color(51, 204, 102, 255);
 var slice0 = new Color(255, 0, 0, 255);
 var slice1 = new Color(0, 128, 255, 255);
+var tinted = new Color(51, 102, 102, 255); // lone * (1, 0.5, 1, 1)
 Microsoft.Xna.Framework.Graphics.Texture2D? loneTex = null, whiteTex = null, arrayTex = null;
 
 using var regGame = new EffectImageRenderer(catPath, regOut, regJobs, (effect, cat) =>
@@ -440,6 +449,7 @@ using var regGame = new EffectImageRenderer(catPath, regOut, regJobs, (effect, c
         whiteTex ??= Solid(gd, Color.White);
         overlay.SetValue(whiteTex);
     }
+    effect.Parameters["Tint"]?.SetValue(new Vector4(1f, 0.5f, 1f, 1f));
     if (effect.Parameters["Arr"] is { } arr)
     {
         if (arrayTex is null)
@@ -471,6 +481,9 @@ foreach (string name in fixtures)
     {
         "RegisterLoneT1"           => cap => AllPixels(cap, p => Near(p, lone), $"every pixel ({lone.R},{lone.G},{lone.B},{lone.A})"),
         "RegisterTexture2DArrayT1" => cap => AllPixels(cap, p => Near(p, slice1), $"every pixel slice 1 ({slice1.R},{slice1.G},{slice1.B},{slice1.A})"),
+        "RegisterSpace0"           => cap => AllPixels(cap, p => Near(p, tinted), $"every pixel Tex1 * Tint ({tinted.R},{tinted.G},{tinted.B},{tinted.A})"),
+        // SpriteBatch's own sprite, the cat: visible content (a slot nothing binds draws nothing).
+        "RegisterDeadSampler"      => cap => (HasVisibleContent(cap), $"the sprite (visible content); centre {Centre(cap)}"),
         // (cat + white) / 2: every channel at least 127. An unbound t2 gives cat / 2.
         _                          => cap => AllPixels(cap, p => p.R >= 127 && p.G >= 127 && p.B >= 127 && p.A >= 254, "every channel >= 127 ((cat + white) / 2)"),
     };
@@ -496,6 +509,12 @@ static Microsoft.Xna.Framework.Graphics.Texture2D Solid(Microsoft.Xna.Framework.
     var t = new Microsoft.Xna.Framework.Graphics.Texture2D(gd, 4, 4);
     t.SetData(Enumerable.Repeat(color, 16).ToArray());
     return t;
+}
+
+static string Centre((string Name, Color[] Pixels, int Width, int Height) cap)
+{
+    Color c = cap.Pixels[(cap.Height / 2) * cap.Width + cap.Width / 2];
+    return $"({c.R},{c.G},{c.B},{c.A})";
 }
 
 static bool Near(Color a, Color b) =>
