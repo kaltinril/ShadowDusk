@@ -216,7 +216,7 @@ public static class SkslConverter
         if (pass.VertexEntryPoint is not null)
         {
             return Fail(options.SourceName, "SD0610",
-                $"pass '{pass.Name}' compiles a vertex shader ('{pass.VertexEntryPoint}'), and SkSL " +
+                $"{PassLabel(pass)} compiles a vertex shader ('{pass.VertexEntryPoint}'), and SkSL " +
                 "runtime effects have no vertex stage at all (a Skia platform limit, not a " +
                 "ShadowDusk one). Only pixel-only passes convert; refusing rather than silently " +
                 "dropping the vertex work.");
@@ -225,7 +225,7 @@ public static class SkslConverter
         if (pass.PixelEntryPoint is null)
         {
             return Fail(options.SourceName, "SD0610",
-                $"pass '{pass.Name}' has no pixel shader — an SkSL runtime effect IS a pixel " +
+                $"{PassLabel(pass)} has no pixel shader — an SkSL runtime effect IS a pixel " +
                 "function, so there is nothing to convert.");
         }
 
@@ -310,6 +310,11 @@ public static class SkslConverter
             })
             : converted;
     }
+
+    // A diagnostic names an anonymous pass (`pass { ... }`, name "") by its index; SkSL converts
+    // only the single pass #0, the one these diagnostics are about.
+    private static string PassLabel(PassInfo pass) =>
+        pass.Name.Length > 0 ? $"pass '{pass.Name}'" : "pass #0 (anonymous)";
 
     private static Result<SkslConversion, ShaderError[]> Fail(string file, string code, string message) =>
         Result<SkslConversion, ShaderError[]>.Fail(
