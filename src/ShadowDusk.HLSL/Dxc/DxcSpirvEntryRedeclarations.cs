@@ -302,6 +302,7 @@ internal static partial class DxcSpirvEntryRedeclarations
         private readonly string _preprocessed;
         private readonly string _file;
         private readonly string _entryPoint;
+        private readonly string _main;
         private readonly LineIndex _rawLines;
         private readonly LineIndex _outLines;
         private readonly (string File, int Line)[] _outPresumed;
@@ -320,6 +321,7 @@ internal static partial class DxcSpirvEntryRedeclarations
             // DXC's first marker names its main input; the raw source starts in it.
             Match first = LineMarker().Match(preprocessed.TrimStart());
             string main = first.Success && first.Groups[2].Success ? Unescape(first.Groups[2].Value) : string.Empty;
+            _main = main;
             _outPresumed = Presumed(preprocessed, main);
             (string File, int Line)[] raw = Presumed(source, main);
             for (int i = 0; i < raw.Length; i++)
@@ -399,10 +401,15 @@ internal static partial class DxcSpirvEntryRedeclarations
         /// </summary>
         public ShaderError Fix(ShaderError error)
         {
+            // A line DXC places in its own name for the main input (no #line of the source's own
+            // before it) is the source file's.
+            if (SameFile(error.File, _main))
+                error = error with { File = _file };
             // The error's line is the author's; the raw lines that carry it are the candidates.
             foreach (KeyValuePair<(string File, int Line), List<int>> entry in _rawByPresumed)
             {
-                if (entry.Key.Line != error.Line || !SameFile(entry.Key.File, error.File))
+                string file = SameFile(entry.Key.File, _main) ? _file : entry.Key.File;
+                if (entry.Key.Line != error.Line || !SameFile(file, error.File))
                     continue;
                 foreach (int line in entry.Value)
                 {

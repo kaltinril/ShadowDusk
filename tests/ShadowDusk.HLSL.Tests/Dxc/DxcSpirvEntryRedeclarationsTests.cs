@@ -142,6 +142,7 @@ public sealed class DxcSpirvEntryRedeclarationsTests
 
         ShaderError error = Refused(source);
 
+        error.File.ShouldBe("t.fx");
         error.Line.ShouldBe(2);
         error.Column.ShouldBe(53);
         error.Message.ShouldContain("'PS' is called here, between its prototype and its definition", Case.Sensitive);
