@@ -90,9 +90,10 @@ public sealed record SkslConversion(
 /// <param name="Name">
 /// The SkSL uniform name, the key for <c>SKRuntimeEffectUniforms</c>: the HLSL global's name, or
 /// the synthesized uniform's (<c>ShadowDusk_Color</c>, <c>ShadowDusk_Resolution</c>,
-/// <c>in_var_&lt;SEMANTIC&gt;</c>). A global whose name is a GLSL reserved word comes out of
-/// SPIRV-Cross with a leading underscore (<c>input</c> is <c>_input</c>), and that is the name
-/// listed here.
+/// <c>in_var_&lt;SEMANTIC&gt;</c>). A global whose name GLSL cannot take comes out of SPIRV-Cross
+/// renamed (<c>input</c> is <c>_input</c>, <c>a__b</c> is <c>a_b</c>, <c>gl_X</c> is
+/// <c>_RESERVED_IDENTIFIER_FIXUP_gl_X</c>), and that is the name listed here, with the renamed
+/// global's default (paired through the SPIR-V member names, never guessed from the spelling).
 /// </param>
 /// <param name="SkslType">The declared type as emitted, e.g. <c>float</c>, <c>vec4</c>, <c>mat4</c>, <c>int</c>.</param>
 /// <param name="ArrayLength">The element count of an array uniform, or <c>0</c> for a non-array.</param>
@@ -116,12 +117,19 @@ public sealed record SkslUniform(string Name, string SkslType, int ArrayLength)
     /// the single value, <c>u.DefaultValue[0]</c>); an <c>int</c> or <c>ivecN</c> uniform takes the
     /// same values as integers.</para>
     /// <para><b>Values.</b> <c>int</c> values converted to floats, <c>uint</c> values by their
-    /// unsigned value, <c>bool</c> as 0 or 1 (SkSL itself has no <c>uint</c> or <c>bool</c>
-    /// uniforms, which Skia's compiler rejects).</para>
+    /// unsigned value (so one beyond 2^24 is not exact), <c>bool</c> as 0 or 1 (SkSL itself has no
+    /// <c>uint</c> or <c>bool</c> uniforms, which Skia's compiler rejects). The converter compiles
+    /// with the OpenGL macro set, so this is the MGFX route's value for an OpenGL build; a default
+    /// chosen under <c>#if OPENGL</c> can differ on DirectX.</para>
+    /// <para><b>Degenerate shapes.</b> The shape is the converted uniform's: <c>float1 F = 0.5;</c>
+    /// is a <c>float</c> uniform with <c>[0.5]</c> (the MGFX route reports none, with <c>SD0017</c>),
+    /// while <c>float1x1</c>, <c>float1xN</c> and <c>floatNx1</c> come out of DXC as a scalar, a
+    /// vector or an array and are <see langword="null"/> with <c>SD0017</c> (the MGFX route has a value).</para>
     /// <para><b>When it is <see langword="null"/>.</b> The global has no initializer; the
     /// initializer could not be evaluated, or its shape does not match the uniform (the
     /// conversion then carries the MGFX route's <c>SD0017</c> warning); or the uniform has no HLSL
-    /// declaration (a synthesized uniform). Child shaders (textures and samplers) are not listed.</para>
+    /// declaration (a synthesized uniform). A global with a default that no listed uniform could be
+    /// paired with is an <c>SD0017</c> warning too. Child shaders (textures and samplers) are not listed.</para>
     /// </remarks>
     public IReadOnlyList<float>? DefaultValue { get; init; }
 
@@ -347,7 +355,7 @@ public static class SkslConverter
                 m.Groups["len"].Success ? int.Parse(m.Groups["len"].Value, System.Globalization.CultureInfo.InvariantCulture) : 0))
             .ToList();
         IReadOnlyList<float>?[] defaults = ConvertedUniformDefaults.Resolve(
-            compilerInput, options.SourceName, declared, mapped.Value.SynthesizedUniforms.ToHashSet(StringComparer.Ordinal), warnings);
+            compilerInput, options.SourceName, seam.Value.Glsl, seam.Value.Spirv, declared, mapped.Value.SynthesizedUniforms.ToHashSet(StringComparer.Ordinal), warnings);
 
         return Result<SkslConversion, ShaderError[]>.Ok(new SkslConversion(
             mapped.Value.SkslText,

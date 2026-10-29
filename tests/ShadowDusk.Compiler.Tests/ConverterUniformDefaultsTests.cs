@@ -234,6 +234,111 @@ public sealed class ConverterUniformDefaultsTests
         mgfx.Single(p => p.Name == "input").DefaultValue.ShouldBe([2f]);
     }
 
+    /// <summary>
+    /// Every SPIRV-Cross rename is paired back to its HLSL global through the SPIR-V member names,
+    /// never guessed from the spelling: a double underscore collapsed, a <c>gl_</c> prefix fixed
+    /// up, and a reserved word that clashes with another global's name.
+    /// </summary>
+    [Theory]
+    [InlineData("float my__val = 0.5;", "my__val", 0.5f, true)]
+    [InlineData("float gl_Thing = 0.5;", "gl_Thing", 0.5f, true)]
+    [InlineData("float _input = 0.25;\nfloat input = 0.5;", "_input", 0.25f, false)]
+    [InlineData("float _input = 0.25;\nfloat input = 0.5;", "input", 0.5f, false)]
+    public async Task Sksl_SpirvCrossRenames_ArePairedByTheSpirvMemberNames(string declarations, string hlslName, float expected, bool onGl)
+    {
+        string use = string.Join(" + ", Regex.Matches(declarations, @"float (\w+) =").Select(m => m.Groups[1].Value));
+        string fx = Fx(declarations, use);
+
+        SkslConversion conversion = Sksl(fx);
+        IReadOnlyList<ParameterReflection> mgfx = await MgfxParameters(fx, onGl);
+
+        mgfx.Single(p => p.Name == hlslName).DefaultValue.ShouldBe([expected]);
+        conversion.Uniforms.Count(u => u.DefaultValue is { } d && d.SequenceEqual([expected])).ShouldBe(1,
+            string.Join(", ", conversion.Uniforms.Select(u => $"{u.Name}=[{(u.DefaultValue is null ? "null" : string.Join(",", u.DefaultValue))}]")));
+        conversion.Uniforms.ShouldAllBe(u => u.DefaultValue != null);
+        conversion.Warnings.ShouldNotContain(w => w.Code == "SD0017");
+    }
+
+    [Fact]
+    public void Sksl_ClashingReservedWordNames_EachGetTheirOwnDefault()
+    {
+        SkslConversion conversion = Sksl(Fx("float _input = 0.25;\nfloat input = 0.5;", "_input + input"));
+
+        // SPIRV-Cross keeps `_input` and renames `input` to the next free name.
+        conversion.Uniforms.Single(u => u.Name == "_input").DefaultValue.ShouldBe([0.25f]);
+        SkslUniform renamed = conversion.Uniforms.Single(u => u.Name != "_input");
+        renamed.Name.ShouldNotBe("input");
+        renamed.DefaultValue.ShouldBe([0.5f]);
+    }
+
+    [Fact]
+    public void Sksl_RenamedGlobalWithoutAnInitializer_IsNull_BesideAStaticOfTheRenamedSpelling()
+    {
+        // `input` (no initializer) becomes `_input`; the static `_input` is not a uniform.
+        SkslConversion conversion = Sksl(Fx("float input;\nstatic float _input = 0.75;", "input + _input"));
+
+        conversion.Uniforms.Single().DefaultValue.ShouldBeNull();
+        conversion.Warnings.ShouldNotContain(w => w.Code == "SD0017");
+    }
+
+    [Fact]
+    public void AGlobalWithADefault_ThatNoConvertedUniformPairsWith_IsAnSd0017Warning()
+    {
+        // The resolver is handed a uniform list missing one global (as for a declaration shape
+        // the converter's uniform scan does not list): its default must be reported as lost.
+        string fx = Fx("float A = 0.5;\nfloat B = 0.25;", "A + B");
+        SkslConversion conversion = Sksl(fx);
+        conversion.Uniforms.Select(u => u.Name).ShouldBe(["A", "B"]);
+
+        // The converter's own front half: pre-parse, flatten with the OpenGL macros, strip techniques.
+        var parse = ShadowDusk.HLSL.FxPreParser.Parse(fx, "AB.fx");
+        parse.IsSuccess.ShouldBeTrue();
+        var flattened = ShadowDusk.Compiler.Internal.ModernGlslSeam.Flatten(parse.Value.StrippedHlsl, "AB.fx", null, []);
+        flattened.IsSuccess.ShouldBeTrue();
+        string input = ShadowDusk.HLSL.FxPreParser.StripTechniqueBlocks(flattened.Value.Text, "AB.fx");
+        var seam = ShadowDusk.Compiler.Internal.ModernGlslSeam.CompilePixel(input, "main", "AB.fx", default);
+        seam.IsSuccess.ShouldBeTrue();
+
+        var warnings = new List<ShaderError>();
+        IReadOnlyList<float>?[] defaults = ShadowDusk.Compiler.Internal.ConvertedUniformDefaults.Resolve(
+            input, "AB.fx", seam.Value.Glsl, seam.Value.Spirv,
+            [new ShadowDusk.Compiler.Internal.ConvertedUniformDefaults.Uniform("A", "float", 0)], [], warnings);
+
+        defaults.Single().ShouldBe([0.5f]);
+        ShaderError lost = warnings.Single(w => w.Code == "SD0017");
+        lost.Message.ShouldContain("'B'", Case.Sensitive);
+        lost.Message.ShouldContain("no uniform ShadowDusk could pair", Case.Sensitive);
+    }
+
+    /// <summary>
+    /// The degenerate one-row / one-column shapes, where the converted uniform's shape and the
+    /// MGFX parameter's differ, pinned as documented: <c>float1</c> is a plain <c>float</c> uniform
+    /// with its value; <c>float1x1</c>, <c>float1x3</c> and <c>float3x1</c> are not a matrix in the
+    /// converted shader, so they report null with SD0017, never a wrongly shaped value.
+    /// </summary>
+    [Theory]
+    [InlineData("float1 F = 0.5;", "F.x", new[] { 0.5f })]
+    [InlineData("float1x1 F = 0.5;", "F._m00", null)]
+    [InlineData("float1x3 F = float1x3(0.5, 0.25, 0.125);", "F._m00 + F._m02", null)]
+    [InlineData("float3x1 F = float3x1(0.5, 0.25, 0.125);", "F._m00 + F._m20", null)]
+    public void DegenerateShapes_FollowTheConvertedUniform(string declaration, string use, float[]? expected)
+    {
+        string fx = Fx(declaration, use);
+        SkslConversion conversion = Sksl(fx);
+        SkslUniform uniform = conversion.Uniforms.Single();
+
+        if (expected is null)
+        {
+            uniform.DefaultValue.ShouldBeNull(uniform.SkslType);
+            conversion.Warnings.ShouldContain(w => w.Code == "SD0017");
+        }
+        else
+        {
+            uniform.DefaultValue.ShouldBe(expected);
+            conversion.Warnings.ShouldNotContain(w => w.Code == "SD0017");
+        }
+    }
+
     [Fact]
     public void SlangSubsetRoute_ReportsTheDeclaredDefault_OnBothConverters()
     {

@@ -51,8 +51,9 @@ public sealed class SlangSkslRouteTests
     /// <summary>
     /// Issue #435 on the real-slangc route: each converter reports, for a Slang global with an
     /// initializer, exactly the default the same route's MGFX build reflects
-    /// (<see cref="SlangCompiler.Compile"/> for OpenGL). Whether slangc's HLSL keeps the
-    /// initializer is slangc's business; the routes must agree on what it kept.
+    /// (<see cref="SlangCompiler.Compile"/> for OpenGL). Measured with the pinned slangc: its HLSL
+    /// drops the initializer, so every route reports null (the built-in subset route keeps it,
+    /// <c>ConverterUniformDefaultsTests.SlangSubsetRoute_ReportsTheDeclaredDefault_OnBothConverters</c>).
     /// </summary>
     [Fact]
     public void DeclaredDefaults_AgreeWithTheSameRoutesMgfxReflection()
@@ -85,16 +86,11 @@ public sealed class SlangSkslRouteTests
             IReadOnlyList<float>? expected = mgfx.Value.Parameters.Single(p => p.Name == name).DefaultValue;
             IReadOnlyList<float>? skslDefault = conversion.Uniforms.Single(u => u.Name == name).DefaultValue;
             IReadOnlyList<float>? raylibDefault = raylib.Value.Uniforms.Single(u => u.Name == name).DefaultValue;
-            if (expected is null)
-            {
-                skslDefault.ShouldBeNull(name);
-                raylibDefault.ShouldBeNull(name);
-            }
-            else
-            {
-                skslDefault.ShouldBe(expected, name);
-                raylibDefault.ShouldBe(expected, name);
-            }
+            // slangc's HLSL does not keep the initializer, so all three routes agree on "unknown".
+            // If a slangc update starts keeping it, this pins that the three still agree.
+            expected.ShouldBeNull($"{name}: slangc kept the initializer; replace this with an equality check");
+            skslDefault.ShouldBeNull(name);
+            raylibDefault.ShouldBeNull(name);
         }
     }
 

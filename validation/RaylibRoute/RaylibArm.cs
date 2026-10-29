@@ -138,10 +138,20 @@ internal static unsafe class RaylibArm
             "ivec2" => ShaderUniformDataType.IVec2,
             "ivec3" => ShaderUniformDataType.IVec3,
             "ivec4" => ShaderUniformDataType.IVec4,
+            "uint" => ShaderUniformDataType.UInt,
+            "uvec2" => ShaderUniformDataType.UIVec2,
+            "uvec3" => ShaderUniformDataType.UIVec3,
+            "uvec4" => ShaderUniformDataType.UIVec4,
             _ => throw new InvalidDataException($"uniform {u.Name}: the gate does not set a '{u.GlslType}'"),
         };
         int count = Math.Max(1, u.ArrayLength);
-        if (type is ShaderUniformDataType.Int or ShaderUniformDataType.IVec2 or ShaderUniformDataType.IVec3 or ShaderUniformDataType.IVec4)
+        if (type is ShaderUniformDataType.UInt or ShaderUniformDataType.UIVec2 or ShaderUniformDataType.UIVec3 or ShaderUniformDataType.UIVec4)
+        {
+            uint[] uints = u.Value.Select(f => (uint)f).ToArray();
+            fixed (uint* p = uints)
+                Raylib.SetShaderValueV(shader, loc, p, type, count);
+        }
+        else if (type is ShaderUniformDataType.Int or ShaderUniformDataType.IVec2 or ShaderUniformDataType.IVec3 or ShaderUniformDataType.IVec4)
         {
             int[] ints = u.Value.Select(f => (int)f).ToArray();
             fixed (int* p = ints)

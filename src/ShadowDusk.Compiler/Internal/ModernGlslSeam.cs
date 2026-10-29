@@ -16,9 +16,11 @@ namespace ShadowDusk.Compiler.Internal;
 /// declares them, or the <c>SD0217</c> failure for a shape the extraction does not model. Left
 /// as a result so each consumer decides whether an unmodeled shape is fatal for it.
 /// </param>
+/// <param name="Spirv">The SPIR-V DXC produced, which still names every uniform as the HLSL declares it (SPIRV-Cross may rename one in the GLSL).</param>
 internal sealed record ModernGlslPixelShader(
     string Glsl,
-    Result<IReadOnlyList<CombinedSamplerPair>, ShaderError> SamplerPairs);
+    Result<IReadOnlyList<CombinedSamplerPair>, ShaderError> SamplerPairs,
+    ReadOnlyMemory<byte> Spirv);
 
 /// <summary>
 /// The front half every source-emitting converter (SkSL, raylib) shares:
@@ -87,6 +89,6 @@ internal static class ModernGlslSeam
             return Result<ModernGlslPixelShader, ShaderError[]>.Fail([glsl.Error]);
 
         return Result<ModernGlslPixelShader, ShaderError[]>.Ok(
-            new ModernGlslPixelShader(glsl.Value.Text, pairs));
+            new ModernGlslPixelShader(glsl.Value.Text, pairs, spirv.Value.Bytes));
     }
 }

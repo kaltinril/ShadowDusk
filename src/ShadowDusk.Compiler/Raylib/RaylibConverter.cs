@@ -99,12 +99,16 @@ public sealed record RaylibUniform(string Name, string GlslType, int ArrayLength
     /// <c>SetShaderValueV(shader, loc, values, type, max(1, ArrayLength))</c> takes. Matrices do
     /// not occur, because the converter refuses matrix uniforms (<c>SD0636</c>).</para>
     /// <para><b>Values.</b> <c>int</c> values converted to floats, <c>uint</c> values by their
-    /// unsigned value, <c>bool</c> as 0 or 1. A <c>bool</c> global is a <c>uint</c> uniform
-    /// (SPIR-V has no bool in a uniform block), so set it as <c>uint</c>; an <c>int</c>/<c>ivecN</c>
-    /// or <c>uint</c>/<c>uvecN</c> uniform takes the same values as integers.</para>
+    /// unsigned value (one beyond 2^24 is not exact), <c>bool</c> as 0 or 1; the MGFX route's value
+    /// for an OpenGL build (the converter's macro set). A <c>bool</c> global is a <c>uint</c> uniform
+    /// (SPIR-V has no bool in a uniform block). An <c>int</c>/<c>ivecN</c> uniform takes the values as
+    /// <c>int</c> (<c>ShaderUniformDataType.Int</c>...); a <c>uint</c>/<c>uvecN</c> one, a <c>bool</c>'s
+    /// included, as <c>uint</c> (<c>ShaderUniformDataType.UInt</c>...: <c>Int</c> on a <c>uint</c>
+    /// uniform is a GL error).</para>
     /// <para><b>When it is <see langword="null"/>.</b> The global has no initializer, or the
     /// initializer could not be evaluated or does not match the uniform's shape (the conversion
-    /// then carries the MGFX route's <c>SD0017</c> warning). Samplers are not uniforms here (see
+    /// then carries the MGFX route's <c>SD0017</c> warning; so does a global with a default that no
+    /// listed uniform pairs with). Samplers are not uniforms here (see
     /// <see cref="RaylibShader.Samplers"/>).</para>
     /// </remarks>
     public IReadOnlyList<float>? DefaultValue { get; init; }
@@ -401,6 +405,8 @@ public static class RaylibConverter
         IReadOnlyList<float>?[] defaults = ConvertedUniformDefaults.Resolve(
             compilerInput,
             file,
+            seam.Value.Glsl,
+            seam.Value.Spirv,
             shader.Uniforms.Select(u => new ConvertedUniformDefaults.Uniform(u.Name, u.GlslType, u.ArrayLength)).ToList(),
             [],
             warnings);
