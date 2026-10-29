@@ -1045,12 +1045,19 @@ internal sealed class CompilationPipeline
         string TextureParameterName(string textureName) =>
             textureParameterNames.TryGetValue(textureName, out string? parameterName) ? parameterName : textureName;
         // The effect parameter a sampler record binds for a reflected texture: -1 for a KNIFX
-        // texture-less legacy sampler (deliberate, as KNI writes it), else the join by name, whose
-        // miss (-1) still fails loudly in the MGFX writer.
-        int TextureParameterIndex(string textureName) =>
-            unboundSamplerTextures.Contains(textureName)
-                ? -1
-                : IndexOfParam(allParameters, TextureParameterName(textureName));
+        // texture-less legacy sampler (deliberate, as KNI writes it), else the join by name. A
+        // miss of that join (-1) fails loudly: in the MGFX writer (SD0022), and for KNIFX, where
+        // -1 is a legal "no parameter" the writer cannot tell apart, through SD0018 below.
+        var unjoinedSamplerTextures = new List<string>();
+        int TextureParameterIndex(string textureName)
+        {
+            if (unboundSamplerTextures.Contains(textureName))
+                return -1;
+            int index = IndexOfParam(allParameters, TextureParameterName(textureName));
+            if (index < 0 && kniTexturelessSamplers)
+                unjoinedSamplerTextures.Add(textureName);
+            return index;
+        }
 
         // GL (Phase 43 F4/F5): one cbuffer record PER SHADER, built from the uniform
         // register layout the GLSL rewriter returned for that shader, deduplicated
@@ -1555,6 +1562,9 @@ internal sealed class CompilationPipeline
                 ConstantBufferIndices = cbIndices,
             };
         }
+
+        if (UnjoinedSamplerTextureError(unjoinedSamplerTextures, options.SourceFileName) is { } unjoined)
+            return Fail(unjoined, runWarnings);
 
         ShaderIR ir = ShaderIRBuilder.Build(
             compiledShaderBlobs,
@@ -2934,6 +2944,23 @@ internal sealed class CompilationPipeline
     /// sampler's name (OpenGL reflects one), as KNI's pipeline emits no parameter for such a
     /// sampler. Returns the reflected names of the removed textures, whose sampler records bind -1.
     /// </summary>
+    internal static ShaderError? UnjoinedSamplerTextureError(IReadOnlyList<string> unjoinedTextures, string? sourceFileName)
+    {
+        if (unjoinedTextures.Count == 0)
+            return null;
+
+        return new ShaderError(
+            File: sourceFileName ?? "<source>",
+            Line: 0,
+            Column: 0,
+            Code: "SD0018",
+            Message: "Internal: KNIFX sampler record(s) for texture(s) " +
+                     string.Join(", ", unjoinedTextures.Distinct(StringComparer.Ordinal).Select(t => $"'{t}'")) +
+                     " name no effect parameter, so the texture could not be bound. Only a texture-less " +
+                     "legacy sampler binds no parameter (-1); this one is a reflection/parameter-table " +
+                     "mismatch, a ShadowDusk bug.");
+    }
+
     private static HashSet<string> DropSynthesizedSamplerParameters(
         List<ParameterReflection> parameters,
         IReadOnlyDictionary<string, string> synthesizedSamplerTextures)
