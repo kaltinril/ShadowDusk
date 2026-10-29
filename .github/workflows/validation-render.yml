@@ -481,7 +481,9 @@ jobs:
       # real engine with no Set call, for MonoGame WindowsDX, KNI WinForms.DX11 (MGFX and KNIFX) and
       # MonoGame WindowsDX12, each with a no-initializer control that must render black. The KNI
       # driver also pins the KNIFX shader model on a Reach device (ps_4_0_level_9_1 loads, 9_3 and
-      # 4_0 refused). All three run even if one fails; the step fails if any did.
+      # 4_0 refused) and SM 2.0/3.0 on KNIFX (ps_2_0/vs_2_0 load on HiDef and Reach, the _3_0 ones on
+      # HiDef only, pixel-identical to KNI's own MGCB build). All three run even if one fails; the
+      # step fails if any did.
       - name: Run initializer-default gates (real MonoGame WindowsDX, KNI DX11, MonoGame DX12 on WARP)
         if: ${{ !cancelled() }}
         env:

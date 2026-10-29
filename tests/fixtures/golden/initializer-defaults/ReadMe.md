@@ -19,3 +19,19 @@ all of them, so there is no OpenGL golden to compare.
 `G_PackedFloat3` (issue #425) is a `float3` that HLSL packing puts behind a `float` in one
 register, followed by a `float4x4`, the shape that used to fail the OpenGL compile with `SD0100`.
 It has no `mgfxc` golden; its pixel tells a misplaced member apart.
+`kni-4.2.9001-Windows/` holds KNI's own build of the SM 2.0/3.0 sources the KNI DX driver
+(`validation/InitializerDefaultsKniDx`) compiles: `A_Tint_ps_2_0` and `A_Tint_ps_3_0` are `A_Tint.fx`
+with both `#define PS_SHADERMODEL` lines naming that profile (`InitializerDefaultsProbe.TintAt`), and
+`ReachVs_vs_2_0` / `ReachVs_vs_3_0` are `InitializerDefaultsProbe.ReachVs(vs, "ps_2_0")`, and
+`XnaTextured_ps_2_0` / `XnaTextured_ps_3_0` are `InitializerDefaultsProbe.XnaTextured(profile)`. Each was built
+with KNI's MGCB (`nkast.Xna.Framework.Content.Pipeline.Builder` 4.2.9001, `tools/MGCB.exe`,
+`/platform:Windows /profile:HiDef /compress:False`, an `EffectImporter`/`EffectProcessor` item per file),
+and the `.knifx` is the effect payload of its `.xnb`: the int32-length-prefixed bytes starting at `KNIF`
+that KNI's `EffectReader` hands to `new Effect`. 4.2.9001 because the driver runs KNI 4.2.9001, whose
+runtime reads KNIFX v11 (4.3.9001's MGCB writes v12).
+
+Provenance and licence: these `.knifx` files are build outputs, KNI's MGCB run on ShadowDusk's own
+shader sources (the probe strings above, under this repository's licence). They contain no KNI source
+or KNI binary code: only the effect container KNI's tool wrote, with the DXBC fxc (d3dcompiler_47,
+called by KNI's processor) produced from those sources. Nothing from KNI's own test assets is
+committed.

@@ -58,6 +58,9 @@ public sealed class FxPreParser
     /// <summary>Returns true when the given profile string (already lowercased) is a recognized shader profile.</summary>
     public static bool IsKnownProfile(string profile) => KnownProfiles.Contains(profile);
 
+    /// <summary>Every recognized profile, for tests that sweep the whole set (e.g. <c>KniDirectXProfileTests</c>).</summary>
+    internal static IReadOnlyCollection<string> KnownProfileNames => KnownProfiles;
+
     // -------------------------------------------------------------------------
     // MonoGame DirectX_11 profile floor (Phase 51 A10)
     // -------------------------------------------------------------------------

@@ -38,6 +38,17 @@ that loads and renders identically to `mgfxc`'s in the real MonoGame/KNI runtime
   OpenGL build (the converters' macro set). **Record equality:** `RaylibUniform` and `SkslUniform`
   equality now includes `DefaultValue` (compared element by element), so two entries for the same
   uniform with different declared defaults are no longer equal.
+- **`vs_2_0`, `ps_2_0`, `vs_3_0` and `ps_3_0` compile for KNIFX on DirectX, as they do in KNI's own
+  pipeline.** XNA-era effects, and every shader in KNI's own EffectTest suite, name SM 2.0 or 3.0;
+  KNI's DirectX pipeline (4.2.9001 and 4.3.9001) builds them by compiling `*_2_0` as
+  `*_4_0_level_9_1` and `*_3_0` as `*_4_0_level_9_3`, recording 2.0 and 3.0. A KNIFX DirectX compile
+  now does the same, and the result is byte-identical to the same effect written at the
+  feature-level-9 profile, as KNI's own `.xnb` is (measured with KNI's MGCB on both versions). In real
+  KNI WinForms.DX11 a `ps_2_0`/`vs_2_0` effect loads and renders on HiDef and Reach, `ps_3_0`/`vs_3_0`
+  on HiDef only (KNI's own shader-model check), each pixel-identical to KNI's own build
+  (`validation/InitializerDefaultsKniDx`). An MGFX DirectX compile keeps `mgfxc`'s `SD0015` for all
+  four, and the profiles KNI's pipeline refuses (`*_2_a`, `ps_2_b`, `*_sw`, SM1, `*_4_0_level_9_0`,
+  SM6) stay `SD0015` on KNIFX, now naming KNI's rule. No output that compiled before changes.
 
 ### Changed
 
@@ -73,6 +84,9 @@ that loads and renders identically to `mgfxc`'s in the real MonoGame/KNI runtime
 
 ### Fixed
 
+- **`SD0015` on a KNIFX DirectX compile applies KNI's profile rule, not `mgfxc`'s.** It refused
+  `*_2_0` and `*_3_0`, which KNI's own pipeline builds (see Added); its message now names KNI and
+  lists the profiles KNI's DirectX pipeline accepts. MGFX DirectX keeps `mgfxc`'s rule and message.
 - **KNIFX records the shader model KNI's own pipeline records for `*_4_0_level_9_1` and
   `*_4_0_level_9_3`: 2.0 and 3.0, not 4.0.** ShadowDusk read the first `_N_N` of the profile, so a
   KNIFX container always recorded 4.0 (version byte `08`) for a literal `ps_4_0_level_9_1`, which

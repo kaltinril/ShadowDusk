@@ -340,8 +340,8 @@ $gates.Add(@{
 foreach ($drv in @(
     @('InitializerDefaultsGl',    'MonoGame DesktopGL'),
     @('InitializerDefaultsDx',    'MonoGame WindowsDX'),
-    @('InitializerDefaultsKniGl', 'KNI SDL2.GL, MGFX v10 and KNIFX, plus the KNIFX shader model on a Reach device'),
-    @('InitializerDefaultsKniDx', 'KNI WinForms.DX11, MGFX v10 and KNIFX, plus the KNIFX shader model on a Reach device'),
+    @('InitializerDefaultsKniGl', 'KNI SDL2.GL, MGFX v10 and KNIFX, plus the KNIFX shader model (incl. SM 2.0/3.0) on a Reach device'),
+    @('InitializerDefaultsKniDx', 'KNI WinForms.DX11, MGFX v10 and KNIFX, plus the KNIFX shader model on a Reach device and KNIFX SM 2.0/3.0 vs KNI''s own build'),
     @('InitializerDefaultsDx12',  'MonoGame 3.8.5 WindowsDX12'))) {
     $project = "validation/$($drv[0])"
     $gates.Add(@{
