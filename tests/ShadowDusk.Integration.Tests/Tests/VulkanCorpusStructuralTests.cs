@@ -134,6 +134,24 @@ public sealed class VulkanCorpusStructuralTests
                 vk.SamplerSlots.ShouldBe(vk.TextureSlots, customMessage: $"{who}: a combined descriptor occupies both slot masks, as mgfxc writes them");
             }
 
+            // A slot is (binding - 32) on both sides of the runtime: MGVK_UpdateDescriptors reads a
+            // descriptor's image from textures[binding - 32], and EffectPass.Apply binds a texture
+            // parameter to GraphicsDevice.Textures[record.TextureSlot]. mgfxc derives the record's
+            // slot and the header's slot mask the same way. A slot that is any other number (the
+            // texture's ordinal, which ShadowDusk once wrote) binds the parameter to a slot nothing
+            // reads, so a lone register(t1) drew (0,0,0,0) in real DesktopVK.
+            var imageSlots = vk.Bindings
+                .Where(b => b.DescriptorType is 1 or 2 && b.Binding >= 32)
+                .Select(b => (int)b.Binding - 32)
+                .ToHashSet();
+            uint expectedMask = imageSlots.Where(s => s < 32).Aggregate(0u, (mask, s) => mask | (1u << s));
+            vk.TextureSlots.ShouldBe(expectedMask, customMessage: $"{who}: the texture slot mask must name exactly the (binding - 32) slots of its image descriptors");
+            foreach (var record in reader.Samplers.Where(s => s.ShaderIndex == shader.Index))
+            {
+                imageSlots.ShouldContain(record.TextureSlot,
+                    customMessage: $"{who}: sampler record '{record.Name}' binds its texture to slot {record.TextureSlot}, which no descriptor reads (slots read: {string.Join(", ", imageSlots.Order())})");
+            }
+
             SpirvDecorationScanner.EntryPointName(vk.Spirv).ShouldBe("main", customMessage: $"{who}: MonoGame's native Vulkan pipeline creation expects the entry point to be main");
 
             SpirvDecorationScanner.Extensions(vk.Spirv).ShouldNotContain(

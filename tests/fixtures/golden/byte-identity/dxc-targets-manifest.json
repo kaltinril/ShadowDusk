@@ -731,6 +731,30 @@
     "dxil": "cbfc289a7bbab16ec89b3a71e784c66a1c985ba629da4dbf3b7aa5612c3153c5",
     "warnings": []
   },
+  "DirectX12.Debug/register-slots/RegisterGapT0T2.fx": {
+    "mgfx": "c7ae53a0e061f1086d5749385c7a3307835e9731d9c3bb2ab1815797fc7d504e",
+    "mgfxNormalized": "60503e0f588e1dcf494ed21ea7bd6d11594ed94a3c371a957e52ce802084d6f9",
+    "dxil": "f10fc7a7fbb87856fbc1a1c5a3be13a6bb16329ab791fa0cb9db0deae8b879af",
+    "warnings": []
+  },
+  "DirectX12.Debug/register-slots/RegisterLoneT1.fx": {
+    "mgfx": "beec0225c17cd165e143985c46979c360603654c443befc550a5bdf455bde846",
+    "mgfxNormalized": "ad7229b68280c022248a4360fe0060f4b28f9a7c8e7bdbb91253911d0cb425ea",
+    "dxil": "4a03155acae90d78456f6a60cfb1ff77f189ad13a14d705301ea1d6500c9e998",
+    "warnings": []
+  },
+  "DirectX12.Debug/register-slots/RegisterMismatchedTS.fx": {
+    "mgfx": "592255cfff1aa653001e959608445667a7990055b337a5ae4c1c0c402961a758",
+    "mgfxNormalized": "dad7615466b0cbfd4dfc08490f9e1f3536ad99fb272da9c8f9fc504bd5d86d08",
+    "dxil": "cf81a1832c780b3c7cf71d257f890efad8acf2bc07056afed752e0f70dc62a50",
+    "warnings": []
+  },
+  "DirectX12.Debug/register-slots/RegisterTexture2DArrayT1.fx": {
+    "mgfx": "d9e9a9a6f8122e26094911e2eb091ad0300b8d7c4893de9e0a720de28dfb002e",
+    "mgfxNormalized": "1da0cb1f4f9f4abbb41c47c1c27f5cffe2905005f871fad6e886975f8798875f",
+    "dxil": "ac7605cdd343411daa9c6236b7a00e54df2eaef7a88e781a842c7a8b60aa8ee9",
+    "warnings": []
+  },
   "DirectX12.Debug/render-states.fx": {
     "mgfx": "2835f086c824b8b7213dc7c81afd39a74a67c970859febeb8c1b71195b31750a",
     "mgfxNormalized": "96adc006cb5e3b33921e44d86198ce5d1bab47a4621e0466d377554f840e8a50",
@@ -1765,6 +1789,30 @@
     "dxil": "acac2b4e610c5c7307e93a4871590ee40aa5bd9c0d9443df3196ffc3a3906b7a",
     "warnings": []
   },
+  "DirectX12/register-slots/RegisterGapT0T2.fx": {
+    "mgfx": "45f7cc2f7e134730e91bad09fd9717baf7903dc5e33633eb44197a7ad6c267bb",
+    "mgfxNormalized": "8e9750147b2a5d097192f79585e44248c2f26171c88ce7d384963e2577e866ad",
+    "dxil": "fb89c65c0ae436b4212c5041caa2bcfd48efe906fe3a6f02647bf205692da13e",
+    "warnings": []
+  },
+  "DirectX12/register-slots/RegisterLoneT1.fx": {
+    "mgfx": "fbb72b1382103ac0fb6969b9d7004ff52fc5211ee2eb8db8ee15da45bafef5c7",
+    "mgfxNormalized": "a5859f9bb9f0a5b4316306cf3c611bfc5dac785b81543e0b288931f90e868e48",
+    "dxil": "817f21ef93f8486cd57dc2563de35c1d5279dfb04b1da9a230144ec08573521f",
+    "warnings": []
+  },
+  "DirectX12/register-slots/RegisterMismatchedTS.fx": {
+    "mgfx": "6e62fe3360d5554055282ff595325e457f5396a9c2d4063c488b5d369de86351",
+    "mgfxNormalized": "004a5aff827def8162ab18b21df660c01f8f80905f107f8e6141187266a6bf04",
+    "dxil": "5aa96a62868d8ed9524130d1aa98730635a1398f807d12a521b3e990476ae344",
+    "warnings": []
+  },
+  "DirectX12/register-slots/RegisterTexture2DArrayT1.fx": {
+    "mgfx": "e70de33f2111446fdaaea5ea48d6e50bf75c93633059058fd15e7203d2b229d3",
+    "mgfxNormalized": "bbafde5aa20e6f840478eb93c106bdbb779bbb848dcdeca9403d8e1c00348675",
+    "dxil": "0c84be933b6d1bca00d44672ac60ac8c827a1086f3ac7123922e3118cd63933e",
+    "warnings": []
+  },
   "DirectX12/render-states.fx": {
     "mgfx": "e0e5fa592ee487d3bc0c89f07f30667b6847f60696c5fcc998f1e112cb9f4b2a",
     "mgfxNormalized": "3c5f874ef901657d845e0f75f47e35b5065ae6b6022a60db20a58073272102de",
@@ -2440,8 +2488,8 @@
     "warnings": []
   },
   "Vulkan.Debug/examples/ExLegacyTextureDiscard.fx": {
-    "mgfx": "942cbdfb6d60ff502b82f96e4975211f3ed154796e9f9b525fb71838946a83e6",
-    "spirv": "aa0e5cd8b689073e0856d018732627911e90e75768f8103a621c8ac1c42863cd",
+    "mgfx": "2383b93d3a01344275e11722b619032504e2c72238dddfd7b38d7a411cd37b1e",
+    "spirv": "e7ca4cb579959ac2c1488b57cbddfa82e06dd2d437d0a0506d5c8f9f7d7ed46d",
     "warnings": []
   },
   "Vulkan.Debug/examples/ExLoopRelational.fx": {
@@ -2684,6 +2732,26 @@
     "spirv": "ff1a475fd60d7807739876ba059c03e89a80c7d30e6410d442cd630173db62e9",
     "warnings": []
   },
+  "Vulkan.Debug/register-slots/RegisterGapT0T2.fx": {
+    "mgfx": "a12bccb2eb3ea81fc280360f4243932b927666df6a83675bbd728c278790777d",
+    "spirv": "ca349ef7f138421fb5cfe08f7bf8b571561e09ee1775a9512c7b0c9f69af01b5",
+    "warnings": []
+  },
+  "Vulkan.Debug/register-slots/RegisterLoneT1.fx": {
+    "mgfx": "9483d58b22c07fe3d0d0755f84e79b992eb990de589b60b59ad963395fc7b956",
+    "spirv": "537a6d491087d1e42de343cd37ec6cb4b986c12bb1f1cd77ab5aa918e1aeca9b",
+    "warnings": []
+  },
+  "Vulkan.Debug/register-slots/RegisterMismatchedTS.fx": {
+    "mgfx": "624b21d1332d0e3b7916612c34d83aa81bbc3a7c9c0853890def8231a7e428ac",
+    "spirv": "1d7bba3ae3c9cac014f95a3ad88ab2089d40f86f36b52e5829900e0aa9d2f132",
+    "warnings": []
+  },
+  "Vulkan.Debug/register-slots/RegisterTexture2DArrayT1.fx": {
+    "mgfx": "17b47b068928535e254da761a30179f2bd570233b70dd46341f38043362f081d",
+    "spirv": "b34b54a2394b4049870877ddbc280d1ef35b849dfffb6802c9e7c78b84987f0b",
+    "warnings": []
+  },
   "Vulkan.Debug/render-states.fx": {
     "mgfx": "c8e1195c441c1c6cc2d51327bd0c87b6bbc50346950471873c4ac6d9f11469cd",
     "spirv": "19fc2f13184c84153fa3d97c9d6de14a70f3168ad2bd19f9c8b5d9aef34deda0",
@@ -2805,7 +2873,7 @@
     "warnings": []
   },
   "Vulkan.Debug/third-party/MonoGame/ParameterTypes.fx": {
-    "mgfx": "b0a6cee7b4eae419c2496a0f280b56f06cd875e967645003c06f4f33e31ec9e2",
+    "mgfx": "cb51fdf70bff597d9dfc00c4ced99926f884d33a235ef9147d6f717c2387e862",
     "spirv": "04fb23da0c3484f8a83bc55e91e82b7276292978814fe1e42402fd9eaf97f41c",
     "warnings": []
   },
@@ -3312,8 +3380,8 @@
     "warnings": []
   },
   "Vulkan/examples/ExLegacyTextureDiscard.fx": {
-    "mgfx": "b561cb3f8be8650f3b82dcfef0662bdaf953d8781a43fd9b28601a0a8afa851b",
-    "spirv": "9e5bd4f85dcb009ce466ff7a2835f549b3daf639f5b7e6aa94e1a79945830d3b",
+    "mgfx": "56ec6229d1032a2450170b7217fb44b09b80de405bee2be65d61558519adee15",
+    "spirv": "9b57de9d7e61f09fa119542966ed1356af26f6f13cbafe9a20990bc6edd2de6e",
     "warnings": []
   },
   "Vulkan/examples/ExLoopRelational.fx": {
@@ -3556,6 +3624,26 @@
     "spirv": "8a65067a5585dace375f941a3a2aef985b98124aa8f6ea88b17f78f6cdabc53f",
     "warnings": []
   },
+  "Vulkan/register-slots/RegisterGapT0T2.fx": {
+    "mgfx": "3e5e50371f7ee4d82692d4e5c941f7b83997b3a9be7b2b3a67674ebd363e7289",
+    "spirv": "17d8ba5a9bab6baa88ed565f896197da30e21288fcc793f7a5bd9d0aee8546f8",
+    "warnings": []
+  },
+  "Vulkan/register-slots/RegisterLoneT1.fx": {
+    "mgfx": "d6277072439aeb7760cbfd7b15e938d8ea603710238cd38add787feabef11144",
+    "spirv": "85d2283f1f1184585ff722f78e609f8e47aba7e2dd7f7829e46b2918979b7933",
+    "warnings": []
+  },
+  "Vulkan/register-slots/RegisterMismatchedTS.fx": {
+    "mgfx": "dd703203ed87b5024cd9e9e498b5fd4833b4320e864f29087ed7bea71ed321ad",
+    "spirv": "22c79bf809ad7409ba9a970828c7a255fdc47d94739ef2c7cdb5166e09b1298f",
+    "warnings": []
+  },
+  "Vulkan/register-slots/RegisterTexture2DArrayT1.fx": {
+    "mgfx": "61ec0af94499b4ce2ddeb042117f2b995e3e8ec84dafdcea1a1c00c506d438b9",
+    "spirv": "2328f0c4941a07b961a8d9fc7362831ef08c9583ca4fe74ecb7120abe15c2d45",
+    "warnings": []
+  },
   "Vulkan/render-states.fx": {
     "mgfx": "3ae7bc948a2b31bf99ef3cc046223ebe5cfb7fde05009fb12c51c3a343782c86",
     "spirv": "eca998b8acd85452e6fcc5b14cefb9cdf64991be9464564edcad8bcaa77175cd",
@@ -3677,7 +3765,7 @@
     "warnings": []
   },
   "Vulkan/third-party/MonoGame/ParameterTypes.fx": {
-    "mgfx": "f71d7379779ed12c2f0f1da01bb32fc227bc0650a753659e3338ec5528ed854a",
+    "mgfx": "7568010ea44724694d1f3ccc26555992c8dc8615fd0053215ed818ca170c235f",
     "spirv": "69e44ed3cba93f1dfede95a2919d98fd7a161cfaee68bcb51205457448a16691",
     "warnings": []
   },

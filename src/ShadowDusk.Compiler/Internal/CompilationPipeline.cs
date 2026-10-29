@@ -69,6 +69,25 @@ internal sealed class CompilationPipeline
         if (first.IsSuccess || compileFailure is null)
             return first;
 
+        // Vulkan: a texture or sampler the binding rewrite could not see on the raw text (its
+        // declaration comes out of a macro) was auto-numbered below binding 32 (SD0228). Compile
+        // once more from the preprocessed source, where the declaration is literal. Only after
+        // that failure, so an effect that compiles from its raw source keeps exactly its bytes;
+        // if the retry fails too, the first attempt's SD0228 stands.
+        if (compileFailure.UnpinnedVulkanResource)
+        {
+            LegacySamplerRecovery.Outcome.Retry? retry = LegacySamplerRecovery.PreprocessedRetry(
+                hlslSource,
+                compileFailure.SourceFileName,
+                compileFailure.Macros,
+                compileFailure.IncludeResolver,
+                options.AdditionalIncludePaths);
+            if (retry is null)
+                return first;
+            Result<CompiledShader, ShaderError[]> second = RunCore(hlslSource, options, retry, out _, cancellationToken);
+            return second.IsSuccess ? second : first;
+        }
+
         // Legacy-sampler recovery (issue #308). A DXC shader compile failed. If the text DXC was
         // given still holds legacy D3D9 sampler syntax once preprocessed (a declaration in an
         // #include'd file, or one that comes out of a macro, which the raw pre-parse cannot
@@ -96,7 +115,11 @@ internal sealed class CompilationPipeline
     private sealed record ShaderCompileFailure(
         string SourceFileName,
         MacroSet Macros,
-        IIncludeResolver IncludeResolver);
+        IIncludeResolver IncludeResolver)
+    {
+        /// <summary>The failure is a Vulkan <c>SD0228</c> (see <see cref="Run"/>), not a DXC compile failure.</summary>
+        public bool UnpinnedVulkanResource { get; init; }
+    }
 
     /// <summary>
     /// A failed shader compile is a candidate for the legacy-sampler recovery only on a target
@@ -942,6 +965,28 @@ internal sealed class CompilationPipeline
                     {
                         return Fail(arrayError, runWarnings);
                     }
+
+                    // Vulkan: a texture's or sampler's slot is its SPIR-V binding minus 32, as
+                    // mgfxc writes it and as MonoGame's DesktopVK descriptor writer reads it
+                    // (binding - 32). The reflector's ordinal numbering only coincides with that
+                    // when the registers have no gap from 0, so an explicit `register(t1)` with
+                    // nothing at t0 used to land its parameter on the wrong device slot.
+                    // Every host reflects Vulkan from SPIR-V, so desktop, browser and Android
+                    // all go through this one rule.
+                    if (options.Target == PlatformTarget.Vulkan)
+                    {
+                        Result<ReflectedEffect, ShaderError> slotted =
+                            VulkanResourceSlots.FromBindings(reflected, glCompileSource.Text, sourceFileName);
+                        if (slotted.IsFailure)
+                        {
+                            // A first pass only: the retry from the preprocessed source (Run)
+                            // is never retried again.
+                            if (recovered is null)
+                                compileFailure = new ShaderCompileFailure(sourceFileName, macros, includeResolver) { UnpinnedVulkanResource = true };
+                            return Fail(slotted.Error, runWarnings);
+                        }
+                        reflected = slotted.Value;
+                    }
                     if (options.Target == PlatformTarget.DirectX12
                         && ResourceArrayDiagnostics.DirectX12Warning(reflected, glCompileSource.Text, sourceFileName) is { } arrayWarning)
                     {
@@ -1452,16 +1497,19 @@ internal sealed class CompilationPipeline
                     // never by GLSL name, and VulkanTextureSamplerBindingRewriter has already
                     // co-located each texture+sampler pair on matching registers — so the
                     // reflected sampler list IS the binding list here.
+                    //
+                    // The slot is the binding minus 32 (VulkanResourceSlots, applied right after
+                    // reflection), mgfxc's own rule and the one MonoGame's descriptor writer
+                    // reads back, so an explicit register(t1) is slot 1 as on DirectX.
                     foreach (SamplerReflection samp in samplerRefs)
                     {
                         int slot = samp.BindSlot;
-                        // Pair the sampler with its texture (by slot, then first) so the
-                        // sampler-type byte can carry the texture's DIMENSION. The dimension
-                        // is reflected identically by BOTH the DXIL oracle and the pure-managed
-                        // SpirvReflector, so this stays byte-transparent across the desktop
-                        // and WASM reflection paths.
+                        // Pair the sampler with the texture on its descriptor (the same raw
+                        // binding, which is what makes the two one combined descriptor), then
+                        // first, so the sampler-type byte can carry the texture's DIMENSION and
+                        // the record names the texture's parameter.
                         TextureReflection? matchedTex =
-                            textureRefs.FirstOrDefault(t => t.BindSlot == slot)
+                            textureRefs.FirstOrDefault(t => t.RawBinding == samp.RawBinding)
                             ?? textureRefs.FirstOrDefault();
                         // No Math.Max(0, …) clamp — see the DirectX branch (bug-hunt N11).
                         int paramIndex = matchedTex is null

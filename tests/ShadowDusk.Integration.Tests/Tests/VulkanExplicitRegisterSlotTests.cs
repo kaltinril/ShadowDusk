@@ -1,0 +1,304 @@
+#nullable enable
+
+using Shouldly;
+using ShadowDusk.Compiler;
+using ShadowDusk.Core;
+using ShadowDusk.Core.Preprocessor;
+using Xunit;
+
+namespace ShadowDusk.Integration.Tests.Tests;
+
+/// <summary>
+/// An explicit <c>register(tN)</c>/<c>register(sN)</c> is the resource's slot on Vulkan, as it is on
+/// DirectX 11 and DirectX 12. mgfxc 3.8.5 <c>/Profile:Vulkan</c> writes the slot as the SPIR-V binding
+/// minus 32 (the <c>-fvk-t-shift</c>/<c>-fvk-s-shift</c> amount), and MonoGame's DesktopVK runtime
+/// reads a descriptor's image from <c>textures[binding - 32]</c> while binding a texture parameter to
+/// <c>GraphicsDevice.Textures[record.TextureSlot]</c>.
+///
+/// <para>ShadowDusk used to write the texture's ORDINAL among the stage's textures, which is the same
+/// number only when the registers start at 0 with no gap. A lone <c>Texture2D Tex1 : register(t1)</c>
+/// got slot 0 (and header texture-slot mask <c>0x1</c>, where mgfxc writes <c>0x2</c>), and in real
+/// MonoGame 3.8.5 DesktopVK it drew (0,0,0,0) where mgfxc's build draws the texture; a
+/// <c>Texture2DArray</c> on <c>t1</c> likewise. Render row: <c>validation/VsDrivenVulkan --
+/// regslots</c>.</para>
+/// </summary>
+[Trait("Category", "Integration")]
+[Trait("Platform", "Vulkan")]
+public sealed class VulkanExplicitRegisterSlotTests
+{
+    private const uint CombinedImageSampler = 1;
+    private const uint SampledImage = 2;
+    private const uint SamplerOnly = 0;
+
+    public static TheoryData<string> GoldenMatched() => new() { "RegisterLoneT1", "RegisterGapT0T2", "RegisterTexture2DArrayT1" };
+
+    public static TheoryData<string> AllShapes() => new() { "RegisterLoneT1", "RegisterGapT0T2", "RegisterMismatchedTS", "RegisterTexture2DArrayT1" };
+
+    [Theory]
+    [MemberData(nameof(GoldenMatched))]
+    public async Task Vulkan_SlotRecordsAndDescriptorHeader_EqualTheMgfxcGolden(string stem)
+    {
+        var subject = MgfxBlobReader.Parse(await CompileAsync(stem, PlatformTarget.Vulkan));
+        var golden  = MgfxBlobReader.Parse(await File.ReadAllBytesAsync(GoldenPath(stem)));
+
+        // Record for record: the slots and the parameter each record binds (by name: ShadowDusk's
+        // Vulkan table also lists the sampler parameters, so the indices themselves differ).
+        subject.Samplers.Count.ShouldBe(golden.Samplers.Count);
+        for (int i = 0; i < golden.Samplers.Count; i++)
+        {
+            MgfxSamplerRecord want = golden.Samplers[i], got = subject.Samplers[i];
+            got.TextureSlot.ShouldBe(want.TextureSlot, $"record {i} texture slot");
+            got.SamplerSlot.ShouldBe(want.SamplerSlot, $"record {i} sampler slot");
+            got.Type.ShouldBe(want.Type, $"record {i} sampler type");
+            subject.ParameterNames[got.Parameter].ShouldBe(golden.ParameterNames[want.Parameter], $"record {i} parameter");
+        }
+
+        var gotHeader  = VulkanShaderCodeReader.Parse(subject.Shaders.Single().Bytecode);
+        var wantHeader = VulkanShaderCodeReader.Parse(golden.Shaders.Single().Bytecode);
+        gotHeader.TextureSlots.ShouldBe(wantHeader.TextureSlots, "texture slot mask");
+        gotHeader.SamplerSlots.ShouldBe(wantHeader.SamplerSlots, "sampler slot mask");
+        gotHeader.TextureTypes.ShouldBe(wantHeader.TextureTypes, "texture type per slot");
+        gotHeader.Bindings.Select(b => (b.Binding, b.DescriptorType))
+            .ShouldBe(wantHeader.Bindings.Select(b => (b.Binding, b.DescriptorType)), "descriptor bindings");
+    }
+
+    [Fact]
+    public async Task Vulkan_LoneRegisterT1_IsSlot1()
+    {
+        var subject = MgfxBlobReader.Parse(await CompileAsync("RegisterLoneT1", PlatformTarget.Vulkan));
+
+        MgfxSamplerRecord record = subject.Samplers.ShouldHaveSingleItem();
+        record.TextureSlot.ShouldBe((byte)1);
+        record.SamplerSlot.ShouldBe((byte)1);
+        subject.ParameterNames[record.Parameter].ShouldBe("Tex1");
+
+        var header = VulkanShaderCodeReader.Parse(subject.Shaders.Single().Bytecode);
+        header.TextureSlots.ShouldBe(0x2u);
+        header.SamplerSlots.ShouldBe(0x2u);
+        header.Bindings.Single().Binding.ShouldBe(33u);
+    }
+
+    [Fact]
+    public async Task Vulkan_RegisterGap_KeepsSlot2()
+    {
+        var subject = MgfxBlobReader.Parse(await CompileAsync("RegisterGapT0T2", PlatformTarget.Vulkan));
+
+        subject.Samplers.Select(s => (subject.ParameterNames[s.Parameter], s.TextureSlot, s.SamplerSlot))
+            .ShouldBe([("Base", (byte)0, (byte)0), ("Overlay", (byte)2, (byte)2)]);
+        VulkanShaderCodeReader.Parse(subject.Shaders.Single().Bytecode).TextureSlots.ShouldBe(0x5u);
+    }
+
+    [Fact]
+    public async Task Vulkan_Texture2DArrayOnT1_IsSlot1()
+    {
+        var subject = MgfxBlobReader.Parse(await CompileAsync("RegisterTexture2DArrayT1", PlatformTarget.Vulkan));
+
+        MgfxSamplerRecord record = subject.Samplers.ShouldHaveSingleItem();
+        record.TextureSlot.ShouldBe((byte)1);
+        subject.ParameterNames[record.Parameter].ShouldBe("Arr");
+        VulkanShaderCodeReader.Parse(subject.Shaders.Single().Bytecode).TextureSlots.ShouldBe(0x2u);
+    }
+
+    [Fact]
+    public async Task Vulkan_MismatchedTextureAndSamplerRegisters_TakeTheTextureRegister()
+    {
+        // register(t1) read through register(s3). MonoGame's Vulkan descriptor model is one
+        // COMBINED_IMAGE_SAMPLER per texture, so the binding rewrite moves the sampler onto the
+        // texture's register and the pair is one descriptor at binding 33, slot 1.
+        var subject = MgfxBlobReader.Parse(await CompileAsync("RegisterMismatchedTS", PlatformTarget.Vulkan));
+
+        MgfxSamplerRecord record = subject.Samplers.ShouldHaveSingleItem();
+        record.TextureSlot.ShouldBe((byte)1);
+        record.SamplerSlot.ShouldBe((byte)1);
+        var header = VulkanShaderCodeReader.Parse(subject.Shaders.Single().Bytecode);
+        header.Bindings.Select(b => (b.Binding, b.DescriptorType)).ShouldBe([(33u, CombinedImageSampler)]);
+
+        // mgfxc agrees on the texture slot; it keeps the registers apart (an image at 33 and a
+        // sampler at 35), the separate SAMPLED_IMAGE + SAMPLER shape MonoGame's native Vulkan
+        // descriptor writer does not handle (measured from the committed golden).
+        var golden = MgfxBlobReader.Parse(await File.ReadAllBytesAsync(GoldenPath("RegisterMismatchedTS")));
+        MgfxSamplerRecord goldenRecord = golden.Samplers.ShouldHaveSingleItem();
+        goldenRecord.TextureSlot.ShouldBe(record.TextureSlot);
+        goldenRecord.SamplerSlot.ShouldBe((byte)3);
+        VulkanShaderCodeReader.Parse(golden.Shaders.Single().Bytecode).Bindings
+            .Select(b => (b.Binding, b.DescriptorType)).OrderBy(b => b.Binding)
+            .ShouldBe([(33u, SampledImage), (35u, SamplerOnly)]);
+    }
+
+    [Theory]
+    [MemberData(nameof(AllShapes))]
+    public async Task TextureSlots_AreTheSameOnVulkanDirectX11AndDirectX12(string stem)
+    {
+        // DirectX is the reference for what a register means: a texture parameter lands on the
+        // slot its register names, on every target.
+        var vulkan = TextureSlots(MgfxBlobReader.Parse(await CompileAsync(stem, PlatformTarget.Vulkan)));
+        var dx12   = TextureSlots(MgfxBlobReader.Parse(await CompileAsync(stem, PlatformTarget.DirectX12)));
+        var dx11   = TextureSlots(MgfxBlobReader.Parse(await CompileAsync(stem, PlatformTarget.DirectX)));
+
+        vulkan.ShouldBe(dx12);
+        vulkan.ShouldBe(dx11);
+    }
+
+    [Fact]
+    public async Task ExLegacyTextureDiscard_SpriteSamplerIsSlot0_LikeDirectX()
+    {
+        // `sampler s0;` is the sprite SpriteBatch binds at slot 0; the mask is the second texture.
+        // A commented `Texture2D T;` in the file's header used to be collected as a texture and
+        // pushed both to t1/t2 on Vulkan (the binding rewriter now ignores comments).
+        var subject = MgfxBlobReader.Parse(await CompileAsync(Path.Combine("examples", "ExLegacyTextureDiscard"), PlatformTarget.Vulkan));
+
+        subject.Samplers.Select(s => (subject.ParameterNames[s.Parameter], s.TextureSlot))
+            .ShouldBe([("s0", (byte)0), ("_maskTex", (byte)1)]);
+        VulkanShaderCodeReader.Parse(subject.Shaders.Single().Bytecode).Bindings
+            .Where(b => b.DescriptorType == CombinedImageSampler).Select(b => b.Binding)
+            .ShouldBe([32u, 33u]);
+    }
+
+    [Fact]
+    public async Task AnUnpinnedTextureDeclaration_IsRefusedWithSD0228()
+    {
+        // `Texture2D A, B;` is a form the Vulkan binding rewrite does not model, so DXC numbers A
+        // from binding 0 and binding - 32 has no slot. mgfxc 3.8.5 writes such a texture as slot
+        // 224 with no descriptor binding at all (measured); ShadowDusk refuses it by name.
+        const string source = """
+            #if SM6
+            #define PS_SHADERMODEL ps_6_0
+            #else
+            #define PS_SHADERMODEL ps_4_0
+            #endif
+
+            Texture2D A, B;
+            SamplerState S : register(s0);
+
+            float4 MainPS(float4 pos : SV_Position, float4 color : COLOR0, float2 uv : TEXCOORD0) : SV_Target0
+            {
+                return A.Sample(S, uv) * color;
+            }
+
+            technique T { pass P { PixelShader = compile PS_SHADERMODEL MainPS(); } }
+            """;
+        using var cts = new CancellationTokenSource(TestBudget.Compile);
+        var result = await new EffectCompiler().CompileAsync(source, new CompilerOptions
+        {
+            Target = PlatformTarget.Vulkan,
+            SourceFileName = "Unpinned.fx",
+        }, cts.Token);
+
+        result.IsFailure.ShouldBeTrue();
+        ShaderError error = result.Error.ShouldHaveSingleItem();
+        error.Code.ShouldBe("SD0228");
+        error.File.ShouldBe("Unpinned.fx");
+        error.Line.ShouldBe(7);
+        error.Column.ShouldBe("Texture2D ".Length + 1);
+        error.Message.ShouldContain("texture 'A'", Case.Sensitive);
+    }
+
+    [Fact]
+    public async Task AMacroDeclaredTexture_IsPinnedThroughThePreprocessedRetry()
+    {
+        // The declaration comes out of a macro, so the binding rewrite cannot see it on the raw
+        // text and DXC numbers it at binding 0, apart from its sampler (the separate
+        // SAMPLED_IMAGE + SAMPLER shape MonoGame's Vulkan descriptor writer cannot bind). The first
+        // attempt's SD0228 triggers one compile from the preprocessed source, where the
+        // declaration is literal: one combined descriptor at binding 32, slot 0, as on DirectX 12.
+        const string source = """
+            #if SM6
+            #define PS_SHADERMODEL ps_6_0
+            #else
+            #define PS_SHADERMODEL ps_4_0_level_9_1
+            #endif
+            #define DECL_TEX(x) Texture2D x##Tex;
+            DECL_TEX(Mask)
+            sampler2D A = sampler_state { Texture = <MaskTex>; };
+            float4 MainPS(float4 color : COLOR0, float2 uv : TEXCOORD0) : COLOR0 { return tex2D(A, uv) * color; }
+            technique Main { pass P0 { PixelShader = compile PS_SHADERMODEL MainPS(); } };
+            """;
+        using var cts = new CancellationTokenSource(TestBudget.Compile);
+        var result = await new EffectCompiler().CompileAsync(source, new CompilerOptions
+        {
+            Target = PlatformTarget.Vulkan,
+            SourceFileName = "MacroTex.fx",
+        }, cts.Token);
+
+        result.IsSuccess.ShouldBeTrue(result.IsFailure ? string.Join("; ", result.Error.Select(e => $"{e.Code}: {e.Message}")) : "ok");
+        var reader = MgfxBlobReader.Parse(result.Value.Data);
+        MgfxSamplerRecord record = reader.Samplers.ShouldHaveSingleItem();
+        record.TextureSlot.ShouldBe((byte)0);
+        reader.ParameterNames[record.Parameter].ShouldBe("MaskTex");
+        VulkanShaderCodeReader.Parse(reader.Shaders.Single().Bytecode).Bindings
+            .Select(b => (b.Binding, b.DescriptorType)).ShouldBe([(32u, CombinedImageSampler)]);
+    }
+
+    // ---- Corpus-wide: a texture parameter's Vulkan slot is its DirectX 12 slot ------------------
+
+    public static TheoryData<string> CorpusFixtures()
+    {
+        string root = Path.Combine(AppContext.BaseDirectory, "fixtures", "shaders");
+        var data = new TheoryData<string>();
+        foreach (string path in Directory.EnumerateFiles(root, "*.fx", SearchOption.AllDirectories).OrderBy(p => p, StringComparer.Ordinal))
+            data.Add(Path.GetRelativePath(root, path).Replace('\\', '/'));
+        return data;
+    }
+
+    [Theory]
+    [MemberData(nameof(CorpusFixtures))]
+    public async Task EveryFixtureThatCompilesForBoth_HasTheSameTextureSlotsOnVulkanAsOnDirectX12(string relativePath)
+    {
+        string fxPath = Path.Combine(AppContext.BaseDirectory, "fixtures", "shaders", relativePath);
+        string source = await File.ReadAllTextAsync(fxPath);
+        using var cts = new CancellationTokenSource(TestBudget.Compile);
+
+        async Task<MgfxBlobReader?> Compile(PlatformTarget target)
+        {
+            var r = await new EffectCompiler().CompileAsync(source, new CompilerOptions
+            {
+                Target = target,
+                IncludeResolver = new FileSystemIncludeResolver(),
+                SourceFileName = fxPath,
+            }, cts.Token);
+            return r.IsSuccess ? MgfxBlobReader.Parse(r.Value.Data) : null;
+        }
+
+        MgfxBlobReader? vulkan = await Compile(PlatformTarget.Vulkan);
+        MgfxBlobReader? dx12 = vulkan is null ? null : await Compile(PlatformTarget.DirectX12);
+        if (vulkan is null || dx12 is null)
+            return; // a refusal on either target is pinned by the byte-identity manifests
+
+        TextureSlots(vulkan).ShouldBe(TextureSlots(dx12), $"{relativePath}: texture parameter -> slot, per shader stage");
+    }
+
+    // (shader stage, parameter name) -> texture slot, over every record of every shader.
+    private static List<(bool IsVertex, string Parameter, byte Slot)> TextureSlots(MgfxBlobReader reader) =>
+        reader.Samplers
+            .Select(s => (reader.Shaders.Single(sh => sh.Index == s.ShaderIndex).IsVertex, reader.ParameterNames[s.Parameter], s.TextureSlot))
+            .Distinct()
+            .OrderBy(x => x.IsVertex).ThenBy(x => x.Item2, StringComparer.Ordinal).ThenBy(x => x.TextureSlot)
+            .ToList();
+
+    private static async Task<byte[]> CompileAsync(string stem, PlatformTarget target)
+    {
+        string fxPath = stem.Contains(Path.DirectorySeparatorChar, StringComparison.Ordinal)
+            ? TestHelpers.FixturePath(stem + ".fx")
+            : TestHelpers.FixturePath(Path.Combine("register-slots", stem + ".fx"));
+        using var cts = new CancellationTokenSource(TestBudget.Compile);
+        var result = await new EffectCompiler().CompileAsync(await File.ReadAllTextAsync(fxPath, cts.Token), new CompilerOptions
+        {
+            Target = target,
+            IncludeResolver = new FileSystemIncludeResolver(),
+            SourceFileName = fxPath,
+        }, cts.Token);
+        result.IsSuccess.ShouldBeTrue(result.IsFailure ? string.Join("; ", result.Error.Select(e => $"{e.Code}: {e.Message}")) : "ok");
+        return result.Value.Data;
+    }
+
+    private static string GoldenPath(string stem)
+    {
+        var dir = new DirectoryInfo(AppContext.BaseDirectory);
+        while (dir is not null && !File.Exists(Path.Combine(dir.FullName, "ShadowDusk.slnx")))
+            dir = dir.Parent;
+        dir.ShouldNotBeNull("repo root (ShadowDusk.slnx)");
+        string path = Path.Combine(dir.FullName, "tests", "fixtures", "golden", "Vulkan", stem + ".mgfx");
+        File.Exists(path).ShouldBeTrue($"mgfxc 3.8.5 /Profile:Vulkan golden must exist at {path}");
+        return path;
+    }
+}

@@ -29,18 +29,23 @@ namespace ShadowDusk.Compiler.Internal;
 /// separate <c>VK_DESCRIPTOR_TYPE_SAMPLER</c> half additionally falls into an unhandled
 /// <c>assert(0)</c> branch, leaving an uninitialised <c>VkWriteDescriptorSet</c>.</para>
 ///
-/// <para><b>Existing explicit registers are honoured wherever they can be.</b> A declaration
-/// that already carries <c>register(tN)</c>/<c>register(sN)</c> keeps its index, and that
-/// index is RESERVED so an auto-assigned pair can never collide with it (two
-/// descriptor-set-layout bindings at the same binding number is invalid regardless of shape).
-/// Explicitly-registered TEXTURES are assigned first, so their index is authoritative among
-/// textures. The one case where an explicit register IS overridden: when honouring it would
-/// split a pair or put two textures on one binding — pair co-location and binding uniqueness
-/// are correctness, whereas the literal register number is not (the runtime binds by slot
-/// index, which this rewrite assigns, and never reads the source's number back). Note
+/// <para><b>The TEXTURE's register decides the pair's index, as it decides the slot on
+/// DirectX.</b> The index this rewrite gives a pair is the effect's slot for it: the Vulkan
+/// slot is the SPIR-V binding minus 32 (<see cref="VulkanResourceSlots"/>), which is the
+/// register. So a texture with <c>register(tN)</c> keeps N, and a texture without one takes the
+/// lowest index no explicitly-registered texture holds, in declaration order, which is the
+/// <c>t</c> register DirectX gives it (an unregistered texture beside <c>register(s2)</c> is
+/// slot 0 on DirectX 11 and 12, where SpriteBatch binds its texture, so it is index 0 here
+/// too). The sampler always moves onto its texture's index: one combined descriptor per pair,
+/// so a sampler's own explicit register is overridden whenever it disagrees. (Before the slot
+/// was taken from the binding, an unregistered texture INHERITED its sampler's register; the
+/// record still said slot 0 but the descriptor read slot 2, and neither matched DirectX.)
+/// Indices that must stay free: every explicit texture register, and the explicit register of
+/// a sampler no texture is sampled through (it keeps its own binding). Two
+/// descriptor-set-layout bindings at the same binding number is invalid regardless of shape,
+/// so an index is only shared deliberately, by the two halves of a pair. Note
 /// <c>-fvk-t-shift</c> and <c>-fvk-s-shift</c> both add 32, so <c>t2</c> and <c>s2</c> occupy
-/// the SAME raw binding — texture and sampler indices share ONE reservation space, and an
-/// index is only shared deliberately, by the two halves of a pair.</para>
+/// the SAME raw binding: texture and sampler indices share ONE space.</para>
 ///
 /// <para><b>Deliberately whole-file, not <c>#if VULKAN</c>-scoped.</b> A texture
 /// declaration is often shared/unconditional across all targets (only its sampler differs
@@ -128,14 +133,25 @@ internal static class VulkanTextureSamplerBindingRewriter
         var samplerNames = new List<string>();
 
         // Indices already pinned by the source. Textures and samplers share one space (both
-        // shifts are +32), so one reservation set covers both.
+        // shifts are +32); which of them must stay free is decided once the pairs are known.
         var explicitIndex = new Dictionary<string, int>(StringComparer.Ordinal);
-        var reserved = new HashSet<int>();
+        var explicitDecls = new List<(string Name, int Index)>();
 
-        foreach (Match m in TextureDecl.Matches(hlsl))
-            Collect(m, textureNames, explicitIndex, reserved);
-        foreach (Match m in SamplerDecl.Matches(hlsl))
-            Collect(m, samplerNames, explicitIndex, reserved);
+        // Every scan below reads a copy with comments and string literals blanked (offsets and
+        // newlines preserved), so a declaration or a Sample call that only appears in a comment
+        // is not a resource. The preprocessed text keeps the author's comments, and a header
+        // such as "rewrites `texture T;` -> `Texture2D T;`" used to be collected as a texture T
+        // that took index 0 and pushed the shader's real pair to t1 (examples/
+        // ExLegacyTextureDiscard.fx: its sprite sampler `s0` then read slot 1, not the slot 0
+        // SpriteBatch binds).
+        string masked = ResourceArrayDiagnostics.MaskCommentsAndStrings(hlsl);
+        MatchCollection textureDecls = TextureDecl.Matches(masked);
+        MatchCollection samplerDecls = SamplerDecl.Matches(masked);
+
+        foreach (Match m in textureDecls)
+            Collect(m, textureNames, explicitIndex, explicitDecls);
+        foreach (Match m in samplerDecls)
+            Collect(m, samplerNames, explicitIndex, explicitDecls);
 
         if (textureNames.Count == 0 && samplerNames.Count == 0)
             return hlsl;
@@ -149,11 +165,11 @@ internal static class VulkanTextureSamplerBindingRewriter
         // is exactly the legal cross-branch re-pairing shape the assignment below supports.
         var pairedSampler = new Dictionary<string, string>(StringComparer.Ordinal);
         var callsBySampler = new Dictionary<string, List<(string Texture, int Offset, (int Group, int Branch)[] Branches)>>(StringComparer.Ordinal);
-        MatchCollection directives = ConditionalDirective.Matches(hlsl);
+        MatchCollection directives = ConditionalDirective.Matches(masked);
         var branchStack = new List<(int Group, int Branch)>();
         int nextDirective = 0, nextGroup = 0;
 
-        foreach (Match m in SampleCall.Matches(hlsl))
+        foreach (Match m in SampleCall.Matches(masked))
         {
             // Advance the conditional-branch cursor to this call's position.
             while (nextDirective < directives.Count && directives[nextDirective].Index < m.Index)
@@ -179,10 +195,21 @@ internal static class VulkanTextureSamplerBindingRewriter
             calls.Add((tex, m.Index, branches));
         }
 
+        // Indices an auto-assigned texture must not take: every explicit TEXTURE register, and
+        // the explicit register of a sampler no texture is sampled through (it keeps its own
+        // binding). A PAIRED sampler's register reserves nothing: the sampler moves onto its
+        // texture's index, so its own number never reaches a binding. (Reserving it used to
+        // push an unregistered texture off the t-register DirectX gives it.)
+        var pairedSamplers = new HashSet<string>(pairedSampler.Values, StringComparer.Ordinal);
+        var reserved = new HashSet<int>();
+        foreach (var (name, index) in explicitDecls)
+            if (textureNames.Contains(name) || !pairedSamplers.Contains(name))
+                reserved.Add(index);
+
         // Assign a shared index per pair (or a fresh one for an unpaired resource) in
         // declaration order, so the result is deterministic regardless of usage order.
-        // An explicit register on EITHER half fixes the pair's index; otherwise the pair
-        // takes the lowest index nobody has reserved or been given.
+        // The TEXTURE's explicit register fixes the pair's index; an unregistered texture takes
+        // the lowest index nobody has reserved or been given, and its sampler follows it.
         var registerIndex = new Dictionary<string, int>(StringComparer.Ordinal);
         // index -> the sampler the texture holding it is paired with (null if unpaired).
         // Two textures may share an index ONLY when they name the same sampler: that is the
@@ -219,8 +246,8 @@ internal static class VulkanTextureSamplerBindingRewriter
             bool inherited = false;
             if (explicitIndex.TryGetValue(tex, out int fixedTex))
                 index = fixedTex;
-            else if (samp is not null && explicitIndex.TryGetValue(samp, out int fixedSamp))
-                (index, inherited) = (fixedSamp, true);
+            // A sampler's own explicit register is NOT inherited: the slot is the texture's,
+            // as on DirectX (see the class remarks).
             // The paired sampler may already be assigned because the SAME sampler name is
             // declared in two mutually-exclusive #if branches (e.g. a modern SamplerState
             // for Vulkan and FxPreParser's converted form for the legacy branch). Follow it
@@ -230,12 +257,11 @@ internal static class VulkanTextureSamplerBindingRewriter
             else
                 index = NextFree(ref next, reserved, registerIndex);
 
-            // An inherited index bypasses `reserved`, so it can collide with a DIFFERENT
-            // pair's explicit register: `Texture2D A : register(t1)` paired with an
-            // auto sampler, plus an auto `Texture2D B` paired with `Sampler : register(s1)`,
-            // put BOTH textures on binding 33 — the invalid layout that access-violates in
-            // MonoGame's descriptor writer. Pair co-location is the invariant that must
-            // hold, so move this pair to a free index instead.
+            // An inherited index (the cross-branch case above) bypasses `reserved`, so it can
+            // collide with a DIFFERENT pair's index, which would put two textures on one
+            // binding: the invalid layout that access-violates in MonoGame's descriptor
+            // writer. Pair co-location is the invariant that must hold, so move this pair to a
+            // free index instead.
             if (inherited
                 && indexPairSampler.TryGetValue(index, out string? owner)
                 && !(owner is not null && samp is not null && owner == samp))
@@ -268,31 +294,45 @@ internal static class VulkanTextureSamplerBindingRewriter
         // pair required a different index than the one it declared. An explicit register
         // that already agrees with the assignment is returned byte-identical.
         // Overriding a disagreeing explicit register is deliberate: an invalid descriptor
-        // layout access-violates at draw, so pair co-location outranks the source's literal
-        // register number (which the runtime never reads back - it binds by slot index).
+        // layout access-violates at draw, so pair co-location outranks a SAMPLER's register
+        // (the texture's register is the slot and is kept; see the class remarks).
         static bool NeedsRewrite(Match m, Dictionary<string, int> assigned, out int index) =>
             assigned.TryGetValue(m.Groups["name"].Value, out index)
             && (!m.Groups["idx"].Success
                 || int.Parse(m.Groups["idx"].Value, System.Globalization.CultureInfo.InvariantCulture) != index);
 
-        string result = TextureDecl.Replace(hlsl, m =>
-            NeedsRewrite(m, registerIndex, out int ti)
-                ? $"{m.Groups["type"].Value}{m.Groups["tmpl"].Value} {m.Groups["name"].Value} : register(t{ti});"
-                : m.Value);
+        // The matches were found in the masked copy, so each is spliced into the ORIGINAL text at
+        // the same offset (masking keeps every offset, and a match lies outside any comment or
+        // string, where the two texts are identical). Texture and sampler declarations never
+        // overlap (different keywords), so one ordered pass places both.
+        var edits = new List<(int Index, int Length, string Text)>();
+        foreach (Match m in textureDecls)
+            if (NeedsRewrite(m, registerIndex, out int ti))
+                edits.Add((m.Index, m.Length, $"{m.Groups["type"].Value}{m.Groups["tmpl"].Value} {m.Groups["name"].Value} : register(t{ti});"));
+        foreach (Match m in samplerDecls)
+            if (NeedsRewrite(m, registerIndex, out int si))
+                edits.Add((m.Index, m.Length, $"{m.Groups["type"].Value} {m.Groups["name"].Value} : register(s{si});"));
 
-        result = SamplerDecl.Replace(result, m =>
-            NeedsRewrite(m, registerIndex, out int si)
-                ? $"{m.Groups["type"].Value} {m.Groups["name"].Value} : register(s{si});"
-                : m.Value);
+        if (edits.Count == 0)
+            return hlsl;
 
-        return result;
+        edits.Sort((a, b) => a.Index.CompareTo(b.Index));
+        var result = new System.Text.StringBuilder(hlsl.Length + edits.Count * 16);
+        int copied = 0;
+        foreach (var (index, length, text) in edits)
+        {
+            result.Append(hlsl, copied, index - copied).Append(text);
+            copied = index + length;
+        }
+        result.Append(hlsl, copied, hlsl.Length - copied);
+        return result.ToString();
     }
 
     private static void Collect(
         Match m,
         List<string> names,
         Dictionary<string, int> explicitIndex,
-        HashSet<int> reserved)
+        List<(string Name, int Index)> explicitDecls)
     {
         string name = m.Groups["name"].Value;
         if (!names.Contains(name))
@@ -302,7 +342,7 @@ internal static class VulkanTextureSamplerBindingRewriter
             return;
 
         int index = int.Parse(m.Groups["idx"].Value, System.Globalization.CultureInfo.InvariantCulture);
-        reserved.Add(index);
+        explicitDecls.Add((name, index));
         // First explicit annotation for a name wins (the same name can appear in two
         // mutually-exclusive #if branches; only one survives the compile).
         if (!explicitIndex.ContainsKey(name))

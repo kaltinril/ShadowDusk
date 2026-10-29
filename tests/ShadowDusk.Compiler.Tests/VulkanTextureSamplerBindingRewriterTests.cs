@@ -454,8 +454,13 @@ public sealed class VulkanTextureSamplerBindingRewriterTests
     }
 
     [Fact]
-    public void Rewrite_UnregisteredTexturePairedWithRegisteredSampler_MirrorsTheSamplerIndex()
+    public void Rewrite_UnregisteredTexturePairedWithRegisteredSampler_TakesTheTextureRegisterDirectXGivesIt()
     {
+        // The pair's index is the effect's Vulkan slot (binding - 32). DirectX 11 and 12 put an
+        // unregistered texture at t0 whatever its sampler's register, and SpriteBatch binds its
+        // texture at slot 0, so the pair is t0/s0 here too. This used to MIRROR the sampler's s3
+        // onto the texture (t3): invisible while the record wrote an ordinal slot, but the
+        // descriptor then read slot 3, where neither DirectX nor SpriteBatch puts the texture.
         const string hlsl = """
             Texture2D Tex;
             SamplerState Samp : register(s3);
@@ -465,7 +470,77 @@ public sealed class VulkanTextureSamplerBindingRewriterTests
 
         string result = VulkanTextureSamplerBindingRewriter.Rewrite(hlsl);
 
-        result.ShouldContain("Texture2D Tex : register(t3);", Case.Sensitive);
-        result.ShouldContain("SamplerState Samp : register(s3);", Case.Sensitive);
+        result.ShouldContain("Texture2D Tex : register(t0);", Case.Sensitive);
+        result.ShouldContain("SamplerState Samp : register(s0);", Case.Sensitive);
+    }
+
+    [Fact]
+    public void Rewrite_AnUnpairedSamplersExplicitRegister_StaysReserved()
+    {
+        // A sampler no texture is sampled through keeps its own binding, so an auto-assigned
+        // texture must not land on it (two descriptors at one binding).
+        const string hlsl = """
+            SamplerState Loose : register(s0);
+            Texture2D Tex;
+            SamplerState Samp;
+
+            float4 PS() : SV_Target { return Tex.Sample(Samp, float2(0, 0)); }
+            """;
+
+        string result = VulkanTextureSamplerBindingRewriter.Rewrite(hlsl);
+
+        result.ShouldContain("SamplerState Loose : register(s0);", Case.Sensitive);
+        result.ShouldContain("Texture2D Tex : register(t1);", Case.Sensitive);
+        result.ShouldContain("SamplerState Samp : register(s1);", Case.Sensitive);
+    }
+
+    [Fact]
+    public void Rewrite_DeclarationInsideAComment_IsNotAResource()
+    {
+        // examples/ExLegacyTextureDiscard.fx's header says "rewrites `texture T;` ->
+        // `Texture2D T;`". That comment used to be collected as a texture T, which took index 0
+        // and pushed the shader's real pair to t1, so on Vulkan its sprite sampler read slot 1
+        // instead of the slot 0 SpriteBatch binds (DirectX 11/12 and OpenGL put it at 0).
+        const string hlsl = """
+            // ShadowDusk rewrites `texture T;` -> `Texture2D T;` so the resource exists.
+            /* Texture2D Block; SamplerState BlockSampler; Block.Sample(BlockSampler, uv) */
+            Texture2D SpriteTex;
+            SamplerState SpriteSampler;
+
+            float4 PS(float2 uv : TEXCOORD0) : SV_Target { return SpriteTex.Sample(SpriteSampler, uv); }
+            """;
+
+        string result = VulkanTextureSamplerBindingRewriter.Rewrite(hlsl);
+
+        result.ShouldContain("Texture2D SpriteTex : register(t0);", Case.Sensitive);
+        result.ShouldContain("SamplerState SpriteSampler : register(s0);", Case.Sensitive);
+        // The comments are returned untouched, never given a register.
+        result.ShouldContain("// ShadowDusk rewrites `texture T;` -> `Texture2D T;` so the resource exists.", Case.Sensitive);
+        result.ShouldContain("/* Texture2D Block; SamplerState BlockSampler; Block.Sample(BlockSampler, uv) */", Case.Sensitive);
+    }
+
+    [Fact]
+    public void Rewrite_SampleCallOnlyInAComment_DoesNotPairOrRaiseSD0028()
+    {
+        // A commented-out second Sample through the same sampler is not a live code path.
+        const string hlsl = """
+            Texture2D A;
+            Texture2D B;
+            SamplerState S;
+            SamplerState T;
+
+            float4 PS(float2 uv : TEXCOORD0) : SV_Target
+            {
+                // return B.Sample(S, uv);
+                return A.Sample(S, uv) + B.Sample(T, uv);
+            }
+            """;
+
+        string result = VulkanTextureSamplerBindingRewriter.Rewrite(hlsl);
+
+        result.ShouldContain("Texture2D A : register(t0);", Case.Sensitive);
+        result.ShouldContain("SamplerState S : register(s0);", Case.Sensitive);
+        result.ShouldContain("Texture2D B : register(t1);", Case.Sensitive);
+        result.ShouldContain("SamplerState T : register(s1);", Case.Sensitive);
     }
 }
