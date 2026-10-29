@@ -23,25 +23,32 @@ namespace ShadowDusk.HLSL.Dxc;
 /// "generated SPIR-V is invalid: 2 Entry points cannot share the same name". The same
 /// preparation runs there, so both hosts compile the same text.)</para>
 ///
-/// <para><b>Why removing the prototype is faithful.</b> A prototype adds nothing the definition
-/// does not carry: DXC's own DXIL path takes the entry's semantics from the definition and
-/// never from a prototype, and fxc (<c>mgfxc</c> 3.8.4.1) compiles these shapes. So a prototype
-/// whose return type and parameter types match the single definition is blanked from the
-/// compile's input: replaced by spaces, keeping every line break, so no diagnostic line or
-/// column moves. DXC then sees one declaration and compiles the definition it would have
-/// compiled. An overload prototype (different parameters, no definition of its own) of an
-/// entry function nothing calls is inert, fxc compiles past it, and it is blanked too.</para>
+/// <para><b>Why removing the prototype is faithful.</b> DXC's own DXIL path takes the entry's
+/// semantics from the definition and never from a prototype, and fxc (<c>mgfxc</c> 3.8.4.1)
+/// compiles these shapes. So a prototype whose return type and parameter types match the single
+/// definition, and that says nothing the definition does not, is blanked from the compile's
+/// input: replaced by spaces, keeping every line break, so no diagnostic line or column moves.
+/// DXC then sees one declaration and compiles the definition it would have compiled. A
+/// prototype that says MORE than its definition (an attribute, a leading modifier such as
+/// <c>precise</c>, <c>inline</c> or <c>static</c>, a parameter's interpolation modifier or default
+/// value) is refused instead, because DXC's front end may merge that into the definition (and
+/// answers an <c>inline</c>/<c>static</c> entry with "cannot find entry function"), so removing
+/// it could change the shader without a word. An overload prototype (different parameters, no
+/// definition of its own) of an entry function nothing calls is inert, fxc compiles past it, and
+/// it is blanked too.</para>
 ///
-/// <para><b>Decided on the preprocessed text, located in the raw text.</b> DXC compiles the text
-/// after its preprocessor, so every decision is made on the managed preprocessed view
-/// (<see cref="FxMacroPreprocessor.ProcessForCompiler"/>: conditionals evaluated, macros
-/// expanded, comments replaced by spaces, one output line per input line): which declarations of
-/// the entry exist, which are prototypes, and where each starts (its return type, with only
-/// storage modifiers and attributes before it) and ends. The raw text is used only to LOCATE each
-/// prototype to blank, at the same line and column, and the raw range is accepted only when it
-/// reads token for token as the preprocessed one (comments aside, and conditional directives
-/// wholly inside it, whose inactive lines the view left empty). A prototype that a macro writes,
-/// renames or moves fails that match and is refused rather than guessed at.</para>
+/// <para><b>Decided on the preprocessed text, removed from the raw text by proof.</b> DXC
+/// compiles the text after its preprocessor, so every decision is made on the managed
+/// preprocessed view (<see cref="FxMacroPreprocessor.ProcessForCompiler"/>: conditionals
+/// evaluated, macros expanded, comments replaced by spaces, one output line per input line):
+/// which declarations of the entry exist, which are prototypes, and which tokens each is. The
+/// raw range to blank runs between exact raw token boundaries on the prototype's first and last
+/// lines, and is accepted only when the source with that range blanked preprocesses to exactly
+/// the original view's tokens minus the prototype's (see <see cref="Locate"/>). So the blanked
+/// range can never take anything else the compiler sees: a macro call before the prototype on
+/// its line (<c>DECL_PARAM(Unused) float4 PS(...);</c>) stays, a prototype a macro completes
+/// (<c>: POS_OUT</c>) or writes whole (<c>DECLARE(PS)</c>) is removed exactly, and one no range
+/// can remove alone (a macro writing it with other code) is refused.</para>
 ///
 /// <para><b>Fail-safe.</b> The crash kills the consumer's process, so no possibly-redeclared
 /// entry reaches the SPIR-V back end. Two or more declaration-shaped uses of the entry name at
@@ -49,12 +56,14 @@ namespace ShadowDusk.HLSL.Dxc;
 /// <c>SD0236</c>. So is a call to the entry function between its prototype and its definition
 /// (without the prototype the call has no declaration; fxc compiles it), an overload prototype
 /// of an entry function the source calls, a prototype whose return type is spelled differently
-/// from the definition's in a way that cannot be told apart from DXC's own type identity, and
-/// (when the preprocessed view cannot be built) any prototype a raw-text reading cannot pin
-/// down. No definition or several, and a prototype whose return type is a different BUILT-IN
-/// type, reach DXC, whose front end reports them cleanly (<c>missing entry point
-/// definition</c>, <c>ambiguous entry point function</c>, <c>functions that differ only in their
-/// return type</c>) before the back end runs.</para>
+/// from the definition's in a way that cannot be told apart from DXC's own type identity, a
+/// declaration shape the reading does not model (a second declarator, <c>float4 A(), PS(...);</c>,
+/// or a directive between the name and its parameters), and (when the preprocessed view cannot
+/// be built) any prototype with a macro in or around it, since no edit can be proven then. No
+/// definition or several, and a prototype whose return type is a different BUILT-IN type, reach
+/// DXC, whose front end reports them cleanly (<c>missing entry point definition</c>,
+/// <c>ambiguous entry point function</c>, <c>functions that differ only in their return
+/// type</c>) before the back end runs.</para>
 ///
 /// <para>The validated DXIL of DirectX 12 and the DXBC of DirectX 11 and FNA never had the
 /// fault and keep their input as is (see <see cref="AppliesTo"/>). A source with no prototype
@@ -95,27 +104,33 @@ internal static partial class DxcSpirvEntryRedeclarations
     {
         ArgumentNullException.ThrowIfNull(source);
         string file = sourceFileName ?? string.Empty;
-        if (string.IsNullOrEmpty(entryPoint) || CannotBeDeclaredTwice(source, entryPoint))
-            return Ok(source);
 
         // `-D` macros come before the text, on lines of their own that are dropped from the view.
         string prefix = string.Concat((macros ?? []).Select(m => $"#define {m.Name} {m.Value ?? "1"}\n"));
+        if (string.IsNullOrEmpty(entryPoint) || CannotBeDeclaredTwice(prefix + source, entryPoint))
+            return Ok(source);
+
+        var macroNames = new HashSet<string>(StringComparer.Ordinal);
+        foreach (Match m in DefinedName().Matches(prefix + source))
+            macroNames.Add(m.Groups[1].Value);
+
         Result<FxMacroPreprocessor.CompilerInput, ShaderError> view = FxMacroPreprocessor.ProcessForCompiler(prefix + source, file);
         if (view.IsSuccess && view.Value.PredefinedMacroUse is null)
         {
             string text = DropLines(view.Value.Text, prefix.Count(c => c == '\n'));
-            return FromView(source, text, entryPoint, file);
+            return FromView(source, text, prefix, entryPoint, file, macroNames);
         }
 
         string why = view.IsFailure
             ? view.Error.Message
             : $"a conditional tests '{view.Value.PredefinedMacroUse!.Name}', a macro only the compiler defines";
-        return FromRawText(source, entryPoint, file, why);
+        return FromRawText(source, prefix, entryPoint, file, why, macroNames);
     }
 
     // ---- The decision on the preprocessed view --------------------------------------------
 
-    private static Result<string, ShaderError> FromView(string source, string text, string entryPoint, string file)
+    private static Result<string, ShaderError> FromView(
+        string source, string text, string prefix, string entryPoint, string file, IReadOnlySet<string> macroNames)
     {
         Analysis analysis = Analyze(text, entryPoint, rawText: false);
         if (analysis.DeclarationShaped < 2)
@@ -129,106 +144,146 @@ internal static partial class DxcSpirvEntryRedeclarations
         if (plan.Value.Count == 0)
             return Ok(source);
 
-        var located = new LineIndex(source);
+        var raw = new LineIndex(source);
         var expanded = new LineIndex(text);
+        List<Tok> viewTokens = Tokenize(text, rawText: false);
+        List<Tok> rawTokens = Tokenize(source, rawText: true).Where(t => t.Kind != TokKind.Comment).ToList();
         var spans = new List<(int Start, int End)>();
         foreach (Declaration prototype in plan.Value)
         {
-            (int Start, int End)? span = located.LineCount == expanded.LineCount
-                ? Locate(source, located, text, expanded, prototype)
+            (int Start, int End)? span = raw.LineCount == expanded.LineCount
+                ? Locate(source, raw, rawTokens, prefix, file, viewTokens, expanded, prototype, macroNames)
                 : null;
             if (span is null)
-            {
-                return Fail(Refuse(text, file, prototype.NameLine, prototype.NameColumn,
-                    $"entry point '{entryPoint}' is declared more than once, and this declaration cannot be matched to the " +
-                    "source as written: a macro writes, renames or moves part of it. " + CrashSentence + " A declaration " +
-                    $"a macro produces cannot be removed from the source, so write the prototype of '{entryPoint}' out " +
-                    "in full on lines of its own, or remove it."));
-            }
+                return Fail(NotLocated(text, file, entryPoint, prototype));
             spans.Add(span.Value);
         }
-        return Ok(Blank(source, spans));
+
+        // Each range was proven on its own; DXC gets all of them at once, so prove that too.
+        string blanked = Blank(source, spans);
+        if (spans.Count > 1 && !Verify(blanked, prefix, file, Without(viewTokens, plan.Value)))
+            return Fail(NotLocated(text, file, entryPoint, plan.Value[0]));
+        return Ok(blanked);
     }
 
+    private static ShaderError NotLocated(string text, string file, string entryPoint, Declaration prototype) =>
+        Refuse(text, file, prototype.NameLine, prototype.NameColumn,
+            $"entry point '{entryPoint}' is declared more than once, and this declaration cannot be removed from the " +
+            "source as written without changing anything else the compiler sees: a macro writes, renames or moves part " +
+            "of it together with other code. " + CrashSentence + $" Write the prototype of '{entryPoint}' out on " +
+            "lines of its own (macros inside it are fine), or remove it.");
+
+    /// <summary>The most raw ranges <see cref="Locate"/> tries for one prototype before refusing.</summary>
+    private const int MaxLocateAttempts = 32;
+
     /// <summary>
-    /// The raw range that holds <paramref name="prototype"/> (read off the preprocessed
-    /// <paramref name="text"/>), or null when the raw text there is not that prototype token for
-    /// token.
+    /// The raw range whose removal takes exactly <paramref name="prototype"/>'s tokens (read off
+    /// the preprocessed text) out of what the compiler sees, and nothing else; null when no such
+    /// range is found.
     /// </summary>
-    private static (int Start, int End)? Locate(string source, LineIndex raw, string text, LineIndex expanded, Declaration prototype)
+    /// <remarks>
+    /// A candidate range runs from the start of a raw token on the prototype's first line to the
+    /// end of a raw token on its last line: exact token boundaries, never part of a token. It is
+    /// accepted only by PROOF: the source with the range blanked is preprocessed again (the same
+    /// <c>-D</c> macros, the same preprocessor that built the view), and its token stream must
+    /// equal the original preprocessed token stream with the prototype's tokens taken out, token
+    /// for token. So a range that would also take a macro call before the prototype
+    /// (<c>DECL_PARAM(Unused) float4 PS(...);</c>: the call's <c>float4 Unused;</c> would vanish
+    /// with it), a directive, or another part of a macro's arguments is never accepted, while a
+    /// prototype that a macro completes (<c>: POS_OUT</c>) or writes whole (a <c>DECLARE(PS)</c>
+    /// call that produces nothing else) is. The positional candidate (the two lines untouched by
+    /// any macro) is tried first, then the narrowest ranges.
+    /// </remarks>
+    private static (int Start, int End)? Locate(
+        string source, LineIndex raw, List<Tok> rawTokens, string prefix, string file,
+        List<Tok> viewTokens, LineIndex expanded, Declaration prototype, IReadOnlySet<string> macroNames)
     {
-        (int startLine, int startColumn) = expanded.Position(prototype.Start);
-        (int endLine, int endColumn) = expanded.Position(prototype.End);
-        if (raw.Offset(startLine, startColumn) is not int start || raw.Offset(endLine, endColumn) is not int end || end <= start)
+        int first = viewTokens.FindIndex(t => t.Offset == prototype.Start);
+        int last = viewTokens.FindLastIndex(t => t.Offset < prototype.End);
+        if (first < 0 || last < first)
             return null;
 
-        // The same first character at a token boundary, and the same `;` last.
-        if (source[start] != text[prototype.Start] || source[end - 1] != ';'
-            || (start > 0 && IsIdentifierChar(source[start - 1])))
-        {
+        // A compiler-counted macro would count differently once part of the text is gone.
+        if (viewTokens.Skip(first).Take(last - first + 1).Any(t => t.IsWord("__COUNTER__")))
             return null;
+
+        List<Tok> expected = Without(viewTokens, [prototype]);
+        int startLine = expanded.Position(viewTokens[first].Offset).Line;
+        int endLine = expanded.Position(viewTokens[last].Offset).Line;
+        List<Tok> onStartLine = rawTokens.Where(t => t.Kind != TokKind.Directive && raw.Position(t.Offset).Line == startLine).ToList();
+        List<Tok> onEndLine = rawTokens.Where(t => t.Kind != TokKind.Directive && raw.Position(t.Offset).Line == endLine).ToList();
+
+        var candidates = new List<(int Start, int End)>();
+
+        // The common case first: no macro touched those lines, so the prototype's first and last
+        // tokens are at the same token positions in the raw lines as in the expanded ones.
+        int firstInLine = viewTokens.Count(t => t.Offset < viewTokens[first].Offset && expanded.Position(t.Offset).Line == startLine);
+        int lastInLine = viewTokens.Count(t => t.Offset < viewTokens[last].Offset && expanded.Position(t.Offset).Line == endLine);
+        if (firstInLine < onStartLine.Count && lastInLine < onEndLine.Count)
+            candidates.Add((onStartLine[firstInLine].Offset, onEndLine[lastInLine].Offset + onEndLine[lastInLine].Text.Length));
+
+        // Then every plausible pair, narrowest first: a start that is the prototype's first token
+        // or a macro name, an end that is its last token, a macro name, or a macro call's ')'.
+        bool IsMacro(Tok t) => t.Kind == TokKind.Identifier && macroNames.Contains(t.Text);
+        foreach (Tok s in onStartLine.Where(t => SameToken(t, viewTokens[first]) || IsMacro(t)).OrderByDescending(t => t.Offset))
+        {
+            foreach (Tok e in onEndLine.Where(t => t.Offset >= s.Offset && (SameToken(t, viewTokens[last]) || t.Is(")") || IsMacro(t))))
+                candidates.Add((s.Offset, e.Offset + e.Text.Length));
         }
 
-        List<Tok> expectedTokens = Tokenize(text[prototype.Start..prototype.End], rawText: false)
-            .Where(t => t.Kind != TokKind.Directive).ToList();
-
-        // Raw tokens: comments dropped; conditional directives must open and close inside the
-        // range (blanking them with it then removes exactly the prototype); a line the view left
-        // empty is an inactive branch (or a directive) and holds nothing the compile sees.
-        var rawTokens = new List<Tok>();
-        int conditionalDepth = 0;
-        foreach (Tok t in Tokenize(source[start..end], rawText: true))
+        int attempts = 0;
+        foreach ((int start, int end) in candidates.Distinct())
         {
-            if (t.Kind == TokKind.Comment)
+            if (end <= start || rawTokens.Any(t => t.Offset >= start && t.Offset < end && t.IsWord("__COUNTER__")))
                 continue;
-            int line = raw.Position(start + t.Offset).Line;
-            if (t.Kind == TokKind.Directive)
-            {
-                string keyword = DirectiveKeyword(t.Text);
-                if (keyword is "if" or "ifdef" or "ifndef")
-                    conditionalDepth++;
-                else if (keyword is "elif" or "else")
-                {
-                    if (conditionalDepth == 0)
-                        return null;
-                }
-                else if (keyword == "endif")
-                {
-                    if (--conditionalDepth < 0)
-                        return null;
-                }
-                else
-                {
-                    return null; // #define, #undef, #line, #pragma, #include, ... inside a declaration
-                }
-                continue;
-            }
-            if (expanded.IsBlankLine(text, line))
-                continue;
-            rawTokens.Add(t);
-        }
-        if (conditionalDepth != 0 || rawTokens.Count != expectedTokens.Count)
-            return null;
-        for (int i = 0; i < rawTokens.Count; i++)
-        {
-            if (rawTokens[i].Kind != expectedTokens[i].Kind
-                || !string.Equals(rawTokens[i].Text, expectedTokens[i].Text, StringComparison.Ordinal))
-            {
+            if (++attempts > MaxLocateAttempts)
                 return null;
-            }
+            if (Verify(Blank(source, [(start, end)]), prefix, file, expected))
+                return (start, end);
         }
-        return (start, end);
+        return null;
+    }
+
+    private static bool SameToken(Tok a, Tok b) => a.Kind == b.Kind && string.Equals(a.Text, b.Text, StringComparison.Ordinal);
+
+    /// <summary>The preprocessed tokens with every listed declaration's tokens taken out.</summary>
+    private static List<Tok> Without(List<Tok> viewTokens, IReadOnlyList<Declaration> removed) =>
+        viewTokens.Where(t => !removed.Any(d => t.Offset >= d.Start && t.Offset < d.End)).ToList();
+
+    /// <summary>
+    /// True when <paramref name="candidate"/> preprocesses, as the compile's view does, to exactly
+    /// the <paramref name="expected"/> token stream: the same kinds and spellings in the same order
+    /// (directives the view passes through included).
+    /// </summary>
+    private static bool Verify(string candidate, string prefix, string file, List<Tok> expected)
+    {
+        Result<FxMacroPreprocessor.CompilerInput, ShaderError> view = FxMacroPreprocessor.ProcessForCompiler(prefix + candidate, file);
+        if (view.IsFailure || view.Value.PredefinedMacroUse is not null)
+            return false;
+        List<Tok> actual = Tokenize(DropLines(view.Value.Text, prefix.Count(c => c == '\n')), rawText: false);
+        if (actual.Count != expected.Count)
+            return false;
+        for (int i = 0; i < actual.Count; i++)
+        {
+            if (!SameToken(actual[i], expected[i]))
+                return false;
+        }
+        return true;
     }
 
     // ---- Without a view: the raw text alone, refusing whatever it cannot pin down ----------
 
-    private static Result<string, ShaderError> FromRawText(string source, string entryPoint, string file, string why)
+    private static Result<string, ShaderError> FromRawText(
+        string source, string prefix, string entryPoint, string file, string why, IReadOnlySet<string> macroNames)
     {
         Analysis analysis = Analyze(source, entryPoint, rawText: true);
 
-        // A macro that names the entry or pastes tokens can write a declaration this reading
-        // cannot see; together with any declaration-shaped use that may be a second one.
-        if (analysis.MacroCouldDeclare && analysis.DeclarationShaped > 0)
+        // A macro that names the entry or pastes tokens (in the source or a `-D` value) can write
+        // a declaration this reading cannot see; with any declaration-shaped use that may be a
+        // second one.
+        bool macroCouldDeclare = analysis.MacroCouldDeclare
+            || IndexOfWord(prefix, entryPoint, 0) >= 0 || prefix.Contains("##", StringComparison.Ordinal);
+        if (macroCouldDeclare && analysis.DeclarationShaped > 0)
         {
             Token at = analysis.Unread.Count > 0 ? analysis.Unread[0]
                 : analysis.Prototypes.Concat(analysis.Definitions).Select(d => new Token(d.NameLine, d.NameColumn)).First();
@@ -257,7 +312,52 @@ internal static partial class DxcSpirvEntryRedeclarations
         Result<IReadOnlyList<Declaration>, ShaderError> plan = Plan(analysis, source, file, entryPoint);
         if (plan.IsFailure)
             return Fail(plan.Error);
-        return Ok(plan.Value.Count > 0 ? Blank(source, plan.Value.Select(d => (d.Start, d.End)).ToList()) : source);
+        if (plan.Value.Count == 0)
+            return Ok(source);
+
+        // Without a view no edit can be proven, so a range is blanked only when its text reaches
+        // the compiler exactly as written: no macro name inside it, not inside a macro call's
+        // parentheses, and no macro body that could open or close one around it.
+        List<Tok> tokens = Tokenize(source, rawText: true).Where(t => t.Kind != TokKind.Comment).ToList();
+        bool unbalancedMacro = tokens.Any(t => t.Kind == TokKind.Directive
+            && string.Equals(DirectiveKeyword(t.Text), "define", StringComparison.Ordinal) && !Balanced(t.Text));
+        foreach (Declaration prototype in plan.Value)
+        {
+            int parens = 0;
+            foreach (Tok t in tokens.TakeWhile(t => t.Offset < prototype.Start))
+            {
+                if (t.Is("("))
+                    parens++;
+                else if (t.Is(")"))
+                    parens--;
+            }
+            bool macroInside = tokens.Any(t => t.Offset >= prototype.Start && t.Offset < prototype.End
+                && t.Kind == TokKind.Identifier && (macroNames.Contains(t.Text) || t.Text == "__COUNTER__"));
+            if (parens != 0 || macroInside || unbalancedMacro)
+            {
+                return Fail(Refuse(source, file, prototype.NameLine, prototype.NameColumn,
+                    $"entry point '{entryPoint}' is declared more than once, and this source cannot be preprocessed here " +
+                    $"({why}), so whether removing the prototype changes anything else cannot be proven: a macro is used in " +
+                    $"or around it. {CrashSentence} Write the prototype of '{entryPoint}' without macros, or remove it."));
+            }
+        }
+        return Ok(Blank(source, plan.Value.Select(d => (d.Start, d.End)).ToList()));
+    }
+
+    /// <summary>True when a <c>#define</c> line's parentheses and braces balance (a body that opens or closes one does not).</summary>
+    private static bool Balanced(string directive)
+    {
+        int parens = 0;
+        int braces = 0;
+        // Continuation lines joined, so a continued line starting with '#' is not read as a directive.
+        foreach (Tok t in Tokenize(directive.TrimStart().TrimStart('#').Replace('\n', ' '), rawText: true))
+        {
+            parens += t.Is("(") ? 1 : t.Is(")") ? -1 : 0;
+            braces += t.Is("{") ? 1 : t.Is("}") ? -1 : 0;
+            if (parens < 0 || braces < 0)
+                return false;
+        }
+        return parens == 0 && braces == 0;
     }
 
     // ---- What to blank ----------------------------------------------------------------------
@@ -294,6 +394,17 @@ internal static partial class DxcSpirvEntryRedeclarations
                     $"type cannot be told safely here, so write the prototype's return type as the definition does, or " +
                     "remove the prototype."));
             }
+            if (sameParameters && Lost(prototype, definition) is { } lost)
+            {
+                // DXC's front end merges some of what a prototype says into the definition (an
+                // inherited attribute, a parameter's interpolation mode, a default argument), so
+                // removing a prototype that says more than its definition could change the
+                // compiled shader without a word. Only a prototype that adds nothing is removed.
+                return Result<IReadOnlyList<Declaration>, ShaderError>.Fail(Refuse(text, file, prototype.NameLine, prototype.NameColumn,
+                    $"entry point '{entryPoint}' has a prototype that carries {lost}, which its definition does not. " +
+                    $"{CrashSentence} Removing this prototype could change the compiled shader, so write {lost} on the " +
+                    $"definition of '{entryPoint}' as well, or remove the prototype."));
+            }
             if (!sameParameters && analysis.Calls.Count > 0)
             {
                 return Result<IReadOnlyList<Declaration>, ShaderError>.Fail(Refuse(text, file, prototype.NameLine, prototype.NameColumn,
@@ -322,6 +433,37 @@ internal static partial class DxcSpirvEntryRedeclarations
         }
 
         return Result<IReadOnlyList<Declaration>, ShaderError>.Ok(blank);
+    }
+
+    /// <summary>
+    /// What a prototype with the definition's signature says that the definition does not (an
+    /// attribute, a leading modifier, a parameter's interpolation modifier or default value), or
+    /// null when it says nothing more. Semantics are not compared: DXC takes an entry point's
+    /// semantics from its definition only (measured on DirectX 12: a semantic written only on the
+    /// prototype gives "Semantic must be defined for all parameters of an entry function"), so a
+    /// prototype's semantics change nothing and DXC reports a missing one itself.
+    /// </summary>
+    /// <remarks>
+    /// A leading modifier counts even when it looks inert: on DirectX 12 the pinned DXC answers an
+    /// <c>inline</c> or <c>static</c> prototype of the entry with "cannot find entry function", so
+    /// removing that prototype would make OpenGL compile what DXC itself refuses.
+    /// </remarks>
+    private static string? Lost(Declaration prototype, Declaration definition)
+    {
+        if (prototype.Attributes.FirstOrDefault(a => !definition.Attributes.Contains(a)) is { } attribute)
+            return $"the attribute '{attribute}'";
+        if (prototype.Modifiers.FirstOrDefault(m => !definition.Modifiers.Contains(m)) is { } modifier)
+            return $"the modifier '{modifier}'";
+        for (int i = 0; i < prototype.Parameters.Count && i < definition.Parameters.Count; i++)
+        {
+            Parameter p = prototype.Parameters[i];
+            Parameter d = definition.Parameters[i];
+            if (p.HasDefault)
+                return $"a default value for parameter {i + 1}";
+            if (p.Qualifiers.FirstOrDefault(q => !d.Qualifiers.Contains(q)) is { } qualifier)
+                return $"the modifier '{qualifier}' on parameter {i + 1}";
+        }
+        return null;
     }
 
     private const string CrashSentence =
@@ -408,7 +550,15 @@ internal static partial class DxcSpirvEntryRedeclarations
     /// <param name="NameColumn">Column (1-based) of the function name.</param>
     /// <param name="ReturnKey">The normalized return type.</param>
     /// <param name="ParameterKey">The normalized parameter types.</param>
-    private sealed record Declaration(int Start, int End, int NameLine, int NameColumn, string ReturnKey, string ParameterKey);
+    /// <param name="Attributes">Each leading <c>[...]</c> attribute, spelled out.</param>
+    /// <param name="Modifiers">The leading modifiers that are not part of the return type (<c>static</c>, <c>precise</c>, ...).</param>
+    /// <param name="Parameters">What each parameter says beyond its type.</param>
+    private sealed record Declaration(
+        int Start, int End, int NameLine, int NameColumn, string ReturnKey, string ParameterKey,
+        IReadOnlyList<string> Attributes, IReadOnlyList<string> Modifiers, IReadOnlyList<Parameter> Parameters);
+
+    /// <summary>A parameter's interpolation (and <c>precise</c>) modifiers, and whether it has a default value.</summary>
+    private sealed record Parameter(IReadOnlyList<string> Qualifiers, bool HasDefault);
 
     /// <summary>A position in the analyzed text.</summary>
     private sealed record Token(int Line, int Column, int Offset = 0);
@@ -470,7 +620,12 @@ internal static partial class DxcSpirvEntryRedeclarations
 
             (int line, int column) = lines.Position(t.Offset);
             var at = new Token(line, column + 1, t.Offset);
-            bool calledShape = i + 1 < tokens.Count && tokens[i + 1].Is("(");
+            // A directive the view passes through (`#pragma`, `#line`) may sit between the name and
+            // its '(': still call-shaped, and then not a declaration this reading accepts.
+            int next = i + 1;
+            while (next < tokens.Count && tokens[next].Kind == TokKind.Directive)
+                next++;
+            bool calledShape = next < tokens.Count && tokens[next].Is("(");
             if (!calledShape)
             {
                 // In the view every macro is expanded, so a use without '(' declares nothing. In
@@ -494,16 +649,36 @@ internal static partial class DxcSpirvEntryRedeclarations
                 continue;
             }
 
-            // Not a declaration: an expression in a global initializer (`= PS(`) is a call; a
-            // type-like token before the name is a declaration this reading failed on.
+            // Not a declaration: an expression in a global initializer (`= PS(`, `max(PS(`) is a
+            // call; a type-like token before the name, or a ',' outside any parentheses (a second
+            // declarator, `float4 A(), PS(...);`), is a declaration this reading failed on.
             Tok? previous = i > 0 ? tokens[i - 1] : null;
-            if (previous is { Kind: TokKind.Identifier } || previous?.Text is ">" or "]")
+            if (previous is { Kind: TokKind.Identifier } || previous?.Text is ">" or "]"
+                || (previous is { } comma && comma.Is(",") && StatementParenDepth(tokens, i) == 0))
+            {
                 unread.Add(at);
+            }
             else
+            {
                 calls.Add(at);
+            }
         }
 
         return new Analysis(prototypes, definitions, calls, unread, macroCouldDeclare);
+    }
+
+    /// <summary>The parenthesis depth at <paramref name="index"/> within its global statement (since the last <c>;</c>, <c>{</c> or <c>}</c>).</summary>
+    private static int StatementParenDepth(List<Tok> tokens, int index)
+    {
+        int depth = 0;
+        for (int j = index - 1; j >= 0 && !(tokens[j].Text is ";" or "{" or "}" && tokens[j].Kind == TokKind.Punctuation); j--)
+        {
+            if (tokens[j].Is(")"))
+                depth--;
+            else if (tokens[j].Is("("))
+                depth++;
+        }
+        return depth;
     }
 
     /// <summary><c>compile ps_3_0 PS(...)</c>, or <c>CompileShader(ps_4_0, PS(...))</c>.</summary>
@@ -598,22 +773,95 @@ internal static partial class DxcSpirvEntryRedeclarations
         if (close < 0)
             return false;
 
-        // A semantic (`: COLOR0`), then the terminator.
+        // Semantics (`: COLOR0`, `: register(c0)`), then the terminator. Anything else (a second
+        // declarator after a ',', an initializer) is not a shape this reading models.
         int k = close + 1;
-        while (k < tokens.Count && (tokens[k].Kind is TokKind.Identifier or TokKind.Number || tokens[k].Text is ":" or "(" or ")" or ","))
-            k++;
+        while (k + 1 < tokens.Count && tokens[k].Is(":") && tokens[k + 1].Kind == TokKind.Identifier)
+        {
+            k += 2;
+            if (k < tokens.Count && tokens[k].Is("("))
+            {
+                int depth = 0;
+                for (; k < tokens.Count; k++)
+                {
+                    if (tokens[k].Kind == TokKind.Directive || tokens[k].Text is "{" or "}" or ";")
+                        return false;
+                    if (tokens[k].Is("("))
+                        depth++;
+                    else if (tokens[k].Is(")") && --depth == 0)
+                        break;
+                }
+                k++;
+            }
+        }
         if (k >= tokens.Count || !(tokens[k].Is(";") || tokens[k].Is("{")))
             return false;
         last = k;
 
+        List<Tok> leading = tokens.GetRange(first, nameIndex - first);
+        List<Tok> parameters = tokens.GetRange(nameIndex + 2, close - nameIndex - 2);
         declaration = new Declaration(
             Start: tokens[first].Offset,
             End: tokens[k].Offset + 1,
             NameLine: 0,
             NameColumn: 0,
-            ReturnKey: ReturnKey(tokens.GetRange(first, nameIndex - first), typedefs),
-            ParameterKey: ParameterKey(tokens.GetRange(nameIndex + 2, close - nameIndex - 2), typedefs));
+            ReturnKey: ReturnKey(leading, typedefs),
+            ParameterKey: ParameterKey(parameters, typedefs),
+            Attributes: Attributes(leading),
+            Modifiers: LeadingModifiers(leading),
+            Parameters: ParameterDetails(parameters));
         return true;
+    }
+
+    /// <summary>Each top-level <c>[...]</c> group among a declaration's leading tokens, spelled out.</summary>
+    private static List<string> Attributes(List<Tok> leading)
+    {
+        var attributes = new List<string>();
+        int depth = 0;
+        int start = 0;
+        for (int i = 0; i < leading.Count; i++)
+        {
+            if (leading[i].Is("[") && depth++ == 0)
+                start = i;
+            else if (leading[i].Is("]") && --depth == 0)
+                attributes.Add(Spell(leading.GetRange(start, i - start + 1)));
+        }
+        return attributes;
+    }
+
+    /// <summary>The storage-class modifiers among a declaration's leading tokens (outside attributes).</summary>
+    private static List<string> LeadingModifiers(List<Tok> leading)
+    {
+        var modifiers = new List<string>();
+        int depth = 0;
+        foreach (Tok t in leading)
+        {
+            if (t.Is("["))
+                depth++;
+            else if (t.Is("]"))
+                depth--;
+            else if (depth == 0 && t.Kind == TokKind.Identifier && StorageModifier().IsMatch(t.Text))
+                modifiers.Add(t.Text);
+        }
+        return modifiers;
+    }
+
+    /// <summary>Per parameter: its interpolation and <c>precise</c> modifiers, and whether it has a default value.</summary>
+    private static List<Parameter> ParameterDetails(List<Tok> tokens)
+    {
+        var parameters = new List<Parameter>();
+        if (tokens.Count == 0 || (tokens.Count == 1 && tokens[0].IsWord("void")))
+            return parameters;
+        foreach (List<Tok> parameter in SplitTopLevel(tokens))
+        {
+            List<string> qualifiers = parameter
+                .TakeWhile(t => t.Kind == TokKind.Identifier && ParameterModifier().IsMatch(t.Text))
+                .Select(t => t.Text)
+                .Where(m => InterpolationModifier().IsMatch(m))
+                .ToList();
+            parameters.Add(new Parameter(qualifiers, HasDefault: parameter.Any(t => t.Is("="))));
+        }
+        return parameters;
     }
 
     /// <summary>The return type, without attributes or storage modifiers, with aliases resolved.</summary>
@@ -884,11 +1132,9 @@ internal static partial class DxcSpirvEntryRedeclarations
     private sealed class LineIndex
     {
         private readonly List<int> _starts = [0];
-        private readonly string _text;
 
         public LineIndex(string text)
         {
-            _text = text;
             for (int i = 0; i < text.Length; i++)
             {
                 if (text[i] == '\n')
@@ -904,27 +1150,6 @@ internal static partial class DxcSpirvEntryRedeclarations
             int index = _starts.BinarySearch(offset);
             int line = index >= 0 ? index : ~index - 1;
             return (line + 1, offset - _starts[line]);
-        }
-
-        /// <summary>The offset of a 1-based line and 0-based column, when that column is on the line.</summary>
-        public int? Offset(int line, int column)
-        {
-            if (line < 1 || line > _starts.Count)
-                return null;
-            int start = _starts[line - 1];
-            int end = line < _starts.Count ? _starts[line] - 1 : _text.Length;
-            if (end > start && _text[end - 1] == '\r')
-                end--;
-            return column <= end - start ? start + column : null;
-        }
-
-        public bool IsBlankLine(string text, int line)
-        {
-            if (line < 1 || line > _starts.Count)
-                return true;
-            int start = _starts[line - 1];
-            int end = line < _starts.Count ? _starts[line] : text.Length;
-            return string.IsNullOrWhiteSpace(text[start..end]);
         }
     }
 
@@ -948,6 +1173,17 @@ internal static partial class DxcSpirvEntryRedeclarations
     /// <summary>Parameter modifiers that do not change the function's signature.</summary>
     [GeneratedRegex(@"^(?:in|const|linear|centroid|nointerpolation|noperspective|sample|precise)$", RegexOptions.CultureInvariant)]
     private static partial Regex IgnoredParameterModifier();
+
+    /// <summary>
+    /// Parameter modifiers outside the signature that still change the compiled shader (how an
+    /// input is interpolated, or its precision), so a prototype's must be on the definition too.
+    /// </summary>
+    [GeneratedRegex(@"^(?:linear|centroid|nointerpolation|noperspective|sample|precise)$", RegexOptions.CultureInvariant)]
+    private static partial Regex InterpolationModifier();
+
+    /// <summary>The name of each <c>#define</c> (object-like or function-like).</summary>
+    [GeneratedRegex(@"^[ \t]*#[ \t]*define[ \t]+([A-Za-z_][A-Za-z0-9_]*)", RegexOptions.CultureInvariant | RegexOptions.Multiline)]
+    private static partial Regex DefinedName();
 
     /// <summary>Words that cannot be a return type (the name follows a statement keyword, not a type).</summary>
     [GeneratedRegex(@"^(?:return|compile|CompileShader|else|case|do|typedef|technique|technique10|technique11|pass)$", RegexOptions.CultureInvariant)]

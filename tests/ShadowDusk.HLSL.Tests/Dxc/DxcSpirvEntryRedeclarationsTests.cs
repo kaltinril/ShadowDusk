@@ -62,7 +62,6 @@ public sealed class DxcSpirvEntryRedeclarationsTests
     [InlineData("float4 PS(float4);\n" + Definition, new[] { 1 })]                                                // unnamed parameter
     [InlineData("float4 PS(in float4 color : TEXCOORD3) : COLOR1;\n" + Definition, new[] { 1 })]                  // other name, `in`, other semantics
     [InlineData("float4 PS(float4 c /* the colour */ : COLOR0) : SV_Target;\n" + Definition, new[] { 1 })]         // a comment inside
-    [InlineData("static inline float4 PS(float4 c : COLOR0) : SV_Target;\n" + Definition, new[] { 1 })]           // storage modifiers
     public void APrototypeMatchingTheDefinition_IsBlankedKeepingEveryLineAndColumn(string source, int[] blankedLines)
     {
         string prepared = Prepared(source);
@@ -231,17 +230,46 @@ public sealed class DxcSpirvEntryRedeclarationsTests
     }
 
     [Fact]
-    public void APrototypeAMacroProduces_IsRefused_BecauseNoTextEditReachesIt()
+    public void APrototypeAMacroCallWritesWhole_IsRemovedWithTheCall()
     {
+        // The call produces the prototype and nothing else, so blanking the call is proven to
+        // take out exactly the prototype.
         string source =
             "#define DECLARE(name) float4 name(float4 c : COLOR0) : SV_Target;\n" +
+            "DECLARE(PS)\n" +
+            Definition + "\n";
+
+        Prepared(source).ShouldBe(BlankLines(source, 2));
+    }
+
+    [Fact]
+    public void AMacroCallWritingThePrototypeAndOtherCode_IsRefused_BecauseNoEditTakesOnlyThePrototype()
+    {
+        string source =
+            "#define DECLARE(name) float4 Unused; float4 name(float4 c : COLOR0) : SV_Target;\n" +
             "DECLARE(PS)\n" +
             Definition + "\n";
 
         ShaderError error = Refused(source);
 
         error.Line.ShouldBe(2);
-        error.Message.ShouldContain("a macro writes, renames or moves part of it", Case.Sensitive);
+        error.Message.ShouldContain("cannot be removed from the source as written without changing anything else", Case.Sensitive);
+    }
+
+    [Fact]
+    public void APrototypeInsideAMacroArgument_IsBlankedOnlyWhenTheCallStillExpandsToEverythingElse()
+    {
+        // `ID(x)` writes its argument once: blanking the argument leaves `ID()`, which expands to nothing.
+        string once = "#define ID(x) x\nID(float4 PS(float4 c : COLOR0) : SV_Target;)\n" + Definition + "\n";
+        Prepared(once).ShouldBe("#define ID(x) x\nID(" + new string(' ', 41) + ")\n" + Definition + "\n");
+
+        // `WRAP(x)` writes more than its argument: blanking the argument keeps `float4 W;`.
+        string wrapped = "#define WRAP(x) float4 W; x\nWRAP(float4 PS(float4 c : COLOR0) : SV_Target;)\n" + Definition + "\n";
+        Prepared(wrapped).ShouldBe("#define WRAP(x) float4 W; x\nWRAP(" + new string(' ', 41) + ")\n" + Definition + "\n");
+
+        // `TWICE(x)` writes it twice: no single range takes out one copy and nothing else.
+        string twice = "#define TWICE(x) x x\nTWICE(float4 PS(float4 c : COLOR0) : SV_Target;)\n" + Definition + "\n";
+        Refused(twice).Line.ShouldBe(2);
     }
 
     [Fact]
@@ -287,22 +315,37 @@ public sealed class DxcSpirvEntryRedeclarationsTests
     }
 
     [Fact]
-    public void AMacroCallOnThePrototypesOwnLine_IsRefused_NeverBlankedWithIt()
+    public void AMacroCallOnThePrototypesOwnLine_IsKept_TheRangeStartsAtTheReturnType()
     {
-        string source = "#define DECL_PARAM(n) float4 n;\nDECL_PARAM(Unused) float4 PS(float4 c : COLOR0) : SV_Target;\n" + Definition + "\n";
+        // The review's BLOCKER: the range used to start at the call, so `float4 Unused;` vanished
+        // with the prototype and the definition silently lost a parameter on OpenGL and Vulkan.
+        const string Call = "DECL_PARAM(Unused) ";
+        const string Prototype = "float4 PS(float4 c : COLOR0) : SV_Target;";
+        string source = "#define DECL_PARAM(n) float4 n;\n" + Call + Prototype + "\n" + Definition + "\n";
 
-        Refused(source).Message.ShouldContain("a macro writes, renames or moves part of it", Case.Sensitive);
+        string prepared = Prepared(source);
+
+        prepared.ShouldBe("#define DECL_PARAM(n) float4 n;\n" + Call + new string(' ', Prototype.Length) + "\n" + Definition + "\n");
+        prepared.ShouldContain("DECL_PARAM(Unused)", Case.Sensitive);
     }
 
     [Fact]
-    public void AnEntryNamedThroughAMacro_IsDecidedOnTheExpandedName_AndRefused()
+    public void AMacroCallBetweenTwoPrototypesOnOneLine_IsKept()
+    {
+        const string Prototype = "float4 PS(float4 c : COLOR0) : SV_Target;";
+        string source = "#define DECL_PARAM(n) float4 n;\n" + Prototype + " DECL_PARAM(Unused) " + Prototype + "\n" + Definition + "\n";
+
+        Prepared(source).ShouldBe("#define DECL_PARAM(n) float4 n;\n" + new string(' ', Prototype.Length) + " DECL_PARAM(Unused) " +
+                                  new string(' ', Prototype.Length) + "\n" + Definition + "\n");
+    }
+
+    [Fact]
+    public void AnEntryNamedThroughAMacro_IsDecidedOnTheExpandedName_AndItsPrototypeBlanked()
     {
         // `-E PSX`: the raw text names PSX only in the #define, so a raw count found it once.
         string source = "#define PF PSX\nfloat4 PF(float4 c : COLOR0) : SV_Target;\nfloat4 PF(float4 c : COLOR0) : SV_Target { return c; }\n";
 
-        ShaderError error = Refused(source, "PSX");
-
-        error.Line.ShouldBe(2);
+        Prepared(source, "PSX").ShouldBe(BlankLines(source, 2));
     }
 
     [Fact]
@@ -314,13 +357,12 @@ public sealed class DxcSpirvEntryRedeclarationsTests
     }
 
     [Fact]
-    public void APrototypeAndAMacroProducedOneOnOneLine_IsRefused()
+    public void APrototypeAndAMacroProducedOneOnOneLine_AreBothRemoved()
     {
         string source = "#define P2 float4 PS(float4 c : COLOR0) : SV_Target;\nfloat4 PS(float4 c : COLOR0) : SV_Target; P2\n" + Definition + "\n";
 
-        Refused(source).Line.ShouldBe(2);
+        Prepared(source).ShouldBe(BlankLines(source, 2));
     }
-
     [Theory]
     [InlineData("typedef float4 F4;\nF4 PS(float4 c : COLOR0) : SV_Target;\n" + Definition + "\n", 2)]
     [InlineData("vector<float, 4> PS(float4 c : COLOR0) : SV_Target;\n" + Definition + "\n", 1)]
@@ -391,6 +433,112 @@ public sealed class DxcSpirvEntryRedeclarationsTests
                         "DECL(PS)\n";
 
         Refused(source).Line.ShouldBe(2);
+    }
+
+    // ---- Re-review of 2026-10-29: only a prototype that adds nothing is removed --------------
+
+    [Theory]
+    [InlineData("[earlydepthstencil]\nfloat4 PS(float4 c : COLOR0) : SV_Target;\n" + Definition + "\n", "the attribute '[earlydepthstencil]'")]
+    [InlineData("precise float4 PS(float4 c : COLOR0) : SV_Target;\n" + Definition + "\n", "the modifier 'precise'")]
+    // DXC's own front end answers an `inline` or `static` prototype of the entry with "cannot
+    // find entry function" (measured on DirectX 12): removing it would compile what DXC refuses.
+    [InlineData("static inline float4 PS(float4 c : COLOR0) : SV_Target;\n" + Definition + "\n", "the modifier 'static'")]
+    [InlineData("inline float4 PS(float4 c : COLOR0) : SV_Target;\n" + Definition + "\n", "the modifier 'inline'")]
+    [InlineData("float4 PS(nointerpolation float4 c : COLOR0) : SV_Target;\n" + Definition + "\n", "the modifier 'nointerpolation' on parameter 1")]
+    [InlineData("float4 PS(float4 c : COLOR0, uniform float k = 0.5) : SV_Target;\n" +
+                "float4 PS(float4 c : COLOR0, uniform float k) : SV_Target { return c * k; }\n", "a default value for parameter 2")]
+    public void APrototypeThatSaysMoreThanItsDefinition_IsRefused_NeverSilentlyDropped(string source, string what)
+    {
+        ShaderError error = Refused(source);
+
+        error.Message.ShouldContain($"carries {what}, which its definition does not", Case.Sensitive);
+    }
+
+    [Theory]
+    [InlineData("[earlydepthstencil]\nfloat4 PS(float4 c : COLOR0) : SV_Target;\n[earlydepthstencil]\n" + Definition + "\n", new[] { 1, 2 })]
+    [InlineData("float4 PS(float4 c : COLOR0, uniform float k) : SV_Target;\n" +
+                "float4 PS(float4 c : COLOR0, uniform float k = 0.5) : SV_Target { return c * k; }\n", new[] { 1 })]
+    [InlineData("float4 PS(nointerpolation float4 c : COLOR0) : SV_Target;\n" +
+                "float4 PS(nointerpolation float4 c : COLOR0) : SV_Target { return c; }\n", new[] { 1 })]
+    [InlineData("float4 PS(float4 c) : SV_Target;\n" + Definition + "\n", new[] { 1 })]          // the definition says more: fine
+    // DXC takes an entry's semantics from its definition only (DirectX 12: "Semantic must be
+    // defined for all parameters"), so a semantic only the prototype has is DXC's to report.
+    [InlineData("float4 PS(float4 c : COLOR0) : SV_Target;\nfloat4 PS(float4 c) : SV_Target { return c; }\n", new[] { 1 })]
+    [InlineData("float4 PS(float4 c : COLOR0) : SV_Target;\nfloat4 PS(float4 c : COLOR0) { return c; }\n", new[] { 1 })]
+    [InlineData("static float4 PS(float4 c : COLOR0) : SV_Target;\nstatic " + Definition + "\n", new[] { 1 })]  // on both: DXC judges the definition
+    public void APrototypeThatSaysNothingTheDefinitionDoesNot_IsBlanked(string source, int[] blankedLines)
+    {
+        Prepared(source).ShouldBe(BlankLines(source, blankedLines));
+    }
+
+    [Theory]
+    [InlineData("float4 Other(float x), PS(float4 c : COLOR0);\n" + Definition + "\n")]               // second declarator
+    [InlineData("float4 PS(float4 c : COLOR0) : SV_Target, Other(float x);\n" + Definition + "\n")]   // first of two declarators
+    [InlineData("float4 PS\n#pragma warning(disable : 3571)\n(float4 c : COLOR0) : SV_Target;\n" + Definition + "\n")]
+    public void ADeclarationShapeTheReadingDoesNotModel_IsRefused_NeverPassedToDxc(string source)
+    {
+        Refused(source).Message.ShouldContain("cannot read as a declaration", Case.Sensitive);
+    }
+
+    [Fact]
+    public void APrototypeInsideAnActiveConditional_IsBlanked_TheDirectivesKept()
+    {
+        string source = "#if 1\nfloat4 PS(float4 c : COLOR0) : SV_Target;\n#endif\n" + Definition + "\n";
+
+        Prepared(source).ShouldBe(BlankLines(source, 2));
+    }
+
+    [Fact]
+    public void AMultiLinePrototypeAMacroCompletes_IsBlanked()
+    {
+        // The MonoGame template's `: POS_OUT` / `SV_POSITION` macros inside the prototype.
+        string source =
+            "#define POS_OUT SV_Position\n" +
+            "float4 VS(float4 p : POSITION0)\n" +
+            "    : POS_OUT;\n" +
+            "float4 VS(float4 p : POSITION0) : POS_OUT { return p; }\n";
+
+        Prepared(source, "VS").ShouldBe(BlankLines(source, 2, 3));
+    }
+
+    [Fact]
+    public void ADMacroThatWritesThePrototype_IsNotMissedByTheCheapGate()
+    {
+        string source = "PROTO\n" + Definition + "\n";
+
+        Result<string, ShaderError> result = DxcSpirvEntryRedeclarations.Prepare(
+            source, "PS", "t.fx", [("PROTO", "float4 PS(float4 c : COLOR0) : SV_Target;")]);
+
+        result.IsSuccess.ShouldBeTrue(result.IsFailure ? result.Error.Message : "");
+        result.Value.ShouldBe(BlankLines(source, 1));
+    }
+
+    [Fact]
+    public void WithoutATrustworthyView_ADMacroThatCouldWriteTheEntry_IsRefused()
+    {
+        string source = "#if __HLSL_VERSION >= 2021\n#define TINT 1\n#endif\nPROTO\n" + Definition + "\n";
+
+        Result<string, ShaderError> result = DxcSpirvEntryRedeclarations.Prepare(
+            source, "PS", "t.fx", [("PROTO", "float4 PS(float4 c : COLOR0) : SV_Target;")]);
+
+        result.IsFailure.ShouldBeTrue(result.IsSuccess ? result.Value : "");
+        result.Error.Code.ShouldBe("SD0236");
+        result.Error.Message.ShouldContain("may be declared more than once through a macro", Case.Sensitive);
+    }
+
+    [Fact]
+    public void WithoutATrustworthyView_APrototypeAMacroTouches_IsRefused_BecauseNoEditCanBeProven()
+    {
+        string source =
+            "#if __HLSL_VERSION >= 2021\n#define TINT 1\n#endif\n" +
+            "#define POS_OUT SV_Position\n" +
+            "float4 VS(float4 p : POSITION0) : POS_OUT;\n" +
+            "float4 VS(float4 p : POSITION0) : POS_OUT { return p; }\n";
+
+        ShaderError error = Refused(source, "VS");
+
+        error.Line.ShouldBe(5);
+        error.Message.ShouldContain("whether removing the prototype changes anything else cannot be proven", Case.Sensitive);
     }
 
     [Fact]
