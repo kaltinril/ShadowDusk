@@ -60,10 +60,18 @@ using ShadowDusk.Validation;
 //                                                                 descriptor binding (informational,
 //                                                                 not a gate: it is the reference
 //                                                                 compiler's output under test).
+//   dotnet run --project validation/VsDrivenVulkan -- regslots -> EXPLICIT REGISTER SLOTS: a lone
+//                                                                 register(t1), a t0+t2 gap and a
+//                                                                 Texture2DArray on t1 (slice 1),
+//                                                                 each vs its mgfxc 3.8.5 golden
+//                                                                 through SpriteBatch, plus a
+//                                                                 known-colour check. Positive
+//                                                                 control: SHADOWDUSK_VK_CONTROL=
+//                                                                 ordinal-slots (expect red).
 string mode = args.Length > 0 ? args[0].Trim().ToLowerInvariant() : "vs";
-if (mode is not ("vs" or "apos" or "wave" or "texarr" or "texarr-reference"))
+if (mode is not ("vs" or "apos" or "wave" or "texarr" or "texarr-reference" or "regslots"))
 {
-    Console.Error.WriteLine($"unknown mode '{mode}' — expected 'vs', 'apos', 'wave', 'texarr' or 'texarr-reference'");
+    Console.Error.WriteLine($"unknown mode '{mode}' — expected 'vs', 'apos', 'wave', 'texarr', 'texarr-reference' or 'regslots'");
     return 2;
 }
 
@@ -87,6 +95,9 @@ Console.WriteLine($"[vs-vulkan] out:     {outDir}\n");
 
 if (mode is "texarr" or "texarr-reference")
     return await RunTextureArrayPhase(mode == "texarr-reference");
+
+if (mode == "regslots")
+    return await RunRegisterSlotsPhase();
 
 if (mode == "wave")
 {
@@ -329,6 +340,240 @@ Console.WriteLine(rejected
 bool texArrPass = goldenEmpty && rejected;
 Console.WriteLine($"[texarr-vulkan] {(texArrPass ? "PASS" : "FAIL")}");
 return texArrPass ? 0 : 1;
+}
+
+// ---------------------------------------------------------------------------------------
+// Explicit register slots (mode "regslots"). A Vulkan texture's slot is its SPIR-V binding
+// minus 32: mgfxc 3.8.5 writes that, and MonoGame's DesktopVK runtime both binds a texture
+// parameter to GraphicsDevice.Textures[slot] and reads a descriptor's image from
+// textures[binding - 32]. ShadowDusk used to write the texture's ORDINAL instead, which is the
+// same number only when the registers start at 0 with no gap. Each fixture below breaks that:
+//
+//   RegisterLoneT1            Texture2D on register(t1), nothing at t0. Tex1 = solid colour.
+//   RegisterGapT0T2           t0 (SpriteBatch's sprite, the cat) + t2 (Overlay = solid white),
+//                             each half the output, so an unbound t2 reads as a dark picture.
+//   RegisterTexture2DArrayT1  Texture2DArray on register(t1), sampling slice 1 (slice 0 red,
+//                             slice 1 blue), built with MonoGame 3.8.4.1+'s public
+//                             Texture2D(..., arraySize) constructor and SetData(level, slice, ...).
+//
+// Each arm (mgfxc 3.8.5 golden, ShadowDusk) is drawn through SpriteBatch on one device and
+// must (a) match the other within 1/255 and (b) show the colour the shader computes from the
+// textures set, checked per pixel, so two arms that are wrong the same way cannot pass.
+// Before the fix the ShadowDusk arm drew (0,0,0,0) for the lone t1 and the array.
+//
+// Positive control: SHADOWDUSK_VK_CONTROL=ordinal-slots rewrites the candidate's sampler
+// records and descriptor-header slot masks back to ordinal numbering (the pre-fix bytes) and
+// the run must turn red with CONTROL-DETECTED.
+// ---------------------------------------------------------------------------------------
+async Task<int> RunRegisterSlotsPhase()
+{
+string control = Environment.GetEnvironmentVariable("SHADOWDUSK_VK_CONTROL")?.Trim() ?? "";
+if (control is not ("" or "ordinal-slots"))
+{
+    Console.Error.WriteLine($"unknown SHADOWDUSK_VK_CONTROL '{control}' for regslots (expected 'ordinal-slots')");
+    return 2;
+}
+if (control != "")
+    Console.WriteLine($"[regslots-vulkan] POSITIVE CONTROL ACTIVE: {control} (this run is expected to FAIL)");
+
+string[] fixtures = ["RegisterLoneT1", "RegisterGapT0T2", "RegisterTexture2DArrayT1"];
+string regOut = Path.Combine(repoRoot, "validation", "output", "regslots-vulkan");
+Directory.CreateDirectory(regOut);
+
+var regJobs = new List<ShaderJob>();
+foreach (string name in fixtures)
+{
+    string fx = Path.Combine(repoRoot, "tests", "fixtures", "shaders", "register-slots", name + ".fx");
+    string golden = Path.Combine(repoRoot, "tests", "fixtures", "golden", "Vulkan", name + ".mgfx");
+
+    byte[]? goldenBytes = File.Exists(golden) ? await File.ReadAllBytesAsync(golden) : null;
+    regJobs.Add(new($"{name}.mgfxc", goldenBytes, goldenBytes is null ? $"golden not found: {golden}" : null));
+
+    var result = await new EffectCompiler().CompileAsync(
+        await File.ReadAllTextAsync(fx),
+        new CompilerOptions { Target = PlatformTarget.Vulkan, IncludeResolver = new FileSystemIncludeResolver(), SourceFileName = fx });
+    byte[]? cand = null;
+    string? candErr = null;
+    if (result.IsFailure)
+        candErr = string.Join(" | ", result.Error.Select(e => $"{e.Code}: {e.Message}"));
+    else
+    {
+        cand = result.Value.Data;
+        if (control == "ordinal-slots")
+            Console.WriteLine($"[regslots-vulkan] ordinal-slots control: {name}: {ApplyOrdinalSlots(cand)}");
+        await File.WriteAllBytesAsync(Path.Combine(regOut, name + ".candidate.mgfx"), cand);
+    }
+    regJobs.Add(new($"{name}.sd", cand, candErr));
+
+    foreach ((string arm, byte[]? bytes) in new[] { ("mgfxc", goldenBytes), ("sd", cand) })
+    {
+        if (bytes is null)
+            continue;
+        var parsed = ShadowDusk.Integration.Tests.MgfxBlobReader.Parse(bytes);
+        var header = ShadowDusk.Integration.Tests.VulkanShaderCodeReader.Parse(parsed.Shaders.Single().Bytecode);
+        Console.WriteLine($"[regslots-vulkan] {name} {arm,-5} records=[{string.Join(", ", parsed.Samplers.Select(s => $"tex{s.TextureSlot}/samp{s.SamplerSlot}->param{s.Parameter}"))}] " +
+                          $"textureSlots=0x{header.TextureSlots:x} bindings=[{string.Join(",", header.Bindings.Select(b => b.Binding))}]");
+    }
+}
+
+// Test textures, made once per device (the renderer calls back per job).
+var lone   = new Color(51, 204, 102, 255);
+var slice0 = new Color(255, 0, 0, 255);
+var slice1 = new Color(0, 128, 255, 255);
+Microsoft.Xna.Framework.Graphics.Texture2D? loneTex = null, whiteTex = null, arrayTex = null;
+
+using var regGame = new EffectImageRenderer(catPath, regOut, regJobs, (effect, cat) =>
+{
+    var gd = effect.GraphicsDevice;
+    // Device texture slots outlive a job: without this the previous arm's texture still sits
+    // in the slot this arm's descriptor reads, and a mis-slotted effect renders correctly by
+    // accident (measured: the ordinal-slots control stayed green until this reset).
+    for (int s = 0; s < 16; s++)
+        gd.Textures[s] = null;
+    if (effect.Parameters["Tex1"] is { } t1)
+    {
+        loneTex ??= Solid(gd, lone);
+        t1.SetValue(loneTex);
+    }
+    if (effect.Parameters["Overlay"] is { } overlay)
+    {
+        whiteTex ??= Solid(gd, Color.White);
+        overlay.SetValue(whiteTex);
+    }
+    if (effect.Parameters["Arr"] is { } arr)
+    {
+        if (arrayTex is null)
+        {
+            arrayTex = new Microsoft.Xna.Framework.Graphics.Texture2D(gd, 4, 4, false, Microsoft.Xna.Framework.Graphics.SurfaceFormat.Color, 2);
+            arrayTex.SetData(0, 0, null, Enumerable.Repeat(slice0, 16).ToArray(), 0, 16);
+            arrayTex.SetData(0, 1, null, Enumerable.Repeat(slice1, 16).ToArray(), 0, 16);
+        }
+        arr.SetValue(arrayTex);
+    }
+});
+regGame.Run();
+
+Console.WriteLine("[regslots-vulkan] load + render results:");
+foreach (var o in regGame.Outcomes)
+    Console.WriteLine($"  [{(o is { Loaded: true, Rendered: true } ? "OK  " : "FAIL")}] {o.Name,-32} {o.Error ?? o.PngPath}");
+
+var regCaps = regGame.Captures.ToDictionary(c => c.Name, c => c);
+bool allPass = true;
+bool controlDetected = false;
+foreach (string name in fixtures)
+{
+    bool haveGolden = regCaps.TryGetValue($"{name}.mgfxc", out var g);
+    bool haveCand   = regCaps.TryGetValue($"{name}.sd", out var c);
+    int maxd = haveGolden && haveCand ? MaxDelta(g, c) : int.MaxValue;
+
+    // What the shader computes from the textures set, per pixel.
+    Func<(string Name, Color[] Pixels, int Width, int Height), (bool Ok, string Detail)> expect = name switch
+    {
+        "RegisterLoneT1"           => cap => AllPixels(cap, p => Near(p, lone), $"every pixel ({lone.R},{lone.G},{lone.B},{lone.A})"),
+        "RegisterTexture2DArrayT1" => cap => AllPixels(cap, p => Near(p, slice1), $"every pixel slice 1 ({slice1.R},{slice1.G},{slice1.B},{slice1.A})"),
+        // (cat + white) / 2: every channel at least 127. An unbound t2 gives cat / 2.
+        _                          => cap => AllPixels(cap, p => p.R >= 127 && p.G >= 127 && p.B >= 127 && p.A >= 254, "every channel >= 127 ((cat + white) / 2)"),
+    };
+    var (goldenOk, goldenDetail) = haveGolden ? expect(g) : (false, "no golden render");
+    var (candOk, candDetail)     = haveCand ? expect(c) : (false, "no candidate render");
+
+    bool pass = maxd <= 1 && goldenOk && candOk;
+    allPass &= pass;
+    Console.WriteLine($"[regslots-vulkan] {name}: maxd {(maxd == int.MaxValue ? "n/a" : maxd)}; mgfxc {(goldenOk ? "OK" : "WRONG")} ({goldenDetail}); " +
+                      $"candidate {(candOk ? "OK" : "WRONG")} ({candDetail}) -> {(pass ? "PASS" : "FAIL")}");
+    if (control == "ordinal-slots" && goldenOk && (!candOk || maxd > 1))
+        controlDetected = true;
+}
+
+if (controlDetected)
+    Console.WriteLine("[regslots-vulkan] CONTROL-DETECTED: the ordinal-slot candidate diverged from mgfxc's render");
+Console.WriteLine($"[regslots-vulkan] {(allPass ? "PASS" : "FAIL")}");
+return allPass ? 0 : 1;
+}
+
+static Microsoft.Xna.Framework.Graphics.Texture2D Solid(Microsoft.Xna.Framework.Graphics.GraphicsDevice gd, Color color)
+{
+    var t = new Microsoft.Xna.Framework.Graphics.Texture2D(gd, 4, 4);
+    t.SetData(Enumerable.Repeat(color, 16).ToArray());
+    return t;
+}
+
+static bool Near(Color a, Color b) =>
+    Math.Abs(a.R - b.R) <= 1 && Math.Abs(a.G - b.G) <= 1 && Math.Abs(a.B - b.B) <= 1 && Math.Abs(a.A - b.A) <= 1;
+
+static (bool Ok, string Detail) AllPixels((string Name, Color[] Pixels, int Width, int Height) cap, Func<Color, bool> ok, string want)
+{
+    int bad = cap.Pixels.Count(p => !ok(p));
+    Color centre = cap.Pixels[(cap.Height / 2) * cap.Width + cap.Width / 2];
+    return (bad == 0, $"want {want}; {bad}/{cap.Pixels.Length} off; centre ({centre.R},{centre.G},{centre.B},{centre.A})");
+}
+
+// The ordinal-slots positive control: renumbers every Vulkan descriptor header's texture and
+// sampler slot masks (and its texture-type table) and every positional sampler record
+// ("ps_s<N>") to ORDINAL slots, 0, 1, 2, ... in slot order, which is exactly what ShadowDusk
+// wrote before the fix. The SPIR-V and its bindings are left alone, so the descriptors still
+// read slot binding - 32. Measured equal to the real pre-fix compile of each fixture except
+// for the 4-byte effect hash in the MGFX header (bytes 6..9), which covers the content.
+// Returns a summary of what was patched.
+static string ApplyOrdinalSlots(byte[] mgfx)
+{
+    var parsed = ShadowDusk.Integration.Tests.MgfxBlobReader.Parse(mgfx);
+    var remap = new Dictionary<int, int>();
+    int headers = 0;
+    int recordsFrom = mgfx.Length;
+    foreach (var shader in parsed.Shaders)
+    {
+        // The shader's ShaderCode field, located by its own bytes: the descriptor header is
+        // its first 84 bytes (VulkanShaderCodeReader's layout).
+        int i = mgfx.AsSpan().IndexOf(shader.Bytecode);
+        if (i < 0)
+            throw new InvalidOperationException("ordinal-slots control: shader code not found in its container.");
+        recordsFrom = Math.Min(recordsFrom, i + shader.Bytecode.Length);
+        uint tSlots = BitConverter.ToUInt32(mgfx, i + 8);
+        uint sSlots = BitConverter.ToUInt32(mgfx, i + 12);
+        if (tSlots == 0)
+            continue;
+
+        var slots = Enumerable.Range(0, 32).Where(b => (tSlots & (1u << b)) != 0).ToList();
+        uint newT = 0, newS = 0;
+        var types = new uint[16];
+        for (int k = 0; k < slots.Count; k++)
+        {
+            int slot = slots[k];
+            if (remap.TryGetValue(slot, out int prior) && prior != k)
+                throw new InvalidOperationException("ordinal-slots control: shaders disagree on the ordinal of a slot; extend the control.");
+            remap[slot] = k;
+            newT |= 1u << k;
+            if ((sSlots & (1u << slot)) != 0)
+                newS |= 1u << k;
+            if (slot < 16 && k < 16)
+                types[k] = BitConverter.ToUInt32(mgfx, i + 16 + 4 * slot);
+        }
+        BitConverter.GetBytes(newT).CopyTo(mgfx, i + 8);
+        BitConverter.GetBytes(newS).CopyTo(mgfx, i + 12);
+        for (int k = 0; k < 16; k++)
+            BitConverter.GetBytes(types[k]).CopyTo(mgfx, i + 16 + 4 * k);
+        headers++;
+    }
+
+    // Records (after the first shader code): type, texSlot, samplerSlot, hasState (false),
+    // name "ps_sN" (length 5), parameter.
+    int records = 0;
+    for (int j = Math.Max(4, recordsFrom); j + 6 <= mgfx.Length; j++)
+    {
+        if (mgfx[j] != 5 || mgfx[j + 1] != 'p' || mgfx[j + 2] != 's' || mgfx[j + 3] != '_' || mgfx[j + 4] != 's')
+            continue;
+        int digit = mgfx[j + 5] - '0';
+        if (digit is < 0 or > 9 || mgfx[j - 1] != 0 || mgfx[j - 2] != digit || mgfx[j - 3] != digit || !remap.TryGetValue(digit, out int k))
+            continue;
+        mgfx[j - 3] = (byte)k;
+        mgfx[j - 2] = (byte)k;
+        mgfx[j + 5] = (byte)('0' + k);
+        records++;
+    }
+    if (headers == 0 || records == 0)
+        throw new InvalidOperationException($"ordinal-slots control: patched {headers} header(s) and {records} record(s); the container shape changed, update the control.");
+    return $"{headers} header(s), {records} record(s), slots {string.Join(", ", remap.OrderBy(kv => kv.Key).Select(kv => $"{kv.Key}->{kv.Value}"))}";
 }
 
 // The SPIR-V version ("1.0", "1.3", ...) of every module embedded in an .mgfx container.

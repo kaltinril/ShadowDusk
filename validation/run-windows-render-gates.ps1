@@ -129,6 +129,9 @@
                                    `-- texarr` (issue #324, expect-diagnostic, no device): a
                                    texture array must be refused with SD0221, since mgfxc 3.8.5's
                                    own Vulkan output for it binds nothing.
+                                   Plus `-- regslots`: explicit register slots (a lone
+                                   register(t1), a t0+t2 gap, a Texture2DArray on t1) vs their
+                                   mgfxc 3.8.5 goldens through SpriteBatch, maxd 0 + a known colour.
     * XNB direct writer          - validation/XnbContentLoad: a ShadowDusk-written .xnb through a
                                    real MonoGame WindowsDX Content.Load<Effect> vs stock mgcb's
                                    (pixel-identical), plus the envelope assertions (Phase 60).
@@ -525,7 +528,7 @@ if (-not $SkipVulkan) {
         Action = { Invoke-Checked 'dotnet' @('run', '--project', 'validation/InitializerDefaultsVulkan', '-c', 'Release') }
     })
     $gates.Add(@{
-        Name   = 'Vulkan VS-driven + Apos.Shapes #145 reproducer (ShadowDusk vs mgfxc 3.8.5 goldens, real MonoGame DesktopVK)'
+        Name   = 'Vulkan VS-driven + Apos.Shapes #145 reproducer + explicit register slots (ShadowDusk vs mgfxc 3.8.5 goldens, real MonoGame DesktopVK)'
         Action = {
             # Issue #145: the PS-only corpus above could not see a vertex shader OR a matrix, which
             # is why row-major matrix packing shipped and every VS-driven Vulkan effect rendered
@@ -541,6 +544,11 @@ if (-not $SkipVulkan) {
             # no parameter, no sampler record and no descriptor binding (the committed golden is
             # decoded to pin that). `-- texarr-reference` draws mgfxc's effect itself, as evidence.
             Invoke-Checked 'dotnet' @('run', '--project', 'validation/VsDrivenVulkan', '-c', 'Release', '--', 'texarr')
+            # Explicit register slots: a texture's Vulkan slot is its SPIR-V binding minus 32, as mgfxc
+            # 3.8.5 writes it and DesktopVK reads it. A lone register(t1), a t0+t2 gap and a Texture2DArray
+            # on t1 vs their mgfxc goldens, each through SpriteBatch with a known-colour check (before
+            # the fix ShadowDusk wrote the ordinal slot and the lone t1 and the array drew (0,0,0,0)).
+            Invoke-Checked 'dotnet' @('run', '--project', 'validation/VsDrivenVulkan', '-c', 'Release', '--', 'regslots')
         }
     })
     $gates.Add(@{
