@@ -27,7 +27,7 @@
     "CORPUS RESULT: PASS"; every mismatching fixture and stage is printed.
 
       1b. corpus-control  the same natives, but the APK carries a manifest with ONE GLSL hash
-                          changed                                  -> CORPUS RESULT: FAIL 49/50,
+                          changed                                  -> CORPUS RESULT: FAIL N-1/N,
                                                                       1 GLSL mismatch
                    (the positive control: a corpus check that could not fail would pass anyway)
 
@@ -102,6 +102,9 @@ if (-not $glslMatch.Success) { throw 'No GLSL hash in intermediates-manifest.jso
 $original = $glslMatch.Groups[1].Value
 $changed = $original.Substring(0, 63) + $(if ($original[63] -eq '0') { '1' } else { '0' })
 [IO.File]::WriteAllText($controlManifest, $manifestText.Remove($glslMatch.Groups[1].Index, 64).Insert($glslMatch.Groups[1].Index, $changed))
+# The corpus is every entry of the committed manifest, so the control's expected count follows it.
+$corpusCount = (ConvertFrom-Json $manifestText -AsHashtable).Count
+if ($corpusCount -lt 2) { throw "intermediates-manifest.json has $corpusCount entries." }
 
 function Remove-Apks {
     # The APK packaging step is incremental on its inputs and does not notice a native library
@@ -169,7 +172,7 @@ try {
         # Positive control: the same natives against a manifest with ONE GLSL hash changed must
         # be reported, or a corpus check that cannot fail would pass every run.
         (Invoke-Scenario 'corpus-control' '' @('ON-DEVICE COMPILE OK') -Corpus -Manifest $controlManifest `
-            -CorpusExpect 'CORPUS RESULT: FAIL 49/50 .*glsl mismatches 1, mgfx mismatches 0'),
+            -CorpusExpect "CORPUS RESULT: FAIL $($corpusCount - 1)/$corpusCount .*glsl mismatches 1, mgfx mismatches 0"),
         (Invoke-Scenario 'foreign' $foreign @('COMPILE REJECTED: SD0219', "not ShadowDusk's pinned build for 'android-x64'")),
         (Invoke-Scenario 'missing' 'none' @('COMPILE REJECTED: SD0219', 'is not in this app')),
         (Invoke-Scenario 'spvc-foreign' '' @('COMPILE REJECTED: SD0103', "not ShadowDusk's pinned build for 'android-x64'") $foreignSpvc),
