@@ -592,19 +592,27 @@ D3D9 register index and never emits named uniforms at all.
 
 The fix is to **fall back to binding by location** the moment the name match misses — never for
 a shader that already resolves by name, so existing output is byte-identical. The data is
-already in the reflection: a `ConstantBufferReflection` lists its members in offset order with
-both the original name and the byte `StartOffset`, and the GL uniform layout carries each
-member's base register. `CompilationPipeline.IndexOfParamByRegister` correlates the GL uniform's
-`BaseRegister × 16` to the cbuffer member's `StartOffset` and takes that member's original
-name — recovering the parameter without ever trusting the SPIRV-Cross-emitted spelling. The
+already in the reflection: a `ConstantBufferReflection` lists its members with their original
+names, in declaration order (sorted by `StartOffset`, a stable sort), and the GL uniform layout
+lists the GLSL members in the same declaration order. `CompilationPipeline.IndexOfParamByDeclarationOrder`
+pairs the two lists POSITION by position and takes the original name at the renamed uniform's
+position — recovering the parameter without ever trusting the SPIRV-Cross-emitted spelling. The
 parameter stays exposed under its original name in the `.mgfx`, so
 `effect.Parameters["noise"].SetValue(...)` binds.
 
-The bridge is restricted to the single-`$Globals` case (the reserved-word case is always a free
-global, where a variable's effective offset is exactly its `StartOffset`). A multi-cbuffer
-shape — where the rewriter's GLSL-declaration merge order is not guaranteed to match the
-reflection's cbuffer order — falls through and keeps the loud `SD0012` rather than risk
-mis-mapping: correctness over coverage.
+It never matches by byte offset (issue #425): the earlier bridge compared the GL uniform's
+`BaseRegister × 16` with the member's `StartOffset`, which holds only when no member is packed
+mid-register. After `float g;` a renamed `float3 noise` sits at byte 4 in the DXIL reflection
+(HLSL packing) and byte 16 in the SPIR-V one (std140), so the desktop mapped it onto the next
+variable and the browser did not; position is the same on every reflection source.
+
+The pairing has to be proven, not assumed: one reflected cbuffer (the reserved-word case is
+always a free global in `$Globals`; with several cbuffers the rewriter's merge order is not
+reconstructed), the same member count on both sides, and every position agreeing by name, either
+exactly or, at a renamed position, with a GLSL spelling that is not itself a parameter and an
+original name that appears nowhere else in the layout. SPIRV-Cross's rename rules (a reserved-word
+prefix, collapsed underscore runs, collision suffixes) are deliberately not modelled. Anything else
+falls through and keeps the loud `SD0012` rather than risk mis-mapping: correctness over coverage.
 
 **The join also runs in the reverse direction (issue #187, synthesized backing).** The
 layout→parameter join above can only bind uniforms the GLSL *declares* — but DXC's `-spirv`

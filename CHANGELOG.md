@@ -217,8 +217,6 @@ that loads and renders identically to `mgfxc`'s in the real MonoGame/KNI runtime
   equality now includes `DefaultValue` (compared element by element), so two entries for the same
   uniform with different declared defaults are no longer equal.
 
-### Changed
-
 ### Fixed
 
 - **KNIFX records the shader model KNI's own pipeline records for `*_4_0_level_9_1` and
@@ -340,9 +338,9 @@ that loads and renders identically to `mgfxc`'s in the real MonoGame/KNI runtime
   Vulkan build writes zeros. Only those default blob bytes change (among the test fixtures only `tests/fixtures/golden/FNA/defaults/DefaultsMatrices.fx`'s `M4r` on
   DirectX 11, DirectX 12, Vulkan and KNIFX-DX; no byte-identity manifest covers that file). Proven in real MonoGame WindowsDX, WindowsDX12 and DesktopVK by the
   new `H_RowMajorMatrix`, `I_PackMatrixPragma`, `J_RowMajor2x2`, `K_RowMajorTallSymmetric`,
-  `L_RowMajorTallAsymmetric`, `M_RowMajorTallFourthRow` and `N_RowMajorTallArray` cases of the `InitializerDefaults*` drivers; KNIFX on DX
-  is byte-tested only, its real-engine proof waits for the separate KNIFX `_level_9_x` shader-model fix (the KNIFX
-  arm of `InitializerDefaultsKniDx` is red on `main` for that reason).
+  `L_RowMajorTallAsymmetric`, `M_RowMajorTallFourthRow` and `N_RowMajorTallArray` cases of the `InitializerDefaults*` drivers, KNIFX on DX
+  included: the KNIFX arm of `InitializerDefaultsKniDx` runs them since the KNIFX `_level_9_x` shader-model fix
+  above, which shipped in this same release (green in CI on the release commit).
 
 ## [0.22.0] - 2026-10-28
 
