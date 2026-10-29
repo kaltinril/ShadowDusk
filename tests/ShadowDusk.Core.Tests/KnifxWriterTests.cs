@@ -89,6 +89,44 @@ public sealed class KnifxWriterTests
     // Header (multi-backend directory)
     // -------------------------------------------------------------------------------------
 
+    // A sampler record's parameter is an index into the effect's parameters or -1 (no parameter,
+    // what KNI's pipeline writes for a texture-less legacy sampler); anything else is SD0018.
+    private static ShaderIR WithSamplerParameter(int parameter)
+    {
+        ShaderIR ir = MinimalIR();
+        CompiledShaderBlob shader = ir.Shaders[0] with
+        {
+            Samplers = new[] { new MgfxSamplerInfo(4, 0, 0, "vs_s0", parameter) },
+        };
+        return new ShaderIR
+        {
+            ConstantBuffers = ir.ConstantBuffers,
+            Shaders = new[] { shader },
+            Parameters = ir.Parameters,
+            Techniques = ir.Techniques,
+        };
+    }
+
+    [Theory]
+    [InlineData(-1)]
+    [InlineData(0)]
+    public void SamplerParameter_MinusOneOrAParameter_IsWritten(int parameter)
+    {
+        var result = new KnifxWriter().Write(WithSamplerParameter(parameter), new KnifxWriterOptions(KnifxBackend.DirectX11));
+        result.IsSuccess.ShouldBeTrue(result.IsFailure ? result.Error.Message : "");
+    }
+
+    [Theory]
+    [InlineData(1)]    // one past the single parameter
+    [InlineData(-2)]
+    public void SamplerParameter_OutOfRange_IsSD0018(int parameter)
+    {
+        var result = new KnifxWriter().Write(WithSamplerParameter(parameter), new KnifxWriterOptions(KnifxBackend.OpenGL));
+        result.IsFailure.ShouldBeTrue();
+        result.Error.Code.ShouldBe("SD0018");
+        result.Error.Message.ShouldContain($"parameter index {parameter}", Case.Sensitive);
+    }
+
     [Fact]
     public void Header_SignatureIsKNIF()
     {

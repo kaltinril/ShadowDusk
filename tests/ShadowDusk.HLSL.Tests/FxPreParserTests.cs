@@ -459,6 +459,95 @@ public sealed class FxPreParserTests
         result.Error.Code.ShouldBe(FxParseErrorCode.DuplicatePassName);
     }
 
+    // An anonymous pass carries an EMPTY name, as mgfxc (MGFX), KNI's pipeline (KNIFX) and
+    // fxc fx_2_0 all write it; ShadowDusk used to synthesize "P<index>". Several anonymous
+    // passes in one technique are legal (mgfxc 3.8.4.1 compiles them) and are not duplicates.
+    [Fact]
+    public void Parse_AnonymousPasses_HaveEmptyNames_AndAreNotDuplicates()
+    {
+        const string source = """
+            technique
+            {
+                pass { PixelShader = compile ps_3_0 PS(); }
+                pass { PixelShader = compile ps_3_0 PS2(); }
+            }
+            technique Named
+            {
+                pass First { PixelShader = compile ps_3_0 PS(); }
+                pass { PixelShader = compile ps_3_0 PS2(); }
+            }
+            """;
+
+        var result = FxPreParser.Parse(source, sourceFile: "test.fx");
+
+        result.IsSuccess.ShouldBeTrue();
+        result.Value.Techniques.Count.ShouldBe(2);
+        result.Value.Techniques[0].Name.ShouldBe("");
+        result.Value.Techniques[0].Passes.Select(p => p.Name).ShouldBe(["", ""]);
+        result.Value.Techniques[0].Passes.Select(p => p.PixelEntryPoint).ShouldBe(["PS", "PS2"]);
+        result.Value.Techniques[1].Name.ShouldBe("Named");
+        result.Value.Techniques[1].Passes.Select(p => p.Name).ShouldBe(["First", ""]);
+    }
+
+    // New with the "" name: an anonymous pass beside a pass NAMED P0 (or P1, ...). The synthesized
+    // P0 collided with it, so `pass { } pass P0 { }` was FX0006 before; mgfxc compiles it.
+    [Fact]
+    public void Parse_AnonymousPassBesideAPassNamedP0_IsNotADuplicate()
+    {
+        const string source = """
+            technique T
+            {
+                pass { PixelShader = compile ps_3_0 PS(); }
+                pass P0 { PixelShader = compile ps_3_0 PS2(); }
+                pass P1 { PixelShader = compile ps_3_0 PS(); }
+            }
+            """;
+
+        var result = FxPreParser.Parse(source, sourceFile: "test.fx");
+
+        result.IsSuccess.ShouldBeTrue(result.IsFailure ? result.Error.Message : "");
+        result.Value.Techniques[0].Passes.Select(p => p.Name).ShouldBe(["", "P0", "P1"]);
+    }
+
+    // Two anonymous techniques both carry "" and are not duplicates (mgfxc 3.8.4.1 OpenGL and
+    // DirectX_11, KNI's pipeline 4.3.9001 and fxc fx_2_0 compile them, measured 2026-10-28), on
+    // the raw and on the preprocessed parse; a NAMED duplicate is still FX0005.
+    [Fact]
+    public void ParseTechniquesPreprocessed_TwoAnonymousTechniques_AreNotDuplicates()
+    {
+        const string source = """
+            technique { pass { PixelShader = compile ps_3_0 PS(); } }
+            technique { pass { PixelShader = compile ps_3_0 PS2(); } }
+            technique T { pass { PixelShader = compile ps_3_0 PS(); } }
+            """;
+
+        var raw = FxPreParser.Parse(source, sourceFile: "test.fx");
+        raw.IsSuccess.ShouldBeTrue(raw.IsFailure ? raw.Error.Message : "");
+        raw.Value.Techniques.Select(t => t.Name).ShouldBe(["", "", "T"]);
+
+        var preprocessed = FxPreParser.ParseTechniquesPreprocessed(source, sourceFile: "test.fx");
+        preprocessed.IsSuccess.ShouldBeTrue(preprocessed.IsFailure ? preprocessed.Error.Message : "");
+        preprocessed.Value.Techniques.Select(t => t.Name).ShouldBe(["", "", "T"]);
+    }
+
+    [Fact]
+    public void Parse_NamedDuplicateBesideAnonymousPass_StillReturnsFX0006()
+    {
+        const string source = """
+            technique T
+            {
+                pass { PixelShader = compile ps_3_0 PS(); }
+                pass A { PixelShader = compile ps_3_0 PS(); }
+                pass A { PixelShader = compile ps_3_0 PS(); }
+            }
+            """;
+
+        var result = FxPreParser.Parse(source, sourceFile: "test.fx");
+
+        result.IsFailure.ShouldBeTrue();
+        result.Error.Code.ShouldBe(FxParseErrorCode.DuplicatePassName);
+    }
+
     // -------------------------------------------------------------------------
     // T15 — unclosed annotation block → FX0007
     // -------------------------------------------------------------------------

@@ -231,14 +231,14 @@ public sealed class Fx2EffectWriter
         for (int t = 0; t < effect.Techniques.Count; t++)
         {
             Fx2Technique technique = effect.Techniques[t];
-            techNameOfs[t] = AddString(pool, technique.Name);
+            techNameOfs[t] = AddName(pool, technique.Name);
             passNameOfs[t] = new uint[technique.Passes.Count];
             passStates[t] = new List<(uint, uint, uint)>[technique.Passes.Count];
 
             for (int p = 0; p < technique.Passes.Count; p++)
             {
                 Fx2Pass pass = technique.Passes[p];
-                passNameOfs[t][p] = AddString(pool, pass.Name);
+                passNameOfs[t][p] = AddName(pool, pass.Name);
                 var states = new List<(uint, uint, uint)>();
 
                 foreach (Fx2RenderState rs in pass.RenderStates)
@@ -502,17 +502,17 @@ public sealed class Fx2EffectWriter
 
             // An EMPTY name is legal: `technique { pass { … } }` (anonymous) compiles under the
             // reference compiler — d3dcompiler_47 at fx_2_0 returns S_OK for it, with only the
-            // usual X4717 deprecation warning (probed 2026-07-22, issue #145). AddString maps
-            // null/empty to pool offset 0, which readers already interpret as "no string", so the
-            // container handles it. Only a non-ASCII name is rejected (the pool is ASCII).
+            // usual X4717 deprecation warning (probed 2026-07-22, issue #145). The same holds for
+            // an anonymous pass (`pass { … }`). AddName writes either as the one-byte empty string
+            // fxc writes. Only a non-ASCII name is rejected (the pool is ASCII).
             if (!System.Text.Ascii.IsValid(technique.Name ?? string.Empty))
                 return Error($"technique #{t} has a non-ASCII name");
 
             for (int p = 0; p < technique.Passes.Count; p++)
             {
                 Fx2Pass pass = technique.Passes[p];
-                if (string.IsNullOrEmpty(pass.Name) || !System.Text.Ascii.IsValid(pass.Name))
-                    return Error($"technique '{technique.Name}' pass #{p} has an empty or non-ASCII name");
+                if (!System.Text.Ascii.IsValid(pass.Name ?? string.Empty))
+                    return Error($"technique '{technique.Name}' pass #{p} has a non-ASCII name");
 
                 foreach ((ShaderStage stage, int idx) in EnumeratePassShaders(pass))
                 {
@@ -601,6 +601,23 @@ public sealed class Fx2EffectWriter
         if (string.IsNullOrEmpty(value))
             return 0;
 
+        return AddStringRecord(pool, value);
+    }
+
+    /// <summary>
+    /// A technique or pass name. Unlike <see cref="AddString"/>, an EMPTY name is written as a
+    /// real one-byte string (length 1, a lone NUL), not as offset 0: that is what fxc
+    /// <c>/T fx_2_0</c> writes for an anonymous <c>technique { pass { … } }</c> (measured with
+    /// fxc 10.0.19041 against d3dcompiler_47), and it is what makes the runtime name "" rather
+    /// than null. MojoShader's <c>readstring</c> returns NULL for a zero length, which FNA's
+    /// <c>PtrToStringAnsi</c> turns into a null <c>Name</c>; FNA's single-pass
+    /// <c>EffectPassCollection[string]</c> then calls <c>Name.Equals</c> on it.
+    /// </summary>
+    private static uint AddName(BinaryWriter pool, string? value) =>
+        AddStringRecord(pool, value ?? string.Empty);
+
+    private static uint AddStringRecord(BinaryWriter pool, string value)
+    {
         uint offset = (uint)pool.BaseStream.Position;
         byte[] bytes = Encoding.ASCII.GetBytes(value);
         pool.Write((uint)(bytes.Length + 1));

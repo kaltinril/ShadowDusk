@@ -67,6 +67,22 @@ public sealed class KnifxWriter
         if (MgfxWriter.DefaultBlobLengthError(ir.Parameters) is { } defaultError)
             return Result<byte[], ShaderError>.Fail(defaultError);
 
+        // A sampler record binds an effect parameter by index, or -1 for none (KNI's own pipeline
+        // writes -1 for a texture-less legacy sampler). Anything else would ship a record KNI
+        // resolves to the wrong parameter or out of range; refuse it (SD0018), as MgfxWriter's
+        // SD0022 does for MGFX.
+        for (int i = 0; i < ir.Shaders.Count; i++)
+        {
+            foreach (var s in ir.Shaders[i].Samplers)
+            {
+                if (s.Parameter < -1 || s.Parameter >= ir.Parameters.Count)
+                    return Result<byte[], ShaderError>.Fail(new ShaderError(
+                        File: "", Line: 0, Column: 0, Code: "SD0018",
+                        Message: $"Shader #{i} sampler '{s.Name}' references parameter index {s.Parameter}, " +
+                                 $"which is neither -1 (no parameter) nor one of the effect's {ir.Parameters.Count} parameters."));
+            }
+        }
+
         // KNIFX writes a leading bool the runtime uses to decode integer-typed parameter
         // defaults as floats; KNI sets it true for the OpenGL (MojoShader) profile.
         bool integersAsFloats = options.Backend is

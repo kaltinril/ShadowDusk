@@ -271,8 +271,8 @@ public static class RaylibConverter
         {
             SourceSpan extra = techniques[0].Passes[1].Span;
             return Fail(file, extra.StartLine, extra.StartColumn, "SD0630",
-                $"technique '{techniques[0].Name}' declares {techniques[0].Passes.Count} passes " +
-                $"('{techniques[0].Passes[1].Name}' is the second). raylib draws with one shader " +
+                $"{TechniqueLabel(techniques[0], 0)} declares {techniques[0].Passes.Count} passes " +
+                $"({PassLabel(techniques[0].Passes[1], 1)} is the second). raylib draws with one shader " +
                 "at a time and has no pass concept, so a multi-pass effect cannot be one raylib " +
                 "shader. Split each pass into its own .fx and chain them through render textures.");
         }
@@ -283,7 +283,7 @@ public static class RaylibConverter
         {
             SourceSpan at = pass.VertexProfileSpan ?? pass.Span;
             return Fail(file, at.StartLine, at.StartColumn, "SD0631",
-                $"pass '{pass.Name}' compiles a vertex shader ('{pass.VertexEntryPoint}'). This " +
+                $"{PassLabel(pass, 0)} compiles a vertex shader ('{pass.VertexEntryPoint}'). This " +
                 "converter emits fragment shaders that run behind raylib's built-in vertex shader " +
                 "(LoadShader(null, fs)); a custom vertex stage needs raylib's vertex conventions " +
                 "(vertexPosition, mvp, ...), which are not mapped. Refusing rather than silently " +
@@ -292,7 +292,7 @@ public static class RaylibConverter
         if (pass.PixelEntryPoint is null)
         {
             return Fail(file, pass.Span.StartLine, pass.Span.StartColumn, "SD0631",
-                $"pass '{pass.Name}' has no pixel shader, so there is no fragment shader to emit.");
+                $"{PassLabel(pass, 0)} has no pixel shader, so there is no fragment shader to emit.");
         }
 
         // MonoGame applies these from the effect on EffectPass.Apply; a raylib shader string has
@@ -302,7 +302,7 @@ public static class RaylibConverter
             RenderStateEntry first = pass.RenderStates[0];
             string names = string.Join(", ", pass.RenderStates.Select(s => $"{s.Key} = {s.Value}"));
             return Fail(file, first.Span.StartLine, first.Span.StartColumn, "SD0632",
-                $"pass '{pass.Name}' sets render state ({names}). A raylib shader is GLSL text only; " +
+                $"{PassLabel(pass, 0)} sets render state ({names}). A raylib shader is GLSL text only; " +
                 "blend, depth, stencil, and rasterizer state are set by the draw code " +
                 "(BeginBlendMode, rlDisableDepthTest, ...), so this state would be silently lost. " +
                 "Remove it from the pass and set the equivalent state around the raylib draw.");
@@ -447,6 +447,13 @@ public static class RaylibConverter
             })
             : converted;
     }
+
+    // A diagnostic names an anonymous pass or technique (`pass { ... }`, name "") by its index.
+    private static string PassLabel(PassInfo pass, int index) =>
+        pass.Name.Length > 0 ? $"pass '{pass.Name}'" : $"pass #{index} (anonymous)";
+
+    private static string TechniqueLabel(TechniqueInfo technique, int index) =>
+        technique.Name.Length > 0 ? $"technique '{technique.Name}'" : $"technique #{index} (anonymous)";
 
     private static Result<RaylibShader, ShaderError[]> Fail(
         string file, int line, int column, string code, string message) =>

@@ -599,8 +599,10 @@ public sealed class FxPreParser
                 // (`#if SM4 technique T {…} #else technique T {…} #endif`), so a duplicate is
                 // only an error once the text is preprocessed. The compile reads its techniques
                 // from the preprocessed translation unit (ParseTechniquesPreprocessed, issue
-                // #407), which reports a real duplicate as FX0005.
-                if (!techniqueNames.Add(tech.Name) && _preprocessed)
+                // #407), which reports a real duplicate as FX0005. Anonymous techniques all carry ""
+                // and are never duplicates: mgfxc 3.8.4.1 (OpenGL, DirectX_11), KNI's pipeline
+                // 4.3.9001 and fxc fx_2_0 compile two of them (measured 2026-10-28).
+                if (tech.Name.Length > 0 && !techniqueNames.Add(tech.Name) && _preprocessed)
                     return Fail<FxParseResult>(FxParseErrorCode.DuplicateTechniqueName,
                         $"Duplicate technique name '{tech.Name}'", tok);
 
@@ -1234,12 +1236,15 @@ public sealed class FxPreParser
                 return Fail<TechniqueInfo>(FxParseErrorCode.UnexpectedToken,
                     $"Expected 'pass' but found '{Peek().Text}'", Peek());
 
-            var passResult = ParsePass(passes.Count);
+            var passResult = ParsePass();
             if (passResult.IsFailure)
                 return Result<TechniqueInfo, FxParseError>.Fail(passResult.Error);
 
+            // Several anonymous passes in one technique are legal (mgfxc 3.8.4.1 and fxc
+            // fx_2_0 both compile `pass { ... } pass { ... }`); they all carry "", so only a
+            // named pass can collide.
             var pass = passResult.Value;
-            if (!passNames.Add(pass.Name))
+            if (pass.Name.Length > 0 && !passNames.Add(pass.Name))
                 return Fail<TechniqueInfo>(FxParseErrorCode.DuplicatePassName,
                     $"Duplicate pass name '{pass.Name}' in technique '{name}'", startTok);
 
@@ -1264,14 +1269,18 @@ public sealed class FxPreParser
     // Pass parsing
     // -------------------------------------------------------------------------
 
-    private Result<PassInfo, FxParseError> ParsePass(int passIndex = 0)
+    private Result<PassInfo, FxParseError> ParsePass()
     {
         var startTok = Peek();
         Consume(); // "pass"
 
         SkipNonCodeTokens();
 
-        // Pass name is optional — anonymous passes (pass { ... }) are legal in FX9.
+        // Pass name is optional — anonymous passes (pass { ... }) are legal in FX9. Like an
+        // anonymous technique, an anonymous pass carries an EMPTY name, which is what the
+        // reference compilers write: mgfxc 3.8.4.1 stores "" in MGFX (OpenGL and DirectX_11),
+        // KNI's own pipeline stores "" in KNIFX, and fxc fx_2_0 writes an empty string. The
+        // runtimes then report EffectPass.Name == "". ShadowDusk used to synthesize "P<index>".
         string name;
         var nameTok = Peek();
         if (nameTok.Kind == TokenKind.Identifier)
@@ -1281,7 +1290,7 @@ public sealed class FxPreParser
         }
         else if (nameTok.Kind == TokenKind.LBrace)
         {
-            name = $"P{passIndex}";
+            name = string.Empty;
         }
         else
         {
@@ -2489,7 +2498,8 @@ public sealed class FxPreParser
                 var result = ParseTechnique();
                 if (result.IsFailure)
                     return Result<List<TechniqueInfo>, FxParseError>.Fail(result.Error);
-                if (!names.Add(result.Value.Name))
+                // An anonymous technique ("") is never a duplicate, as for passes (see above).
+                if (result.Value.Name.Length > 0 && !names.Add(result.Value.Name))
                 {
                     return Fail<List<TechniqueInfo>>(FxParseErrorCode.DuplicateTechniqueName,
                         $"Duplicate technique name '{result.Value.Name}'", tok);
