@@ -18,6 +18,22 @@ that loads and renders identically to `mgfxc`'s in the real MonoGame/KNI runtime
 
 ### Fixed
 
+- **OpenGL vertex inputs with `BINORMAL`, `TANGENT`, `BLENDINDICES`, `BLENDWEIGHT`, `PSIZE`,
+  `FOG` or `DEPTH` semantics compile, and a matrix interpolant (`float3x3 TangentToWorld :
+  TEXCOORD2`) reaches the pixel shader.** Both were refused with `SD0210` while `mgfxc` compiles
+  them, which blocked normal-mapped shaders on OpenGL (KNI EffectTest's `DeferredBasicEffect` hit
+  it at `BINORMAL0`, then at its `float3x3` interpolant). The GL attribute table is now the shared
+  `VertexSemanticMapper` the Vulkan and DirectX 12 tables already used, so each record carries
+  the usage and index `mgfxc` 3.8.4.1 writes (measured per semantic, including non-zero indices
+  such as `TEXCOORD3` and `BLENDWEIGHT1`); a semantic `mgfxc` itself refuses on OpenGL (`MYSEM0`)
+  is still `SD0210`, and so is `SAMPLE`. A matrix interpolant is split into one `vTexCoord{n}`
+  varying per register, packed one HLSL column per register as fxc packs it. Rendered in real
+  MonoGame DesktopGL and real KNI SDL2.GL (MGFX v10 and KNIFX) through a custom
+  `VertexDeclaration`, every element matches the `mgfxc` build at maxd 0
+  (`validation/VertexSemanticsGl`, `validation/VertexSemanticsKniGl`). Every shader that compiled
+  before compiles to the same bytes. Still open on OpenGL for skinned shaders: an `int4`/`uint4`
+  `BLENDINDICES` input and `float4x3` bone uniforms are refused (`SD0210`), and the stock
+  `SkinnedEffect.fx` stops earlier at `SD0010` (macro-defined techniques).
 - **Techniques are read from the preprocessed source, like `mgfxc` (issue #407).** A technique
   inside a false `#if` (or behind an unset `/Defines` value) was still compiled, a technique in an
   `#include`d file was not found (`SD0010`, or dropped beside the main file's own), and a macro

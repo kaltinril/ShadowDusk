@@ -162,6 +162,8 @@ ShadowDusk/
 │                                  #   DxModernFeatures, ShaderToyRouteDx (that route's DirectX arm), …),
 │                                  #   InitializerDefaults{Gl,Dx,KniGl,KniDx,Dx12,Vulkan} (+ SharedInitializerDefaults): a global
 │                                  #   initializer is the default with no Set call, per real runtime (owner directive 2026-10-28),
+│                                  #   VertexSemantics{Gl,KniGl} (+ SharedVertexSemantics): every GL vertex-input semantic
+│                                  #   and a float3x3 interpolant through a custom VertexDeclaration, vs the mgfxc build,
 │                                  #   DX12 (BaselineDx12, CandidateDx12, VsDrivenDx12
 │                                  #     + compare_dx12.py), FNA (FnaValidation), KNI (KniDesktopGL, KniWinFormsDX, KniVsDriven),
 │                                  #   Vulkan (BaselineVulkan, CandidateVulkan, VsDrivenVulkan
