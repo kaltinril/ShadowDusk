@@ -11,6 +11,33 @@ Before any HLSL compiler sees the source, ShadowDusk runs two managed front-end 
 
 It also performs targeted **texture-keyword rewrites** (e.g. legacy `texture T;` → `Texture2D T;`) so effect-syntax shaders compile faithfully on the modern toolchain.
 
+### Legacy sampling intrinsics
+
+On every target except FNA (whose `fx_2_0` compiler takes D3D9 syntax natively), the pre-parser rewrites a legacy sampler (`sampler2D S;`, `sampler S = sampler_state { Texture = <T>; … };`) to a `Texture2D` + `SamplerState` pair and its sampling calls to the texture's methods:
+
+| Source | Becomes | Note |
+|---|---|---|
+| `tex2D(s, uv)` | `T.Sample(s, uv)` | name swap; the arguments line up |
+| `tex2Dgrad(s, uv, dx, dy)` | `T.SampleGrad(s, uv, dx, dy)` | name swap |
+| `tex2Dlod(s, t)` | `tex2Dlod_SD0(T, s, t)`, a helper returning `T.SampleLevel(s, t.xy, t.w)` | LOD in `t.w`; vertex or pixel stage |
+| `tex2Dbias(s, t)` | `tex2Dbias_SD0(T, s, t)`, returning `T.SampleBias(s, t.xy, t.w)` | bias in `t.w`; pixel stage |
+| `tex2Dproj(s, t)` | `tex2Dproj_SD0(T, s, t)`, returning `T.Sample(s, t.xy / t.w)` | projective divide; pixel stage |
+
+The last three pack a second operand into the coordinate's `w`, so the call cannot be a plain name swap. Each becomes a call of a small helper the pre-parser defines at global scope, on the same line, right before the declaration (usually the function) that calls it:
+
+```hlsl
+float4 tex2Dlod_SD0(Texture2D sdTexture, SamplerState sdSampler, float4 sdCoord) { return sdTexture.SampleLevel(sdSampler, sdCoord.xy, sdCoord.w); } float4 MainVS(...)
+```
+
+- **A helper, not an inline `T.SampleLevel(s, (t).xy, (t).w)`**, so the coordinate is evaluated once, as the intrinsic evaluates it: an expression with a side effect (an assignment, `++`, a call with an `inout` parameter) would otherwise run twice.
+- **The arguments are copied verbatim.** Only the span from the intrinsic's name through its `(` is replaced, so nested calls, swizzles, macros and comments in the arguments are untouched, a nested `tex2D` inside them is still rewritten in place, and no line moves (an error inside the coordinate keeps its line number).
+- **The helper takes the texture and the sampler as parameters** and references no global, so it is valid wherever it lands, even when the texture or the sampler is declared inside an `#if`. Its texture parameter takes the texture's declared type (`Texture2D<float>` stays `Texture2D<float>`). Each declaration gets its own helper, so two `#if` branches never define one name twice.
+- **Refused loudly with `FX0012`**: a call with other than two arguments, and a conditional directive that closes or switches the branch the calling declaration starts in before the call (one body under two `#if`-selected headers), since no single position serves every configuration.
+- A sampler the raw parse cannot bind (a function parameter, or one an `#include` or macro declares) is left alone, exactly like `tex2D`'s; the recovery below re-parses the preprocessed source.
+- On **Vulkan**, the helper call is also what pairs the texture with its sampler on one combined descriptor (`VulkanTextureSamplerBindingRewriter`), since the pair never appears in a `T.Sample(s, …)` call.
+
+`mgfxc` 3.8.4.1 `/Profile:DirectX_11` compiles every legacy intrinsic, including the 1D, 3D and cube families (`tex1D…`, `tex3D…`, `texCUBE…`). ShadowDusk does not rewrite those yet (they need a `Texture1D` / `Texture3D` / `TextureCube` the sampler rewrite does not synthesize) and refuses them with `FX0012`, naming the intrinsic and the modern form to use.
+
 The stripped HLSL feeds the compiler; the extracted metadata feeds the [reflection](reflection.md) and [MGFX writer](mgfx-format.md) stages so the emitted `.mgfx` reconstructs the original technique/pass structure.
 
 ## Preprocessor

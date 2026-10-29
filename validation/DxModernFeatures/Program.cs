@@ -19,6 +19,11 @@
 // s1 and samples at uv*3: the s1 wrap repeats the stripes, the s0 clamp smears the edge
 // texel. ShadowDusk's vkd3d build is pixel-diffed against the COMMITTED mgfxc golden, and the
 // golden is rendered once more with PointClamp on s1 to prove the scene can tell the two apart.
+//
+// ARM "legacy-lod" (tests/fixtures/golden/legacy-lod-intrinsics/Tex2DLodRender.fx): tex2Dlod in
+// the vertex and pixel stage, tex2Dbias and tex2Dproj in legacy sampler syntax, vs the committed
+// mgfxc 3.8.4.1 DirectX_11 golden, plus mgfxc's build of the modern twin, which must render the
+// same (validation/SharedLegacyLod; the DX12 and Vulkan drivers draw the same scene).
 
 using System;
 using System.Linq;
@@ -111,7 +116,23 @@ Console.WriteLine($"\n[dx-modern] legacy-register: candidate vs mgfxc golden max
 Console.WriteLine($"[dx-modern] legacy-register: scene tells s0 from s1 (golden with PointClamp on s1 differs): {legacyGame.NonTrivial}");
 Console.WriteLine($"[dx-modern] legacy-register verdict: {(legacyOk ? "PASS" : "FAIL")}");
 
-return ok && legacyOk ? 0 : 1;
+// ---- Arm "legacy-lod" ----------------------------------------------------------------------
+// tex2Dlod in the VERTEX and pixel stage, tex2Dbias and tex2Dproj, in legacy D3D9 sampler
+// syntax (tests/fixtures/golden/legacy-lod-intrinsics/Tex2DLodRender.fx). ShadowDusk refused
+// all three with FX0012 before 2026-10-28; mgfxc 3.8.4.1 compiles them at vs_4_0/ps_4_0.
+// Reference: the COMMITTED mgfxc DirectX_11 golden. Also drawn: mgfxc's build of the modern
+// twin (Tex2DLodRenderModern.fx, the Texture2D methods the intrinsics are defined as), which
+// must equal the golden; that is the measurement the DirectX 12 and Vulkan arms rely on when
+// they use the twin as their reference. Positive controls: four ShadowDusk builds that each
+// drop one intrinsic's w operand (LOD_VS=0, LOD_PS=0, BIAS=0, PROJ_Q=1) must move exactly
+// their own column.
+bool lodOk = await ShadowDusk.Validation.LegacyLod.LegacyLodArm.RunAsync(
+    PlatformTarget.DirectX, repoRoot, "dx-modern legacy-lod", "legacy-lod-dx11", tolerance: 0, "VertexTextureEffect.DirectX_11.mgfx",
+    ("mgfxc-legacy", "Tex2DLodRender.DirectX_11.mgfx"),
+    ("mgfxc-modern-twin", "Tex2DLodRenderModern.DirectX_11.mgfx"));
+Console.WriteLine($"[dx-modern] legacy-lod verdict: {(lodOk ? "PASS" : "FAIL")}");
+
+return ok && legacyOk && lodOk ? 0 : 1;
 
 static string FindRepoRoot()
 {

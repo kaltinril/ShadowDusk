@@ -50,7 +50,7 @@ author's source and everything after them stays verbatim.
 | `FX0009` | `sampler_state` block opened but never closed. |
 | `FX0010` | Unrecognized render-state key (non-fatal). |
 | `FX0011` | Unknown character in effect source (e.g. `@`, `` ` ``). |
-| `FX0012` | Legacy D3D9 sampling intrinsic (e.g. `tex2Dlod`) whose arguments cannot be rewritten 1:1 to a modern `Texture2D` method. |
+| `FX0012` | Legacy D3D9 sampling intrinsic the SM4 rewrite cannot convert: the 1D, 3D and cube families (`tex1D…`, `tex3D…`, `texCUBE…`, which need a resource type the rewrite does not synthesize), or a `tex2Dlod` / `tex2Dbias` / `tex2Dproj` call with other than two arguments or split by a conditional directive from the start of its declaration. `tex2D`, `tex2Dgrad`, `tex2Dlod`, `tex2Dbias` and `tex2Dproj` are rewritten. Never raised for FNA. |
 | `FX0013` | An SM4+ resource or sampler type (e.g. `SamplerComparisonState`) appeared in a shader targeting FNA's D3D9 `fx_2_0` profile, where no SM1–3 lowering exists. Raised *before* the source reaches vkd3d, which does not reject these cleanly (a `SamplerComparisonState` makes its SM1 lowering take the whole process down with an access violation). |
 | `FX0014` | A pass assigns `HullShader`, `DomainShader`, `GeometryShader`, or `ComputeShader`. MonoGame's and KNI's `Effect` model exactly two shader stages, so **no compiler can produce a loadable effect containing one** — a consumer-runtime limit, not a ShadowDusk gap (`mgfxc` refuses the same inputs). Replaces the nonsense `FX0008` "missing `;`" these used to produce. See `plan/DONE/PHASE-58-extended-shader-stages.md` for the measured evidence and the conversion question. |
 

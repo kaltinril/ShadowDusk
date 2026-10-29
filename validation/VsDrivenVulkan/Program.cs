@@ -60,11 +60,33 @@ using ShadowDusk.Validation;
 //                                                                 descriptor binding (informational,
 //                                                                 not a gate: it is the reference
 //                                                                 compiler's output under test).
+//   dotnet run --project validation/VsDrivenVulkan -- legacy-lod
+//                                                              -> tex2Dlod (vertex AND pixel stage),
+//                                                                 tex2Dbias, tex2Dproj in legacy
+//                                                                 sampler syntax vs mgfxc 3.8.5's
+//                                                                 Vulkan build of the modern twin,
+//                                                                 with four positive controls.
 string mode = args.Length > 0 ? args[0].Trim().ToLowerInvariant() : "vs";
-if (mode is not ("vs" or "apos" or "wave" or "texarr" or "texarr-reference"))
+if (mode is not ("vs" or "apos" or "wave" or "texarr" or "texarr-reference" or "legacy-lod"))
 {
-    Console.Error.WriteLine($"unknown mode '{mode}' — expected 'vs', 'apos', 'wave', 'texarr' or 'texarr-reference'");
+    Console.Error.WriteLine($"unknown mode '{mode}' — expected 'vs', 'apos', 'wave', 'texarr', 'texarr-reference' or 'legacy-lod'");
     return 2;
+}
+
+if (mode == "legacy-lod")
+{
+    // tests/fixtures/golden/legacy-lod-intrinsics/Tex2DLodRender.fx, ShadowDusk's Vulkan build vs
+    // the real mgfxc 3.8.5 /Profile:Vulkan build of the MODERN twin (Tex2DLodRenderModern.fx):
+    // mgfxc 3.8.5 refuses the legacy spelling on Vulkan (sampler_state is effect syntax DXC
+    // rejects), and the twin's equivalence is measured on mgfxc's own DirectX_11 builds by
+    // validation/DxModernFeatures. The twin carries explicit registers so mgfxc's (binding - 32)
+    // slot arithmetic stays in range (the SlotOffset bug above); the candidate is auto-numbered,
+    // the shape a game ships. One device, every arm drawn in this one process.
+    bool lodOk = await ShadowDusk.Validation.LegacyLod.LegacyLodArm.RunAsync(
+        PlatformTarget.Vulkan, ShaderInputs.FindRepoRoot(), "legacy-lod-vulkan", "legacy-lod-vulkan", tolerance: 0, "VertexTextureEffect.Vulkan.mgfx",
+        ("mgfxc-modern-twin", "Tex2DLodRenderModern.Vulkan.mgfx"));
+    Console.WriteLine($"[legacy-lod-vulkan] verdict: {(lodOk ? "PASS" : "FAIL")}");
+    return lodOk ? 0 : 1;
 }
 
 const string Fixture = "VsTransformColorTexture";
