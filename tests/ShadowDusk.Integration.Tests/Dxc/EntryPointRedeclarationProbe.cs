@@ -163,6 +163,21 @@ public static class EntryPointRedeclarationProbe
         // NITs: a non-ASCII comment in the blanked prototype; a carriage-return-only file.
         new("utf8-comment-proto", Fx("float4 PS(float4 c /* é\U0001F600 */ : COLOR0) : COLOR0;", TechPs, PsDef), Fx("", TechPs, PsDef), true),
         new("cr-only-proto", Fx(PsProto, TechPs, PsDef).Replace('\n', '\r'), Fx("", TechPs, PsDef).Replace('\n', '\r'), true),
+        // Final review of 2026-10-29. DXC's own preprocessor decides: a prototype (beside a call
+        // that would be refused, or carrying `precise`) in a branch DXC never compiles changes
+        // nothing; these were SD0236 on the branch and compile on 0.22.1.
+        new("xbox-dead-proto-and-call", Fx("#ifdef _XBOX", PsProto, Half, "#endif", TechPs, PsDef), Fx("", "", "", "", TechPs, PsDef), true),
+        new("xbox-dead-precise-proto", Fx("#ifdef _XBOX", "precise " + PsProto, "#endif", TechPs, PsDef), Fx("", "", "", TechPs, PsDef), true),
+        new("ifndef-hlsl-version-dead-proto", Fx("#ifndef __HLSL_VERSION", PsProto, Half, "#endif", TechPs, PsDef), Fx("", "", "", "", TechPs, PsDef), true),
+        // C's unsigned preprocessor arithmetic, which the managed evaluator got wrong: TRUE to DXC,
+        // so the prototype is live and must go. Crashed OpenGL and Vulkan on main and the branch.
+        new("unsigned-cmp-proto", Fx("#if -1 > 0u", PsProto, "#endif", TechPs, PsDef), Fx("#if -1 > 0u", "", "#endif", TechPs, PsDef), true),
+        new("unsigned-div-proto", Fx("#if (-1 / 2u) > 100", PsProto, "#endif", TechPs, PsDef), Fx("#if (-1 / 2u) > 100", "", "#endif", TechPs, PsDef), true),
+        // A source DXC's preprocessor rejects reaches DXC as written: the front end stops on it.
+        new("error-directive-proto", Fx("#error not this target", PsProto, TechPs, PsDef), null, true),
+        // Issue #444: DXC crashes expanding __TIMESTAMP__ (even -P); refused (SD0238) wherever DXC runs.
+        new("timestamp-dead-branch", Fx("#if 0", "static const int Stamp = __TIMESTAMP__;", "#endif", TechPs, PsDef), Fx("", "", "", TechPs, PsDef), true),
+        new("timestamp-in-comment", Fx("/* __TIMESTAMP__ */ // __TIMESTAMP__", TechPs, PsDef), Fx("", TechPs, PsDef), true),
     ];
 
     private const string CatDefine = "#define CAT(a,b) a##b";

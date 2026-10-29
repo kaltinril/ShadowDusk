@@ -86,6 +86,10 @@ public sealed class DxcShaderCompiler : IDxcShaderCompiler, IDisposable
         if (NativeError(request.SourceFileName, usesValidator: false) is { } loadError)
             return Result<string, ShaderError>.Fail(loadError);
 
+        // DXC crashes the process expanding __TIMESTAMP__, even preprocessing only (issue #444).
+        if (DxcTimestampMacro.Refusal(request.HlslSource, request.SourceFileName) is { } timestamp)
+            return Result<string, ShaderError>.Fail(timestamp);
+
         IReadOnlyList<string> arguments = DxcFlagBuilder.BuildPreprocess(request.Macros);
 
         // Same raw vtable call the compile path uses (per-platform wchar_t arg encoding,
@@ -125,6 +129,29 @@ public sealed class DxcShaderCompiler : IDxcShaderCompiler, IDisposable
         }
     }
 
+    /// <summary>
+    /// One DXC preprocess-only run (<paramref name="arguments"/> carry <c>-P</c>) of
+    /// <paramref name="source"/>: the expanded text, or a failure when DXC's preprocessor reports
+    /// an error. Never reaches a back end.
+    /// </summary>
+    internal DxcSpirvEntryRedeclarations.PreprocessedText PreprocessOnly(
+        string source, IReadOnlyList<string> arguments, IDxcIncludeHandler? includeHandler)
+    {
+        IDxcResult result = DxcNativeInterop.Compile(_compiler!, source, arguments, includeHandler);
+        try
+        {
+            if (result.GetStatus().Failure)
+                return new DxcSpirvEntryRedeclarations.PreprocessedText(false, string.Empty);
+            using IDxcBlob hlslBlob = result.GetOutput(DxcOutKind.Hlsl);
+            return new DxcSpirvEntryRedeclarations.PreprocessedText(
+                true, System.Text.Encoding.UTF8.GetString(hlslBlob.AsBytes()).TrimEnd('\0'));
+        }
+        finally
+        {
+            result.Dispose();
+        }
+    }
+
     // Issue #229: on the Vulkan target DXC refuses wave/quad intrinsics at its default Vulkan
     // 1.0 target env. ShadowDusk deliberately does NOT retry with -fspv-target-env=vulkan1.1:
     // MonoGame's DesktopVK creates a Vulkan 1.0 instance with no subgroup support, and the
@@ -156,17 +183,29 @@ public sealed class DxcShaderCompiler : IDxcShaderCompiler, IDisposable
         if (NativeError(request.SourceFileName, usesValidator) is { } loadError)
             return Result<PlatformBlob, ShaderError>.Fail(loadError);
 
+        // DXC crashes the process expanding __TIMESTAMP__, in any compile (issue #444): refused
+        // (SD0238) before DXC is called at all, the preprocess runs below included.
+        if (DxcTimestampMacro.Refusal(request.HlslSource, request.SourceFileName) is { } timestamp)
+            return Result<PlatformBlob, ShaderError>.Fail(timestamp);
+
         // DXC's SPIR-V back end crashes the process on an entry function that is declared more
         // than once; its redundant prototypes are kept out of the input (SD0236 when that
-        // cannot be done safely). Returns the source unchanged when it has none.
+        // cannot be done safely), decided and proven by DXC's own preprocessor (-P, which never
+        // reaches the back end) run with this compile's arguments. Returns the source unchanged
+        // when DXC's preprocessed text declares the entry once.
         string hlslSource = request.HlslSource;
         if (DxcSpirvEntryRedeclarations.AppliesTo(arguments))
         {
+            IReadOnlyList<string> preprocessArguments = DxcSpirvEntryRedeclarations.PreprocessArguments(arguments);
             Result<string, ShaderError> prepared = DxcSpirvEntryRedeclarations.Prepare(
-                hlslSource, request.EntryPoint, request.SourceFileName, request.Macros);
-            if (prepared.IsFailure)
+                hlslSource, request.EntryPoint, request.SourceFileName, request.Macros,
+                text => PreprocessOnly(text, preprocessArguments, request.IncludeHandler));
+            if (prepared.IsSuccess)
+                hlslSource = prepared.Value;
+            else if (DxcSpirvEntryRedeclarations.EmitsSpirv(arguments))
                 return Result<PlatformBlob, ShaderError>.Fail(prepared.Error);
-            hlslSource = prepared.Value;
+            // Otherwise this is the OpenGL target's unvalidated DXIL reflection companion, which
+            // DXC compiles without the fault: it keeps the source as written, as before.
         }
 
         // A SPIR-V compile with debug information loads libdxcompiler by LEAF name from inside

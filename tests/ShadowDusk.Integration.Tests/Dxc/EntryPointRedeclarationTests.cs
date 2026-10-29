@@ -87,7 +87,18 @@ public sealed class EntryPointRedeclarationTests
         ["paren-declarator-def-alone"] = Ok,
         ["utf8-comment-proto"] = Same,
         ["cr-only-proto"] = Same,
+        // Final review of 2026-10-29: DXC's preprocessor decides and proves.
+        ["xbox-dead-proto-and-call"] = Same,          // was SD0236 on the branch; 0.22.1 compiled it
+        ["xbox-dead-precise-proto"] = Same,
+        ["ifndef-hlsl-version-dead-proto"] = Same,
+        ["unsigned-cmp-proto"] = Same,                // crashed main: the managed evaluator read it as false
+        ["unsigned-div-proto"] = Same,
+        ["error-directive-proto"] = DxcError,         // DXC's front end stops on the #error, no back end
+        ["timestamp-dead-branch"] = Timestamp,        // issue #444: refused before DXC runs
+        ["timestamp-in-comment"] = Same,
     };
+
+    private const string Timestamp = "DIAG SD0238";
 
     /// <summary>
     /// The targets that never had the fault keep compiling as they did: vkd3d (DirectX 11, FNA)
@@ -95,10 +106,24 @@ public sealed class EntryPointRedeclarationTests
     /// </summary>
     private static Dictionary<string, string> Expected(string target) => target switch
     {
-        "raylib" or "sksl" => Spirv,
+        // The converters compile with warnings as errors (-WX): DXC's own preprocessor warning
+        // about the unsigned conversion stops the compile in the front end, before the back end.
+        "raylib" or "sksl" => new(Spirv, StringComparer.Ordinal)
+        {
+            ["unsigned-cmp-proto"] = DxcError,
+            ["unsigned-div-proto"] = DxcError,
+        },
         // The OpenGL target's DXIL reflection companion refuses a `static` entry ("cannot find
         // entry function"), with or without a prototype; the SPIR-V-only routes compile it.
-        "OpenGL" => new(Spirv, StringComparer.Ordinal) { ["static-proto-and-def"] = DxcError },
+        // The same companion reads a source whose preparation is refused as written (DXIL has no
+        // fault), so an overload prototype of a called entry gets DXC's own "ambiguous entry point
+        // function" from it, as on 0.22.1, before the SPIR-V compile would refuse it.
+        "OpenGL" => new(Spirv, StringComparer.Ordinal)
+        {
+            ["static-proto-and-def"] = DxcError,
+            ["ps-overload-proto-of-called-entry"] = DxcError,
+            ["inline-proto"] = DxcError,               // "cannot find entry function", as on DirectX 12
+        },
         // Vulkan compiles every entry point as `main` (mgfxc's rename), which leaves a
         // macro-produced `PS` prototype an unrelated, unused declaration: nothing to refuse.
         // The same rename does not see a parenthesised declarator: that prototype is an unrelated
@@ -130,6 +155,8 @@ public sealed class EntryPointRedeclarationTests
             ["paren-declarator-def"] = "DIAG E5000",
             ["paren-declarator-def-alone"] = "DIAG E5000",
             ["cr-only-proto"] = "DIAG E4000",
+            ["error-directive-proto"] = "DIAG E4001",           // vkd3d's own #error
+            ["timestamp-dead-branch"] = Same,                    // vkd3d never runs DXC: no crash to refuse
         },
         // DXC's DXIL front end calls an overload prototype without a definition ambiguous, as
         // it always has here (fxc compiles it); unchanged by this fix, which never touches

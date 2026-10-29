@@ -340,7 +340,8 @@ internal sealed class CompilationPipeline
         if (recovered is null)
         {
             Result<EffectTechniques.Resolution, ShaderError> resolvedTechniques = EffectTechniques.Resolve(
-                hlslSource, sourceFileName, macros, includeResolver, options.AdditionalIncludePaths, fxParsed);
+                hlslSource, sourceFileName, macros, includeResolver, options.AdditionalIncludePaths, fxParsed,
+                EffectTechniques.CompilesThroughDxc(options.Target));
             if (resolvedTechniques.IsFailure)
                 return Fail(resolvedTechniques.Error);
 
@@ -1483,7 +1484,8 @@ internal sealed class CompilationPipeline
         }
 
         IReadOnlyDictionary<string, GlobalInitializerDefault> parameterDefaults =
-            ResolveParameterDefaults(preprocessed.Text, sourceFileName, allParameters, runWarnings);
+            ResolveParameterDefaults(preprocessed.Text, sourceFileName, allParameters, runWarnings,
+                EffectTechniques.CompilesThroughDxc(options.Target));
         IReadOnlyList<EffectParameterInfo> effectParameterInfoList =
             BuildEffectParameterInfoList(allParameters, parameterDefaults, runWarnings);
 
@@ -2392,7 +2394,8 @@ internal sealed class CompilationPipeline
         // Issue #407: techniques from the preprocessed translation unit, as on the other targets
         // (and as fxc's own effect compiler reads them for fx_2_0).
         Result<EffectTechniques.Resolution, ShaderError> fnaTechniques = EffectTechniques.Resolve(
-            hlslSource, sourceFileName, fnaPlatformMacros, includeResolver, options.AdditionalIncludePaths, fxParsed);
+            hlslSource, sourceFileName, fnaPlatformMacros, includeResolver, options.AdditionalIncludePaths, fxParsed,
+            compilerIsDxc: false);
         if (fnaTechniques.IsFailure)
             return Fail(fnaTechniques.Error);
         fxParsed = fxParsed with { Techniques = fnaTechniques.Value.Techniques };
@@ -4042,7 +4045,8 @@ internal sealed class CompilationPipeline
         string preprocessedText,
         string sourceFileName,
         IReadOnlyList<ParameterReflection> parameters,
-        List<ShaderError> warnings)
+        List<ShaderError> warnings,
+        bool compilerIsDxc)
     {
         var parameterNames = new HashSet<string>(StringComparer.Ordinal);
         foreach (ParameterReflection p in parameters)
@@ -4051,7 +4055,7 @@ internal sealed class CompilationPipeline
         Result<GlobalInitializers, ShaderError> read;
         try
         {
-            read = GlobalInitializerReader.Read(preprocessedText, sourceFileName);
+            read = GlobalInitializerReader.Read(preprocessedText, sourceFileName, compilerIsDxc);
         }
         catch (Exception ex) when (ex is ArgumentException or InvalidOperationException or IndexOutOfRangeException
                                        or FormatException or OverflowException or KeyNotFoundException)
