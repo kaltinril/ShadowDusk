@@ -5,7 +5,8 @@
 // Ports every test of KNI's Tests/Framework.Graphics/EffectTest.cs (github.com/kniEngine/kni, Ms-PL;
 // written and checked against XNA by KNI's author) to a real MonoGame/KNI Game and runs the
 // shader-driven ones against ShadowDusk's in-process build of KNI's own test shaders, vendored
-// unmodified under tests/fixtures/shaders/third-party/KNI. Five companion shaders
+// under tests/fixtures/shaders/third-party/KNI (shader code unmodified; a provenance comment header
+// is prepended to each file). Five companion shaders
 // (validation/SharedKniEffectTest/Companion, ShadowDusk-authored) pin the extra findings of the
 // evaluation that ported the suite (matrix default layout, a texture at register(t1), a texture array,
 // vertex texture fetch in both spellings).
@@ -111,7 +112,12 @@ public static class KniEffectTestProbe
 
     internal enum Kind { Gate, KnownFail, Info }
 
-    internal sealed record Expectation(Kind Kind, string Reason);
+    /// <summary>
+    /// A row's classification. For KNOWN-FAIL, <paramref name="Signatures"/> are the failure texts its
+    /// listed bugs produce: the row only counts as "still failing as expected" when its detail contains
+    /// one of them, so a crash or a different regression cannot hide behind a known-fail row.
+    /// </summary>
+    internal sealed record Expectation(Kind Kind, string Reason, IReadOnlyList<string>? Signatures = null);
 
     // Known ShadowDusk bugs (fixed on other branches). A row tagged with one must still FAIL.
     private const string KfKnifxDxSm2 =
@@ -127,6 +133,17 @@ public static class KniEffectTestProbe
     private const string KfTex2Dlod =
         "known bug: tex2Dlod is refused with FX0012 (no 1:1 modern rewrite yet); mgfxc compiles it for DirectX_11 and DirectX_12";
 
+    /// <summary>What each listed bug's failure looks like in a row's detail (any one must appear).</summary>
+    private static readonly Dictionary<string, string[]> KnownSignatures = new(StringComparer.Ordinal)
+    {
+        [KfKnifxDxSm2] = ["SD0015"],
+        [KfKnifxLevel9] = ["Shader model 4.0 is not supported by the current graphics profile 'HiDef'"],
+        [KfGlVertexSemantics] = ["SD0210: Unsupported vertex-input semantic 'BINORMAL0'"],
+        [KfKnifxTexturelessSampler] = ["Parameters.Count=2 [Sampler0,Sampler1]"],
+        [KfVulkanRegisterSlots] = ["centre (0,0,0,0)"],
+        [KfTex2Dlod] = ["FX0012"],
+    };
+
     // Informational reasons.
     private const string InfoRuntimeOnly =
         "runtime-only: exercises BasicEffect, the runtime's built-in effect; ShadowDusk's output is not involved";
@@ -140,6 +157,8 @@ public static class KniEffectTestProbe
         "not implemented: ShadowDusk emits no compute stage (MGFX v10 has none, KNIFX compute output is not modelled); mgfxc 3.8.4.1/3.8.5 refuse the file too";
     private const string InfoGlVtf =
         "runtime limit: MonoGame and KNI GL both translate through MojoShader, which has no vertex texture fetch (SD0210); mgfxc's OpenGL build fails the same way";
+    private const string InfoGlTex2Dlod =
+        "runtime limit, behind a listed bug: on OpenGL tex2Dlod is refused with FX0012 first (the known tex2Dlod bug), and once that is fixed the GL runtimes still have no vertex texture fetch (SD0210, as for SampleLevel); mgfxc's OpenGL build fails too";
     private const string InfoGlTextureArray =
         "runtime limit: MojoShader (MonoGame and KNI GL) has no texture-array sampler (SD0210); mgfxc OpenGL refuses it (X4545)";
     private const string InfoKniHiDefTextureArray =
@@ -231,13 +250,15 @@ public static class KniEffectTestProbe
                 break;
 
             case "VertexTextureTex2Dlod":
-                if (gl) return new(Kind.Info, InfoGlVtf);
+                if (gl) return new(Kind.Info, InfoGlTex2Dlod);
                 if (rt == "kni-dx") return new(Kind.Info, knifx ? InfoKnifxSm4HiDef : InfoKniDxVtf);
                 known.Add(KfTex2Dlod);
                 break;
         }
 
-        return known.Count > 0 ? new(Kind.KnownFail, string.Join(" + ", known)) : new(Kind.Gate, "");
+        return known.Count > 0
+            ? new(Kind.KnownFail, string.Join(" + ", known), known.SelectMany(k => KnownSignatures[k]).ToArray())
+            : new(Kind.Gate, "");
     }
 
     // ----------------------------------------------------------------------------------------------
@@ -275,6 +296,8 @@ public static class KniEffectTestProbe
             Console.WriteLine($"[{cfg.Runtime}] FAIL: built for {want} but loaded {rtName.Version} (stale build?)");
             return 1;
         }
+
+        WarnIfMapCountLow(cfg);
 
         var compiler = new EffectCompiler();
         var builds = new List<Build>();
@@ -346,6 +369,30 @@ public static class KniEffectTestProbe
     }
 
 
+    /// <summary>
+    /// On Linux, warns when <c>vm.max_map_count</c> is too low for a Vulkan run on Mesa lavapipe. Measured
+    /// 2026-10-28 (PR #434; Mesa 25.2.8, MonoGame 3.8.5 DesktopVK): MonoGame's <c>MGG_Shader_Create</c> allocates
+    /// about 13,500 descriptor sets per shader and never frees them, and lavapipe backs each set with its own
+    /// buffer mapping, so a process holds ~13,500 more mappings per shader created. At the kernel's limit
+    /// lavapipe's <c>lvp_descriptor_set_create</c> does not check the failed map and segfaults in <c>memset</c>
+    /// (exit 139), minutes into the run with no managed output. 262,144 (GitHub's ubuntu image) is ~19 shaders;
+    /// this driver creates more than that. A GPU driver does not map per set. The CI job raises the limit.
+    /// </summary>
+    private static void WarnIfMapCountLow(ProbeConfig cfg)
+    {
+        const long Needed = 1_048_576;
+        if (cfg.Target != PlatformTarget.Vulkan || !OperatingSystem.IsLinux()) return;
+        try
+        {
+            if (long.TryParse(File.ReadAllText("/proc/sys/vm/max_map_count").Trim(), out long limit) && limit < Needed)
+                Console.WriteLine($"[{cfg.Runtime}] WARNING: vm.max_map_count is {limit}. On Mesa lavapipe MonoGame DesktopVK " +
+                    $"holds ~13,500 mappings per shader, so this run may segfault (exit 139) after ~{limit / 13_500} shaders. " +
+                    "Raise it first: sudo sysctl -w vm.max_map_count=2097152");
+        }
+        catch (IOException) { /* not readable: nothing to say */ }
+        catch (UnauthorizedAccessException) { }
+    }
+
     private static string Replace(string s, string from, string to)
     {
         if (!s.Contains(from, StringComparison.Ordinal))
@@ -398,7 +445,7 @@ public static class KniEffectTestProbe
     {
         string L = $"[{cfg.Runtime}]";
         int expected = builds.Sum(b => b.IsControl ? 1 : b.Case.Checks.Length);
-        int gatePass = 0, gateFail = 0, kfStill = 0, kfFlipped = 0, info = 0, ctlOk = 0, ctlMissed = 0;
+        int gatePass = 0, gateFail = 0, kfStill = 0, kfFlipped = 0, kfWrong = 0, info = 0, ctlOk = 0, ctlMissed = 0;
         var lines = new List<string>();
         var legend = new Dictionary<string, string>(StringComparer.Ordinal);
         string Tag(Expectation e)
@@ -419,8 +466,11 @@ public static class KniEffectTestProbe
                     if (r.Pass) gatePass++; else gateFail++;
                     break;
                 case Kind.KnownFail:
-                    verdict = r.Pass ? "KNOWN-FAIL  PASS   <-- UNEXPECTED PASS: flip this row to GATE in KniEffectTestProbe.Classify" : "KNOWN-FAIL  fail";
-                    if (r.Pass) kfFlipped++; else kfStill++;
+                    bool expectedWay = !r.Pass && (e.Signatures ?? []).Any(s => r.Detail.Contains(s, StringComparison.Ordinal));
+                    verdict = r.Pass ? "KNOWN-FAIL  PASS   <-- UNEXPECTED PASS: flip this row to GATE in KniEffectTestProbe.Classify"
+                        : expectedWay ? "KNOWN-FAIL  fail"
+                        : "KNOWN-FAIL  FAIL   <-- FAILS FOR ANOTHER REASON than its listed bug (expected one of: " + string.Join(" / ", e.Signatures ?? []) + ")";
+                    if (r.Pass) kfFlipped++; else if (expectedWay) kfStill++; else kfWrong++;
                     break;
                 default:
                     verdict = r.Pass ? "INFO        pass" : "INFO        fail";
@@ -447,9 +497,9 @@ public static class KniEffectTestProbe
 
         bool complete = rows.Count == expected;
         Console.WriteLine();
-        Console.WriteLine($"{L} gated {gatePass}/{gatePass + gateFail} pass; known-failing {kfStill} still failing, {kfFlipped} unexpectedly passing; informational {info}; controls {ctlOk}/{ctlOk + ctlMissed} detected; rows {rows.Count}/{expected}.");
+        Console.WriteLine($"{L} gated {gatePass}/{gatePass + gateFail} pass; known-failing {kfStill} still failing as expected, {kfFlipped} unexpectedly passing, {kfWrong} failing for another reason; informational {info}; controls {ctlOk}/{ctlOk + ctlMissed} detected; rows {rows.Count}/{expected}.");
         if (!complete) Console.WriteLine($"{L} FAIL: only {rows.Count} of {expected} rows ran");
-        bool green = gateFail == 0 && kfFlipped == 0 && ctlMissed == 0 && complete;
+        bool green = gateFail == 0 && kfFlipped == 0 && kfWrong == 0 && ctlMissed == 0 && complete;
         Console.WriteLine(green ? $"{L} GREEN" : $"{L} RED");
         return green ? 0 : 1;
     }
@@ -486,6 +536,9 @@ public static class KniEffectTestProbe
             _done = true;
             foreach (Build b in _builds)
             {
+                // Flushed before each build, so a native crash (no managed results) still names the case it was in.
+                Console.WriteLine($"[probe] drawing {b.Case.Id} :: {b.Arm}{(b.IsControl ? " (control)" : "")}");
+                Console.Out.Flush();
                 var results = new Dictionary<string, (bool Pass, string Detail)>();
                 string[] checks = b.IsControl ? [b.ControlCheck!] : b.Case.Checks;
                 try
@@ -690,8 +743,13 @@ public static class KniEffectTestProbe
                             catch (Exception ex) { round.That(false, $"SetValue/GetValueMatrix threw {ex.GetType().Name}: {OneLine(ex.Message)}"); }
                         }
 
-                        // The initializer IS preserved, so DXC's 'initializer ignored' warning must not be passed on.
-                        string? stale = b.Warnings.FirstOrDefault(w => w.Contains("initializer ignored", StringComparison.Ordinal));
+                        // The initializer IS preserved, so the compiler's "initializer ignored" warning must not be passed
+                        // on: DXC's SPIR-V wording ("... so initializer ignored", OpenGL/Vulkan) and its DXIL wording
+                        // ("Initializer of external global will be ignored", DirectX 12) alike. vkd3d (DirectX 11)
+                        // emits neither (it keeps the default in RDEF; measured 2026-10-28), so there the row only
+                        // guards against a new warning appearing.
+                        string? stale = b.Warnings.FirstOrDefault(w =>
+                            w.Contains("nitializer", StringComparison.Ordinal) && w.Contains("ignored", StringComparison.Ordinal));
                         warn.That(stale is null, $"stale warning: {stale}");
                         dflt.Commit();
                         round.Commit();
