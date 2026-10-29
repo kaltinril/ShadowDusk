@@ -37,7 +37,9 @@
 //     goldens: the column packing a row_major interpolant had before it was modelled. If these
 //     matched, the packing cases could not see a column/row swap.
 //   * Split1x4ToVec compiled with its float1x4 declared float4 (one register, the layout before
-//     degenerate interpolants were split): must diverge from the split golden.
+//     degenerate interpolants were split): must diverge from the split golden. That layout's VS
+//     writes one varying where the PS reads four, so a strict driver's linker refuses the program
+//     (Mesa: "varying ... not written by vertex shader"); there that link refusal is the detection.
 // Exit code 0 iff every case passes and every control is detected. See docs/validation-matrix.md §6.
 
 using System;
@@ -241,6 +243,15 @@ public static class VertexSemanticsProbe
 
     /// <summary>What MonoGame's and KNI's GL shader compile throws when the driver refuses the GLSL.</summary>
     private const string StrictRefusalSignature = "Shader Compilation Failed";
+
+    /// <summary>
+    /// The runtime's program-link failure (MonoGame and KNI GL both throw it; KNI appends the
+    /// driver's log, MonoGame prints it to the console). On a strict driver it is the only throw
+    /// that counts as detecting a <see cref="ControlKind.WrongPacking"/> control: Mesa 25.2.8
+    /// (llvmpipe) refuses the Split1x4ToVec control with "fragment shader varying vTexCoord2 not
+    /// written by vertex shader". A compile failure or any other throw is still a missed control.
+    /// </summary>
+    private const string StrictLinkRefusalSignature = "Unable to link effect program";
 
     // tests/fixtures/golden/vertex-semantics/packing: fixture -> how many `Mode` values it has.
     private static readonly (string Stem, int Modes)[] Packing =
@@ -518,6 +529,15 @@ public static class VertexSemanticsProbe
                         {
                             PackingStem = job.PackingStem, Refused = true,
                         });
+                    }
+                    else if (job.Control == ControlKind.WrongPacking && StrictDriver
+                             && ex.Message.Contains(StrictLinkRefusalSignature, StringComparison.Ordinal))
+                    {
+                        // A wrong layout whose VS no longer writes a varying the PS reads: a strict
+                        // linker refuses the program, so it cannot render like mgfxc's.
+                        Results.Add(new JobResult(job.Name, true,
+                            $"CONTROL-DETECTED (strict driver: {GlRenderer}): the linker refused the wrong layout: " +
+                            $"{ex.GetType().Name}: {ex.Message.ReplaceLineEndings(" ").Trim()}"));
                     }
                     else
                     {

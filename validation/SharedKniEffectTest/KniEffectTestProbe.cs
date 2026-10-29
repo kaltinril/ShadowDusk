@@ -38,6 +38,7 @@ using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Reflection;
+using System.Runtime.InteropServices;
 using System.Text.RegularExpressions;
 using System.Threading;
 using Microsoft.Xna.Framework;
@@ -131,7 +132,12 @@ public static class KniEffectTestProbe
     private static readonly Dictionary<string, string[]> KnownSignatures = new(StringComparer.Ordinal)
     {
         [KfVsPositionOutputSm6] = ["SEHException", "centre (255,0,255,255)"],
+        [KfStrictGlNonSquare] = ["Shader Compilation Failed"],
     };
+
+    // A known gap, not a bug fixed elsewhere: on a strict GL driver the row must still fail, as above.
+    private const string KfStrictGlNonSquare =
+        "known gap (SD0403, docs/validation-matrix.md section 7): ShadowDusk's GLSL for DeferredBasicEffect's VS declares a non-square `mat3x4` (the (float3x3)World cast), which the versionless MonoGame/KNI GL dialect cannot; a strict GL front end (Mesa, Apple, ANGLE) refuses it when KNI compiles the shaders at Effect load, a lenient one accepts it; mgfxc's build loads on both (the compile warns SD0403)";
 
     // Informational reasons.
     private const string InfoRuntimeOnly =
@@ -168,11 +174,16 @@ public static class KniEffectTestProbe
         "runtime constraint: the test draws KNI's PS (reads TEXCOORD0) behind BasicEffect's VS (writes none); D3D12 pipeline creation rejects that pairing (HRESULT 0x80070057) where D3D11 tolerates it, so MonoGame 3.8.5 WindowsDX12 throws for ShadowDusk's PS and draws nothing for mgfxc 3.8.5's";
     private const string InfoGlModernSamplerRegister =
         "matches mgfxc: on OpenGL a modern `SamplerState : register(s1)` only reserves s1, so the combined pair lands on unit 0, SpriteBatch's texture (docs/glsl-uniform-naming.md); mgfxc's own build renders the same white";
+    private const string InfoStrictGlVsPsLinkage =
+        "driver constraint: the test draws KNI's PS (reads TEXCOORD0) behind BasicEffect's VS (writes none); a strict GL linker (Mesa: 'fragment shader varying vTexCoord0 not written by vertex shader') refuses that program for mgfxc's build exactly as for ShadowDusk's, where a lenient driver links and draws it (gated there)";
     private const string InfoVulkanVsPsLinkage =
         "not drawn on Vulkan: the test draws KNI's PS (reads a float2 TEXCOORD0 at location 0) behind BasicEffect's VS (writes a float4 there), which the Vulkan spec forbids without VK_KHR_maintenance4 (VUID-RuntimeSpirv-maintenance4-06817, measured under the Khronos validation layer) and MonoGame DesktopVK does not enable it; drawing it would fail the CI lane's layer check for any compiler's PS";
     private const string InfoReference = "reference arm (not scored): the reference compiler's own build, for comparison";
 
-    internal static Expectation Classify(string rt, string kase, string arm, string check)
+    /// <param name="strictGl">The GL driver's front end is a strict one (Mesa, Apple, ANGLE), read from
+    /// its GL strings at run time; false before the device exists, so a build-time call sees the lenient
+    /// classification and the report re-classifies with the measured driver.</param>
+    internal static Expectation Classify(string rt, string kase, string arm, string check, bool strictGl = false)
     {
         if (arm is "mgfxc" or "kni-xnb") return new(Kind.Info, InfoReference);
         CaseDef def = Cases.Single(c => c.Id == kase);
@@ -208,7 +219,12 @@ public static class KniEffectTestProbe
                 if (dx11) return new(Kind.Info, InfoDx11FxcTextureSlots);
                 if (rt == "mg-dx12") return new(Kind.Info, InfoDx12LegacyColorStruct);
                 if (rt == "mg-vk") return new(Kind.Info, InfoVulkanLegacyColorStruct);
+                // KNI compiles the GL shaders at Effect load; MonoGame only at link, which this case never reaches.
+                if (rt == "kni-gl" && strictGl) known.Add(KfStrictGlNonSquare);
                 break;
+
+            case "OldSyntax_t0t1" or "OldSyntax_t1t0" when check == "render" && gl && strictGl:
+                return new(Kind.Info, InfoStrictGlVsPsLinkage);
 
             case "OldSyntax_t0t1" or "OldSyntax_t1t0" when check == "render" && rt == "mg-dx12":
                 return new(Kind.Info, InfoDx12VsPsLinkage);
@@ -353,7 +369,13 @@ public static class KniEffectTestProbe
         using var game = new ProbeGame(builds, cfg);
         game.Run();
 
-        return Report(cfg, builds, game.Rows);
+        if (cfg.Target == PlatformTarget.OpenGL)
+        {
+            Console.WriteLine($"[{cfg.Runtime}] GL_VENDOR={game.GlVendor} | GL_RENDERER={game.GlRenderer} | GL_VERSION={game.GlVersion}");
+            Console.WriteLine($"[{cfg.Runtime}] driver class: {(game.StrictGl ? "STRICT GL front end" : "lenient")}");
+        }
+
+        return Report(cfg, builds, game.Rows, game.StrictGl);
     }
 
 
@@ -429,7 +451,7 @@ public static class KniEffectTestProbe
     // Report
     // ----------------------------------------------------------------------------------------------
 
-    private static int Report(ProbeConfig cfg, List<Build> builds, List<Row> rows)
+    private static int Report(ProbeConfig cfg, List<Build> builds, List<Row> rows, bool strictGl)
     {
         string L = $"[{cfg.Runtime}]";
         int expected = builds.Sum(b => b.IsControl ? 1 : b.Case.Checks.Length);
@@ -443,9 +465,13 @@ public static class KniEffectTestProbe
             return t;
         }
 
+        // The SD0403 gap row fails "the expected way" only when its own compile really warned SD0403.
+        var warnedSd0403 = builds.Where(b => !b.IsControl && b.Warnings.Any(w => w.StartsWith("SD0403:", StringComparison.Ordinal)))
+            .Select(b => (b.Case.Id, b.Arm)).ToHashSet();
+
         foreach (Row r in rows.Where(r => r.ControlName is null))
         {
-            Expectation e = Classify(cfg.Runtime, r.Case, r.Arm, r.Check);
+            Expectation e = Classify(cfg.Runtime, r.Case, r.Arm, r.Check, strictGl);
             string verdict;
             switch (e.Kind)
             {
@@ -454,7 +480,8 @@ public static class KniEffectTestProbe
                     if (r.Pass) gatePass++; else gateFail++;
                     break;
                 case Kind.KnownFail:
-                    bool expectedWay = !r.Pass && (e.Signatures ?? []).Any(s => r.Detail.Contains(s, StringComparison.Ordinal));
+                    bool expectedWay = !r.Pass && (e.Signatures ?? []).Any(s => r.Detail.Contains(s, StringComparison.Ordinal))
+                        && (!e.Reason.Contains(KfStrictGlNonSquare, StringComparison.Ordinal) || warnedSd0403.Contains((r.Case, r.Arm)));
                     verdict = r.Pass ? "KNOWN-FAIL  PASS   <-- UNEXPECTED PASS: flip this row to GATE in KniEffectTestProbe.Classify"
                         : expectedWay ? "KNOWN-FAIL  fail"
                         : "KNOWN-FAIL  FAIL   <-- FAILS FOR ANOTHER REASON than its listed bug (expected one of: " + string.Join(" / ", e.Signatures ?? []) + ")";
@@ -472,6 +499,14 @@ public static class KniEffectTestProbe
 
         foreach (Row r in rows.Where(r => r.ControlName is not null))
         {
+            // A control planted on a check this driver does not gate (built before the driver was known)
+            // proves nothing either way: reported, not counted.
+            if (Classify(cfg.Runtime, r.Case, r.Arm, r.Check, strictGl) is { Kind: not Kind.Gate } notGated)
+            {
+                lines.Add($"  {"CONTROL     n/a",-18} {r.Case + "/" + r.Check,-36} {r.Arm,-12} [{Tag(notGated)}] {r.ControlName}: not gated on this driver: {r.Detail}");
+                continue;
+            }
+
             // A control is detected only if its check RAN and reported a value mismatch.
             bool detected = !r.Pass && !r.Detail.StartsWith("compile:", StringComparison.Ordinal) && !r.Detail.StartsWith("load:", StringComparison.Ordinal) && !r.Detail.StartsWith("threw", StringComparison.Ordinal);
             if (detected) ctlOk++; else ctlMissed++;
@@ -504,6 +539,41 @@ public static class KniEffectTestProbe
 
         public List<Row> Rows { get; } = [];
 
+        public string GlVendor { get; private set; } = "(unknown)";
+        public string GlRenderer { get; private set; } = "(unknown)";
+        public string GlVersion { get; private set; } = "(unknown)";
+
+        /// <summary>
+        /// An OpenGL run on a strict GLSL front end (Mesa, Apple, ANGLE; the same list as the vertex
+        /// semantics gate), decided from the GL strings before anything is drawn, never from a failure.
+        /// </summary>
+        public bool StrictGl { get; private set; }
+
+        [UnmanagedFunctionPointer(CallingConvention.Winapi)]
+        private delegate nint GlGetStringFn(uint name);
+
+        /// <summary>The current context's GL strings, read from the platform GL library (current during Draw).</summary>
+        private void ReadGlStrings()
+        {
+            const uint GL_VENDOR = 0x1F00, GL_RENDERER = 0x1F01, GL_VERSION = 0x1F02;
+            string[] libs = OperatingSystem.IsWindows() ? ["opengl32.dll"]
+                : OperatingSystem.IsMacOS() ? ["/System/Library/Frameworks/OpenGL.framework/OpenGL"]
+                : ["libGL.so.1", "libGL.so", "libOpenGL.so.0"];
+            foreach (string lib in libs)
+            {
+                if (!NativeLibrary.TryLoad(lib, out nint handle)) continue;
+                if (!NativeLibrary.TryGetExport(handle, "glGetString", out nint fn)) continue;
+                var glGetString = Marshal.GetDelegateForFunctionPointer<GlGetStringFn>(fn);
+                GlVendor = Marshal.PtrToStringAnsi(glGetString(GL_VENDOR)) ?? "(null)";
+                GlRenderer = Marshal.PtrToStringAnsi(glGetString(GL_RENDERER)) ?? "(null)";
+                GlVersion = Marshal.PtrToStringAnsi(glGetString(GL_VERSION)) ?? "(null)";
+                break;
+            }
+            string all = $"{GlVendor} {GlRenderer} {GlVersion}";
+            StrictGl = new[] { "Mesa", "llvmpipe", "softpipe", "Apple", "ANGLE" }
+                .Any(k => all.Contains(k, StringComparison.OrdinalIgnoreCase));
+        }
+
         public ProbeGame(IReadOnlyList<Build> builds, ProbeConfig cfg)
         {
             _builds = builds;
@@ -522,6 +592,7 @@ public static class KniEffectTestProbe
         {
             if (_done) { Exit(); return; }
             _done = true;
+            if (_cfg.Target == PlatformTarget.OpenGL) ReadGlStrings();
             foreach (Build b in _builds)
             {
                 // Flushed before each build, so a native crash (no managed results) still names the case it was in.
