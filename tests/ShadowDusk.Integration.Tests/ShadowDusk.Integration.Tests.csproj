@@ -88,6 +88,10 @@
          (LegacySamplerParameterNameTests). Kept out of fixtures/shaders so they do not join
          the corpus sweeps. -->
     <None Include="..\..\tests\fixtures\golden\legacy-sampler-names\**\*" CopyToOutputDirectory="PreserveNewest" Link="fixtures\golden\legacy-sampler-names\%(RecursiveDir)%(Filename)%(Extension)" />
+    <!-- GL vertex-input semantic + matrix-interpolant fixtures and their mgfxc 3.8.4.1 OpenGL
+         goldens (GlVertexSemanticTests; rendered by validation/VertexSemanticsGl and
+         validation/VertexSemanticsKniGl), outside the corpus sweeps. -->
+    <None Include="..\..\tests\fixtures\golden\vertex-semantics\**\*" CopyToOutputDirectory="PreserveNewest" Link="fixtures\golden\vertex-semantics\%(RecursiveDir)%(Filename)%(Extension)" />
     <!-- Legacy/modern sampler UNIT (OpenGL) and SLOT (DirectX 11) fixtures and their mgfxc
          3.8.4.1 goldens (LegacySamplerUnitTests), likewise outside the corpus sweeps. -->
     <None Include="..\..\tests\fixtures\golden\legacy-sampler-units\**\*" CopyToOutputDirectory="PreserveNewest" Link="fixtures\golden\legacy-sampler-units\%(RecursiveDir)%(Filename)%(Extension)" />

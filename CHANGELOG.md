@@ -89,6 +89,34 @@ that loads and renders identically to `mgfxc`'s in the real MonoGame/KNI runtime
   pin sanity check now allows +-1 per channel, as the `InitializerDefaults*` drivers do; the
   ShadowDusk vs `fxc` comparison (parameters and every pixel) is still exact. Validation only,
   no output change.
+- **OpenGL vertex inputs with `BINORMAL`, `TANGENT`, `BLENDINDICES`, `BLENDWEIGHT`, `PSIZE`,
+  `FOG` or `DEPTH` semantics compile, and a matrix interpolant (`float3x3 TangentToWorld :
+  TEXCOORD2`) reaches the pixel shader.** Both were refused with `SD0210` while `mgfxc` compiles
+  them, which blocked normal-mapped shaders on OpenGL (KNI EffectTest's `DeferredBasicEffect` hit
+  it at `BINORMAL0`, then at its `float3x3` interpolant). The GL attribute table is now the shared
+  `VertexSemanticMapper` the Vulkan and DirectX 12 tables already used, so each record carries
+  the usage and index `mgfxc` 3.8.4.1 writes (measured per semantic, including non-zero indices
+  such as `TEXCOORD3` and `BLENDWEIGHT1`); a semantic `mgfxc` itself refuses on OpenGL (`MYSEM0`)
+  is still `SD0210`, and so is `SAMPLE`. A matrix interpolant is split into one `vTexCoord{n}`
+  varying per register, laid out as fxc lays it out: one HLSL column per register, or one row per
+  register for an explicit `row_major` (read from the HLSL declaration, since DXC's output is
+  identical for the two), so a stage that reads the interpolant as separate vectors gets
+  `mgfxc`'s data, with each stage laid out from the signature of the entry point it compiles (so
+  a `row_major` VS output read as a column_major PS input, or two techniques declaring one semantic
+  differently, also match `mgfxc`). A degenerate `float1xN` interpolant is split over N
+  one-component registers as fxc lays it out. A matrix interpolant the scanned signature does not
+  declare (a semantic on a struct-typed member holding a matrix, a type defined twice at file
+  scope), a `float1xN` vertex input, and `PSIZE0` beside `POINTSIZE0` are refused with `SD0210`
+  rather than laid out by guess. `TEXCOORD00` is `TEXCOORD0`, as in fxc. Two vertex
+  inputs naming one element (`POSITION0` beside `SV_POSITION` or `Position0`) now share one
+  attribute record, as in `mgfxc`; before, the second read zero. Rendered in real MonoGame
+  DesktopGL and real KNI SDL2.GL (MGFX v10 and KNIFX) through a custom `VertexDeclaration`, every
+  element and every mixed-declaration packing case matches the `mgfxc` build at maxd 0
+  (`validation/VertexSemanticsGl`, `validation/VertexSemanticsKniGl`). Every corpus shader that
+  compiled before compiles to the same bytes. Still open on OpenGL for skinned shaders: an `int4`/`uint4`
+  `BLENDINDICES` input and `float4x3` bone uniforms are refused (`SD0210`), and the stock
+  `SkinnedEffect.fx` stops earlier at `SD0010` (macro-defined techniques).
+
 ## [0.22.1] - 2026-10-29
 
 ### Added

@@ -45,4 +45,14 @@ public sealed record GlSamplerSlots(
     /// </summary>
     public IReadOnlyDictionary<string, string> LegacySamplerTextures { get; init; } =
         new Dictionary<string, string>(StringComparer.Ordinal);
+
+    /// <summary>
+    /// Function name -> the matrix declarations its signature carries, for every function
+    /// DEFINED in the preprocessed source (the compile looks up the entry points its passes name).
+    /// Not a sampler fact: it rides on the same view because the OpenGL rewriter cannot see
+    /// majorness in DXC's output, and fxc packs a <c>row_major</c> matrix interpolant by rows
+    /// (see <see cref="MatrixInterpolantDeclaration"/>).
+    /// </summary>
+    public IReadOnlyDictionary<string, EntryPointMatrixInterpolants> EntryPointInterpolants { get; init; } =
+        new Dictionary<string, EntryPointMatrixInterpolants>(StringComparer.Ordinal);
 }

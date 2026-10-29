@@ -2058,6 +2058,7 @@ public sealed class FxPreParser
                 LegacySamplerRegisters = legacyRegisters,
                 LegacyTextures = legacyTextures,
                 LegacySamplerTextures = legacySamplerTextures,
+                EntryPointInterpolants = GlEntryPointInterpolantScanner.Scan(tokens),
             });
     }
 

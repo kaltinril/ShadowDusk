@@ -88,6 +88,20 @@
                                    (zeros) as a second control. Dx12 and Vulkan are MonoGame 3.8.5.
                                    KniDx and KniGl also open a Reach device: KNIFX ps/vs_4_0_level_9_1
                                    must load (recorded SM 2.0); 9_3, 4_0 (and 3_0 on GL) refused.
+    * GL vertex semantics        - validation/VertexSemantics{Gl,KniGl}: a custom VertexDeclaration
+                                   with BINORMAL / TANGENT / BLENDINDICES (Byte4) / BLENDWEIGHT 0+1 /
+                                   PSIZE / FOG / DEPTH / TEXCOORD3 / COLOR, each element shown alone
+                                   through the effect's `Pick`, plus a float3x3 TEXCOORD2
+                                   interpolant; vs the mgfxc OpenGL build (maxd <= 1) and the
+                                   element's CPU value, MGFX v10 on MonoGame, v10 + KNIFX on KNI;
+                                   plus 30 matrix-interpolant packing fixtures whose stages declare
+                                   the interpolant differently (column_major and row_major, 3x3 /
+                                   4x3 / 3x4 / 2x2). Controls that must diverge: a relabelled
+                                   BINORMAL0 record, two row_major fixtures packed by columns, a split float1x4 in one register.
+                                   The non-square packing cases are an explicit list a strict GL
+                                   driver (Mesa/Apple/ANGLE, from GL_RENDERER) must refuse
+                                   (EXPECTED-REFUSED, SD0403); on a desktop GPU driver they must
+                                   render and match like the rest, so this run is where they do.
     * Apos.Shapes GL render-proof - validation/VsDriven -- apos: a single shape plus a needle-thin
                                    ellipse vs the mgfxc OpenGL golden, tol 2/255. Uses the older
                                    apos-shapes.fx pin - the current revision's mgfxc GL compile is
@@ -357,6 +371,19 @@ $gates.Add(@{
     Name   = 'Non-square matrix Set (issue #423, real MonoGame WindowsDX vs MonoGame DX semantics + mgfxc DirectX_11 builds)'
     Action = { Invoke-Checked 'dotnet' @('run', '--project', 'validation/NonSquareMatrixDx', '-c', 'Release') }
 })
+# GL vertex-input semantics beyond POSITION/COLOR/TEXCOORD/NORMAL (BINORMAL, TANGENT,
+# BLENDINDICES, BLENDWEIGHT, PSIZE, FOG, DEPTH, non-zero indices) and float3x3 interpolants:
+# each element of a custom VertexDeclaration drives the colour, vs the mgfxc OpenGL build in the
+# same process AND the CPU-known element value, with a relabelled-record control that must diverge.
+foreach ($drv in @(
+    @('VertexSemanticsGl',    'MonoGame DesktopGL'),
+    @('VertexSemanticsKniGl', 'KNI SDL2.GL, MGFX v10 and KNIFX'))) {
+    $project = "validation/$($drv[0])"
+    $gates.Add(@{
+        Name   = "GL vertex semantics + matrix interpolants ($($drv[1]): every VertexElementUsage binds, vs mgfxc OpenGL build, relabelled-record control)"
+        Action = [scriptblock]::Create("Invoke-Checked 'dotnet' @('run', '--project', '$project', '-c', 'Release')")
+    })
+}
 $gates.Add(@{
     Name   = 'Apos.Shapes GL render-proof (Phase 51 A3, real MonoGame DesktopGL vs mgfxc OpenGL golden)'
     Action = { Invoke-Checked 'dotnet' @('run', '--project', 'validation/VsDriven', '-c', 'Release', '--', 'apos') }
