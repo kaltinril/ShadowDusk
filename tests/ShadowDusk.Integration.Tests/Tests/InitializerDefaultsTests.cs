@@ -297,9 +297,57 @@ public sealed class InitializerDefaultsTests
         CompiledShader m = await CompileAsync("M_RowMajorTallFourthRow.fx", target);
         ShaderError w = m.Warnings.Single(x => x.Code == "SD0017");
         w.Message.ShouldContain("row 3", Case.Sensitive);
-        w.Message.ShouldContain("A Set cannot fill those registers either", Case.Sensitive);
+        w.Message.ShouldContain("A Set cannot reach rows 3 and beyond either", Case.Sensitive);
+        w.Message.ShouldContain("remove its row_major modifier", Case.Sensitive);
+        w.Message.ShouldNotContain("transpose it", Case.Sensitive);
         w.Message.ShouldNotContain("Set the parameter by name", Case.Sensitive);
         Param(m, "M").DefaultValue.ShouldBe(new byte[48]);
+    }
+
+    [Theory]
+    [InlineData(PlatformTarget.DirectX)]
+    [InlineData(PlatformTarget.DirectX12)]
+    public async Task TallRowMajorArrayDefault_OnDirectX_IsALoudSd0017(PlatformTarget target)
+    {
+        // MonoGame uploads each element ColumnCount (3) registers after the last, over a row_major
+        // buffer of 4 registers per element: element 1 would land a register early, over element 0's
+        // zero row. Refused, every element zero, the advice naming the array.
+        CompiledShader n = await CompileAsync("N_RowMajorTallArray.fx", target);
+        ShaderError w = n.Warnings.Single(x => x.Code == "SD0017");
+        w.Message.ShouldContain("array of row_major 4x3 matrices", Case.Sensitive);
+        w.Message.ShouldContain("Separate (non-array) parameters", Case.Sensitive);
+        w.Message.ShouldNotContain("Set the parameter by name", Case.Sensitive);
+        MgfxParameterRecord b = Param(n, "B");
+        b.Elements.Count.ShouldBe(2);
+        b.Elements.ShouldAllBe(e => e.DefaultValue!.All(x => x == 0));
+        n.Parameters.Single(p => p.Name == "B").DefaultValue.ShouldBeNull();
+    }
+
+    [Fact]
+    public async Task TallRowMajorArrayDefault_OnVulkan_IsEveryElementInRegisterOrder()
+    {
+        // Vulkan's 3x4 header advances 4 registers per element, the row_major stride.
+        CompiledShader n = await CompileAsync("N_RowMajorTallArray.fx", PlatformTarget.Vulkan);
+        n.Warnings.ShouldNotContain(w => w.Code == "SD0017");
+        MgfxParameterRecord b = Param(n, "B");
+        Floats(b.Elements[0].DefaultValue!).ShouldBe(new[] { 0.25f, 0f, 0f, 0f, 0.5f, 0f, 0f, 0f, 0.75f, 0f, 0f, 0f });
+        Floats(b.Elements[1].DefaultValue!).ShouldBe(new[] { 0f, 1f, 0f, 0.5f, 0f, 0f, 0f, 0f, 1f, 0f, 0f, 0f });
+    }
+
+    [Fact]
+    public async Task TallRowMajorDefault_NegativeZeroInTheUnreachedRow_IsKept()
+    {
+        // The unreached-row check is numeric: -0.0 is zero, so an affine matrix written with -0 is kept.
+        const string src = """
+            row_major float4x3 M = float4x3(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.0, -0.0, -0.0);
+            float4 MainPS(float4 pos : SV_Position) : SV_Target0 { return M[1].xyzz; }
+            technique T { pass P { PixelShader = compile ps_4_0 MainPS(); } }
+            """;
+        var result = await new EffectCompiler().CompileAsync(
+            src, new CompilerOptions { Target = PlatformTarget.DirectX, SourceFileName = "NegZero.fx" });
+        result.IsSuccess.ShouldBeTrue(result.IsFailure ? result.Error[0].Message : "");
+        result.Value.Warnings.ShouldNotContain(w => w.Code == "SD0017");
+        Floats(Param(result.Value, "M").DefaultValue!).ShouldBe(new[] { 1f, 0f, 0f, 0f, 0f, 1f, 0f, 0f, 0f, 0f, 1f, 0f });
     }
 
     [Fact]

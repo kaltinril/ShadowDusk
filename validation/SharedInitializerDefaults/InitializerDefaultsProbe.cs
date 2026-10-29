@@ -59,6 +59,9 @@ public static class InitializerDefaultsProbe
         new("K_RowMajorTallSymmetric.fx",  false, 64, 128, 191, 255),
         new("L_RowMajorTallAsymmetric.fx", false, 32, 128, 32, 255),
         new("M_RowMajorTallFourthRow.fx",  false, 64, 128, 191, 255, OnDirectX: (0, 0, 0, 255)),
+        // An ARRAY of tall row_major float4x3: on DirectX each element is uploaded 3 registers after the last
+        // over a 4-register stride, so it is SD0017 and zeros there (black); Vulkan advances 4.
+        new("N_RowMajorTallArray.fx",      false, 32, 128, 32, 255, OnDirectX: (0, 0, 0, 255)),
     ];
 
     /// <summary>

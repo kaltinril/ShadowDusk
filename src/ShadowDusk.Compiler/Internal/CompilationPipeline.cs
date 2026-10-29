@@ -1198,7 +1198,7 @@ internal sealed class CompilationPipeline
         {
             for (int i = 0; i < allParameters.Count; i++)
                 if (allParameters[i].IsRowMajor)
-                    allParameters[i] = allParameters[i] with { IsRowMajor = false };
+                    allParameters[i] = allParameters[i] with { IsRowMajor = false, IsHeaderTransposed = false };
         }
 
         IReadOnlyDictionary<string, GlobalInitializerDefault> parameterDefaults =
@@ -3172,13 +3172,13 @@ internal sealed class CompilationPipeline
             GlobalInitializerDefault? def = null;
             if (defaults.TryGetValue(param.Name, out GlobalInitializerDefault? candidate))
             {
-                (GlobalInitializerDefault stored, string? rowMajorReason) = InStorageOrder(param, candidate);
-                string? mismatch = rowMajorReason ?? DefaultShapeMismatch(param, stored);
+                (GlobalInitializerDefault stored, RowMajorRefusal? refusal) = InStorageOrder(param, candidate);
+                string? mismatch = refusal?.Reason ?? DefaultShapeMismatch(param, stored);
                 if (mismatch is null)
                     def = stored;
-                else if (rowMajorReason is not null)
+                else if (refusal is not null)
                     warnings.Add(DefaultNotPreserved(candidate.File, candidate.Line, candidate.Column, param.Name, mismatch,
-                        RowMajorAdvice));
+                        refusal.Advice));
                 else
                     warnings.Add(DefaultNotPreserved(candidate.File, candidate.Line, candidate.Column, param.Name, mismatch));
             }
@@ -3214,10 +3214,15 @@ internal sealed class CompilationPipeline
     /// square matrix is the rows in order, a TALL one (R &gt; C) reaches rows 0..C-1 only (an element
     /// in a row j &gt;= C is refused, an all-zero tail is kept: an affine world or bone matrix's
     /// fourth column), and a WIDE one (C &gt; R) uploads C registers over a matrix of R, so it is
-    /// refused (the upload runs into the next member, or past the end of the buffer). Before this, a
-    /// row_major default was the column-major blob and arrived transposed, with no warning.
+    /// refused (the upload runs into the next member, or past the end of the buffer). An ARRAY is
+    /// uploaded element after element, each <c>Ch</c> registers on from the last
+    /// (<c>ConstantBuffer.SetParameter</c>: <c>offset += ColumnCount * 16</c>), while a row_major
+    /// array's buffer holds R registers per element, so unless <c>Ch == R</c> (Vulkan, or a square
+    /// matrix) every element after the first lands in the wrong registers: a DirectX tall row_major
+    /// array is refused too. Before this, a row_major default was the column-major blob and arrived
+    /// transposed, with no warning.
     /// </summary>
-    private static (GlobalInitializerDefault Stored, string? RowMajorReason) InStorageOrder(
+    private static (GlobalInitializerDefault Stored, RowMajorRefusal? Refusal) InStorageOrder(
         ParameterReflection param, GlobalInitializerDefault def)
     {
         if (!param.IsRowMajor || def.Class != (byte)EffectParameterClass.Matrix || param.Class != EffectParameterClass.Matrix)
@@ -3229,8 +3234,19 @@ internal sealed class CompilationPipeline
             return (def, null);                               // DefaultShapeMismatch reports it
 
         if (ch > rows)
-            return (def, $"it is a row_major {rows}x{cols} matrix, whose buffer holds {rows} registers, one per row, " +
-                         $"and MonoGame uploads its {rh}x{ch} parameter as {ch} registers of {rh} floats, past the matrix");
+            return (def, new RowMajorRefusal(
+                $"it is a row_major {rows}x{cols} matrix, whose buffer holds {rows} registers, one per row, " +
+                $"and MonoGame uploads its {rh}x{ch} parameter as {ch} registers of {rh} floats, past the matrix",
+                "A Set cannot fill those registers either (and last in the globals the first Apply throws). " +
+                ColumnMajorAdvice));
+
+        if (Math.Max(1, param.Elements) > 1 && ch != rows)
+            return (def, new RowMajorRefusal(
+                $"it is an array of row_major {rows}x{cols} matrices, whose buffer holds {rows} registers per element, " +
+                $"and MonoGame uploads each element {ch} registers after the last, so every element after the first " +
+                "lands in the wrong registers on this target",
+                "A Set of the array lands those elements in the wrong registers too. " + ColumnMajorAdvice +
+                " Separate (non-array) parameters also work."));
 
         var blobs = new List<byte[]>(def.ElementBlobs.Count);
         foreach (byte[] blob in def.ElementBlobs)
@@ -3247,11 +3263,16 @@ internal sealed class CompilationPipeline
                     {
                         Buffer.BlockCopy(blob, source, stored, (j * rh + k) * 4, 4);
                     }
-                    else if (BitConverter.ToInt32(blob, source) != 0)
+                    else if (def.Type == (byte)EffectParameterType.Single
+                                 ? BitConverter.ToSingle(blob, source) != 0f   // numerically: -0.0 is zero
+                                 : BitConverter.ToInt32(blob, source) != 0)
                     {
-                        return (def, $"it is a row_major {rows}x{cols} matrix, whose buffer holds one register per row, " +
-                                     $"and MonoGame uploads its {rh}x{ch} parameter as {ch} registers of {rh} floats, so " +
-                                     $"row {j} (non-zero in the initializer) is never written on this target");
+                        return (def, new RowMajorRefusal(
+                            $"it is a row_major {rows}x{cols} matrix, whose buffer holds one register per row, " +
+                            $"and MonoGame uploads its {rh}x{ch} parameter as {ch} registers of {rh} floats, so " +
+                            $"row {j} (non-zero in the initializer) is never written on this target",
+                            $"A Set cannot reach rows {ch} and beyond either. " + ColumnMajorAdvice +
+                            $" A row_major {rows}x{cols} default is kept on this target only when those rows are zero."));
                     }
                 }
             }
@@ -3260,10 +3281,12 @@ internal sealed class CompilationPipeline
         return (def with { Rows = rh, Columns = ch, ElementBlobs = blobs }, null);
     }
 
-    /// <summary>The <c>SD0017</c> advice for a row_major shape the upload cannot fill: a Set cannot either.</summary>
-    private const string RowMajorAdvice =
-        "A Set cannot fill those registers either. Declare the matrix column-major (drop row_major or " +
-        "#pragma pack_matrix(row_major)), or transpose it to a tall shape whose extra rows are zero.";
+    /// <summary>Why a row_major default cannot be stored, and the advice for it (a runtime Set does not help).</summary>
+    private sealed record RowMajorRefusal(string Reason, string Advice);
+
+    private const string ColumnMajorAdvice =
+        "Declare the matrix column-major instead: remove its row_major modifier, or, if a " +
+        "#pragma pack_matrix(row_major) applies, declare it column_major or after #pragma pack_matrix(column_major).";
 
     /// <summary>
     /// Why the default read off the source cannot be attached to the reflected parameter, or null

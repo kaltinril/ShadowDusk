@@ -75,13 +75,15 @@ that loads and renders identically to `mgfxc`'s in the real MonoGame/KNI runtime
   columns, such as an affine `float4x3` world or bone matrix): MonoGame uploads it as C registers of R floats, which
   reaches rows 0..C-1, so those rows are written and a zero tail is kept; a non-zero row at index C or beyond is
   the `SD0017` warning naming the row. A WIDE `row_major` matrix on DirectX (more columns than rows) is uploaded
-  past the matrix, so its initializer is `SD0017` and a zero default instead of a scrambled one; for these the
-  warning says a Set cannot reach the registers either and suggests column-major packing. OpenGL is unchanged
+  past the matrix, and an ARRAY of non-square `row_major` matrices on DirectX is uploaded one element every
+  `ColumnCount` registers over a stride of `RowCount` (so every element after the first lands wrong): both are
+  `SD0017` and a zero default instead of a scrambled one. For these the warning says why a Set does not help
+  either and suggests column-major packing (or, for an array, separate parameters). OpenGL is unchanged
   (render-proven). Real `mgfxc` has no reference: its DirectX_11 build refuses every `row_major` matrix and its
   Vulkan build writes zeros. Only those default blob bytes change (in the corpus, `DefaultsMatrices.fx`'s `M4r` on
   DirectX 11, DirectX 12, Vulkan and KNIFX-DX). Proven in real MonoGame WindowsDX, WindowsDX12 and DesktopVK by the
   new `H_RowMajorMatrix`, `I_PackMatrixPragma`, `J_RowMajor2x2`, `K_RowMajorTallSymmetric`,
-  `L_RowMajorTallAsymmetric` and `M_RowMajorTallFourthRow` cases of the `InitializerDefaults*` drivers; KNIFX on DX
+  `L_RowMajorTallAsymmetric`, `M_RowMajorTallFourthRow` and `N_RowMajorTallArray` cases of the `InitializerDefaults*` drivers; KNIFX on DX
   is byte-tested only, its real-engine proof waits for the separate KNIFX `_level_9_x` shader-model fix (the KNIFX
   arm of `InitializerDefaultsKniDx` is red on `main` for that reason).
 
