@@ -531,7 +531,13 @@ internal sealed class CompilationPipeline
         // them, so a legacy SM3 effect compiled here and then failed the consumer's real
         // Content Pipeline build. DirectX only — see DirectX11FloorCheck's remarks for why
         // the OpenGL/Vulkan/DX12 equivalents are deliberately not enforced here.
+        //
+        // A KNIFX container on DirectX takes KNI's floor instead of mgfxc's: KNI's own DirectX
+        // pipeline also accepts *_2_0 and *_3_0, compiling them as *_4_0_level_9_1 / _9_3 (see
+        // KniDirectXProfile). Choosing the KNIFX container is choosing KNI's pipeline; MGFX keeps
+        // mgfxc's refusal.
         bool enforceDx11Floor = directX;
+        bool kniDirectXFloor = directX && effectiveContainer == EffectContainer.Knifx;
         // A profile a macro produced is validated through the macro name the author wrote, so DXC
         // expands it with -P as before issue #407. (The Android emulator hangs the first SPIR-V
         // compile after the corpus' effects stop making those -P calls: a DXC-spawned thread is
@@ -549,7 +555,8 @@ internal sealed class CompilationPipeline
                         pass.VertexProfileMacroName ?? pass.VertexProfileToken, pass.VertexProfileSpan, ShaderStage.Vertex,
                         dxcCompiler, macros, preprocessed, sourceFileName,
                         profileExpansionCache, enforceStagePrefix: true, cancellationToken,
-                        enforceDirectX11Floor: enforceDx11Floor, entryPoint: pass.VertexEntryPoint);
+                        enforceDirectX11Floor: enforceDx11Floor, entryPoint: pass.VertexEntryPoint,
+                        kniDirectXFloor: kniDirectXFloor);
                     if (v is { } vErr)
                         return Fail(vErr);
                 }
@@ -560,7 +567,8 @@ internal sealed class CompilationPipeline
                         pass.PixelProfileMacroName ?? pass.PixelProfileToken, pass.PixelProfileSpan, ShaderStage.Pixel,
                         dxcCompiler, macros, preprocessed, sourceFileName,
                         profileExpansionCache, enforceStagePrefix: true, cancellationToken,
-                        enforceDirectX11Floor: enforceDx11Floor, entryPoint: pass.PixelEntryPoint);
+                        enforceDirectX11Floor: enforceDx11Floor, entryPoint: pass.PixelEntryPoint,
+                        kniDirectXFloor: kniDirectXFloor);
                     if (p is { } pErr)
                         return Fail(pErr);
                 }
@@ -1673,7 +1681,8 @@ internal sealed class CompilationPipeline
         bool enforceStagePrefix,
         CancellationToken cancellationToken,
         bool enforceDirectX11Floor = false,
-        string? entryPoint = null)
+        string? entryPoint = null,
+        bool kniDirectXFloor = false)
     {
         // A missing profile cannot be validated (and never reaches a compile with a real
         // target) — leave the existing SM3 fallback behavior untouched.
@@ -1684,7 +1693,7 @@ internal sealed class CompilationPipeline
         // (IsKnownProfile is case-insensitive, so the lowercased form is fine here.)
         if (FxPreParser.IsKnownProfile(profile))
             return ResolvedProfileChecks(
-                profile, stage, span, sourceFileName, enforceStagePrefix, enforceDirectX11Floor, entryPoint);
+                profile, stage, span, sourceFileName, enforceStagePrefix, enforceDirectX11Floor, entryPoint, kniDirectXFloor);
 
         // Profile-SHAPED but NOT a known profile (e.g. 'ps_9_9', 'ps_2_5'): unconditionally
         // invalid — no macro could rescue a literal that already looks like a profile — so
@@ -1715,7 +1724,7 @@ internal sealed class CompilationPipeline
 
         if (expanded is not null && FxPreParser.IsKnownProfile(expanded))
             return ResolvedProfileChecks(
-                expanded, stage, span, sourceFileName, enforceStagePrefix, enforceDirectX11Floor, entryPoint);
+                expanded, stage, span, sourceFileName, enforceStagePrefix, enforceDirectX11Floor, entryPoint, kniDirectXFloor);
 
         return ProfileError(profile, span, sourceFileName);
     }
@@ -1735,15 +1744,18 @@ internal sealed class CompilationPipeline
         string sourceFileName,
         bool enforceStagePrefix,
         bool enforceDirectX11Floor,
-        string? entryPoint)
+        string? entryPoint,
+        bool kniDirectXFloor)
     {
         ShaderError? stagePrefix = StagePrefixCheck(knownProfile, stage, span, sourceFileName, enforceStagePrefix);
         if (stagePrefix is not null)
             return stagePrefix;
 
-        return enforceDirectX11Floor
-            ? DirectX11FloorCheck(knownProfile, stage, span, sourceFileName, entryPoint)
-            : null;
+        if (!enforceDirectX11Floor)
+            return null;
+        return kniDirectXFloor
+            ? KniDirectXFloorCheck(knownProfile, stage, span, sourceFileName, entryPoint)
+            : DirectX11FloorCheck(knownProfile, stage, span, sourceFileName, entryPoint);
     }
 
     /// <summary>
@@ -1916,6 +1928,10 @@ internal sealed class CompilationPipeline
     /// compiler is mgfxc <b>3.8.5</b>, which is not the pinned golden oracle and is not
     /// installed here, so its floor has never been measured — guessing it would be the
     /// opposite of the empirical rule this check is built on.
+    ///
+    /// <para>This is the MGFX container's floor. A KNIFX container on DirectX is checked
+    /// against KNI's own pipeline instead (<see cref="KniDirectXFloorCheck"/>), which also
+    /// accepts <c>*_2_0</c> and <c>*_3_0</c>.</para>
     /// </remarks>
     private static ShaderError? DirectX11FloorCheck(
         string knownProfile, ShaderStage stage, SourceSpan? span, string sourceFileName, string? entryPoint)
@@ -1938,6 +1954,35 @@ internal sealed class CompilationPipeline
                      $"profiles such as {prefix}_6_0 are refused too). Use the standard " +
                      "'#if OPENGL … #else …' header so the DirectX arm defines " +
                      "VS_SHADERMODEL/PS_SHADERMODEL as the *_4_0_level_9_1 pair");
+    }
+
+    /// <summary>
+    /// The DirectX floor for a KNIFX container: the compile targets KNI's own DirectX pipeline
+    /// accepts (<see cref="KniDirectXProfile.Accepts"/>), which are mgfxc's DirectX_11 set plus
+    /// <c>*_2_0</c> and <c>*_3_0</c> (compiled as <c>*_4_0_level_9_1</c> / <c>*_4_0_level_9_3</c>).
+    /// Everything else KNI's MGCB refuses ("Invalid profile 'ps_2_a'. Pixel shader 'P'.", or for SM1
+    /// "... must be at least SM 2.0.", measured on 4.2.9001 and 4.3.9001), and so does this check,
+    /// with the same <c>SD0015</c> the MGFX floor reports.
+    /// </summary>
+    private static ShaderError? KniDirectXFloorCheck(
+        string knownProfile, ShaderStage stage, SourceSpan? span, string sourceFileName, string? entryPoint)
+    {
+        if (KniDirectXProfile.Accepts(knownProfile))
+            return null;
+
+        string stageWord = stage == ShaderStage.Vertex ? "vertex" : "pixel";
+        string prefix    = stage == ShaderStage.Vertex ? "vs" : "ps";
+        string named     = entryPoint is null ? string.Empty : $" (the {stageWord} shader '{entryPoint}')";
+        return new ShaderError(
+            File: sourceFileName,
+            Line: span?.StartLine ?? 0,
+            Column: span?.StartColumn ?? 0,
+            Code: "SD0015",
+            Message: $"compile target '{knownProfile}'{named} is not one KNI's DirectX pipeline accepts — " +
+                     "KNI's own effect processor refuses it as an invalid profile. For the KNIFX container on " +
+                     $"DirectX, KNI accepts only {prefix}_2_0 and {prefix}_3_0 (which it compiles as " +
+                     $"{prefix}_4_0_level_9_1 and {prefix}_4_0_level_9_3), {prefix}_4_0_level_9_1, " +
+                     $"{prefix}_4_0_level_9_3, {prefix}_4_0, {prefix}_4_1, and {prefix}_5_0");
     }
 
     /// <summary>
