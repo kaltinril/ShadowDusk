@@ -310,7 +310,15 @@ Mesa **lavapipe** under xvfb, with the **Khronos validation layer** forced on by
 ubuntu was picked over SwiftShader on `windows-latest` because it hosted DesktopVK on the first measured run
 (VS-driven maxd 0, gallery maxd 0, PS corpus 10/10, zero layer errors or warnings) and needs only `apt`, not
 the registry workarounds an elevated Windows runner forces on a non-SDK ICD. Two positive controls in the same
-job prove it can fail (see the §6 row).
+job prove it can fail (see the §6 row). **The job raises `vm.max_map_count` to 2,097,152** (measured 2026-10-28,
+PR #434): MonoGame 3.8.5 DesktopVK's `MGG_Shader_Create` allocates about 13,500 descriptor sets per shader and
+never frees them, and lavapipe backs every set with its own buffer mapping, so a process holds ~13,500 more
+mappings per shader. At the image's 262,144 (about 19 shaders) lavapipe's `lvp_descriptor_set_create` memsets a
+failed map and the driver segfaults (exit 139, minutes in, no managed output); `InitializerDefaultsVulkan` (17
+cases) and `NonSquareMatrixVulkan` (two builds of 9 cases) were the first drivers past it. Reproduced in an
+ubuntu 24.04 container with the same Mesa 25.2.8 / LLVM 20.1.2 lavapipe (crash at 262,144 mappings, all cases pass
+at 2,097,152). A GPU driver does not map per set. Nothing is skipped; both drivers warn on Linux when the limit
+is below 1,048,576, and print each case before drawing it, so a native crash still names the case.
 
 ## 7. Gaps & next targets (ordered)
 

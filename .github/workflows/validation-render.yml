@@ -632,6 +632,16 @@ jobs:
       # Pin Mesa's lavapipe (CPU Vulkan) as the only ICD, so a runner image that ever grows
       # another driver cannot change what judged the pixels. The manifest's file name varies
       # across Mesa packagings, so it is located rather than hard-coded; none found = red.
+      # Measured 2026-10-28 (PR #434): MonoGame 3.8.5 DesktopVK's MGG_Shader_Create allocates ~13,500
+      # descriptor sets per shader and never frees them, and lavapipe backs each set with its own buffer
+      # mapping. At vm.max_map_count (262144 on this image, ~19 shaders) lavapipe's descriptor-set create
+      # memsets a failed map and the driver segfaults (exit 139) minutes in. A GPU driver does not map per
+      # set. Raising the per-process mapping limit runs every case; nothing is skipped.
+      - name: Raise vm.max_map_count for lavapipe (MonoGame maps ~13.5k descriptor sets per shader)
+        run: |
+          sudo sysctl -w vm.max_map_count=2097152
+          cat /proc/sys/vm/max_map_count
+
       - name: Pin lavapipe as the only Vulkan ICD
         run: |
           ls -l /usr/share/vulkan/icd.d/ /usr/share/vulkan/explicit_layer.d/

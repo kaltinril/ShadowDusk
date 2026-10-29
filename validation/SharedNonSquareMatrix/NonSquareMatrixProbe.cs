@@ -116,6 +116,7 @@ public static class NonSquareMatrixProbe
 
     public static int Run(string runtime, PlatformTarget inProcessTarget, string[] args)
     {
+        WarnIfMapCountLow(runtime, inProcessTarget);
         var watchdog = new Thread(() =>
         {
             Thread.Sleep(240_000);
@@ -200,6 +201,30 @@ public static class NonSquareMatrixProbe
             ? $"[{runtime}] PASS: the in-tree ShadowDusk build matches the expectation on every gated case."
             : $"[{runtime}] FAIL: {gateFailures} gated failure(s) of the in-tree ShadowDusk build.");
         return gateFailures == 0 ? 0 : 1;
+    }
+
+    /// <summary>
+    /// On Linux, warns when <c>vm.max_map_count</c> is too low for a Vulkan run on Mesa lavapipe. Measured
+    /// 2026-10-28 (Mesa 25.2.8, MonoGame 3.8.5 DesktopVK): MonoGame's <c>MGG_Shader_Create</c> allocates about
+    /// 13,500 descriptor sets per shader and never frees them, and lavapipe backs each set with its own buffer
+    /// mapping, so a process holds ~13,500 more mappings per shader created. At the kernel's limit lavapipe's
+    /// <c>lvp_descriptor_set_create</c> does not check the failed map and segfaults in <c>memset</c> (exit 139),
+    /// minutes into the run with no managed output. 262,144 (GitHub's ubuntu image) is ~19 shaders; 65,530 (the
+    /// kernel default) ~4. A GPU driver does not map per set. The CI job raises the limit.
+    /// </summary>
+    private static void WarnIfMapCountLow(string label, PlatformTarget target)
+    {
+        const long Needed = 1_048_576;
+        if (target != PlatformTarget.Vulkan || !OperatingSystem.IsLinux()) return;
+        try
+        {
+            if (long.TryParse(File.ReadAllText("/proc/sys/vm/max_map_count").Trim(), out long limit) && limit < Needed)
+                Console.WriteLine($"[{label}] WARNING: vm.max_map_count is {limit}. On Mesa lavapipe MonoGame DesktopVK " +
+                    $"holds ~13,500 mappings per shader, so this run may segfault (exit 139) after ~{limit / 13_500} shaders. " +
+                    $"Raise it first: sudo sysctl -w vm.max_map_count=2097152");
+        }
+        catch (IOException) { /* not readable: nothing to say */ }
+        catch (UnauthorizedAccessException) { }
     }
 
     private static string Decode(byte[] px, int width)
@@ -289,6 +314,9 @@ public static class NonSquareMatrixProbe
 
             foreach (Job job in _jobs)
             {
+                // Flushed before each job, so a native crash (no managed results) still names the case it was in.
+                Console.WriteLine($"[probe] drawing {job.Case.Fx} [{job.Build}]");
+                Console.Out.Flush();
                 if (job.Bytes is null) { Results.Add(new JobResult(job, null, false, job.Error ?? "no bytes")); continue; }
 
                 Effect effect;
