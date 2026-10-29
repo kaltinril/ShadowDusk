@@ -56,7 +56,8 @@ that loads and renders identically to `mgfxc`'s in the real MonoGame/KNI runtime
   wrong, silently. A renamed `float3`/`float2` behind a `float`, which compiles now that the entry
   above is fixed, would have done the same on the desktop but not in the browser host, which reflects
   the std140 SPIR-V. The mapping now uses
-  declaration order with every other uniform's name checked, identically on every host, and fails
+  declaration order with every other uniform's name checked, identically on every host (also for
+  SPIRV-Cross's other renames: `my__val` to `my_val`, and `_noise_1` beside a real `_noise`), and fails
   `SD0012` with a message naming the cause when that cannot be proven (a renamed uniform in a stage
   with two cbuffers). No shader in the fixture corpus changes bytes.
 

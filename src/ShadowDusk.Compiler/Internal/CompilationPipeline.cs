@@ -1071,7 +1071,8 @@ internal sealed class CompilationPipeline
                     {
                         // Fallback (B10): SPIRV-Cross renames a free uniform whose name
                         // collides with a GLSL reserved word (e.g. `noise` -> `_noise`,
-                        // legal+required GLSL), so the GLSL layout's name no longer
+                        // legal+required GLSL; also underscore runs and collisions), so the
+                        // GLSL layout's name no longer
                         // matches the reflected parameter (still `noise`) and the name
                         // join misses. Recover the parameter by DECLARATION ORDER: the
                         // reflected cbuffer variable at this member's position carries the
@@ -1091,10 +1092,11 @@ internal sealed class CompilationPipeline
                             Code: "SD0012",
                             Message: $"GL uniform '{u.Name}' (shader #{i}) has no matching " +
                                      "effect parameter: the GLSL uniform layout and the reflected " +
-                                     "parameter list diverged. If SPIRV-Cross renamed a uniform " +
-                                     "named after a GLSL reserved word (noise -> _noise), it can " +
-                                     "only be mapped back when the stage's uniforms are all loose " +
-                                     "globals or in one cbuffer; rename the uniform otherwise"), runWarnings);
+                                     "parameter list diverged. SPIRV-Cross renames some uniforms " +
+                                     "(a GLSL reserved word, noise -> _noise; a run of underscores, " +
+                                     "my__val -> my_val; a name collision, _noise_1); a renamed " +
+                                     "uniform can only be mapped back when the stage's uniforms are " +
+                                     "all loose globals or in one cbuffer, so rename it otherwise"), runWarnings);
                     paramIndices.Add(paramIndex);
                     paramOffsets.Add((ushort)(u.BaseRegister * 16));
                     backedParamIndices.Add(paramIndex);
@@ -3017,8 +3019,9 @@ internal sealed class CompilationPipeline
     /// <summary>
     /// The DECLARATION-ORDER BRIDGE for the GL cbuffer/parameter join (B10), used ONLY
     /// when the primary name match fails, which happens exactly when SPIRV-Cross renamed
-    /// a free uniform whose name collides with a GLSL reserved word (<c>noise</c> →
-    /// <c>_noise</c>; also <c>filter</c>, <c>sample</c>, <c>input</c>, <c>output</c>, …).
+    /// a uniform: one named after a GLSL reserved word (<c>noise</c> → <c>_noise</c>; also
+    /// <c>filter</c>, <c>output</c>, …), one with a run of underscores (<c>my__val</c> →
+    /// <c>my_val</c>), or one whose rename collides with another name (<c>_noise_1</c>).
     /// The rewriter's layout lists the block's members in declaration order, and the
     /// reflected cbuffer lists its variables in that same order (every layout keeps it), so
     /// the renamed <paramref name="uniform"/> is the reflected variable at its position
@@ -3039,8 +3042,10 @@ internal sealed class CompilationPipeline
     /// (the reserved-word case is always a free global in <c>$Globals</c>; with several
     /// cbuffers the rewriter's merge order is not reconstructed), the same member count on
     /// both sides, and every position to agree by name: exactly, or, at a renamed
-    /// position, a GLSL name that is the reflected name with a prefix added (SPIRV-Cross
-    /// only prefixes) and is not itself a parameter. Anything else declines.</para>
+    /// position, a GLSL spelling that is not itself a parameter and an original name that
+    /// appears nowhere else in the layout. SPIRV-Cross's rename rules are deliberately not
+    /// modelled (an earlier prefix-only check refused valid underscore and collision
+    /// renames). Anything else declines.</para>
     /// </summary>
     private static int IndexOfParamByDeclarationOrder(
         IReadOnlyList<ConstantBufferReflection> constantBuffers,
@@ -3067,14 +3072,25 @@ internal sealed class CompilationPipeline
             string reflectedName = variables[j].Name;
             if (glslName == reflectedName)
                 continue;
-            bool renamed = glslName.Length > reflectedName.Length
-                && glslName.EndsWith(reflectedName, StringComparison.Ordinal)
-                && IndexOfParam(parameters, glslName) < 0;
+            // A renamed position: SPIRV-Cross's spelling must not be some other parameter's
+            // name, and the original name must not appear elsewhere in the layout. The rename
+            // rule itself is not modelled (it prefixes reserved words, collapses runs of
+            // underscores and suffixes collisions): position is the proof.
+            bool renamed = IndexOfParam(parameters, glslName) < 0
+                && !LayoutHasName(layout, reflectedName);
             if (!renamed)
                 return -1;
         }
 
         return IndexOfParam(parameters, variables[layoutIndex].Name);
+    }
+
+    private static bool LayoutHasName(IReadOnlyList<MonoGameGlslUniform> layout, string name)
+    {
+        foreach (MonoGameGlslUniform u in layout)
+            if (u.Name == name)
+                return true;
+        return false;
     }
 
     private static int IndexOfCbuffer(IReadOnlyList<ConstantBufferReflection> cbuffers, string name)

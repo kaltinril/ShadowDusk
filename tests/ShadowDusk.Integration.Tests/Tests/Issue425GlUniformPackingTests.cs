@@ -109,6 +109,24 @@ public sealed class Issue425GlUniformPackingTests
             "float4(output * g, 1) + c",
             [("g", 0), ("output", 1), ("c", 2)],
             ["ps_uniforms_vec4[1].xyz"]),
+        // SPIRV-Cross's other renames, which a prefix-only check refused (SD0012): a run of
+        // underscores collapses (my__val -> my_val, a___b -> a_b), and a rename that collides
+        // with another name gets a suffix (noise -> _noise_1 beside a real _noise).
+        ["DoubleUnderscore"] = new(
+            "float g;\nfloat4 my__val;\nfloat4 c;",
+            "my__val * g + c",
+            [("g", 0), ("my__val", 1), ("c", 2)],
+            ["ps_uniforms_vec4[1]"]),
+        ["TripleUnderscore"] = new(
+            "float g;\nfloat4 a___b;\nfloat4 c;",
+            "a___b * g + c",
+            [("g", 0), ("a___b", 1), ("c", 2)],
+            ["ps_uniforms_vec4[1]"]),
+        ["RenameCollision"] = new(
+            "float4 _noise;\nfloat4 noise;\nfloat4 c;",
+            "_noise + noise * 2 + c",
+            [("_noise", 0), ("noise", 1), ("c", 2)],
+            ["ps_uniforms_vec4[0]", "ps_uniforms_vec4[1]", "ps_uniforms_vec4[2]"]),
     };
 
     public static TheoryData<string> ReservedWordShapes() => new(s_reservedWordShapes.Keys);
