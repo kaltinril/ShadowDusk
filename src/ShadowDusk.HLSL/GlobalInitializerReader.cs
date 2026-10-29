@@ -33,21 +33,7 @@ public sealed record GlobalInitializerDefault(
     IReadOnlyList<byte[]> ElementBlobs,
     string File,
     int Line,
-    int Column)
-{
-    /// <summary>
-    /// The 1-based line of the initializer's last character in <see cref="File"/>; with
-    /// <see cref="EndColumn"/> it closes the span <c>(Line, Column)</c> .. <c>(EndLine, EndColumn)</c>
-    /// that runs from the declared name to the end of its initializer. A compiler reports a
-    /// diagnostic about the initializer somewhere inside that span (DXC's SPIR-V path at the
-    /// initializer's first token, its DXIL path at the name), which can be lines below the name
-    /// (<c>float4 C =</c> / <c>{ 1, 0, 0, 1 };</c>). 0 when unknown: the span is the name alone.
-    /// </summary>
-    public int EndLine { get; init; }
-
-    /// <summary>The 1-based column of the initializer's last character; see <see cref="EndLine"/>.</summary>
-    public int EndColumn { get; init; }
-}
+    int Column);
 
 /// <summary>A global initializer the reader found but could not turn into a default.</summary>
 /// <param name="Name">The declared name.</param>
@@ -775,18 +761,6 @@ public static class GlobalInitializerReader
                 var blobs = new List<byte[]>(elements.Count);
                 foreach (Val v in elements) blobs.Add(ToBlob(v));
 
-                // The span ends at the initializer's last token in the declaration's own file (a
-                // token a macro or #include brought in from elsewhere cannot bound it).
-                Tk end = nameTok;
-                for (int i = initEnd - 1; i >= initStart; i--)
-                {
-                    if (string.Equals(_t[i].File, nameTok.File, StringComparison.Ordinal))
-                    {
-                        end = _t[i];
-                        break;
-                    }
-                }
-
                 Defaults[nameTok.Text] = new GlobalInitializerDefault(
                     nameTok.Text,
                     type.MgfxClass,
@@ -797,11 +771,7 @@ public static class GlobalInitializerReader
                     blobs,
                     nameTok.File,
                     nameTok.Line,
-                    nameTok.Col)
-                {
-                    EndLine = end.Line,
-                    EndColumn = end.Col + Math.Max(end.Text.Length, 1) - 1,
-                };
+                    nameTok.Col);
             }
             catch (EvalException e)
             {

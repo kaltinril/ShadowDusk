@@ -41,55 +41,6 @@ public sealed class GlobalInitializerReaderTests
         return r.Defaults[name];
     }
 
-    // ---- the declaration span: name to the end of the initializer ------------------------
-    // The pipeline matches DXC's "initializer ignored" warning to a kept default by position, and
-    // DXC reports it at the initializer's first token, which can be lines below the name.
-
-    [Fact]
-    public void Span_OneLine_EndsAtTheInitializersLastCharacter()
-    {
-        GlobalInitializerDefault d = One("float R = 1.5;", "R");
-
-        (d.Line, d.Column).ShouldBe((1, 7));
-        (d.EndLine, d.EndColumn).ShouldBe((1, 13));
-    }
-
-    [Fact]
-    public void Span_BraceOnTheNextLine_EndsAtTheClosingBrace()
-    {
-        GlobalInitializerDefault d = One("float4 C =\n{ 1, 0, 0, 1 };", "C");
-
-        (d.Line, d.Column).ShouldBe((1, 8));
-        (d.EndLine, d.EndColumn).ShouldBe((2, 14));
-    }
-
-    [Fact]
-    public void Span_EqualsOnTheNextLine_CoversTheConstructor()
-    {
-        GlobalInitializerDefault d = One("float4 C\n  = float4(0, 1, 0, 1);", "C");
-
-        (d.Line, d.Column).ShouldBe((1, 8));
-        (d.EndLine, d.EndColumn).ShouldBe((2, 22));
-    }
-
-    [Fact]
-    public void Span_MultiLineArrayAndMatrix_EndAtTheirClosingBraces()
-    {
-        GlobalInitializers r = Read("float A[3] =\n{\n    1, 2, 3\n};\nfloat2x2 M =\n{\n  1, 0,\n  0, 1\n};");
-
-        (r.Defaults["A"].Line, r.Defaults["A"].EndLine, r.Defaults["A"].EndColumn).ShouldBe((1, 4, 1));
-        (r.Defaults["M"].Line, r.Defaults["M"].EndLine, r.Defaults["M"].EndColumn).ShouldBe((5, 9, 1));
-    }
-
-    [Fact]
-    public void Span_SecondDeclaratorOfAStatement_IsItsOwn()
-    {
-        GlobalInitializers r = Read("float A = 1, B =\n  2;");
-
-        (r.Defaults["A"].Line, r.Defaults["A"].Column, r.Defaults["A"].EndLine, r.Defaults["A"].EndColumn).ShouldBe((1, 7, 1, 11));
-        (r.Defaults["B"].Line, r.Defaults["B"].Column, r.Defaults["B"].EndLine, r.Defaults["B"].EndColumn).ShouldBe((1, 14, 2, 3));
-    }
-
     // ---- the minimal case, byte for byte -------------------------------------------------
 
     [Fact]

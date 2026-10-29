@@ -3287,66 +3287,20 @@ internal sealed class CompilationPipeline
 
         if (kept.Count > 0)
         {
+            var keptSites = new HashSet<(string File, int Line)>();
+            foreach (GlobalInitializerDefault d in kept.Values)
+                keptSites.Add((SourceBaseName(d.File), d.Line));
+
             // DXC's wording differs by path: the SPIR-V compiles say "variable 'X' will be placed in
             // $Globals so initializer ignored", the DXIL (DirectX 12) compile "Initializer of external
             // global will be ignored". Both are untrue once the default is stored.
-            //
-            // The warning is matched to a kept default by POSITION, inside the span from the declared
-            // name to the end of its initializer: the SPIR-V path reports the initializer's first
-            // token, the DXIL path the name (measured, DXC 1.7.2212.40), so a brace or '=' on the next
-            // line (`float4 C =` / `{ 1, 0, 0, 1 };`) used to leave a stale warning behind when only
-            // the name's line was compared. The variable name in the message is no key either: that
-            // DXC names the FIRST global with an initializer in every one of these warnings.
-            // A clang note that follows a removed warning ("expanded from macro 'RED'", when the
-            // initializer is a macro) belongs to it and goes with it.
-            for (int i = 0; i < warnings.Count; i++)
-            {
-                ShaderError w = warnings[i];
-                if (w.Code != "X0000" || w.Severity == ShaderErrorSeverity.Note ||
-                    !(w.Message.Contains("so initializer ignored", StringComparison.Ordinal) ||
-                      w.Message.Contains("Initializer of external global will be ignored", StringComparison.Ordinal)) ||
-                    !kept.Values.Any(d => InitializerSpanContains(d, w)))
-                {
-                    continue;
-                }
-
-                int notes = 0;
-                while (i + 1 + notes < warnings.Count &&
-                       warnings[i + 1 + notes].Code == "X0000" &&
-                       warnings[i + 1 + notes].Severity == ShaderErrorSeverity.Note)
-                {
-                    notes++;
-                }
-                warnings.RemoveRange(i, 1 + notes);
-                i--;
-            }
+            warnings.RemoveAll(w => w.Code == "X0000" &&
+                (w.Message.Contains("so initializer ignored", StringComparison.Ordinal) ||
+                 w.Message.Contains("Initializer of external global will be ignored", StringComparison.Ordinal)) &&
+                keptSites.Contains((SourceBaseName(w.File), w.Line)));
         }
 
         return kept;
-    }
-
-    /// <summary>
-    /// Whether <paramref name="warning"/>'s location lies in <paramref name="def"/>'s declaration,
-    /// from the declared name to the end of its initializer, in the same file (by base name, the
-    /// form both the compilers and the reader report).
-    /// </summary>
-    internal static bool InitializerSpanContains(GlobalInitializerDefault def, ShaderError warning)
-    {
-        if (!string.Equals(SourceBaseName(def.File), SourceBaseName(warning.File), StringComparison.Ordinal))
-            return false;
-
-        (int Line, int Column) start = (def.Line, def.Column);
-        (int Line, int Column) end = def.EndLine > 0 ? (def.EndLine, def.EndColumn) : start;
-        (int Line, int Column) at = (warning.Line, warning.Column);
-
-        // A diagnostic without a column (0) is placed by its line alone.
-        if (at.Column <= 0)
-            return at.Line >= start.Line && at.Line <= end.Line;
-
-        return Compare(at, start) >= 0 && Compare(at, end) <= 0;
-
-        static int Compare((int Line, int Column) a, (int Line, int Column) b) =>
-            a.Line != b.Line ? a.Line.CompareTo(b.Line) : a.Column.CompareTo(b.Column);
     }
 
     private static string SourceBaseName(string path)
