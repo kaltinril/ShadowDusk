@@ -14,6 +14,12 @@ link by.
 - `DeferredGBufferShape`: the shape of KNI EffectTest's `DeferredBasicEffect` (written
   independently): tangent-frame inputs and interpolant, three render-target outputs.
 
+- `packing/`: one matrix interpolant declared differently by the two stages (a matrix written
+  whole and read as separate vectors, or the reverse; 3x3, 4x3, 3x4, 2x2; column_major and
+  explicit `row_major`; a `typedef row_major`; `#pragma pack_matrix(row_major)`), so a render
+  shows the register layout fxc gives it; `DuplicatePosition` is `POSITION0` beside
+  `SV_POSITION`. Goldens are `packing/<Shape>.OpenGL.mgfx`.
+
 Consumers:
 
 - `tests/ShadowDusk.Integration.Tests/Reflection/GlVertexSemanticTests.cs` compares ShadowDusk's
@@ -31,7 +37,7 @@ From the repository root, after `dotnet tool restore`:
 
 ```powershell
 $mgfxc = Join-Path $env:USERPROFILE ".nuget\packages\dotnet-mgcb\3.8.4.1\tools\net8.0\any\mgfxc.dll"
-foreach ($fx in Get-ChildItem tests/fixtures/golden/vertex-semantics -Filter *.fx) {
+foreach ($fx in Get-ChildItem tests/fixtures/golden/vertex-semantics -Recurse -Filter *.fx) {
     dotnet $mgfxc $fx.FullName (Join-Path $fx.DirectoryName "$($fx.BaseName).OpenGL.mgfx") "/Profile:OpenGL"
 }
 ```

@@ -77,7 +77,7 @@ void main()
     [InlineData("FOG4")]
     [InlineData("PSIZE0")]
     [InlineData("TEXCOORD12")]
-    [InlineData("position")]
+    [InlineData("normal2")]   // lowercase; ("position" would be the POSITION0 element, merged)
     public void VertexInput_UsesTheSharedMapper(string semantic)
     {
         // One table: the GL attribute record is exactly what Vulkan's and DirectX 12's
@@ -283,6 +283,104 @@ void main()
 """;
         var act = () => MonoGameGlslRewriter.Rewrite(vs, ShaderStage.Vertex);
         Should.Throw<MonoGameGlslRewriteException>(act).Message.ShouldContain("vs_oT2_mat", Case.Sensitive);
+    }
+
+    private static MonoGameGlslInterpolantPacking RowMajor(params string[] semantics) =>
+        new(new HashSet<string>(semantics, StringComparer.Ordinal), new Dictionary<string, string>(StringComparer.Ordinal));
+
+    [Fact]
+    public void RowMajorMatrixInterpolant_VertexStage_PacksOneHlslRowPerRegister_LikeFxc()
+    {
+        // fxc packs an explicit row_major interpolant by ROWS (mgfxc's golden: vs_o2 = Tangent);
+        // DXC's GLSL is identical to the column_major one, so only the packing input tells them apart.
+        string glsl = MonoGameGlslRewriter.Rewrite(MatrixVs, ShaderStage.Vertex, null, RowMajor("TEXCOORD2")).Glsl;
+
+        glsl.ShouldContain("vTexCoord2.xyz = vs_oT2_mat[0];", Case.Sensitive);
+        glsl.ShouldContain("vTexCoord3.xyz = vs_oT2_mat[1];", Case.Sensitive);
+        glsl.ShouldContain("vTexCoord4.xyz = vs_oT2_mat[2];", Case.Sensitive);
+        glsl.ShouldNotContain("vs_oT2_mat[0][0]", Case.Sensitive);
+    }
+
+    [Fact]
+    public void RowMajorMatrixInterpolant_PixelStage_RebuildsFromRows()
+    {
+        string glsl = MonoGameGlslRewriter.Rewrite(MatrixPs, ShaderStage.Pixel, null, RowMajor("TEXCOORD2")).Glsl;
+
+        glsl.ShouldContain("mat3(vTexCoord2.xyz, vTexCoord3.xyz, vTexCoord4.xyz) * vec3(0.5, 0.25, 0.125)", Case.Sensitive);
+    }
+
+    [Fact]
+    public void RowMajorMatrixInterpolant_NonSquare_UsesOneRegisterPerGlslColumn()
+    {
+        // HLSL row_major float2x4 -> GLSL mat2x4: two registers (the HLSL rows) of four.
+        const string vs = """
+#version 140
+in vec4 in_var_POSITION0;
+out mat2x4 out_var_TEXCOORD1;
+void main()
+{
+    gl_Position = in_var_POSITION0;
+    out_var_TEXCOORD1 = mat2x4(in_var_POSITION0, in_var_POSITION0.wzyx);
+    gl_Position.z = 2.0 * gl_Position.z - gl_Position.w;
+}
+""";
+        string glsl = MonoGameGlslRewriter.Rewrite(vs, ShaderStage.Vertex, null, RowMajor("TEXCOORD1")).Glsl;
+
+        glsl.ShouldContain("vTexCoord1.xyzw = vs_oT1_mat[0];", Case.Sensitive);
+        glsl.ShouldContain("vTexCoord2.xyzw = vs_oT1_mat[1];", Case.Sensitive);
+        glsl.ShouldNotContain("vTexCoord3", Case.Sensitive);
+    }
+
+    [Fact]
+    public void RowMajorSet_OnlyAffectsItsOwnSemantic()
+    {
+        string glsl = MonoGameGlslRewriter.Rewrite(MatrixVs, ShaderStage.Vertex, null, RowMajor("TEXCOORD5")).Glsl;
+
+        glsl.ShouldContain("vTexCoord2.xyz = vec3(vs_oT2_mat[0][0], vs_oT2_mat[1][0], vs_oT2_mat[2][0]);", Case.Sensitive);
+    }
+
+    [Theory]
+    [InlineData(ShaderStage.Vertex)]
+    [InlineData(ShaderStage.Pixel)]
+    public void RefusedInterpolantSemantic_FailsLoudly_OnAMatrixOrAVector(ShaderStage stage)
+    {
+        var packing = new MonoGameGlslInterpolantPacking(
+            new HashSet<string>(StringComparer.Ordinal),
+            new Dictionary<string, string>(StringComparer.Ordinal) { ["TEXCOORD5"] = "the reason given" });
+
+        var act = () => MonoGameGlslRewriter.Rewrite(stage == ShaderStage.Vertex ? MatrixVs : MatrixPs, stage, null, packing);
+
+        string message = Should.Throw<MonoGameGlslRewriteException>(act).Message;
+        message.ShouldContain("TEXCOORD5", Case.Sensitive);
+        message.ShouldContain("the reason given", Case.Sensitive);
+    }
+
+    [Fact]
+    public void TwoInputsForOneElement_ShareOneAttribute_LikeFxc()
+    {
+        // `: POSITION0` beside `: SV_POSITION` is one input register to fxc (mgfxc writes one
+        // record); two Position/0 records would leave the second attribute unbound.
+        const string vs = """
+#version 140
+in vec4 in_var_POSITION0;
+in vec4 in_var_SV_POSITION;
+in vec3 in_var_NORMAL0;
+out vec4 out_var_TEXCOORD0;
+void main()
+{
+    gl_Position = in_var_POSITION0;
+    out_var_TEXCOORD0 = in_var_SV_POSITION + vec4(in_var_NORMAL0, 0.0);
+    gl_Position.z = 2.0 * gl_Position.z - gl_Position.w;
+}
+""";
+        var result = MonoGameGlslRewriter.Rewrite(vs, ShaderStage.Vertex);
+
+        result.Attributes.Count.ShouldBe(2);
+        result.Attributes[0].Name.ShouldBe("vs_v0");
+        result.Attributes[1].Name.ShouldBe("vs_v1");
+        result.Attributes[1].Usage.ShouldBe((byte)3);
+        result.Glsl.ShouldContain("vTexCoord0 = vs_v0 + vec4(vs_v1.xyz, 0.0);", Case.Sensitive);
+        result.Glsl.ShouldNotContain("vs_v2", Case.Sensitive);
     }
 
     [Fact]

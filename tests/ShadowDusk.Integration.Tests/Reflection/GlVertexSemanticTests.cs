@@ -81,6 +81,73 @@ public sealed class GlVertexSemanticTests
         });
     }
 
+    // packing/: the two stages declare one matrix interpolant differently, so these pin fxc's
+    // register layout (rendered vs mgfxc in validation/VertexSemanticsGl and VertexSemanticsKniGl).
+    public static TheoryData<string> PackingShapes() => new()
+    {
+        "packing/MatToVec33", "packing/RowMatToVec33", "packing/VecToMat33", "packing/VecToRowMat33",
+        "packing/MatToVec43", "packing/RowMatToVec43", "packing/MatToVec34", "packing/RowMatToVec34",
+        "packing/MatToVec22", "packing/RowMatToVec22", "packing/VecToMat43", "packing/VecToRowMat43",
+        "packing/VecToMat34", "packing/VecToRowMat22", "packing/TypedefRowMatToVec33",
+        "packing/PragmaRowMajorMatToVec33", "packing/DuplicatePosition",
+    };
+
+    private static readonly HashSet<string> NonSquare = new(StringComparer.Ordinal)
+    {
+        "packing/MatToVec43", "packing/RowMatToVec43", "packing/MatToVec34", "packing/RowMatToVec34",
+        "packing/VecToMat43", "packing/VecToRowMat43", "packing/VecToMat34",
+    };
+
+    [Theory]
+    [MemberData(nameof(PackingShapes))]
+    public async Task PackingShape_RecordsAndVaryingsMatchMgfxc(string shape)
+    {
+        MgfxBlobReader subject = MgfxBlobReader.Parse(await CompileAsync(shape));
+        MgfxBlobReader golden = Golden(shape);
+
+        Records(subject).ShouldBe(Records(golden));
+        foreach (bool vertex in new[] { true, false })
+            Varyings(subject, vertex).ShouldBe(Varyings(golden, vertex));
+    }
+
+    [Fact]
+    public async Task RowMajorMatrixInterpolant_IsPackedByRows_ColumnMajorByColumns()
+    {
+        string RowVs(MgfxBlobReader r) => Encoding.ASCII.GetString(r.Shaders.Single(s => s.IsVertex).Bytecode);
+
+        RowVs(MgfxBlobReader.Parse(await CompileAsync("packing/RowMatToVec33")))
+            .ShouldContain("vTexCoord2.xyz = vs_oT2_mat[0];", Case.Sensitive);
+        RowVs(MgfxBlobReader.Parse(await CompileAsync("packing/MatToVec33")))
+            .ShouldContain("vTexCoord2.xyz = vec3(vs_oT2_mat[0][0], vs_oT2_mat[1][0], vs_oT2_mat[2][0]);", Case.Sensitive);
+        RowVs(MgfxBlobReader.Parse(await CompileAsync("packing/PragmaRowMajorMatToVec33")))
+            .ShouldContain("vTexCoord2.xyz = vec3(vs_oT2_mat[0][0], vs_oT2_mat[1][0], vs_oT2_mat[2][0]);", Case.Sensitive);
+    }
+
+    [Theory]
+    // mgfxc compiles this one (a row_major VS output read as a column_major PS input); which
+    // declaration belongs to which stage is not modelled, so neither layout is provably fxc's.
+    [InlineData("""
+        struct VSOut { float4 Position : POSITION0; row_major float3x3 F : TEXCOORD2; };
+        struct PSIn { float4 Position : POSITION0; float3x3 F : TEXCOORD2; };
+        VSOut VS(float4 p : POSITION0) { VSOut o; o.Position = p; o.F = float3x3(p.xyz, p.yzx, p.zxy); return o; }
+        float4 PS(PSIn i) : COLOR0 { return float4(i.F[0], 1); }
+        """, "row_major")]
+    // fxc spreads a float1x3 over three registers of one component; DXC hands the rewrite a vec3.
+    [InlineData("""
+        struct VSOut { float4 Position : POSITION0; float1x3 A : TEXCOORD2; };
+        VSOut VS(float4 p : POSITION0) { VSOut o; o.Position = p; o.A = (float1x3)p.xyz; return o; }
+        float4 PS(VSOut i) : COLOR0 { return float4((float3)i.A, 1); }
+        """, "1x3")]
+    public async Task UnmodelledInterpolantLayout_FailsLoudly(string body, string expected)
+    {
+        string src = body + "\ntechnique T { pass P { VertexShader = compile vs_3_0 VS(); PixelShader = compile ps_3_0 PS(); } }\n";
+        var result = await new EffectCompiler().CompileAsync(src, new CompilerOptions { Target = PlatformTarget.OpenGL });
+
+        result.IsFailure.ShouldBeTrue();
+        result.Error.ShouldContain(e => e.Code == "SD0210" && e.Message.Contains(expected, StringComparison.Ordinal)
+                                        && e.Message.Contains("TEXCOORD2", StringComparison.Ordinal));
+    }
+
     [Fact]
     public async Task UnknownSemantic_StillFailsLoudly()
     {
@@ -128,7 +195,12 @@ technique T { pass P { VertexShader = compile vs_3_0 VS(); PixelShader = compile
         result.IsSuccess.ShouldBeTrue(result.IsFailure
             ? string.Join(" | ", result.Error.Select(e => e.FxcFormattedMessage))
             : "");
-        result.Value.Warnings.ShouldBeEmpty();
+        // A non-square matrix interpolant puts a mat4x3 / mat3x4 / mat2x4 in at least one stage's
+        // GLSL, which is the registered SD0403 warning (strict front ends refuse it); nothing else
+        // may warn.
+        result.Value.Warnings.Where(w => !(NonSquare.Contains(shape) && w.Code == "SD0403")).ShouldBeEmpty();
+        if (NonSquare.Contains(shape))
+            result.Value.Warnings.ShouldContain(w => w.Code == "SD0403");
         return result.Value.Data;
     }
 }

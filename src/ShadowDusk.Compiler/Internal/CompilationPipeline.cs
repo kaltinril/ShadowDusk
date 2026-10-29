@@ -601,6 +601,7 @@ internal sealed class CompilationPipeline
         IReadOnlySet<string> legacyGlTextures = new HashSet<string>(StringComparer.Ordinal);
         IReadOnlyDictionary<string, string> legacySamplerTextureView = new Dictionary<string, string>(StringComparer.Ordinal);
         ShaderError? reservationError = null;
+        MonoGameGlslInterpolantPacking? glInterpolants = null;
         IReadOnlyDictionary<string, int> legacySamplerRegisters = new Dictionary<string, int>(StringComparer.Ordinal);
         if (options.Target == PlatformTarget.OpenGL)
         {
@@ -617,6 +618,7 @@ internal sealed class CompilationPipeline
                 legacySamplerRegisters = reservation.Value.LegacySamplerRegisters;
                 legacyGlTextures = reservation.Value.LegacyTextures;
                 legacySamplerTextureView = reservation.Value.LegacySamplerTextures;
+                glInterpolants = GlInterpolantPacking(reservation.Value.MatrixInterpolants);
             }
             else
             {
@@ -747,6 +749,7 @@ internal sealed class CompilationPipeline
                         reservedGlSamplerSlots: reservedGlSamplerSlots,
                         glTextureDeclarationOrder: options.GlTextureDeclarationOrder,
                         legacyGlTextures: legacyGlTextures,
+                        glInterpolants: glInterpolants,
                         cancellationToken);
 
                     if (compileOutput.Blob.IsFailure)
@@ -805,6 +808,7 @@ internal sealed class CompilationPipeline
                         reservedGlSamplerSlots: reservedGlSamplerSlots,
                         glTextureDeclarationOrder: options.GlTextureDeclarationOrder,
                         legacyGlTextures: legacyGlTextures,
+                        glInterpolants: glInterpolants,
                         cancellationToken);
 
                     if (compileOutput.Blob.IsFailure)
@@ -2456,6 +2460,46 @@ internal sealed class CompilationPipeline
         }
     }
 
+    /// <summary>
+    /// What the OpenGL rewriter must know about the effect's matrix interpolants, from their
+    /// declarations in the preprocessed source (DXC's GLSL is identical for row_major and
+    /// column_major, and for <c>float1xN</c> and a vector, but fxc lays each out differently):
+    /// the semantics declared <c>row_major</c> (packed one row per register, as fxc does);
+    /// and, refused when met, a semantic declared with both majornesses (one declaration per
+    /// stage is not known here, so neither layout is provably fxc's) and a degenerate
+    /// <c>float1xN</c> / <c>row_major floatNx1</c>, which fxc spreads over N registers.
+    /// </summary>
+    private static MonoGameGlslInterpolantPacking GlInterpolantPacking(
+        IReadOnlyList<MatrixInterpolantDeclaration> declarations)
+    {
+        var rowMajor = new HashSet<string>(StringComparer.Ordinal);
+        var refused = new Dictionary<string, string>(StringComparer.Ordinal);
+        foreach (IGrouping<string, MatrixInterpolantDeclaration> group in declarations.GroupBy(d => d.Semantic))
+        {
+            MatrixInterpolantDeclaration? degenerate = group.FirstOrDefault(d => d.IsDegenerate);
+            if (degenerate is not null)
+            {
+                refused[group.Key] = $"'{degenerate.Name}' is a {(degenerate.RowMajor ? "row_major " : "")}" +
+                    $"{degenerate.Rows}x{degenerate.Columns} matrix, which fxc spreads over " +
+                    $"{Math.Max(degenerate.Rows, degenerate.Columns)} TEXCOORD registers of one component each, " +
+                    "but which reaches the OpenGL rewrite as a single vector; declare it as a vector instead.";
+                continue;
+            }
+            bool anyRow = group.Any(d => d.RowMajor), anyColumn = group.Any(d => !d.RowMajor);
+            if (anyRow && anyColumn)
+            {
+                refused[group.Key] = $"it is declared as a row_major matrix ('{group.First(d => d.RowMajor).Name}') " +
+                    $"and as a column_major one ('{group.First(d => !d.RowMajor).Name}'); fxc packs the two " +
+                    "differently (one row per register against one column per register), and which declaration " +
+                    "belongs to which stage is not modelled. Declare both the same way.";
+                continue;
+            }
+            if (anyRow)
+                rowMajor.Add(group.Key);
+        }
+        return new MonoGameGlslInterpolantPacking(rowMajor, refused);
+    }
+
     private static (Result<byte[], ShaderError> Blob, ReadOnlyMemory<byte> DxilBlob, ReadOnlyMemory<byte> SpirvBlob, IReadOnlyList<MgfxVertexAttributeInfo> Attributes, IReadOnlyList<MonoGameGlslUniform> Uniforms, IReadOnlyList<ShaderError> Warnings)
         CompileEntryPoint(
             Lazy<IDxcShaderCompiler> dxcCompiler,
@@ -2472,6 +2516,7 @@ internal sealed class CompilationPipeline
             IReadOnlySet<int> reservedGlSamplerSlots,
             IReadOnlyDictionary<string, int> glTextureDeclarationOrder,
             IReadOnlySet<string> legacyGlTextures,
+            MonoGameGlslInterpolantPacking? glInterpolants,
             CancellationToken ct)
     {
         IReadOnlyList<MgfxVertexAttributeInfo> noAttributes = Array.Empty<MgfxVertexAttributeInfo>();
@@ -2601,7 +2646,7 @@ internal sealed class CompilationPipeline
                     }
 
                     MonoGameGlslResult rewritten =
-                        MonoGameGlslRewriter.Rewrite(transpileResult.Value.Text, stage, samplerSlots);
+                        MonoGameGlslRewriter.Rewrite(transpileResult.Value.Text, stage, samplerSlots, glInterpolants);
                     glslText = rewritten.Glsl;
                     // The shader's uniform register layout — the pipeline builds the
                     // per-shader {vs,ps}_uniforms_vec4 cbuffer record from THIS, so

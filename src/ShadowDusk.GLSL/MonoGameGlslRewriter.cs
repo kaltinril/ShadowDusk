@@ -70,7 +70,27 @@ public sealed record MonoGameGlslUniform(
     int    RegisterCount);
 
 /// <summary>
-/// Result of <see cref="MonoGameGlslRewriter.Rewrite"/>.
+/// The interpolant facts the OpenGL rewrite needs from the HLSL source, because DXC's output
+/// drops them: DXC emits byte-identical GLSL for a <c>row_major</c> and a <c>column_major</c>
+/// matrix interpolant, and for a <c>float1x3</c> and a <c>float3</c>, while fxc gives each its own
+/// register layout.
+/// </summary>
+/// <param name="RowMajor">
+/// <c>TEXCOORD{n}</c> semantics (uppercased, index included) whose matrix interpolant is
+/// declared <c>row_major</c>: packed one HLSL row per register, as fxc does.
+/// </param>
+/// <param name="Refused">
+/// Interpolant semantics with no faithful layout, each with the reason, refused loudly when any
+/// interpolant of either stage carries it (a semantic declared <c>row_major</c> in one place and
+/// <c>column_major</c> in another, so which stage is which cannot be told; a <c>float1xN</c>,
+/// which fxc spreads over N registers).
+/// </param>
+public sealed record MonoGameGlslInterpolantPacking(
+    IReadOnlySet<string> RowMajor,
+    IReadOnlyDictionary<string, string> Refused);
+
+/// <summary>
+/// Result of <see cref="MonoGameGlslRewriter.Rewrite(string, ShaderStage, IReadOnlyList{int}?)"/>.
 /// </summary>
 /// <param name="Glsl">The rewritten legacy GLSL source.</param>
 /// <param name="Samplers">Samplers in declaration order, renamed to <c>ps_s{k}</c> (pixel stage only).</param>
@@ -213,24 +233,37 @@ public static class MonoGameGlslRewriter
 
     /// <summary>
     /// A matrix interpolant split across consecutive <c>vTexCoord{n}</c> varyings the way
-    /// fxc (and so mgfxc) packs it: one register per HLSL COLUMN (column_major, the
-    /// default), register <c>n + k</c> holding column <c>k</c>. In SPIRV-Cross's GLSL the
-    /// matrix's columns are the HLSL ROWS (DXC maps an HLSL <c>floatRxC</c> to a GLSL
-    /// matrix of R columns of C components), so register <c>n + k</c> is GLSL row
-    /// <c>k</c>: <c>vec(m[0][k], m[1][k], …)</c>. A <c>row_major</c> interpolant reaches the
-    /// rewriter as byte-identical GLSL (measured), so it is packed the same way, where fxc
-    /// would give it one ROW per register; both stages come from this rewrite, so the effect
-    /// renders the same either way.
+    /// fxc (and so mgfxc) packs it. DXC emits byte-identical GLSL for a <c>row_major</c> and a
+    /// <c>column_major</c> interpolant (measured), so the majorness comes from the HLSL source,
+    /// through <see cref="MonoGameGlslInterpolantPacking"/>. fxc packs the two differently, and
+    /// a stage that declares the interpolant as separate vectors (or with the other majorness)
+    /// reads whichever registers fxc's layout puts there:
+    /// <list type="bullet">
+    ///   <item><b>column_major</b> (the default, and what <c>#pragma pack_matrix</c> leaves an
+    ///   interpolant at): one HLSL COLUMN per register. SPIRV-Cross's matrix columns are the HLSL
+    ///   ROWS (DXC maps an HLSL <c>floatRxC</c> to a GLSL matrix of R columns of C components), so
+    ///   register <c>n + k</c> is GLSL row <c>k</c>: <c>vec(m[0][k], m[1][k], …)</c>.</item>
+    ///   <item><b>row_major</b>: one HLSL ROW per register, so register <c>n + c</c> is GLSL
+    ///   column <c>c</c>, <c>m[c]</c>.</item>
+    /// </list>
     /// </summary>
     /// <param name="Identifier">The SPIRV-Cross name (<c>out_var_TEXCOORD2</c> / <c>in_var_TEXCOORD2</c>).</param>
     /// <param name="Type">The GLSL matrix type (<c>mat3</c>, <c>mat2x4</c>, …).</param>
-    /// <param name="Columns">GLSL columns (= HLSL rows): the components each register carries.</param>
-    /// <param name="Rows">GLSL rows (= HLSL columns): the number of registers / varyings.</param>
+    /// <param name="Columns">GLSL columns (= HLSL rows).</param>
+    /// <param name="Rows">GLSL rows (= HLSL columns).</param>
+    /// <param name="RowMajor">The HLSL declaration is <c>row_major</c>.</param>
     /// <param name="VaryingNames">The <c>vTexCoord{n+k}</c> names, one per register.</param>
     /// <param name="Temp">VS only: the global the body writes, copied to the varyings at the end of <c>main</c>.</param>
     private sealed record MatrixVarying(
-        string Identifier, string Type, int Columns, int Rows,
-        IReadOnlyList<string> VaryingNames, string? Temp);
+        string Identifier, string Type, int Columns, int Rows, bool RowMajor,
+        IReadOnlyList<string> VaryingNames, string? Temp)
+    {
+        /// <summary>Registers (= varyings) the interpolant occupies.</summary>
+        public int Registers => RowMajor ? Columns : Rows;
+
+        /// <summary>Components each register carries.</summary>
+        public int Width => RowMajor ? Rows : Columns;
+    }
 
     /// <summary>One parsed uniform block: its instance name and members in order.</summary>
     private sealed record UniformBlock(
@@ -259,6 +292,27 @@ public static class MonoGameGlslRewriter
     /// </exception>
     public static MonoGameGlslResult Rewrite(
         string glsl, ShaderStage stage, IReadOnlyList<int>? samplerSlots = null)
+        => Rewrite(glsl, stage, samplerSlots, interpolants: null);
+
+    /// <summary>
+    /// Rewrites SPIRV-Cross GLSL into the MonoGame/MojoShader dialect for the given stage, with
+    /// what the HLSL source says about its interpolants that DXC's output does not carry.
+    /// </summary>
+    /// <param name="glsl">The modern GLSL emitted by SPIRV-Cross.</param>
+    /// <param name="stage">The shader stage being rewritten (vertex or pixel).</param>
+    /// <param name="samplerSlots">See <see cref="Rewrite(string, ShaderStage, IReadOnlyList{int}?)"/>.</param>
+    /// <param name="interpolants">
+    /// Which <c>TEXCOORD</c> semantics are <c>row_major</c> matrix interpolants, and which
+    /// interpolant semantics have no faithful layout here (refused loudly when met). When null
+    /// every matrix interpolant is column_major and nothing is refused on that ground.
+    /// </param>
+    /// <returns>The rewritten GLSL and what it binds, as for the three-parameter overload.</returns>
+    /// <exception cref="MonoGameGlslRewriteException">
+    /// Thrown when the input GLSL cannot be rewritten faithfully into the dialect.
+    /// </exception>
+    public static MonoGameGlslResult Rewrite(
+        string glsl, ShaderStage stage, IReadOnlyList<int>? samplerSlots,
+        MonoGameGlslInterpolantPacking? interpolants)
     {
         ArgumentNullException.ThrowIfNull(glsl);
 
@@ -440,8 +494,9 @@ public static class MonoGameGlslRewriter
             var matMatch = MatrixVaryingDecl.Match(line);
             if (matMatch.Success && (matMatch.Groups[1].Value == "out") == isVertex)
             {
+                ThrowIfRefusedInterpolant(matMatch.Groups[3].Value, interpolants);
                 var mv = ParseMatrixVarying(
-                    matMatch.Groups[3].Value, matMatch.Groups[2].Value, isVertex, glsl);
+                    matMatch.Groups[3].Value, matMatch.Groups[2].Value, isVertex, glsl, interpolants);
                 matrixVaryings.Add(mv);
                 foreach (var name in mv.VaryingNames)
                 {
@@ -467,9 +522,22 @@ public static class MonoGameGlslRewriter
                     // the source width (matches the SpriteEffect golden). The semantic
                     // → VertexElementUsage+index mapping is captured for the .mgfx
                     // attribute table so MonoGame binds the right vertex element.
+                    var (usage, index) = SemanticToVertexUsage(ident);
+
+                    // Two inputs naming the same element (`: POSITION0` beside `: SV_POSITION`,
+                    // or `: POSITION0` beside `: Position0`) are ONE input register to fxc, so
+                    // mgfxc writes one record and both read it. Two records with one
+                    // (usage, index) would leave the second attribute unbound (it reads zero):
+                    // merge them the way fxc does.
+                    MonoGameGlslAttribute? same = attributes.FirstOrDefault(a => a.Usage == usage && a.Index == index);
+                    if (same is not null)
+                    {
+                        attributeReads.Add(new InputVarying(ident, type, same.Name));
+                        continue;
+                    }
+
                     int slot = attributes.Count;
                     var attrName = $"vs_v{slot}";
-                    var (usage, index) = SemanticToVertexUsage(ident);
                     attributes.Add(new MonoGameGlslAttribute(slot, attrName, usage, index));
                     // The attribute is DECLARED vec4 (mgfxc form) but a narrower source
                     // (float3 POSITION / float2 TEXCOORD) must read a truncating swizzle
@@ -480,6 +548,7 @@ public static class MonoGameGlslRewriter
                 else
                 {
                     // PS input = a legacy varying the built-in/custom VS wrote.
+                    ThrowIfRefusedInterpolant(ident, interpolants);
                     var varyingName = SemanticToVaryingName(ident);
                     inputVaryings.Add(new InputVarying(ident, type, varyingName));
                     output.Add($"varying vec4 {varyingName};");
@@ -513,6 +582,7 @@ public static class MonoGameGlslRewriter
                         continue;
                     }
 
+                    ThrowIfRefusedInterpolant(ident, interpolants);
                     var type = outVaryMatch.Groups[1].Value;
                     var varyingName = SemanticToVaryingName(ident);
                     outputVaryings.Add(new InputVarying(ident, type, varyingName));
@@ -1545,7 +1615,8 @@ public static class MonoGameGlslRewriter
     /// second register has no legacy varying name) fails loudly.
     /// </summary>
     private static MatrixVarying ParseMatrixVarying(
-        string identifier, string type, bool isVertex, string sourceGlsl)
+        string identifier, string type, bool isVertex, string sourceGlsl,
+        MonoGameGlslInterpolantPacking? interpolants)
     {
         var sem = StripInterfacePrefix(identifier).ToUpperInvariant();
         string digits = sem.StartsWith("TEXCOORD", StringComparison.Ordinal) ? sem["TEXCOORD".Length..] : "";
@@ -1562,8 +1633,10 @@ public static class MonoGameGlslRewriter
         // matN = N columns x N rows; matCxR = C columns x R rows (GLSL notation).
         int columns = type[3] - '0';
         int rows = type.Length > 4 ? type[5] - '0' : columns;
+        bool rowMajor = interpolants?.RowMajor.Contains($"TEXCOORD{baseIndex}") == true;
+        int registers = rowMajor ? columns : rows;
 
-        var names = Enumerable.Range(0, rows).Select(k => $"vTexCoord{baseIndex + k}").ToList();
+        var names = Enumerable.Range(0, registers).Select(k => $"vTexCoord{baseIndex + k}").ToList();
 
         string? temp = null;
         if (isVertex)
@@ -1576,26 +1649,50 @@ public static class MonoGameGlslRewriter
                     "clashes with the matrix-interpolant temporary. Cannot safely rewrite.");
             }
         }
-        return new MatrixVarying(identifier, type, columns, rows, names, temp);
+        return new MatrixVarying(identifier, type, columns, rows, rowMajor, names, temp);
     }
 
     /// <summary>
-    /// PS read of a matrix interpolant: the matrix rebuilt from its registers,
-    /// <c>m[c][k] = vTexCoord{n+k}[c]</c> (the inverse of the VS copy-out).
+    /// The interpolant semantic an identifier carries, as <see cref="MonoGameGlslInterpolantPacking"/>
+    /// keys it (uppercased; a bare <c>TEXCOORD</c> is <c>TEXCOORD0</c>).
+    /// </summary>
+    private static string InterpolantKey(string identifier)
+    {
+        var sem = StripInterfacePrefix(identifier).ToUpperInvariant();
+        return sem == "TEXCOORD" ? "TEXCOORD0" : sem;
+    }
+
+    private static void ThrowIfRefusedInterpolant(string identifier, MonoGameGlslInterpolantPacking? interpolants)
+    {
+        if (interpolants is not null && interpolants.Refused.TryGetValue(InterpolantKey(identifier), out string? reason))
+        {
+            throw new MonoGameGlslRewriteException(
+                $"GLSL rewrite: interpolant '{identifier}' cannot be laid out the way fxc lays it out " +
+                $"for the MonoGame OpenGL target: {reason}");
+        }
+    }
+
+    /// <summary>
+    /// PS read of a matrix interpolant: the matrix rebuilt from its registers, the inverse of the
+    /// VS copy-out. Column_major: <c>m[c][k] = vTexCoord{n+k}[c]</c>; row_major:
+    /// <c>m[c] = vTexCoord{n+c}</c>.
     /// </summary>
     private static string MatrixVaryingReadExpression(MatrixVarying mv)
     {
-        var cols = Enumerable.Range(0, mv.Columns).Select(c =>
-            $"vec{mv.Rows}(" + string.Join(", ", mv.VaryingNames.Select(v => $"{v}.{Components[c]}")) + ")");
+        IEnumerable<string> cols = mv.RowMajor
+            ? mv.VaryingNames.Select(v => $"{v}.{Components[..mv.Rows]}")
+            : Enumerable.Range(0, mv.Columns).Select(c =>
+                $"vec{mv.Rows}(" + string.Join(", ", mv.VaryingNames.Select(v => $"{v}.{Components[c]}")) + ")");
         return $"{mv.Type}(" + string.Join(", ", cols) + ")";
     }
 
     /// <summary>
-    /// VS copy-out of a matrix interpolant: once the body has written the temporary,
-    /// register <c>k</c> receives GLSL row <c>k</c>,
-    /// <c>vTexCoord{n+k}.xyz = vec3(m[0][k], m[1][k], m[2][k])</c>, immediately before
-    /// SPIRV-Cross's trailing depth-convention line (the end of <c>main</c>, where the
-    /// position fixup also goes), else before <c>main</c>'s closing brace. An early
+    /// VS copy-out of a matrix interpolant: once the body has written the temporary, each
+    /// register receives what fxc puts there. Column_major: register <c>k</c> is GLSL row
+    /// <c>k</c>, <c>vTexCoord{n+k}.xyz = vec3(m[0][k], m[1][k], m[2][k])</c>; row_major:
+    /// register <c>c</c> is GLSL column <c>c</c>, <c>vTexCoord{n+c}.xyz = m[c]</c>. Inserted
+    /// immediately before SPIRV-Cross's trailing depth-convention line (the end of <c>main</c>,
+    /// where the position fixup also goes), else before <c>main</c>'s closing brace. An early
     /// <c>return</c> would skip it, so that shape fails loudly.
     /// </summary>
     private static string InjectMatrixVaryingCopyOut(string body, MatrixVarying mv)
@@ -1621,10 +1718,11 @@ public static class MonoGameGlslRewriter
                 $"'{mv.Identifier}' out to its varyings.");
         }
 
-        string swizzle = Components[..mv.Columns];
-        var copy = Enumerable.Range(0, mv.Rows).Select(k =>
-            $"    {mv.VaryingNames[k]}.{swizzle} = vec{mv.Columns}(" +
-            string.Join(", ", Enumerable.Range(0, mv.Columns).Select(c => $"{mv.Temp}[{c}][{k}]")) + ");");
+        string swizzle = Components[..mv.Width];
+        var copy = Enumerable.Range(0, mv.Registers).Select(k => mv.RowMajor
+            ? $"    {mv.VaryingNames[k]}.{swizzle} = {mv.Temp}[{k}];"
+            : $"    {mv.VaryingNames[k]}.{swizzle} = vec{mv.Columns}(" +
+              string.Join(", ", Enumerable.Range(0, mv.Columns).Select(c => $"{mv.Temp}[{c}][{k}]")) + ");");
         lines.InsertRange(insertAt, copy);
         return string.Join("\n", lines);
     }

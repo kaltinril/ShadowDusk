@@ -45,4 +45,13 @@ public sealed record GlSamplerSlots(
     /// </summary>
     public IReadOnlyDictionary<string, string> LegacySamplerTextures { get; init; } =
         new Dictionary<string, string>(StringComparer.Ordinal);
+
+    /// <summary>
+    /// Every matrix-typed <c>TEXCOORD</c> interpolant declaration in the preprocessed source, with
+    /// its HLSL shape and majorness. Not a sampler fact: it rides on the same view because the
+    /// OpenGL rewriter cannot see majorness in DXC's output, and fxc packs a <c>row_major</c>
+    /// matrix interpolant by rows (see <see cref="MatrixInterpolantDeclaration"/>).
+    /// </summary>
+    public IReadOnlyList<MatrixInterpolantDeclaration> MatrixInterpolants { get; init; } =
+        Array.Empty<MatrixInterpolantDeclaration>();
 }
