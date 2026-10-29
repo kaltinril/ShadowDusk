@@ -222,24 +222,44 @@ internal static class HlslReadOrder
         // Whether some choice of guards keeps a read q of `second` while dropping every read of
         // `first` before q and keeping one of `first` after it: with q's and r's guards kept and
         // every other guard dropped, a read survives only if its guards are all q's or r's.
+        // Reads under the same guards are interchangeable here, so each distinct guard set is
+        // tried once.
         bool CanComeFirst(List<int> second, List<int> first)
         {
+            var before = new List<int[]>();   // the distinct guard sets of `first`'s reads before q
+            var beforeKeys = new HashSet<string>(StringComparer.Ordinal);
+            var tried = new HashSet<string>(StringComparer.Ordinal);
+            int f = 0;
             foreach (int q in second)
             {
-                if (first.Any(o => o < q && occurrences[o].Guards.Length == 0))
-                    return false; // a read of `first` before q is certainly kept, and so before every later q
-                foreach (int r in first)
+                for (; f < first.Count && first[f] < q; f++)
                 {
-                    if (r < q)
+                    int[] g = occurrences[first[f]].Guards;
+                    if (g.Length == 0)
+                        return false; // certainly kept, before q and every later q
+                    if (beforeKeys.Add(GuardKey(g)))
+                        before.Add(g);
+                }
+                // `before` only grows and the reads after q only shrink: a q with the guards of
+                // one already tried against the same `before` cannot do better.
+                if (!tried.Add(GuardKey(occurrences[q].Guards) + "|" + before.Count))
+                    continue;
+                var afterKeys = new HashSet<string>(StringComparer.Ordinal);
+                for (int k = f; k < first.Count; k++)
+                {
+                    int[] r = occurrences[first[k]].Guards;
+                    if (first[k] < q || !afterKeys.Add(GuardKey(r)))
                         continue;
                     var kept = new HashSet<int>(occurrences[q].Guards);
-                    kept.UnionWith(occurrences[r].Guards);
-                    if (first.Where(o => o < q).All(o => !occurrences[o].Guards.All(kept.Contains)))
+                    kept.UnionWith(r);
+                    if (before.All(o => !o.All(kept.Contains)))
                         return true;
                 }
             }
             return false;
         }
+
+        static string GuardKey(int[] guards) => string.Join(',', guards);
 
         // ---- Walking statements -------------------------------------------------------------
 
