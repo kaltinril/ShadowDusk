@@ -91,7 +91,8 @@ that loads and renders identically to `mgfxc`'s in the real MonoGame/KNI runtime
   `mgfxc`'s own build, which DesktopVK does not handle, so that technique drew nothing. A call in a
   function the entry point never calls (read with every macro expanded, so a helper called only
   through a `#define` still counts as called; a member call such as `h.Get(uv)` reaches only the
-  methods of a struct, named or anonymous, while a qualified call such as `Lib::H(uv)` or `S::Get(uv)`
+  methods of a struct, named or anonymous, whatever its base clause (`: N::Base`, `: I, J`), and a
+  function inside braces the rewrite cannot classify counts as reached by every call, while a qualified call such as `Lib::H(uv)` or `S::Get(uv)`
   reaches a namespace's function and a static method alike; a `#define`'s body counts only where the
   shader's own reachable code expands it, so a macro another technique or stage uses pairs nothing
   here), or on a line an inactive `#if` drops (`#if 0`, the branch
@@ -109,7 +110,7 @@ that loads and renders identically to `mgfxc`'s in the real MonoGame/KNI runtime
   texture's, so the texture's own slot stays its DirectX register and an alias never takes slot 0,
   where SpriteBatch binds its sprite; never past the stage's last texture slot (MonoGame DesktopVK
   has 16 for a pixel shader, 8 for a vertex shader), where it takes the lowest free slot below its
-  texture's instead, and is refused with the new `SD0237` when every slot is taken. Declaring an alias now raises the warning
+  texture's instead (never slot 0), and is refused with the new `SD0237` when no slot but slot 0 is free. Declaring an alias now raises the warning
   `SD0235` (set that texture through `Effect.Parameters`: SpriteBatch fills slot 0 only), and an
   identifier using the reserved `_SDVkAlias` suffix is refused on Vulkan with `SD0234` (other targets
   treat it as an ordinary name). Storage buffers (`StructuredBuffer`, `ByteAddressBuffer` and their

@@ -889,6 +889,122 @@ public sealed class VulkanExplicitRegisterSlotTests
             .ShouldBe(slots.Select(s => (32u + s, CombinedImageSampler)));
     }
 
+    [Fact]
+    public async Task Vulkan_AnAliasOnlySlot0IsLeftFor_IsSD0237_NotAnAliasSpriteBatchOverwrites()
+    {
+        // Tex on t15, t1..t14 taken: the only free slot is 0, where SpriteBatch binds its sprite over the
+        // effect parameter. The alias used to land there with an SD0235 saying SpriteBatch fills only the
+        // first sampler; on slot 0 SpriteBatch overwrites the alias, so the point read draws the sprite.
+        string declarations = string.Concat(Enumerable.Range(1, 14).Select(i => $"Texture2D T{i} : register(t{i}); SamplerState S{i} : register(s{i});\n"));
+        string reads = string.Concat(Enumerable.Range(1, 14).Select(i => $"T{i}.SampleLevel(S{i}, uv, 0) + "));
+        string source = declarations +
+                        "Texture2D Tex : register(t15); SamplerState Lin : register(s15); SamplerState Pt;\n" +
+                        "float4 PS(float4 p : SV_Position, float2 uv : TEXCOORD0) : SV_Target { return " + reads + "Tex.Sample(Lin, uv) + Tex.Sample(Pt, uv); }\n" +
+                        "technique T { pass P { PixelShader = compile ps_4_0 PS(); } }\n";
+
+        var result = await CompileSourceAsync(source, "AliasOnlySlot0.fx");
+
+        result.IsFailure.ShouldBeTrue("compiled an alias on slot 0, where SpriteBatch binds its sprite");
+        ShaderError error = result.Error.ShouldHaveSingleItem();
+        error.Code.ShouldBe("SD0237");
+        error.Message.ShouldContain("texture 'Tex' is sampled through a second sampler, 'Pt'", Case.Sensitive);
+        error.Line.ShouldBe(16);
+    }
+
+    // ---- A struct with any base clause: its methods are reached by member calls ----------------------
+
+    public static TheoryData<string, string, string> BaseClauseStructs() => new()
+    {
+        { "qualified base", "namespace N { struct Base { float w; }; }", "struct S : N::Base" },
+        { "two interfaces", "interface I { float4 Get(float2 uv); }; interface J { float k(); };", "class S : I, J" },
+    };
+
+    private static string BaseClauseProbe(string prelude, string header, string declarations, string method, string free, string ps) =>
+        declarations + "\n" + prelude + "\n" +
+        header + " { float4 Get(float2 uv) { return " + method + "; } float k() { return 1; } };\n" +
+        free + "\n" +
+        "float4 PS(float4 p : SV_Position, float2 uv : TEXCOORD0) : SV_Target { S s; return " + ps + "; }\n" +
+        "technique T { pass P { PixelShader = compile ps_4_0 PS(); } }\n";
+
+    [Theory]
+    [MemberData(nameof(BaseClauseStructs))]
+    public async Task Vulkan_AMethodOfAStructWithABaseClause_IsReached_OneDescriptorAtSlot0(string name, string prelude, string header)
+    {
+        // `S : N::Base` and `C : I, J` were not read as struct headers, so Get was a free function no
+        // member call reaches, Smp a standalone sampler, and the shader refused with SD0232 (0.22.1
+        // compiled it). A dead free function samples Tex through U first in the file.
+        string source = BaseClauseProbe(prelude, header, "Texture2D Tex; SamplerState U; SamplerState Smp;",
+            "Tex.Sample(Smp, uv)", "float4 Dead(float2 uv) { return Tex.Sample(U, uv); }", "s.Get(uv)");
+
+        var result = await CompileSourceAsync(source, "BaseClause.fx");
+
+        result.IsSuccess.ShouldBeTrue(result.IsFailure ? $"{name}: " + string.Join("; ", result.Error.Select(e => $"{e.Code}: {e.Message}")) : "ok");
+        var subject = MgfxBlobReader.Parse(result.Value.Data);
+        MgfxSamplerRecord record = subject.Samplers.ShouldHaveSingleItem(name);
+        (subject.ParameterNames[record.Parameter], record.TextureSlot, record.SamplerSlot).ShouldBe(("Tex", (byte)0, (byte)0), name);
+        VulkanShaderCodeReader.Parse(subject.Shaders.Single().Bytecode).Bindings
+            .Select(b => (b.Binding, b.DescriptorType)).ShouldBe([(32u, CombinedImageSampler)], name);
+        result.Value.Warnings.ShouldNotContain(w => w.Code == "SD0235", name);
+    }
+
+    [Theory]
+    [MemberData(nameof(BaseClauseStructs))]
+    public async Task Vulkan_AMethodOfAStructWithABaseClause_KeepsTheExplicitRegisters(string name, string prelude, string header)
+    {
+        // Tex on t1 is sampled only inside S::Get; 0.22.1 compiled Tex + A on slot 1 and Tex2 + B on slot 0.
+        string source = BaseClauseProbe(prelude, header,
+            "Texture2D Tex : register(t1); Texture2D Tex2 : register(t0); SamplerState A : register(s1); SamplerState B : register(s0);",
+            "Tex.Sample(A, uv)", "", "s.Get(uv) + Tex2.Sample(B, uv)");
+
+        var result = await CompileSourceAsync(source, "BaseClauseExplicit.fx");
+
+        result.IsSuccess.ShouldBeTrue(result.IsFailure ? $"{name}: " + string.Join("; ", result.Error.Select(e => $"{e.Code}: {e.Message}")) : "ok");
+        var subject = MgfxBlobReader.Parse(result.Value.Data);
+        subject.Samplers.Select(s => (subject.ParameterNames[s.Parameter], s.TextureSlot, s.SamplerSlot)).OrderBy(s => s.TextureSlot).ToArray()
+            .ShouldBe(new (string, byte, byte)[] { ("Tex2", 0, 0), ("Tex", 1, 1) }, name);
+        VulkanShaderCodeReader.Parse(subject.Shaders.Single().Bytecode).Bindings
+            .Select(b => (b.Binding, b.DescriptorType)).OrderBy(b => b.Binding).ToArray()
+            .ShouldBe(new[] { (32u, CombinedImageSampler), (33u, CombinedImageSampler) }, name);
+        result.Value.Warnings.ShouldNotContain(w => w.Code == "SD0235", name);
+    }
+
+    [Theory]
+    [MemberData(nameof(BaseClauseStructs))]
+    public async Task Vulkan_ASecondTextureOnASharedSamplerInAMethodOfAStructWithABaseClause_IsSD0028(string name, string prelude, string header)
+    {
+        // Tex through A in the method, Tex2 through A in a free function. With the method unreached the
+        // shader compiled Tex2 + A on one descriptor and Tex a lone image, sampled through A at runtime
+        // (a layout nothing validated); 0.22.1 refused it.
+        string source = BaseClauseProbe(prelude, header, "Texture2D Tex; Texture2D Tex2; SamplerState A;",
+            "Tex.Sample(A, uv)", "float4 Other(float2 uv) { return Tex2.Sample(A, uv); }", "s.Get(uv) + Other(uv)");
+
+        var result = await CompileSourceAsync(source, "BaseClauseShared.fx");
+
+        result.IsFailure.ShouldBeTrue($"{name}: compiled where it must be SD0028");
+        result.Error.ShouldHaveSingleItem().Code.ShouldBe("SD0028", name);
+    }
+
+    [Theory]
+    [MemberData(nameof(BaseClauseStructs))]
+    public async Task Vulkan_ATextureReadThroughASecondSamplerInAMethodOfAStructWithABaseClause_GetsItsAlias(string name, string prelude, string header)
+    {
+        // Tex through A in the method and through B in a free function: two combined descriptors bound to
+        // Tex, as with a plain `struct S : Base` (the unreached method used to make A standalone, SD0232).
+        string source = BaseClauseProbe(prelude, header, "Texture2D Tex; SamplerState A; SamplerState B;",
+            "Tex.Sample(A, uv)", "float4 Other(float2 uv) { return Tex.Sample(B, uv); }", "s.Get(uv) + Other(uv)");
+
+        var result = await CompileSourceAsync(source, "BaseClauseAlias.fx");
+
+        result.IsSuccess.ShouldBeTrue(result.IsFailure ? $"{name}: " + string.Join("; ", result.Error.Select(e => $"{e.Code}: {e.Message}")) : "ok");
+        var subject = MgfxBlobReader.Parse(result.Value.Data);
+        subject.Samplers.Select(s => (subject.ParameterNames[s.Parameter], s.TextureSlot, s.SamplerSlot)).OrderBy(s => s.TextureSlot).ToArray()
+            .ShouldBe(new (string, byte, byte)[] { ("Tex", 0, 0), ("Tex", 1, 1) }, name);
+        VulkanShaderCodeReader.Parse(subject.Shaders.Single().Bytecode).Bindings
+            .Select(b => (b.Binding, b.DescriptorType)).OrderBy(b => b.Binding).ToArray()
+            .ShouldBe(new[] { (32u, CombinedImageSampler), (33u, CombinedImageSampler) }, name);
+        result.Value.Warnings.Where(w => w.Code == "SD0235").ShouldHaveSingleItem(name);
+    }
+
     // ---- A #define body counts only where its expansion is reachable ----------------------------------
 
     [Fact]
