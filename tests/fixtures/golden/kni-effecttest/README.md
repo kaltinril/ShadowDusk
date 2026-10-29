@@ -1,7 +1,11 @@
 # Reference-compiler builds for the KNI EffectTest gate
 
-Real `mgfxc` builds of KNI's test shaders (`tests/fixtures/shaders/third-party/KNI/*.fx`, vendored
-unmodified) and of the gate's companion shaders (`validation/SharedKniEffectTest/Companion/*.fx`).
+Real `mgfxc` builds of KNI's test shaders (`tests/fixtures/shaders/third-party/KNI/*.fx`: KNI's shader
+code unmodified, with a provenance comment header prepended) and of the gate's companion shaders
+(`validation/SharedKniEffectTest/Companion/*.fx`, ShadowDusk-authored).
+
+**Licence:** the builds of KNI's shaders are compiled form of Ms-PL code and are distributed under
+the same Ms-PL; see `tests/fixtures/shaders/third-party/KNI/LICENSE` and that directory's `NOTICE.md`.
 The `validation/KniEffectTest*` drivers load them as the **`mgfxc` reference arm**: printed next to
 ShadowDusk's rows for comparison, never scored. They are what lets the gate say "mgfxc does the same"
 or "mgfxc passes where we fail" with evidence rather than memory.

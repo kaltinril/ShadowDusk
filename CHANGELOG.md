@@ -16,14 +16,16 @@ that loads and renders identically to `mgfxc`'s in the real MonoGame/KNI runtime
 
 - **KNI's own effect test suite is now a render gate** (`validation/KniEffectTest{KniGl,KniDx,Gl,Dx,Dx12,Vulkan}`).
   Every test of KNI's `Tests/Framework.Graphics/EffectTest.cs`, which KNI's author checked against XNA, runs in a
-  real engine on KNI's own test shaders, vendored unmodified under `tests/fixtures/shaders/third-party/KNI` (Ms-PL,
-  with the licence and a `NOTICE.md`), plus five companion shaders for a matrix default, a texture at
+  real engine on KNI's own test shaders, vendored under `tests/fixtures/shaders/third-party/KNI` (Ms-PL, with the
+  licence and a `NOTICE.md`; shader code unmodified, a provenance comment header prepended), plus five companion shaders for a matrix default, a texture at
   `register(t1)`, a texture array and vertex texture fetch. Runtimes: KNI 4.2.9001 and 4.3.9001 (SDL2.GL and
   WinForms.DX11, MGFX and KNIFX), MonoGame DesktopGL, WindowsDX, WindowsDX12 and DesktopVK, with real `mgfxc`
-  builds and KNI's own prebuilt `.xnb` as reference arms. Each row is gated, a listed known ShadowDusk bug that must
+  builds and KNI's own prebuilt `.xnb` as reference arms (the `.xnb` load only on KNI 4.3.9001; 4.2.9001 refuses
+  them as "for a newer version of KNI"). Each row is gated, a listed known ShadowDusk bug that must
   keep failing until its fix flips it, or informational with the reason printed; positive controls must be
-  caught. It runs in CI (llvmpipe, WARP, lavapipe with the Vulkan validation layer) and in
-  `run-windows-render-gates.ps1`. Test and validation only: no package changes.
+  caught. A known-failing row must also fail for its listed reason, or the run is red. It is wired into CI
+  (llvmpipe, WARP, lavapipe with the Vulkan validation layer, the lavapipe job raising `vm.max_map_count` first;
+  first CI run pending) and into `run-windows-render-gates.ps1`; measured green locally. Test and validation only: no package changes.
 
 ### Changed
 

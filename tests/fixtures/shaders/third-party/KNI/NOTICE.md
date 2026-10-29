@@ -21,7 +21,9 @@ corpora barely touch. They feed the `validation/KniEffectTest*` render gate (see
   `EffectTest.cs` in `80431200` (2025-08-31).
 - **Upstream directory:** `Tests/Assets/Effects/`
 - **Fetched:** 2026-10-28. Every file was checked against the upstream tree at that commit by git
-  blob SHA (all identical).
+  blob SHA (all identical). For the `.fx` files that holds for the bytes BELOW the prepended
+  provenance header (the vendored file is header + upstream bytes); the `.xnb` files and `LICENSE`
+  match upstream as committed.
 
 ```sh
 curl -sL "https://raw.githubusercontent.com/kniEngine/kni/1dda67cf2fc7c0cc68ea87ebc905f6ebb5d99468/Tests/Assets/Effects/<File>" -o <File>
@@ -36,6 +38,11 @@ curl -sL "https://raw.githubusercontent.com/kniEngine/kni/1dda67cf2fc7c0cc68ea87
   (upstream `Tests/Assets/Effects/DirectX/` and `OpenGL/`), loaded by the gate through a real KNI
   `ContentManager` as a reference arm. They are compiled form; they are redistributed under the
   same Ms-PL, unmodified. Upstream's `XNA/*.xnb` were **not** taken (no runtime here can load them).
+  They load only on **KNI 4.3.9001**: KNI 4.2.9001 refuses every one with "This effect seems to be
+  for a newer version of KNI", so on the 4.2 runs that arm prints only that. On KNI 4.3.9001
+  WinForms.DX11, KNI's own `OldSyntax_t1t0.xnb` binds the two textures SWAPPED
+  (`Textures[0]=texture1`; KNI's test file carries a TODO for it) and its `DeferredBasicEffect.xnb`
+  binds none, where ShadowDusk's DX build passes both; the OpenGL ones pass every check.
 - `EffectTest.cs` itself was **not** vendored; the gate's driver (`validation/SharedKniEffectTest`)
   is a port of its assertions, written for this repository.
 
