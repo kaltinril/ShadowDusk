@@ -47,6 +47,16 @@ public sealed class EntryPointRedeclarationTests
         ["ps-called-between-proto-and-def"] = Refused,
         ["ps-overload-proto-of-called-entry"] = Refused,
         ["ps-proto-from-macro"] = Refused,
+        // Review of 2026-10-28: the blanked range keeps a macro call before the prototype, and
+        // shapes that used to reach DXC (and crash it) are blanked to the no-prototype bytes.
+        ["macro-call-before-proto"] = Same,
+        ["two-protos-one-line"] = Same,
+        ["typedef-return-proto"] = Same,
+        ["vector-return-proto"] = Same,
+        ["comment-in-proto"] = Same,
+        ["conditional-semantic-proto"] = Same,
+        ["const-param-proto-called"] = Same,
+        ["macro-named-entry-proto"] = Refused,        // the raw text cannot be matched to the expansion
     };
 
     /// <summary>
@@ -66,6 +76,7 @@ public sealed class EntryPointRedeclarationTests
             ["ps-called-between-proto-and-def"] = Ok,
             ["ps-overload-proto-of-called-entry"] = Ok,
             ["ps-proto-from-macro"] = Ok,
+            ["macro-named-entry-proto"] = Ok,
         },
         // DXC's DXIL front end calls an overload prototype without a definition ambiguous, as
         // it always has here (fxc compiles it); unchanged by this fix, which never touches
@@ -76,6 +87,7 @@ public sealed class EntryPointRedeclarationTests
             ["ps-called-between-proto-and-def"] = Ok,
             ["ps-overload-proto-of-called-entry"] = DxcError,
             ["ps-proto-from-macro"] = Ok,
+            ["macro-named-entry-proto"] = Ok,
         },
         _ => throw new ArgumentOutOfRangeException(nameof(target), target, null),
     };
@@ -113,8 +125,11 @@ public sealed class EntryPointRedeclarationTests
     /// source with the OpenGL SPIR-V arguments and no input preparation, must still crash, so
     /// the theory above proves the fix rather than a DXC that stopped faulting. When a DXC bump
     /// fixes the fault upstream, this turns red, and the workaround (and SD0236) can be retired.
+    /// Windows only: the crash was measured on win-x64. The Linux and macOS builds of the pinned
+    /// DXC are not known to fault the same way (the browser build does not: it fails the compile
+    /// instead), and the theory above must pass there whatever they do.
     /// </summary>
-    [Fact]
+    [WindowsOnlyFact]
     [Trait("Platform", "OpenGL")]
     public async Task RawDxc_StillCrashesOnAnEntryPrototype_ProvingTheProbeCanDetectIt()
     {
@@ -165,5 +180,18 @@ public sealed class EntryPointRedeclarationTests
         string output = run.Stdout + (err.Length > 4000 ? err[..4000] + "\n[...]" : err);
         _output.WriteLine($"{label}: exit {run.ExitCode} (0x{run.ExitCode:X8}) after {run.Elapsed.TotalSeconds:F1} s\n{output}");
         return (run.ExitCode, output);
+    }
+}
+
+/// <summary>
+/// A fact that runs on Windows only: the raw-DXC crash control is measured there (win-x64), and
+/// the Linux and macOS builds of the pinned DXC are not known to fault the same way.
+/// </summary>
+internal sealed class WindowsOnlyFactAttribute : FactAttribute
+{
+    public WindowsOnlyFactAttribute()
+    {
+        if (!OperatingSystem.IsWindows())
+            Skip = "The raw-DXC entry-prototype crash is measured on Windows only.";
     }
 }

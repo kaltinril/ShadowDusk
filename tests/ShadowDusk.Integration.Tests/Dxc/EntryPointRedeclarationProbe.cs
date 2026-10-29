@@ -86,7 +86,25 @@ public static class EntryPointRedeclarationProbe
         new("ps-called-between-proto-and-def", Fx(PsProto, Half, TechPs, PsDef), null, true),
         new("ps-overload-proto-of-called-entry", Fx(Overload, PsDef, Half, TechPs), null, true),
         new("ps-proto-from-macro", Fx("#define DECLARE(name) float4 name(float4 c : COLOR0) : COLOR0;", "DECLARE(PS)", TechPs, PsDef), null, true),
+
+        // Review of 2026-10-28. A macro call without a `;` of its own right before the prototype
+        // must survive the blanking (it was wiped with it: a parameter silently lost on GL/VK).
+        new("macro-call-before-proto", Fx("#define DECL_PARAM(n) float4 n;", "DECL_PARAM(Unused)", PsProto, TechPs, PsDefUnused),
+            Fx("#define DECL_PARAM(n) float4 n;", "DECL_PARAM(Unused)", "", TechPs, PsDefUnused), true),
+        // Shapes that still reached DXC and crashed it.
+        new("two-protos-one-line", Fx(PsProto + " " + PsProto, TechPs, PsDef), Fx("", TechPs, PsDef), true),
+        new("typedef-return-proto", Fx("typedef float4 F4;", "F4 PS(float4 c : COLOR0) : COLOR0;", TechPs, PsDef),
+            Fx("typedef float4 F4;", "", TechPs, PsDef), true),
+        new("vector-return-proto", Fx("vector<float, 4> PS(float4 c : COLOR0) : COLOR0;", TechPs, PsDef), Fx("", TechPs, PsDef), true),
+        new("comment-in-proto", Fx("float4 /* a */ PS /* b */ (float4 c : COLOR0) : COLOR0;", TechPs, PsDef), Fx("", TechPs, PsDef), true),
+        new("conditional-semantic-proto", Fx("float4 PS(float4 c : COLOR0)", "#if SM4", " : SV_Target", "#else", " : COLOR0", "#endif", ";", TechPs, PsDef),
+            Fx("", "", "", "", "", "", "", TechPs, PsDef), true),
+        new("const-param-proto-called", Fx("float4 PS(const float4 c : COLOR0) : COLOR0;", TechPs, PsDef, Half), Fx("", TechPs, PsDef, Half), true),
+        new("macro-named-entry-proto", Fx("#define PF PSX", "float4 PF(float4 c : COLOR0) : COLOR0;",
+            "technique T { pass { PixelShader = compile PS_SM PF(); } }", "float4 PF(float4 c : COLOR0) : COLOR0 { return c; }"), null, true),
     ];
+
+    private const string PsDefUnused = "float4 PS(float4 c : COLOR0) : COLOR0 { return c * Unused; }";
 
     /// <summary>The plain prototype-then-definition HLSL the raw-DXC control compiles.</summary>
     public const string RawControlSource =
@@ -95,15 +113,17 @@ public static class EntryPointRedeclarationProbe
     /// <summary>Runs the probe; see the class remarks for the argument.</summary>
     public static int Run(string[] args)
     {
-        if (args.Length != 1)
+        if (args.Length is not (1 or 2))
         {
-            Console.Error.WriteLine($"usage: {ProbeArgument} <OpenGL|Vulkan|DirectX|DirectX12|Fna|raylib|sksl|raw-dxc>");
+            Console.Error.WriteLine($"usage: {ProbeArgument} <OpenGL|Vulkan|DirectX|DirectX12|Fna|raylib|sksl|raw-dxc> [<file.fx>]");
             return 64;
         }
 
         string target = args[0];
         if (target == "raw-dxc")
             return RunRawControl();
+        if (args.Length == 2)
+            return RunFile(target, Path.GetFullPath(args[1]));
 
         foreach (Case c in Cases)
         {
@@ -137,24 +157,41 @@ public static class EntryPointRedeclarationProbe
         return 0;
     }
 
-    /// <summary>The compiled output as a comparable string (hex for binary containers).</summary>
-    private static Result<string, ShaderError[]> Compile(string target, string effect)
+    /// <summary>
+    /// One effect file from disk (with its <c>#include</c>s), one verdict line: sweeps a folder of
+    /// probe shaders a file per process, so one crash cannot hide the others.
+    /// </summary>
+    private static int RunFile(string target, string path)
     {
+        string name = Path.GetFileName(path);
+        Console.WriteLine($"{VerdictPrefix}{name} START");
+        Console.Out.Flush();
+        Result<string, ShaderError[]> compiled = Compile(target, File.ReadAllText(path), path);
+        Console.WriteLine(compiled.IsFailure
+            ? $"{VerdictPrefix}{name} DIAG {compiled.Error[0].Code} {compiled.Error[0].Line}:{compiled.Error[0].Column} {compiled.Error[0].Message.ReplaceLineEndings(" ")}"
+            : $"{VerdictPrefix}{name} OK {compiled.Value}");
+        return 0;
+    }
+
+    /// <summary>The compiled output as a comparable string (hex for binary containers).</summary>
+    private static Result<string, ShaderError[]> Compile(string target, string effect, string sourceName = SourceName)
+    {
+        var includes = new ShadowDusk.Core.Preprocessor.FileSystemIncludeResolver();
         switch (target)
         {
             case "raylib":
             {
-                var r = RaylibConverter.Convert(effect, new RaylibConvertOptions { SourceName = SourceName });
-                return r.IsFailure ? Result<string, ShaderError[]>.Fail(r.Error) : Result<string, ShaderError[]>.Ok(r.Value.FragmentShader);
+                var r = RaylibConverter.Convert(effect, new RaylibConvertOptions { SourceName = sourceName, IncludeResolver = includes });
+                return r.IsFailure ? Result<string, ShaderError[]>.Fail(r.Error) : Result<string, ShaderError[]>.Ok(Hash(r.Value.FragmentShader));
             }
             case "sksl":
             {
-                var s = SkslConverter.Convert(effect, new SkslConvertOptions { SourceName = SourceName });
-                return s.IsFailure ? Result<string, ShaderError[]>.Fail(s.Error) : Result<string, ShaderError[]>.Ok(s.Value.SkslText);
+                var s = SkslConverter.Convert(effect, new SkslConvertOptions { SourceName = sourceName, IncludeResolver = includes });
+                return s.IsFailure ? Result<string, ShaderError[]>.Fail(s.Error) : Result<string, ShaderError[]>.Ok(Hash(s.Value.SkslText));
             }
             default:
             {
-                var options = new CompilerOptions { Target = Enum.Parse<PlatformTarget>(target, ignoreCase: true), SourceFileName = SourceName };
+                var options = new CompilerOptions { Target = Enum.Parse<PlatformTarget>(target, ignoreCase: true), SourceFileName = sourceName, IncludeResolver = includes };
                 var m = new EffectCompiler().Compile(effect, options);
                 return m.IsFailure
                     ? Result<string, ShaderError[]>.Fail(m.Error)
@@ -162,6 +199,9 @@ public static class EntryPointRedeclarationProbe
             }
         }
     }
+
+    private static string Hash(string text) =>
+        Convert.ToHexString(SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(text))) + ":" + text.Length;
 
     /// <summary>
     /// The pinned DXC, called with the OpenGL pixel SPIR-V arguments on a prototype-then-definition

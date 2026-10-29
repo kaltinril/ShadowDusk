@@ -72,14 +72,15 @@ internal sealed class JsDxcShaderCompiler : IDxcShaderCompiler
             request.Macros,
             request.Options);
 
-        // The browser's DXC is the same code as the desktop one, with the same SPIR-V fault on an
-        // entry function declared more than once: the same input preparation (see
-        // DxcSpirvEntryRedeclarations), so both hosts compile the same text.
+        // An entry function declared more than once crashes the desktop DXC's SPIR-V back end; the
+        // browser's DXC build does not crash on it but fails the compile ("generated SPIR-V is
+        // invalid: 2 Entry points cannot share the same name"). The same input preparation runs
+        // here (see DxcSpirvEntryRedeclarations), so both hosts compile the same text.
         string hlslSource = request.HlslSource;
         if (DxcSpirvEntryRedeclarations.AppliesTo(arguments))
         {
             Result<string, ShaderError> prepared = DxcSpirvEntryRedeclarations.Prepare(
-                hlslSource, request.EntryPoint, request.SourceFileName);
+                hlslSource, request.EntryPoint, request.SourceFileName, request.Macros);
             if (prepared.IsFailure)
                 return Result<PlatformBlob, ShaderError>.Fail(prepared.Error);
             hlslSource = prepared.Value;

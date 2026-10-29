@@ -163,7 +163,7 @@ public sealed class DxcShaderCompiler : IDxcShaderCompiler, IDisposable
         if (DxcSpirvEntryRedeclarations.AppliesTo(arguments))
         {
             Result<string, ShaderError> prepared = DxcSpirvEntryRedeclarations.Prepare(
-                hlslSource, request.EntryPoint, request.SourceFileName);
+                hlslSource, request.EntryPoint, request.SourceFileName, request.Macros);
             if (prepared.IsFailure)
                 return Result<PlatformBlob, ShaderError>.Fail(prepared.Error);
             hlslSource = prepared.Value;

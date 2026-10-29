@@ -241,7 +241,7 @@ public sealed class DxcSpirvEntryRedeclarationsTests
         ShaderError error = Refused(source);
 
         error.Line.ShouldBe(2);
-        error.Message.ShouldContain("comes out of a macro expansion", Case.Sensitive);
+        error.Message.ShouldContain("a macro writes, renames or moves part of it", Case.Sensitive);
     }
 
     [Fact]
@@ -271,6 +271,126 @@ public sealed class DxcSpirvEntryRedeclarationsTests
 
         error.File.ShouldBe("effect.fx");
         error.Line.ShouldBe(2);
+    }
+
+    // ---- Review of 2026-10-28: the blanked range, and shapes that still reached DXC ----------
+
+    [Theory]
+    // A macro call with no `;` of its own right before the prototype (MonoGame's Macros.fxh
+    // END_CONSTANTS, DECLARE_TEXTURE): the range starts at the return type, so the call stays.
+    [InlineData("#define DECL_PARAM(n) float4 n;\nDECL_PARAM(Unused)\nfloat4 PS(float4 c : COLOR0) : SV_Target;\n" + Definition + "\n", 3)]
+    [InlineData("#define END_CONSTANTS };\ncbuffer C {\nfloat4 Tint;\nEND_CONSTANTS\nfloat4 PS(float4 c : COLOR0) : SV_Target;\n" + Definition + "\n", 5)]
+    [InlineData("#define DECLARE_TEXTURE(n, i) Texture2D n : register(t##i);\nDECLARE_TEXTURE(Mask, 1)\nfloat4 PS(float4 c : COLOR0) : SV_Target;\n" + Definition + "\n", 3)]
+    public void AMacroCallBeforeThePrototype_IsKept_OnlyThePrototypeIsBlanked(string source, int prototypeLine)
+    {
+        Prepared(source).ShouldBe(BlankLines(source, prototypeLine));
+    }
+
+    [Fact]
+    public void AMacroCallOnThePrototypesOwnLine_IsRefused_NeverBlankedWithIt()
+    {
+        string source = "#define DECL_PARAM(n) float4 n;\nDECL_PARAM(Unused) float4 PS(float4 c : COLOR0) : SV_Target;\n" + Definition + "\n";
+
+        Refused(source).Message.ShouldContain("a macro writes, renames or moves part of it", Case.Sensitive);
+    }
+
+    [Fact]
+    public void AnEntryNamedThroughAMacro_IsDecidedOnTheExpandedName_AndRefused()
+    {
+        // `-E PSX`: the raw text names PSX only in the #define, so a raw count found it once.
+        string source = "#define PF PSX\nfloat4 PF(float4 c : COLOR0) : SV_Target;\nfloat4 PF(float4 c : COLOR0) : SV_Target { return c; }\n";
+
+        ShaderError error = Refused(source, "PSX");
+
+        error.Line.ShouldBe(2);
+    }
+
+    [Fact]
+    public void TwoPrototypesOnOneLine_AreBothBlanked()
+    {
+        string source = "float4 PS(float4 c : COLOR0) : SV_Target; float4 PS(float4 c : COLOR0) : SV_Target;\n" + Definition + "\n";
+
+        Prepared(source).ShouldBe(BlankLines(source, 1));
+    }
+
+    [Fact]
+    public void APrototypeAndAMacroProducedOneOnOneLine_IsRefused()
+    {
+        string source = "#define P2 float4 PS(float4 c : COLOR0) : SV_Target;\nfloat4 PS(float4 c : COLOR0) : SV_Target; P2\n" + Definition + "\n";
+
+        Refused(source).Line.ShouldBe(2);
+    }
+
+    [Theory]
+    [InlineData("typedef float4 F4;\nF4 PS(float4 c : COLOR0) : SV_Target;\n" + Definition + "\n", 2)]
+    [InlineData("vector<float, 4> PS(float4 c : COLOR0) : SV_Target;\n" + Definition + "\n", 1)]
+    [InlineData("float4 PS(vector<float,4> c : COLOR0) : SV_Target;\n" + Definition + "\nfloat4 H(float4 c) { return PS(c); }\n", 1)]
+    [InlineData("float4 PS(const float4 c : COLOR0) : SV_Target;\n" + Definition + "\nfloat4 H(float4 c) { return PS(c); }\n", 1)]
+    [InlineData("float4 PS(in float4 c : COLOR0) : SV_Target;\n" + Definition + "\nfloat4 H(float4 c) { return PS(c); }\n", 1)]
+    public void ASameTypeSpelledDifferently_IsTheSameDeclaration_AndBlanked(string source, int prototypeLine)
+    {
+        Prepared(source).ShouldBe(BlankLines(source, prototypeLine));
+    }
+
+    [Fact]
+    public void AReturnTypeThatMayBeTheDefinitionsUnderAnotherName_IsRefused()
+    {
+        // A struct alias the reading does not resolve: one type to DXC or two cannot be told.
+        string source = "struct S { float4 c : SV_Target; };\nstruct T { float4 c : SV_Target; };\n" +
+                        "T PS(float4 c : COLOR0);\nS PS(float4 c : COLOR0) { S s; s.c = c; return s; }\n";
+
+        Refused(source).Message.ShouldContain("spelled differently", Case.Sensitive);
+    }
+
+    [Theory]
+    [InlineData("float4 PS /* note */ (float4 c : COLOR0) : SV_Target;\n" + Definition + "\n")]
+    [InlineData("float4 /* note */ PS(float4 c : COLOR0) : SV_Target;\n" + Definition + "\n")]
+    [InlineData("float4 // note\nPS(float4 c : COLOR0) : SV_Target;\n" + Definition + "\n")]
+    public void CommentsInsideThePrototype_AreRead_AndBlankedWithIt(string source)
+    {
+        string prepared = Prepared(source);
+
+        prepared.ShouldNotContain("note", Case.Sensitive);
+        prepared.ShouldEndWith(Definition + "\n", Case.Sensitive);
+        prepared.Length.ShouldBe(source.Length);
+    }
+
+    [Fact]
+    public void AConditionalChoosingThePrototypesSemantic_IsBlankedWithThePrototype()
+    {
+        string source = "float4 PS(float4 c : COLOR0)\n#if SM4\n : SV_Target\n#else\n : COLOR0\n#endif\n;\n" +
+                        "float4 PS(float4 c : COLOR0) : COLOR0 { return c; }\n";
+
+        Prepared(source).ShouldBe(BlankLines(source, 1, 2, 3, 4, 5, 6, 7));
+    }
+
+    [Fact]
+    public void ATechniquesCompileReference_IsNotACall()
+    {
+        string source = "float4 PS(float2 uv : TEXCOORD0) : SV_Target;\n" + Definition + "\n" +
+                        "technique T { pass { PixelShader = compile ps_3_0 PS(); } }\n";
+
+        Prepared(source).ShouldBe(BlankLines(source, 1));
+    }
+
+    [Fact]
+    public void ADMacroTheCompilePasses_IsSeenByTheView()
+    {
+        string source = "#if VARIANT\nfloat4 PS(float4 c : COLOR0) : SV_Target { return c.bgra; }\n#endif\n" +
+                        "float4 PS(float4 c : COLOR0) : SV_Target;\n" + Definition + "\n";
+
+        // Without VARIANT one definition: blanked. With `-D VARIANT` two: DXC reports it.
+        Prepared(source).ShouldBe(BlankLines(source, 4));
+        DxcSpirvEntryRedeclarations.Prepare(source, "PS", "t.fx", [("VARIANT", "1")]).Value.ShouldBe(source);
+    }
+
+    [Fact]
+    public void AFunctionLikeMacroWritingItsArgumentTwice_IsNotMissedByTheCheapGate()
+    {
+        string source = "#define DECL(n) float4 n(float4 c : COLOR0) : SV_Target; float4 n(float4 c : COLOR0) : SV_Target { return c; }\n" +
+                        "DECL(PS)\n";
+
+        Refused(source).Line.ShouldBe(2);
     }
 
     [Fact]
