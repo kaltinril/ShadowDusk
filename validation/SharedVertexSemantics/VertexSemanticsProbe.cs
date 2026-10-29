@@ -36,6 +36,8 @@
 //   * RowMatToVec33 and VecToRowMat33 compiled with `row_major` deleted, against the row_major
 //     goldens: the column packing a row_major interpolant had before it was modelled. If these
 //     matched, the packing cases could not see a column/row swap.
+//   * Split1x4ToVec compiled with its float1x4 declared float4 (one register, the layout before
+//     degenerate interpolants were split): must diverge from the split golden.
 // Exit code 0 iff every case passes and every control is detected. See docs/validation-matrix.md §6.
 
 using System;
@@ -169,6 +171,18 @@ public static class VertexSemanticsProbe
                     byte[] golden = File.ReadAllBytes(Path.Combine(dir, "packing", stem + ".OpenGL.mgfx"));
                     jobs.Add(new Job($"CONTROL {stem} packed by columns (must diverge)", swapped, golden, "Mode", 0, null, ControlKind.WrongPacking));
                 }
+
+                // The split layout of a degenerate float1x4: the same shader with the interpolant
+                // declared float4 (one register, the layout before the split) must diverge.
+                {
+                    string path = Path.Combine(dir, "packing", "Split1x4ToVec.fx");
+                    string source = File.ReadAllText(path);
+                    string vector = source.Replace("float1x4", "float4", StringComparison.Ordinal);
+                    if (vector == source) throw new InvalidOperationException("Split1x4ToVec.fx no longer says float1x4");
+                    var single = CompileSource(compiler, label, container, path, vector);
+                    byte[] golden = File.ReadAllBytes(Path.Combine(dir, "packing", "Split1x4ToVec.OpenGL.mgfx"));
+                    jobs.Add(new Job("CONTROL Split1x4ToVec in one register (must diverge)", single, golden, null, 0, null, ControlKind.WrongPacking));
+                }
             }
         }
 
@@ -238,6 +252,8 @@ public static class VertexSemanticsProbe
         ("PragmaRowMajorMatToVec33", 3), ("DuplicatePosition", 1),
         ("RetValRowMatToVec33", 3), ("CommaDeclRowMat", 3), ("LeadingZeroRowMatToVec33", 3),
         ("RowMatToColMat33", 3), ("NestedStructRowMatToVec33", 3), ("UnusedDegenerateStruct", 1),
+        ("Split1x4Both", 1), ("Split1x4ToVec", 1), ("SplitRow4x1Both", 1), ("VecToSplit1x3", 1),
+        ("LocalStructShadow", 1), ("LocalTypedefShadow", 1),
     ];
 
     // Packing fixtures with more than one technique: fixture -> the techniques to draw.
@@ -560,8 +576,8 @@ public static class VertexSemanticsProbe
                         if (job.Control == ControlKind.WrongPacking)
                         {
                             ok = maxd > 1;
-                            notes.Add(ok ? "CONTROL-DETECTED: column packing differs from mgfxc's row_major layout"
-                                         : "CONTROL NOT DETECTED: column packing still matched the row_major golden");
+                            notes.Add(ok ? "CONTROL-DETECTED: the wrong layout differs from mgfxc's"
+                                         : "CONTROL NOT DETECTED: the wrong layout still matched the golden");
                         }
                         else
                         {

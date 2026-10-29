@@ -32,10 +32,11 @@ that loads and renders identically to `mgfxc`'s in the real MonoGame/KNI runtime
   identical for the two), so a stage that reads the interpolant as separate vectors gets
   `mgfxc`'s data, with each stage laid out from the signature of the entry point it compiles (so
   a `row_major` VS output read as a column_major PS input, or two techniques declaring one semantic
-  differently, also match `mgfxc`). A matrix interpolant the scanned signature does not declare (a
-  semantic on a struct-typed member holding a matrix, an overloaded entry point), a `float1xN`
-  interpolant or vertex input, and `PSIZE0` beside `POINTSIZE0` are refused with `SD0210` rather
-  than laid out by guess. `TEXCOORD00` is `TEXCOORD0`, as in fxc. Two vertex
+  differently, also match `mgfxc`). A degenerate `float1xN` interpolant is split over N
+  one-component registers as fxc lays it out. A matrix interpolant the scanned signature does not
+  declare (a semantic on a struct-typed member holding a matrix, a type defined twice at file
+  scope), a `float1xN` vertex input, and `PSIZE0` beside `POINTSIZE0` are refused with `SD0210`
+  rather than laid out by guess. `TEXCOORD00` is `TEXCOORD0`, as in fxc. Two vertex
   inputs naming one element (`POSITION0` beside `SV_POSITION` or `Position0`) now share one
   attribute record, as in `mgfxc`; before, the second read zero. Rendered in real MonoGame
   DesktopGL and real KNI SDL2.GL (MGFX v10 and KNIFX) through a custom `VertexDeclaration`, every

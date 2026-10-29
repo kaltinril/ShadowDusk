@@ -85,10 +85,10 @@
                                    through the effect's `Pick`, plus a float3x3 TEXCOORD2
                                    interpolant; vs the mgfxc OpenGL build (maxd <= 1) and the
                                    element's CPU value, MGFX v10 on MonoGame, v10 + KNIFX on KNI;
-                                   plus 24 matrix-interpolant packing fixtures whose stages declare
+                                   plus 30 matrix-interpolant packing fixtures whose stages declare
                                    the interpolant differently (column_major and row_major, 3x3 /
                                    4x3 / 3x4 / 2x2). Controls that must diverge: a relabelled
-                                   BINORMAL0 record, and two row_major fixtures packed by columns.
+                                   BINORMAL0 record, two row_major fixtures packed by columns, a split float1x4 in one register.
                                    The non-square packing cases are an explicit list a strict GL
                                    driver (Mesa/Apple/ANGLE, from GL_RENDERER) must refuse
                                    (EXPECTED-REFUSED, SD0403); on a desktop GPU driver they must

@@ -58,11 +58,11 @@
 #                              interpolant, through a custom VertexDeclaration in REAL MonoGame
 #                              DesktopGL and REAL KNI SDL2.GL (MGFX v10 + KNIFX): each element's
 #                              render vs the committed mgfxc OpenGL build in the same process
-#                              (maxd <= 1) AND the element's CPU-known value; 24 matrix-
+#                              (maxd <= 1) AND the element's CPU-known value; 30 matrix-
 #                              interpolant packing fixtures whose stages declare it differently
-#                              (column_major / row_major, square and non-square) vs mgfxc; three
+#                              (column_major / row_major, square and non-square) vs mgfxc; four
 #                              positive controls that must diverge (a relabelled BINORMAL0
-#                              record, two row_major fixtures packed by columns). The driver is
+#                              record, two row_major fixtures packed by columns, a split float1x4 in one register). The driver is
 #                              classified from GL_RENDERER: on a strict one (llvmpipe here) the
 #                              listed non-square cases must be refused with the runtime's
 #                              "Shader Compilation Failed" (EXPECTED-REFUSED, SD0403), any other
