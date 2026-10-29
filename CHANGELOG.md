@@ -39,6 +39,32 @@ that loads and renders identically to `mgfxc`'s in the real MonoGame/KNI runtime
   every target reflects a `uint` as `Int32`, so `uint U = 3000000000;` reflected -1294967296. The value is now read by
   the HLSL declaration's kind (exposed as the new `GlobalInitializerDefault.Kind` / `GlobalInitializerKind` in
   `ShadowDusk.HLSL`). `ParameterReflection.Type` stays `Int32` on Vulkan, and no emitted byte changes. This changes what 0.22.0 reported for those two cases (its "Vulkan `bool` reads -1" note no longer applies).
+- **Vulkan non-square matrix parameters now reach the shader in the right registers, and keep their initializer default** (issue #423).
+  DXC turns each HLSL row of a `floatRxC` into a SPIR-V column, and the SPIR-V reflection read that back as C x R,
+  so a column-major `float2x3` was written to the `.mgfx` as 3x2. MonoGame uploads a matrix as `ColumnCount`
+  registers of `RowCount` floats, so the transposed header put a Set matrix in the wrong registers (a `float4x3`
+  lost its translation row, a `float3x2` read zero, a `float4x3[2]` threw at the first `Apply`), and the initializer
+  default was dropped with `SD0017` and a zero blob. A column-major matrix (the default packing) now has its HLSL
+  shape, as on DirectX 11 and 12, with the same column-by-column default; the Vulkan parameter table of the new
+  `G_NonSquare.fx` fixture equals the DirectX 12 one byte for byte. A `row_major` non-square matrix keeps the C x R
+  header, because its buffer holds one register per HLSL row and that is the header the upload matches (a Set
+  matrix arrives transposed, as a `row_major float4x4` does on every backend); its initializer is still `SD0017`.
+  Real `mgfxc` 3.8.5 `/Profile:Vulkan` writes C x R for both packings (measured), so the column-major header
+  deliberately departs from it: its build renders the cases above wrong, and MonoGame 3.8.5's own stock DesktopVK
+  `SkinnedEffect` throws at the first `Apply` for the same reason. Proven in real MonoGame 3.8.5 DesktopVK against
+  MonoGame's WindowsDX semantics by the new `validation/NonSquareMatrixVulkan` and `validation/NonSquareMatrixDx`
+  probes (in CI and the gate script). Only the row and column bytes and the default blob of column-major non-square
+  matrix parameters change, on Vulkan; in the byte-identity corpus only `SkinnedEffect.fx` (`float4x3 Bones[]`)
+  moved, in its Vulkan `.mgfx` hash.
+- **Vulkan effects whose globals end in a `float2x2` (or a `float2x3`, `float2x4`) no longer throw at the first draw.**
+  ShadowDusk sized the constant buffer from the last matrix's packed `rows*cols*4` bytes, but a column-major `float2x2`
+  spans 24 bytes (two registers, the second half-used), so a buffer ending in one was a register short and MonoGame
+  DesktopVK's upload of the last register ran past its end. The size now covers both the matrix's real footprint and
+  what MonoGame writes for its header (`ColumnCount` registers of `RowCount` floats, 16 bytes apart), which is what
+  DirectX 12's DXIL reflection reports (`float2 Offset; float2x2 M;` is 48 bytes, not 32) and what real `mgfxc` 3.8.5's
+  Vulkan build writes (measured: 48, and its build renders that shader). The short size was ShadowDusk's own. Only
+  the constant-buffer size bytes of those Vulkan effects change; the `InitializerDefaultsVulkan` driver no longer
+  skips its `float2x2` case.
 
 ## [0.22.0] - 2026-10-28
 
@@ -83,25 +109,6 @@ that loads and renders identically to `mgfxc`'s in the real MonoGame/KNI runtime
 
 ### Fixed
 
-- **Vulkan now reports a non-square matrix in its declared shape, and keeps its initializer default** (issue #423).
-  DXC turns each HLSL row of a `floatRxC` into a SPIR-V column, and the SPIR-V reflection read that back as C x R,
-  so a `float2x3` was written to the `.mgfx` as 3x2. MonoGame uploads a matrix as `ColumnCount` registers of
-  `RowCount` floats, so the transposed header put the matrix in the wrong registers, and the initializer default
-  was dropped with `SD0017` and a zero blob. The header is now the HLSL shape (what the DXIL path, DirectX 11 and
-  DirectX 12 already wrote) and the default is the same column-by-column blob as on DirectX; the Vulkan parameter
-  table of the new `G_NonSquare.fx` fixture equals the DirectX 12 one byte for byte. This deliberately departs from
-  real `mgfxc` 3.8.5 `/Profile:Vulkan`, which writes the same transposed header ShadowDusk did (measured). Only the
-  row and column bytes and the default blob of non-square matrix parameters change, on Vulkan (and on the browser's
-  SPIR-V-reflected OpenGL path, where the OpenGL target refuses non-square matrices anyway). In the byte-identity
-  corpus only `SkinnedEffect.fx` (`float4x3 Bones[]`) moved, in its Vulkan `.mgfx` hash. The pure-managed
-  SPIR-V reflection now matches the DXIL oracle for every matrix shape (`SpirvMatrixShapeReflectionTests`).
-- **Vulkan effects whose globals end in a `float2x2` (or a `float2x3`, `float2x4`) no longer throw at the first draw.**
-  The constant buffer was sized from the matrix's packed `rows*cols*4` bytes, but a column-major `float2x2` spans
-  24 bytes (two registers, the second half-used), so a buffer ending in one was a register short and MonoGame
-  DesktopVK's upload of the last register ran past its end. The size is now the matrix's real footprint, which is
-  what DirectX 12's DXIL reflection reports (`float2 Offset; float2x2 M;` is 48 bytes, not 32). Real `mgfxc` 3.8.5's
-  Vulkan build has the same short size, so its build of such a shader throws too. Only the constant-buffer size
-  bytes of those Vulkan effects change; the `InitializerDefaultsVulkan` driver no longer skips its `float2x2` case.
 - **FNA (`fx_2_0` `.fxb`) now keeps matrix and array initializer defaults.** `float2x2 M = 0.5 * I` and
   `float4 Colors[2] = {red, green}` read as zero in real FNA 26.06 (both FNA3D drivers) where `fxc /T fx_2_0`'s
   build reads the initializers; only scalar and vector defaults survived. The CTAB default is now read for

@@ -11,12 +11,16 @@ namespace ShadowDusk.Integration.Tests.Reflection;
 
 /// <summary>
 /// Issue #423: the pure-managed <see cref="SpirvReflector"/> (Vulkan, and the browser's OpenGL) must
-/// report a matrix in its HLSL shape, as the native DXIL oracle does. DXC lowers an HLSL
-/// <c>floatRxC</c> to a SPIR-V matrix of R column vectors of C components, and the reflector used to
-/// read that back as C x R, so every non-square matrix on Vulkan was reported transposed: its MGFX
-/// header disagreed with the declaration (MonoGame's runtime sizes the upload by it) and its
-/// initializer default was dropped with <c>SD0017</c>. Real mgfxc 3.8.5 <c>/Profile:Vulkan</c> writes
-/// the same transposed header (measured 2026-10-28), so this is a deliberate departure from it.
+/// report a matrix in the shape MonoGame's runtime uploads by. DXC lowers an HLSL <c>floatRxC</c> to a
+/// SPIR-V matrix of R column vectors of C components, and the reflector used to read that back as
+/// C x R, so every non-square column-major matrix on Vulkan was reported transposed: MonoGame
+/// uploaded it into the wrong registers and its initializer default was dropped with <c>SD0017</c>.
+/// A column-major matrix (the default) now reports its HLSL shape, as the DXIL oracle does. A
+/// <c>row_major</c> one reports C x R, deliberately unlike the oracle: MonoGame always uploads
+/// <c>ColumnCount</c> registers of <c>RowCount</c> floats, and a row_major buffer holds one register
+/// per HLSL row, so only C x R matches it (and it is what real mgfxc 3.8.5 <c>/Profile:Vulkan</c>
+/// writes, measured 2026-10-28); the HLSL shape scrambles it and, last in the buffer with C &gt; R,
+/// writes past the end.
 /// </summary>
 [Trait("Category", "Integration")]
 [Trait("Platform", "Vulkan")]
@@ -31,7 +35,6 @@ public sealed class SpirvMatrixShapeReflectionTests
         { "float3x4", "float3x4 M; float4 Pad;" },
         { "float4x3", "float4x3 M; float4 Pad;" },
         { "float4x3[2]", "float4x3 M[2]; float4 Pad;" },
-        { "row_major float2x3", "row_major float2x3 M; float4 Pad;" },
         { "float2x2", "float2x2 M; float4 Pad;" },
     };
 
@@ -57,8 +60,34 @@ public sealed class SpirvMatrixShapeReflectionTests
         fromSpirv.StartOffset.ShouldBe(fromDxil.StartOffset, label);
 
         // And the HLSL shape it names, not just "whatever DXIL said".
-        string shape = label.Replace("row_major ", "", StringComparison.Ordinal).Replace("[2]", "", StringComparison.Ordinal);
+        string shape = label.Replace("[2]", "", StringComparison.Ordinal);
         (fromSpirv.Rows, fromSpirv.Columns).ShouldBe((shape[5] - '0', shape[7] - '0'), label);
+    }
+
+    public static TheoryData<string, string, int, int> RowMajorShapes => new()
+    {
+        { "row_major float2x3", "row_major float2x3 M; float4 Pad;", 3, 2 },
+        { "row_major float4x3", "row_major float4x3 M; float4 Pad;", 3, 4 },
+        { "row_major float3x2[2]", "row_major float3x2 M[2]; float4 Pad;", 2, 3 },
+        { "row_major float4x4", "row_major float4x4 M; float4 Pad;", 4, 4 },
+    };
+
+    [Theory]
+    [MemberData(nameof(RowMajorShapes))]
+    public async Task SpirvReflection_ReportsARowMajorMatrix_InTheShapeMonoGameUploadsItBy(
+        string label, string declarations, int rows, int columns)
+    {
+        using var cts = new CancellationTokenSource(TestBudget.Compile);
+        string hlsl = declarations + "\nfloat4 MainPS(float4 pos : SV_Position) : SV_Target0 { return Pad + " +
+                      (label.EndsWith("]", StringComparison.Ordinal) ? "M[1][0].x" : "M[0][0]") + "; }\n";
+
+        ReflectedEffect spirv = Reflect(new SpirvReflector().Reflect(
+            await CompileAsync(hlsl, PlatformTarget.Vulkan, cts.Token)));
+        VariableReflection m = spirv.ConstantBuffers.Single().Variables.Single(v => v.Name == "M");
+
+        // C x R: ColumnCount (= HLSL rows) registers of RowCount (= HLSL columns) floats is exactly the
+        // row_major buffer, one register per HLSL row.
+        (m.Rows, m.Columns).ShouldBe((rows, columns), label);
     }
 
     public static TheoryData<string> TrailingMatrices => new()
@@ -72,6 +101,8 @@ public sealed class SpirvMatrixShapeReflectionTests
         "float4x3 M;",
         "row_major float2x2 M;",
         "row_major float3x2 M;",
+        "float4 Pad; row_major float2x3 M;",   // probe case I: threw at the first Apply with the HLSL-shape header
+        "float4 Pad; row_major float2x4 M;",
         "float4 V; float2x3 M[2];",
     };
 
@@ -94,7 +125,14 @@ public sealed class SpirvMatrixShapeReflectionTests
         ReflectedEffect dxil = Reflect(new DxilReflectionExtractor().Extract(
             await CompileAsync(hlsl, PlatformTarget.DirectX12, cts.Token), cts.Token));
 
-        spirv.ConstantBuffers.Single().SizeBytes.ShouldBe(dxil.ConstantBuffers.Single().SizeBytes, declarations);
+        ConstantBufferReflection cb = spirv.ConstantBuffers.Single();
+        cb.SizeBytes.ShouldBe(dxil.ConstantBuffers.Single().SizeBytes, declarations);
+
+        // And it covers what MonoGame writes for the reflected header: ColumnCount registers of
+        // RowCount floats, 16 bytes apart, from the matrix's offset (the last element of an array).
+        VariableReflection m = cb.Variables.Single(v => v.Name == "M");
+        int lastElement = Math.Max(0, m.Elements - 1) * m.Columns * 16;
+        cb.SizeBytes.ShouldBeGreaterThanOrEqualTo(m.StartOffset + lastElement + (m.Columns - 1) * 16 + m.Rows * 4, declarations);
     }
 
     private static ReflectedEffect Reflect(Result<ReflectedEffect, ShaderError> result)

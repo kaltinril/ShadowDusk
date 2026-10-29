@@ -7,7 +7,7 @@
 
 // Issue #423: non-square matrix defaults. Every element is distinct, and the three read are the only
 // ones with their value, so a transposed shape or a blob written row by row cannot give (191,128,64).
-float2x3 Wide = float2x3(0.125, 0.25,  0.75,
+float2x3 Wide = float2x3(0.125, 0.875, 0.75,
                          0.375, 0.5,   0.625);
 float3x2 Tall = float3x2(0.1, 0.2,
                          0.3, 0.4,

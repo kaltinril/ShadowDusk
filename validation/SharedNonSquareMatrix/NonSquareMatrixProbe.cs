@@ -42,8 +42,11 @@ using Rectangle = Microsoft.Xna.Framework.Rectangle;
 
 namespace ShadowDusk.Validation.NonSquareMatrix;
 
-/// <summary>One probe: the shader, how many pixels it writes, how to Set it, and the expected channels.</summary>
-internal sealed record ProbeCase(string Name, string Fx, int Width, Action<Effect> Set, float[] Expected, bool Gated, string Note);
+/// <summary>
+/// One probe: the shader, how many pixels it writes, how to Set it, and the expected channels.
+/// <paramref name="GatedOnVulkan"/> gates a case on the Vulkan run only (the DX run reports it).
+/// </summary>
+internal sealed record ProbeCase(string Name, string Fx, int Width, Action<Effect> Set, float[] Expected, bool Gated, string Note, bool GatedOnVulkan = false);
 
 /// <summary>One build of the cases: a label and either a directory of prebuilt .mgfx files or an in-process target.</summary>
 public sealed record ProbeBuild(string Label, string? Directory, PlatformTarget? InProcessTarget);
@@ -85,7 +88,7 @@ public static class NonSquareMatrixProbe
                 Px(P(0, 0, 0, -1), P(0, 0, 0, -1)), true, "SetValue(Matrix) has no 2-row case: a no-op on every MonoGame backend"),
             new("D row_major float4x3 SetValue(Matrix)", "D_RowMajor4x3", 4, e => e.Parameters["M"]!.SetValue(m0),
                 Px(P(K(0, 0), K(0, 1), K(0, 2), -1), P(K(1, 0), K(1, 1), K(1, 2), -1), P(K(2, 0), K(2, 1), K(2, 2), -1), P(K(3, 0), K(3, 1), K(3, 2), -1)),
-                false, "informational: mgfxc DirectX_11 refuses the shape, so there is no DX reference"),
+                false, "informational: mgfxc DirectX_11 refuses the shape, so there is no DX reference; on Vulkan ShadowDusk writes mgfxc's row_major header, so the Set Matrix arrives transposed, as a row_major float4x4 does"),
             new("E float4x3 B[2] SetValue(Matrix[])", "E_Array4x3", 8, e => e.Parameters["B"]!.SetValue(new[] { m0, m1 }),
                 Px(P(K(0, 0), K(0, 1), K(0, 2), -1), P(K(1, 0), K(1, 1), K(1, 2), -1), P(K(2, 0), K(2, 1), K(2, 2), -1), P(K(3, 0), K(3, 1), K(3, 2), -1),
                    P(K(0, 0) + 16, K(0, 1) + 16, K(0, 2) + 16, -1), P(K(1, 0) + 16, K(1, 1) + 16, K(1, 2) + 16, -1), P(K(2, 0) + 16, K(2, 1) + 16, K(2, 2) + 16, -1), P(K(3, 0) + 16, K(3, 1) + 16, K(3, 2) + 16, -1)),
@@ -101,7 +104,8 @@ public static class NonSquareMatrixProbe
                 Px(P(K(0, 0), K(0, 1), 29, -1), P(K(1, 0), K(1, 1), 30, -1), P(K(2, 0), K(2, 1), 31, -1)), true, "buffer size"),
             new("I float4 Pad; row_major float2x3 M (last)", "I_PadRowMajor2x3", 3, e => e.Parameters["Pad"]!.SetValue(new Vector4(25, 26, 27, 28) * Step),
                 Px(P(0, 0, 0, -1), P(0, 0, 0, -1), P(25, 26, 27, 28)), false,
-                "informational buffer size: M cannot be Set (2 rows) and mgfxc DirectX_11 refuses row_major; does the first upload throw?"),
+                "buffer size, gated on Vulkan: the first upload must not throw (M cannot be Set: 2 rows). On DX ShadowDusk's build throws (known gap; mgfxc DirectX_11 refuses row_major non-square)",
+                GatedOnVulkan: true),
         ];
     }
 
@@ -158,17 +162,18 @@ public static class NonSquareMatrixProbe
         game.Run();
 
         var sb = new StringBuilder();
+        bool IsGated(ProbeCase c) => c.Gated || (c.GatedOnVulkan && inProcessTarget == PlatformTarget.Vulkan);
         sb.AppendLine($"[{runtime}] decoded k per pixel (channel value * 32; '.' = 0, '-' = 1.0 alpha). Expected = MonoGame DirectX semantics.");
         int gateFailures = 0;
         foreach (ProbeCase c in cases)
         {
-            sb.AppendLine($"  {c.Name}  [{c.Fx}.fx]{(c.Gated ? "" : "  (informational)")}{(c.Note.Length > 0 ? "  -- " + c.Note : "")}");
+            sb.AppendLine($"  {c.Name}  [{c.Fx}.fx]{(IsGated(c) ? "" : "  (informational)")}{(c.Note.Length > 0 ? "  -- " + c.Note : "")}");
             sb.AppendLine($"    {"expected",-14} {Decode(c.Expected.Select(v => (byte)Math.Round(v * 255)).ToArray(), c.Width)}");
             foreach (JobResult r in game.Results.Where(r => r.Job.Case == c))
             {
                 string verdict = r.Pixels is null ? "ERROR" : r.Match ? "MATCH" : "DIFF";
                 sb.AppendLine($"    {r.Job.Build,-14} {(r.Pixels is null ? r.Detail : Decode(r.Pixels, c.Width))}  {verdict}{(r.Pixels is not null && !r.Match ? "  raw " + Raw(r.Pixels, c.Width) : "")}");
-                if (r.Job.Build == "sd-intree" && c.Gated && !r.Match) gateFailures++;
+                if (r.Job.Build == "sd-intree" && IsGated(c) && !r.Match) gateFailures++;
             }
         }
 

@@ -49,8 +49,9 @@ public static class InitializerDefaultsProbe
     /// <summary>
     /// Runs the probe. <paramref name="mgfxcOpenGlControl"/> is true on the GL runtimes: the committed
     /// mgfxc OpenGL build of RedDefault must render black. C_Vec2Mat2 runs on DesktopVK too: it used to throw
-    /// there with or without initializers, because ShadowDusk (like mgfxc's Vulkan build) sized a buffer ending
-    /// in a float2x2 a register short and MonoGame's upload ran past its end; fixed in SpirvReflectionParser.
+    /// there with or without initializers, because ShadowDusk's Vulkan reflection sized a buffer ending in a
+    /// float2x2 a register short (mgfxc's Vulkan build sizes it right) and MonoGame's upload ran past its end;
+    /// fixed in SpirvReflectionParser.
     /// </summary>
     public static int Run(string label, PlatformTarget target, EffectContainer[] containers, bool mgfxcOpenGlControl)
     {

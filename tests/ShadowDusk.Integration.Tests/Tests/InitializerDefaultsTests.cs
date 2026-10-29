@@ -155,10 +155,11 @@ public sealed class InitializerDefaultsTests
     [Fact]
     public async Task C_Vec2Mat2_VulkanBufferHoldsTheWholeFloat2x2()
     {
-        // The float2x2 at offset 16 spans 24 bytes (two registers, the second half full), so the
-        // buffer is 48 bytes. Vulkan used to say 32 (the packed 16-byte matrix size), and MonoGame
-        // DesktopVK's upload of the second register then ran past the end and threw at the first draw
-        // (real mgfxc 3.8.5's Vulkan build has the same 32). DirectX 12 (DXIL) has always said 48.
+        // The float2x2 at offset 16 spans 24 bytes (two registers, the second half-used), so the
+        // buffer is 48 bytes. ShadowDusk's Vulkan reflection used to say 32 (the packed 16-byte matrix
+        // size), and MonoGame DesktopVK's upload of the second register then ran past the end and threw
+        // at the first draw. DirectX 12 (DXIL) has always said 48, and so does real mgfxc 3.8.5's Vulkan
+        // build of the same globals (measured, validation/SharedNonSquareMatrix G_V2M2).
         MgfxBlobReader vulkan = MgfxBlobReader.Parse((await CompileAsync("C_Vec2Mat2.fx", PlatformTarget.Vulkan)).Data);
         MgfxBlobReader dx12 = MgfxBlobReader.Parse((await CompileAsync("C_Vec2Mat2.fx", PlatformTarget.DirectX12)).Data);
 
@@ -181,11 +182,42 @@ public sealed class InitializerDefaultsTests
 
         MgfxParameterRecord wide = Param(g, "Wide");
         (wide.Rows, wide.Columns).ShouldBe(((byte)2, (byte)3));
-        Floats(wide.DefaultValue!).ShouldBe(new[] { 0.125f, 0.375f, 0.25f, 0.5f, 0.75f, 0.625f });
+        Floats(wide.DefaultValue!).ShouldBe(new[] { 0.125f, 0.375f, 0.875f, 0.5f, 0.75f, 0.625f });
 
         MgfxParameterRecord tall = Param(g, "Tall");
         (tall.Rows, tall.Columns).ShouldBe(((byte)3, (byte)2));
         Floats(tall.DefaultValue!).ShouldBe(new[] { 0.1f, 0.3f, 0.25f, 0.2f, 0.4f, 0.6f });
+    }
+
+    [Fact]
+    public async Task RowMajorNonSquare_OnVulkan_KeepsMgfxcsHeader_FitsItsBuffer_AndIsAnSd0017()
+    {
+        // Probe case I (issue #423): a row_major float2x3 LAST in the globals. MonoGame uploads
+        // ColumnCount registers of RowCount floats; the row_major buffer holds one register per HLSL
+        // row, so the header is 3x2 (what real mgfxc 3.8.5's Vulkan build writes), the upload is the
+        // buffer exactly, and the buffer (48 bytes) holds it. With the HLSL-shape 2x3 header the
+        // runtime wrote 3 registers from offset 16, past a 48-byte buffer, and threw at the first Apply.
+        const string src = """
+            float4 Pad;
+            row_major float2x3 M = float2x3(1, 2, 3, 4, 5, 6);
+            float4 MainPS(float4 pos : SV_Position) : SV_Target0 { return Pad + M[1].z; }
+            technique T { pass P { PixelShader = compile ps_6_0 MainPS(); } }
+            """;
+        var result = await new EffectCompiler().CompileAsync(
+            src, new CompilerOptions { Target = PlatformTarget.Vulkan, SourceFileName = "RowMajor.fx" });
+        result.IsSuccess.ShouldBeTrue(result.IsFailure ? result.Error[0].Message : "");
+
+        MgfxBlobReader file = MgfxBlobReader.Parse(result.Value.Data);
+        MgfxParameterRecord m = file.Parameters.Single(p => p.Name == "M");
+        (m.Rows, m.Columns).ShouldBe(((byte)3, (byte)2));
+        MgfxConstantBufferRecord cb = file.ConstantBuffers.Single();
+        cb.ParameterOffsets.ShouldBe(new[] { 0, 16 });
+        cb.Size.ShouldBe(48);
+        cb.Size.ShouldBeGreaterThanOrEqualTo(16 + (m.Columns - 1) * 16 + m.Rows * 4);
+
+        // Known gap: the declaration (2x3) disagrees with the header, so its initializer is not kept.
+        result.Value.Warnings.ShouldContain(w => w.Code == "SD0017" && w.Message.Contains("'M'", StringComparison.Ordinal));
+        m.DefaultValue.ShouldBe(new byte[24]);
     }
 
     [Fact]
