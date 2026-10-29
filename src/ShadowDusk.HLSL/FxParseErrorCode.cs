@@ -39,9 +39,12 @@ public enum FxParseErrorCode
     UnknownCharacter = 11,
 
     /// <summary>
-    /// FX0012: A legacy D3D9 sampling intrinsic (e.g. <c>tex2Dlod</c>) whose argument list
-    /// does not map 1:1 onto a modern <c>Texture2D</c> method, so it cannot be rewritten
-    /// forward for DXC. (The FNA target compiles these natively and never raises this.)
+    /// FX0012: A legacy D3D9 sampling intrinsic call the SM4 rewrite cannot convert to a modern
+    /// texture method: one of the 1D, 3D or cube families (<c>tex1D</c>, <c>tex3Dlod</c>,
+    /// <c>texCUBE</c>, …), whose resource type the rewrite does not synthesize, or a
+    /// <c>tex2Dlod</c> / <c>tex2Dbias</c> / <c>tex2Dproj</c> call it cannot place its helper for
+    /// (a wrong argument count, or a conditional directive splitting the declaration that
+    /// calls it). (The FNA target compiles these natively and never raises this.)
     /// </summary>
     UnsupportedLegacyIntrinsic = 12,
 

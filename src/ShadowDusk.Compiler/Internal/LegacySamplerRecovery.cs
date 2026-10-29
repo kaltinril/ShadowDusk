@@ -117,7 +117,7 @@ internal static class LegacySamplerRecovery
         if (parsed.IsFailure)
         {
             // An FXnnnn diagnostic is the pre-parser's verdict on the preprocessed source, which
-            // is the text mgfxc parses too: it is the effect's real error (a tex2Dlod inside a
+            // is the text mgfxc parses too: it is the effect's real error (a texCUBE inside a
             // macro is FX0012, with its location). Anything else is the view failing to build.
             return parsed.Error.Code.StartsWith("FX", StringComparison.Ordinal)
                 ? new Outcome.Rejected(parsed.Error)
@@ -199,7 +199,8 @@ internal static class LegacySamplerRecovery
         Message: $"legacy D3D9 sampler syntax ('{residue.Token}') is still in the source after ShadowDusk's SM4 " +
                  "rewrite ran on the preprocessed effect, so the compiler was given a construct it does not " +
                  "have. The rewrite models a global 'sampler' / 'sampler2D' declaration (bare, with a " +
-                 "register, or with a sampler_state block) read by tex2D or tex2Dgrad; it does not model " +
+                 "register, or with a sampler_state block) read by tex2D, tex2Dgrad, tex2Dlod, tex2Dbias or " +
+                 "tex2Dproj; it does not model " +
                  "this shape (for example a sampler2D function parameter). Use Texture2D + SamplerState + " +
                  ".Sample for it. The FNA (fx_2_0) and DirectX_11 targets compile legacy sampler syntax " +
                  "natively.");

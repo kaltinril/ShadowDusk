@@ -1815,9 +1815,12 @@ public sealed class FxPreParserTests
     }
 
     // -------------------------------------------------------------------------
-    // Legacy sampling intrinsics: tex2Dgrad forwards (1:1 args); tex2Dlod and the
-    // other restructuring variants fail loudly with FX0012 (naming the intrinsic)
-    // instead of dying inside DXC with a misleading diagnostic.
+    // Legacy sampling intrinsics: tex2Dgrad forwards (1:1 args); the 1D/3D/CUBE
+    // families fail loudly with FX0012 (naming the intrinsic) instead of dying inside
+    // DXC with a misleading diagnostic. tex2Dlod / tex2Dbias / tex2Dproj used to be
+    // rows of the FX0012 theory below; they are rewritten since 2026-10-28 and pinned
+    // by FxPreParserRestructuredIntrinsicTests (same sampler_state shape, asserted
+    // positively).
     // -------------------------------------------------------------------------
 
     [Fact]
@@ -1844,9 +1847,9 @@ public sealed class FxPreParserTests
     }
 
     [Theory]
-    [InlineData("tex2Dlod")]
-    [InlineData("tex2Dproj")]
-    [InlineData("tex2Dbias")]
+    [InlineData("tex1Dlod")]
+    [InlineData("tex3Dlod")]
+    [InlineData("texCUBElod")]
     [InlineData("texCUBE")]
     [InlineData("tex3D")]
     public void Parse_UnsupportedLegacyIntrinsic_FailsWithFX0012_NamingTheIntrinsic(string intrinsic)
