@@ -18,6 +18,38 @@ that loads and renders identically to `mgfxc`'s in the real MonoGame/KNI runtime
 
 ### Fixed
 
+- **DirectX 11: legacy samplers' textures now sit on the texture slots `mgfxc` gives them, so
+  SpriteBatch's sprite reaches the right sampler.** fxc (and so `mgfxc` and KNI's pipeline) gives
+  a LEGACY sampler's texture (`sampler2D A;`, a `sampler_state` block, read with `tex2D`) the
+  `tN` slot of the shader's FIRST READ of it, in evaluation order (an argument before the call
+  that takes it, an inner read before the dependent read around it; a read the compiler drops
+  takes no slot), ahead of every modern `Texture2D` without a register (those keep declaration
+  order), around every explicit texture register (read or not). ShadowDusk numbered the SM4
+  rewrite in declaration order, which put a texture `sampler_state` names, or one declared above
+  the sprite sampler, on `t0` where SpriteBatch binds the sprite: the XNA/MonoGame
+  `BloomCombine.fx` shape (`sampler BloomSampler : register(s0); sampler BaseSampler :
+  register(s1) = sampler_state { Texture = (BaseTexture); };`) swapped the bloom and the base
+  (maxd 188 in real KNI WinForms.DX11, maxd 200 in real MonoGame WindowsDX against `mgfxc`
+  3.8.4.1's build). Each DirectX 11 shader with a legacy sampler is now checked after its compile
+  (the order is read from the compiled DXBC's own instruction stream, the surviving textures from
+  its RDEF) and, when the slots differ, recompiled with each texture pinned by an explicit
+  `register(tN)`. Measured on 39 new shapes (`tests/fixtures/golden/dx11-texture-slots/`) and the
+  27 legacy-sampler goldens, all now `mgfxc`'s table (the 11 listed as divergent before included)
+  except two recorded cases: an explicit `register(tN)` on a `texture2D T` a `sampler_state`
+  names is honoured, as in XNA and KNI's own effect tests, where `mgfxc` reserves `tN` and moves
+  the sampler's texture to the next free slot; and two legacy samplers sharing one texture keep
+  one record (`mgfxc` has two), still open. If a texture cannot be pinned (declared through a
+  macro or in a declarator list) the effect compiles as before and warns `SD0228`. **DirectX 11
+  and KNIFX DirectX output changes** only for shaders whose legacy-sampler texture slots were not
+  fxc's: in the corpus, `ForwardLighting.fx`, `SamplerPairMirror.fx` and
+  `SamplerRegisterOrder.fx` (now `mgfxc`'s table exactly), and none of the byte-identity
+  manifests' fixtures; OpenGL, DirectX 12, Vulkan, FNA and KNIFX OpenGL bytes are unchanged for
+  every `.fx` under `tests/fixtures` (DirectX 12 keeps declaration order, no reference table
+  for these shapes was established; FNA already matches `fxc`'s declaration-order sampler
+  registers). Rung 4: `validation/DxModernFeatures` arm
+  "texture-slots" (real MonoGame WindowsDX, GPU and WARP) and the texture-slot rows of
+  `validation/KniWinFormsDX` (real KNI 4.2.9001 WinForms.DX11), maxd 0 against the `mgfxc`
+  golden (maxd 200 in MonoGame with the previous compiler).
 - **Techniques are read from the preprocessed source, like `mgfxc` (issue #407).** A technique
   inside a false `#if` (or behind an unset `/Defines` value) was still compiled, a technique in an
   `#include`d file was not found (`SD0010`, or dropped beside the main file's own), and a macro

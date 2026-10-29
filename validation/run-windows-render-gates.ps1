@@ -25,7 +25,9 @@
   history and evidence detail lives in docs/validation-matrix.md section 6.
     * MonoGame WindowsDX corpus  - validation/BaselineDx + CandidateDx + compare_dx.py
                                    (ShadowDusk DX vs mgfxc DX golden, real MonoGame WindowsDX).
-    * DX modern features (VTF)   - validation/DxModernFeatures (vkd3d vs fxc oracle, maxd 0).
+    * DX modern features (VTF)   - validation/DxModernFeatures (vkd3d vs fxc oracle, maxd 0), plus
+                                   its legacy-register and legacy texture-slot arms (SpriteBatch,
+                                   vs the committed mgfxc DirectX_11 goldens, maxd 0).
     * DX Apos.Shapes gallery     - validation/VsDrivenDx -- apos: the full 30-cell Apos.Shapes
                                    ShapeBatch gallery through the real NuGet package; d3dcompiler_47
                                    arm vs the real mgfxc DirectX_11 golden, vkd3d arm vs the
@@ -60,7 +62,7 @@
                                    mgfxc 3.8.5 golden - same parameter table (one `Tex` bound to
                                    slot 0), same picture, element [1] really read.
     * KNI DirectX                - validation/KniWinFormsDX (ShadowDusk DX vs mgfxc, real KNI
-                                   WinForms.DX11).
+                                   WinForms.DX11), plus the legacy texture-slot rows.
     * KNI OpenGL desktop         - validation/Baseline + Candidate + KniDesktopGL + compare_kni.py
                                    (ShadowDusk v10 vs mgfxc + MonoGame, real KNI SDL2.GL - the
                                    real-KNI-runtime GL proof CI's llvmpipe lane does not cover).
@@ -242,7 +244,7 @@ $gates.Add(@{
     }
 })
 $gates.Add(@{
-    Name   = 'DX modern features / vertex texture fetch (vkd3d vs fxc oracle)'
+    Name   = 'DX modern features / vertex texture fetch (vkd3d vs fxc oracle) + legacy sampler register and texture-slot arms vs mgfxc'
     Action = { Invoke-Checked 'dotnet' @('run', '--project', 'validation/DxModernFeatures', '-c', 'Release') }
 })
 $gates.Add(@{
@@ -286,7 +288,7 @@ $gates.Add(@{
     }
 })
 $gates.Add(@{
-    Name   = 'KNI DirectX (ShadowDusk DX vs mgfxc, real KNI WinForms.DX11)'
+    Name   = 'KNI DirectX (ShadowDusk DX vs mgfxc, real KNI WinForms.DX11, incl. legacy texture slots)'
     Action = { Invoke-Checked 'dotnet' @('run', '--project', 'validation/KniWinFormsDX', '-c', 'Release') }
 })
 # KNI OpenGL gates: CI's llvmpipe lane covers the in-process MonoGame GL gates, but the

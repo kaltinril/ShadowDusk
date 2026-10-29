@@ -113,7 +113,39 @@ internal static class Program
                               $"{(r.CompileError ?? $"{r.CandidateBytes!.Length} bytes")}");
         Console.WriteLine();
 
-        using var game = new KniDxCompareGame(catPath, outDir, rows, tolerance);
+        // ---- Texture-slot arm: legacy sampler textures on fxc's t slots ----------------
+        // tests/fixtures/golden/dx11-texture-slots/: fxc gives a legacy sampler's texture the
+        // slot of its first read (ahead of unregistered modern textures, around explicit texture
+        // registers); ShadowDusk used to number the SM4 rewrite in declaration order, and in the
+        // BloomCombine shape SpriteBatch's scene (t0) reached the wrong sampler (maxd 188 here).
+        // Each shape is compiled into the MGFX v10 container, drawn through SpriteBatch with the
+        // sprite on t0 and the other textures set through their parameters, and must match the
+        // mgfxc 3.8.4.1 golden exactly; the positive control redraws the golden with the sprite's
+        // texture and one parameter's exchanged. (KNIFX carries the same DXBC and sampler table,
+        // but a KNIFX DirectX effect at ps_4_0_level_9_1 does not load on this HiDef device at
+        // all: "Shader model 4.0 is not supported by the current graphics profile 'HiDef'",
+        // measured 2026-10-28 on main too, validation/InitializerDefaultsKniDx's KNIFX rows.)
+        string slotsDir = Path.Combine(repoRoot, "tests", "fixtures", "golden", "dx11-texture-slots");
+        var slotRows = new List<SlotRow>();
+        foreach ((string shape, Dictionary<string, string> parameters, string? control) in SlotRow.Cases)
+        {
+            string src = File.ReadAllText(Path.Combine(slotsDir, shape + ".fx"));
+            byte[] golden = File.ReadAllBytes(Path.Combine(slotsDir, shape + ".DirectX_11.mgfx"));
+            foreach (EffectContainer container in new[] { EffectContainer.Mgfx })
+            {
+                var result = compiler.Compile(src, new CompilerOptions
+                {
+                    Target = PlatformTarget.DirectX,
+                    Container = container,
+                    SourceFileName = shape + ".fx",
+                });
+                slotRows.Add(new SlotRow($"{shape} ({container})", result.IsSuccess ? result.Value.Data : null,
+                    result.IsSuccess ? null : string.Join(" | ", result.Error.Select(e => $"{e.Code}: {e.Message}")),
+                    golden, parameters, control));
+            }
+        }
+
+        using var game = new KniDxCompareGame(catPath, outDir, rows, tolerance, slotRows);
         game.Run();
 
         int ok = 0;
@@ -124,13 +156,33 @@ internal static class Program
             Console.WriteLine($"  [{(o.Pass ? "PASS" : "FAIL")}] {o.Name,-12} {o.Detail}");
         }
         Console.WriteLine($"\n[kni-dx] {ok}/{game.Outcomes.Count} loaded + rendered + matched mgfxc in real KNI v{xna.Version}.");
-        return ok == game.Outcomes.Count ? 0 : 1;
+        return ok == game.Outcomes.Count && game.Outcomes.Count == rows.Count + slotRows.Count ? 0 : 1;
     }
 }
 
 internal sealed record DxRow(string Name, byte[]? CandidateBytes, byte[]? GoldenBytes, string? CompileError);
 
 internal sealed record DxOutcome(string Name, bool Pass, string Detail);
+
+/// <summary>One texture-slot row: a shape compiled into one container, its golden, the parameter textures it sets.</summary>
+internal sealed record SlotRow(
+    string Name, byte[]? CandidateBytes, string? CompileError, byte[] GoldenBytes,
+    Dictionary<string, string> Parameters, string? ControlParameter)
+{
+    public const string Red = "red", Green = "green", Blue = "blue", Sprite = "sprite";
+
+    /// <summary>The same five shapes as validation/DxModernFeatures' "texture-slots" arm.</summary>
+    public static readonly (string Shape, Dictionary<string, string> Parameters, string? Control)[] Cases =
+    {
+        ("BloomCombineUndeclaredTexture", new() { ["Tex2"] = Green }, "Tex2"),
+        ("DeclaredTextureAboveSpriteSampler", new() { ["Tex2"] = Green }, "Tex2"),
+        ("ModernReadFirstStillAfterLegacy", new() { ["A"] = Green, ["T"] = Blue }, "A"),
+        ("ModernExplicitT1BetweenLegacy", new() { ["A"] = Green, ["T"] = Blue }, "A"),
+        // Explicit registers on sampler_state textures: honoured by ShadowDusk (XNA), moved by
+        // mgfxc; set through their parameters (Spec = the sprite's own texture) both agree.
+        ("ExplicitTextureRegistersReversed", new() { ["Diffuse"] = Green, ["Spec"] = Sprite }, null),
+    };
+}
 
 /// <summary>
 /// One real KNI WinForms.DX11 device: loads each row's candidate (ShadowDusk) and golden
@@ -147,18 +199,20 @@ internal sealed class KniDxCompareGame : Game
     private readonly string _outDir;
     private readonly IReadOnlyList<DxRow> _rows;
     private readonly int _tolerance;
+    private readonly IReadOnlyList<SlotRow> _slotRows;
     private SpriteBatch _sb = null!;
     private Texture2D _cat = null!;
     private bool _done;
 
     public List<DxOutcome> Outcomes { get; } = new();
 
-    public KniDxCompareGame(string catPath, string outDir, IReadOnlyList<DxRow> rows, int tolerance)
+    public KniDxCompareGame(string catPath, string outDir, IReadOnlyList<DxRow> rows, int tolerance, IReadOnlyList<SlotRow> slotRows)
     {
         _catPath = catPath;
         _outDir = outDir;
         _rows = rows;
         _tolerance = tolerance;
+        _slotRows = slotRows;
         _gdm = new GraphicsDeviceManager(this)
         {
             PreferredBackBufferWidth = 64,
@@ -195,8 +249,98 @@ internal sealed class KniDxCompareGame : Game
         foreach (DxRow row in _rows)
             Outcomes.Add(RunRow(row));
 
+        if (_slotRows.Count > 0)
+        {
+            Texture2D Solid(Color c)
+            {
+                var t = new Texture2D(GraphicsDevice, 1, 1, false, SurfaceFormat.Color);
+                t.SetData(new[] { c });
+                return t;
+            }
+            using var red = Solid(new Color(200, 0, 0));
+            using var green = Solid(new Color(0, 200, 0));
+            using var blue = Solid(new Color(0, 0, 200));
+            foreach (SlotRow row in _slotRows)
+                Outcomes.Add(RunSlotRow(row, red, green, blue));
+        }
+
         _done = true;
         Exit();
+    }
+
+    private DxOutcome RunSlotRow(SlotRow row, Texture2D red, Texture2D green, Texture2D blue)
+    {
+        if (row.CandidateBytes is null)
+            return new DxOutcome(row.Name, false, $"compile failure: {row.CompileError}");
+        Texture2D Named(string n) => n switch { SlotRow.Green => green, SlotRow.Blue => blue, _ => red };
+        var parameters = row.Parameters.ToDictionary(p => p.Key, p => Named(p.Value));
+
+        Color[]? Render(byte[] bytes, Texture2D sprite, IReadOnlyDictionary<string, Texture2D> values, out string? error)
+        {
+            error = null;
+            const int w = 32, h = 32;
+            try
+            {
+                using var effect = new Effect(GraphicsDevice, bytes);
+                foreach ((string name, Texture2D tex) in values)
+                {
+                    EffectParameter p = effect.Parameters[name]
+                        ?? throw new InvalidOperationException($"no parameter '{name}'");
+                    p.SetValue(tex);
+                }
+                using var rt = new RenderTarget2D(GraphicsDevice, w, h, false, SurfaceFormat.Color, DepthFormat.None);
+                GraphicsDevice.SetRenderTarget(rt);
+                GraphicsDevice.Clear(Color.Black);
+                _sb.Begin(SpriteSortMode.Immediate, BlendState.Opaque, SamplerState.PointClamp, null, null, effect);
+                _sb.Draw(sprite, new Rectangle(0, 0, w, h), Color.White);
+                _sb.End();
+                GraphicsDevice.SetRenderTarget(null);
+                var px = new Color[w * h];
+                rt.GetData(px);
+                return px;
+            }
+            catch (Exception ex)
+            {
+                try { _sb.End(); } catch { /* may not be in a batch */ }
+                try { GraphicsDevice.SetRenderTarget(null); } catch { /* ignore */ }
+                error = $"{ex.GetType().Name}: {ex.Message}";
+                return null;
+            }
+        }
+
+        static int MaxD(Color[] a, Color[] b)
+        {
+            int m = 0;
+            for (int i = 0; i < a.Length; i++)
+                m = Math.Max(m, Math.Max(Math.Max(Math.Abs(a[i].R - b[i].R), Math.Abs(a[i].G - b[i].G)),
+                                         Math.Max(Math.Abs(a[i].B - b[i].B), Math.Abs(a[i].A - b[i].A))));
+            return m;
+        }
+
+        Color[]? candidate = Render(row.CandidateBytes, red, parameters, out string? candErr);
+        if (candidate is null)
+            return new DxOutcome(row.Name, false, $"candidate failed: {candErr}");
+        Color[]? golden = Render(row.GoldenBytes, red, parameters, out string? goldErr);
+        if (golden is null)
+            return new DxOutcome(row.Name, false, $"GOLDEN failed (control failure): {goldErr}");
+        int maxDelta = MaxD(candidate, golden);
+
+        string controlText = "n/a";
+        bool controlOk = true;
+        if (row.ControlParameter is { } swap)
+        {
+            var swapped = new Dictionary<string, Texture2D>(parameters) { [swap] = red };
+            Color[]? goldenSwapped = Render(row.GoldenBytes, parameters[swap], swapped, out string? swapErr);
+            if (goldenSwapped is null)
+                return new DxOutcome(row.Name, false, $"positive control failed: {swapErr}");
+            int controlDelta = MaxD(golden, goldenSwapped);
+            controlOk = controlDelta > 16;
+            controlText = controlDelta.ToString();
+        }
+        Color k = candidate[16 * 32 + 16], g = golden[16 * 32 + 16];
+        return new DxOutcome(row.Name, maxDelta == 0 && controlOk,
+            $"texture slots: maxDelta={maxDelta} (tolerance 0) candidate ({k.R},{k.G},{k.B}) mgfxc ({g.R},{g.G},{g.B}); " +
+            $"positive control (sprite and '{row.ControlParameter ?? "-"}' swapped) delta {controlText}");
     }
 
     private DxOutcome RunRow(DxRow row)

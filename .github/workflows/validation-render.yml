@@ -67,7 +67,10 @@
 #   * DxModernFeatures       — DX11 vertex-texture-fetch: vkd3d (shipping) vs
 #                              d3dcompiler/fxc oracle, real MonoGame WindowsDX. The
 #                              flagship gate here: single process, self-asserting exit
-#                              code, no Python, no external mgfxc invocation.
+#                              code, no Python, no external mgfxc invocation. Its
+#                              "legacy-register" and "texture-slots" arms render
+#                              SpriteBatch scenes vs committed mgfxc goldens in the same
+#                              process (the texture-slots rows run in KniWinFormsDX too).
 #   * KniWinFormsDX          — DX11 ShadowDusk vs the committed mgfxc goldens, real KNI
 #                              WinForms.DX11 (proves WARP extends to KNI's DX backend,
 #                              which carries the pin on PresentationParameters rather
@@ -436,12 +439,12 @@ jobs:
       # instead of a hardware adapter — windows-latest has no GPU. SHADOWDUSK_DX_WARP is
       # opt-in (see validation/SharedDx/DxHeadlessRasterizer.cs), so a developer's local
       # `dotnet run` still renders on their real GPU; only this job's env sets it.
-      - name: Run DX11 modern-features gate (vkd3d vs fxc oracle, real MonoGame WindowsDX)
+      - name: Run DX11 modern-features gate (vkd3d vs fxc oracle; legacy sampler register + texture-slot arms vs mgfxc; real MonoGame WindowsDX)
         env:
           SHADOWDUSK_DX_WARP: "1"
         run: dotnet run --project validation/DxModernFeatures -c Release --no-build
 
-      - name: Run KNI DirectX gate (ShadowDusk vs mgfxc, real KNI WinForms.DX11)
+      - name: Run KNI DirectX gate (ShadowDusk vs mgfxc incl. legacy texture slots, real KNI WinForms.DX11)
         env:
           SHADOWDUSK_DX_WARP: "1"
         run: dotnet run --project validation/KniWinFormsDX -c Release --no-build

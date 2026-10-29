@@ -19,6 +19,19 @@
 // s1 and samples at uv*3: the s1 wrap repeats the stripes, the s0 clamp smears the edge
 // texel. ShadowDusk's vkd3d build is pixel-diffed against the COMMITTED mgfxc golden, and the
 // golden is rendered once more with PointClamp on s1 to prove the scene can tell the two apart.
+//
+// ARM "texture-slots" (tests/fixtures/golden/dx11-texture-slots/): fxc gives a LEGACY sampler's
+// texture the t slot of its first read, ahead of every unregistered modern texture, around every
+// explicit texture register; ShadowDusk used to number the SM4 rewrite in declaration order, so in
+// the BloomCombine shape (`sampler BloomSampler : register(s0); sampler BaseSampler : register(s1)
+// = sampler_state { Texture = (Tex2); };`) Tex2 took t0 and SpriteBatch's scene reached the wrong
+// sampler (maxd 188 in real KNI WinForms.DX11). Each shape is drawn through SpriteBatch (the sprite
+// on t0, the other textures through their parameters) with ShadowDusk's build and the committed
+// mgfxc 3.8.4.1 golden, which must match (maxd 0); the positive control renders the golden again
+// with the sprite's texture and one parameter's exchanged (what a build with those two slots
+// swapped draws) and must differ. ExplicitTextureRegistersReversed covers the one recorded mgfxc
+// deviation (registers on sampler_state textures, honoured here as in XNA): set through their
+// parameters, both layouts draw the same picture.
 
 using System;
 using System.Linq;
@@ -111,7 +124,52 @@ Console.WriteLine($"\n[dx-modern] legacy-register: candidate vs mgfxc golden max
 Console.WriteLine($"[dx-modern] legacy-register: scene tells s0 from s1 (golden with PointClamp on s1 differs): {legacyGame.NonTrivial}");
 Console.WriteLine($"[dx-modern] legacy-register verdict: {(legacyOk ? "PASS" : "FAIL")}");
 
-return ok && legacyOk ? 0 : 1;
+// ---- Arm "texture-slots" ------------------------------------------------------------------
+string slotsDir = System.IO.Path.Combine(repoRoot, "tests", "fixtures", "golden", "dx11-texture-slots");
+var slotCases = new TextureSlotCase[]
+{
+    // The XNA/MonoGame BloomCombine shape: BloomSampler : register(s0) bare (the scene, from
+    // SpriteBatch), BaseSampler : register(s1) = sampler_state { Texture = (Tex2); }, Tex2 never
+    // declared. ShadowDusk used to put Tex2 on t0, under the sprite.
+    new("BloomCombineUndeclaredTexture", new() { ["Tex2"] = TextureSlotHarness.Green }, ControlParameter: "Tex2"),
+    // `texture Tex2;` declared ABOVE the register(s0) sprite sampler.
+    new("DeclaredTextureAboveSpriteSampler", new() { ["Tex2"] = TextureSlotHarness.Green }, ControlParameter: "Tex2"),
+    // A modern Texture2D declared between two legacy samplers and read first: still after them.
+    new("ModernReadFirstStillAfterLegacy", new() { ["A"] = TextureSlotHarness.Green, ["T"] = TextureSlotHarness.Blue }, ControlParameter: "A"),
+    // An explicit `Texture2D T : register(t1)` between two legacy samplers read in reverse.
+    new("ModernExplicitT1BetweenLegacy", new() { ["A"] = TextureSlotHarness.Green, ["T"] = TextureSlotHarness.Blue }, ControlParameter: "A"),
+    // Explicit registers on the textures sampler_state blocks name: honoured by ShadowDusk (XNA),
+    // moved to t2/t3 by mgfxc. Set through their parameters (Spec to the sprite's own texture, which
+    // ShadowDusk reads from t0) both builds draw the same picture; no swap control, since the point
+    // is that the two layouts agree here.
+    new("ExplicitTextureRegistersReversed", new() { ["Diffuse"] = TextureSlotHarness.Green, ["Spec"] = TextureSlotHarness.SpriteTexture }, ControlParameter: null),
+};
+var slotInputs = new System.Collections.Generic.List<(TextureSlotCase Case, byte[] Candidate, byte[] Golden)>();
+foreach (TextureSlotCase c in slotCases)
+{
+    string src = await System.IO.File.ReadAllTextAsync(System.IO.Path.Combine(slotsDir, c.Shape + ".fx"));
+    var r = await new EffectCompiler().CompileAsync(src, new CompilerOptions { Target = PlatformTarget.DirectX, SourceFileName = c.Shape + ".fx" });
+    if (r.IsFailure)
+    {
+        Console.WriteLine($"[dx-modern] texture-slots {c.Shape}: COMPILE FAIL: " + string.Join(" | ", r.Error.Select(e => $"{e.Code}: {e.Message}")));
+        return 1;
+    }
+    slotInputs.Add((c, r.Value.Data, await System.IO.File.ReadAllBytesAsync(System.IO.Path.Combine(slotsDir, c.Shape + ".DirectX_11.mgfx"))));
+}
+using var slotGame = new TextureSlotHarness(slotInputs);
+slotGame.Run();
+bool slotsOk = slotGame.Results.Count == slotCases.Length;
+foreach (var res in slotGame.Results)
+{
+    bool caseOk = res.Rendered && res.MaxDelta == 0 && (res.ControlDelta is null || res.ControlDelta > 16);
+    slotsOk &= caseOk;
+    Console.WriteLine($"[dx-modern] texture-slots {res.Shape}: candidate vs mgfxc golden max delta {res.MaxDelta}; " +
+                      $"positive control (golden with the sprite and '{res.ControlParameter ?? "-"}' swapped) delta {(res.ControlDelta?.ToString() ?? "n/a")}; " +
+                      $"{(caseOk ? "PASS" : "FAIL")}");
+}
+Console.WriteLine($"[dx-modern] texture-slots verdict: {(slotsOk ? "PASS" : "FAIL")}");
+
+return ok && legacyOk && slotsOk ? 0 : 1;
 
 static string FindRepoRoot()
 {
@@ -197,6 +255,116 @@ sealed class LegacyRegisterHarness : Game
             NonTrivial = MaxD(golden, goldenClamp) > 16;
             Console.WriteLine($"  legacy-register row (candidate): {string.Join(" ", Enumerable.Range(0, 6).Select(i => candidate[(H / 2) * W + i * W / 6]).Select(c => $"({c.R},{c.G},{c.B})"))}");
             Console.WriteLine($"  legacy-register row (mgfxc):     {string.Join(" ", Enumerable.Range(0, 6).Select(i => golden[(H / 2) * W + i * W / 6]).Select(c => $"({c.R},{c.G},{c.B})"))}");
+        }
+        _done = true;
+        Exit();
+    }
+}
+
+// ---- Arm "texture-slots": SpriteBatch puts the sprite on t0; the rest come from parameters ----
+
+/// <summary>One texture-slot shape: the parameter textures it sets, and which one the control swaps with the sprite.</summary>
+sealed record TextureSlotCase(string Shape, System.Collections.Generic.Dictionary<string, string> Parameters, string? ControlParameter);
+
+sealed class TextureSlotHarness : Game
+{
+    public const string Red = "red", Green = "green", Blue = "blue", SpriteTexture = "sprite";
+    private const int W = 32, H = 32;
+    private readonly GraphicsDeviceManager _gdm;
+    private readonly System.Collections.Generic.IReadOnlyList<(TextureSlotCase Case, byte[] Candidate, byte[] Golden)> _cases;
+    private bool _done;
+
+    public System.Collections.Generic.List<(string Shape, bool Rendered, int MaxDelta, int? ControlDelta, string? ControlParameter)> Results { get; } = new();
+
+    public TextureSlotHarness(System.Collections.Generic.IReadOnlyList<(TextureSlotCase Case, byte[] Candidate, byte[] Golden)> cases)
+    {
+        _cases = cases;
+        _gdm = new GraphicsDeviceManager(this)
+        {
+            PreferredBackBufferWidth = W,
+            PreferredBackBufferHeight = H,
+            GraphicsProfile = GraphicsProfile.HiDef,
+        };
+    }
+
+    protected override void Draw(GameTime gameTime)
+    {
+        if (_done) { Exit(); return; }
+        var gd = GraphicsDevice;
+        Texture2D Solid(Color c)
+        {
+            var t = new Texture2D(gd, 1, 1, false, SurfaceFormat.Color);
+            t.SetData(new[] { c });
+            return t;
+        }
+        using var red = Solid(new Color(200, 0, 0));
+        using var green = Solid(new Color(0, 200, 0));
+        using var blue = Solid(new Color(0, 0, 200));
+        Texture2D Named(string n) => n switch { Red => red, Green => green, Blue => blue, _ => red };
+
+        Color[]? Render(byte[] effectBytes, Texture2D sprite, System.Collections.Generic.IReadOnlyDictionary<string, Texture2D> parameters)
+        {
+            try
+            {
+                using var effect = new Effect(gd, effectBytes);
+                foreach ((string name, Texture2D tex) in parameters)
+                {
+                    EffectParameter p = effect.Parameters[name]
+                        ?? throw new InvalidOperationException($"no parameter '{name}'");
+                    p.SetValue(tex);
+                }
+                using var rt = new RenderTarget2D(gd, W, H, false, SurfaceFormat.Color, DepthFormat.None);
+                using var sb = new SpriteBatch(gd);
+                gd.SetRenderTarget(rt);
+                gd.Clear(Color.Black);
+                sb.Begin(SpriteSortMode.Immediate, BlendState.Opaque, SamplerState.PointClamp, null, null, effect);
+                sb.Draw(sprite, new Rectangle(0, 0, W, H), Color.White);
+                sb.End();
+                gd.SetRenderTarget(null);
+                var px = new Color[W * H];
+                rt.GetData(px);
+                return px;
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"  texture-slots render threw: {ex.GetType().Name}: {ex.Message}");
+                try { gd.SetRenderTarget(null); } catch { }
+                return null;
+            }
+        }
+
+        static int MaxD(Color[] a, Color[] b)
+        {
+            int m = 0;
+            for (int i = 0; i < a.Length; i++)
+                m = Math.Max(m, Math.Max(Math.Max(Math.Abs(a[i].R - b[i].R), Math.Abs(a[i].G - b[i].G)),
+                                         Math.Max(Math.Abs(a[i].B - b[i].B), Math.Abs(a[i].A - b[i].A))));
+            return m;
+        }
+
+        foreach ((TextureSlotCase c, byte[] candidateBytes, byte[] goldenBytes) in _cases)
+        {
+            var parameters = c.Parameters.ToDictionary(p => p.Key, p => p.Value == SpriteTexture ? red : Named(p.Value));
+            Color[]? candidate = Render(candidateBytes, red, parameters);
+            Color[]? golden = Render(goldenBytes, red, parameters);
+            int? control = null;
+            if (c.ControlParameter is { } swap && golden is not null)
+            {
+                // The same scene with the sprite's texture and the swapped parameter's exchanged:
+                // what a build that put the two on each other's slot would draw.
+                Texture2D other = parameters[swap];
+                var swapped = new System.Collections.Generic.Dictionary<string, Texture2D>(parameters) { [swap] = red };
+                Color[]? goldenSwapped = Render(goldenBytes, other, swapped);
+                if (goldenSwapped is not null)
+                    control = MaxD(golden, goldenSwapped);
+            }
+            bool rendered = candidate is not null && golden is not null;
+            Results.Add((c.Shape, rendered, rendered ? MaxD(candidate!, golden!) : -1, control, c.ControlParameter));
+            if (rendered)
+            {
+                Color k = candidate![(H / 2) * W + W / 2], g = golden![(H / 2) * W + W / 2];
+                Console.WriteLine($"  texture-slots {c.Shape}: candidate ({k.R},{k.G},{k.B}) mgfxc ({g.R},{g.G},{g.B})");
+            }
         }
         _done = true;
         Exit();
