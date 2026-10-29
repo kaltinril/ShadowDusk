@@ -3201,7 +3201,7 @@ internal sealed class CompilationPipeline
     private static IReadOnlyList<ShaderError> WithViewWarning(List<ShaderError> warnings, ShaderError? viewWarning) =>
         viewWarning is null ? warnings : [viewWarning, .. warnings];
 
-    private static ShaderError DefaultNotPreserved(string file, int line, int column, string name, string reason) =>
+    internal static ShaderError DefaultNotPreserved(string file, int line, int column, string name, string reason) =>
         new(File: file,
             Line: line,
             Column: column,

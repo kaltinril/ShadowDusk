@@ -48,6 +48,52 @@ public sealed class SlangSkslRouteTests
         conversion.SynthesizedUniforms.ShouldContain("ShadowDusk_Color");
     }
 
+    /// <summary>
+    /// Issue #435 on the real-slangc route: each converter reports, for a Slang global with an
+    /// initializer, exactly the default the same route's MGFX build reflects
+    /// (<see cref="SlangCompiler.Compile"/> for OpenGL). Measured with the pinned slangc: its HLSL
+    /// drops the initializer, so every route reports null (the built-in subset route keeps it,
+    /// <c>ConverterUniformDefaultsTests.SlangSubsetRoute_ReportsTheDeclaredDefault_OnBothConverters</c>).
+    /// </summary>
+    [Fact]
+    public void DeclaredDefaults_AgreeWithTheSameRoutesMgfxReflection()
+    {
+        const string slang = """
+            float Thickness = 1.5;
+            float4 Tint = float4(0.5, 0.25, 1, 1);
+
+            [shader("fragment")]
+            float4 MainPS(float4 pos : SV_Position, float2 uv : TEXCOORD0) : SV_Target
+            {
+                return Tint * Thickness;
+            }
+            """;
+        var compiler = new SlangCompiler();
+
+        var mgfx = compiler.Compile(slang, new ShadowDusk.Core.CompilerOptions
+        {
+            Target = ShadowDusk.Core.PlatformTarget.OpenGL,
+            SourceFileName = "Defaults.slang",
+        });
+        mgfx.IsSuccess.ShouldBeTrue(mgfx.IsFailure ? string.Join(" | ", mgfx.Error.Select(e => $"{e.Code}: {e.Message}")) : "");
+        var sksl = compiler.ConvertToSksl(slang, new SkslConvertOptions { SourceName = "Defaults.slang" });
+        SkslConversion conversion = SkslTwinHarness.Succeeded(sksl);
+        var raylib = compiler.ConvertToRaylib(slang, new RaylibConvertOptions { SourceName = "Defaults.slang" });
+        raylib.IsSuccess.ShouldBeTrue(raylib.IsFailure ? string.Join(" | ", raylib.Error.Select(e => $"{e.Code}: {e.Message}")) : "");
+
+        foreach (string name in new[] { "Thickness", "Tint" })
+        {
+            IReadOnlyList<float>? expected = mgfx.Value.Parameters.Single(p => p.Name == name).DefaultValue;
+            IReadOnlyList<float>? skslDefault = conversion.Uniforms.Single(u => u.Name == name).DefaultValue;
+            IReadOnlyList<float>? raylibDefault = raylib.Value.Uniforms.Single(u => u.Name == name).DefaultValue;
+            // slangc's HLSL does not keep the initializer, so all three routes agree on "unknown".
+            // If a slangc update starts keeping it, this pins that the three still agree.
+            expected.ShouldBeNull($"{name}: slangc kept the initializer; replace this with an equality check");
+            skslDefault.ShouldBeNull(name);
+            raylibDefault.ShouldBeNull(name);
+        }
+    }
+
     // Generics and interfaces are exactly what the subset frontend refuses with SD0600.
     private const string GenericSlang = """
         interface IBlendMode { float3 apply(float3 a, float3 b); }

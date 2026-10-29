@@ -22,13 +22,27 @@ namespace ShadowDusk.Validation.RaylibRoute;
 /// SEPARATE copy of the source: MonoGame 3.8's GL backend stores sampler state on the texture
 /// object, so one texture on two units leaks the second unit's wrap mode into later draws.
 /// </param>
+/// <param name="RaylibUniforms">
+/// Issue #435: when set, the raylib arm sets exactly these (typed, arrays included) INSTEAD of
+/// <paramref name="Uniforms"/>, which then only the MonoGame arm reads. The defaults case uses it
+/// to set each uniform from <c>RaylibUniform.DefaultValue</c> on raylib while MonoGame sets nothing
+/// and draws with the <c>.mgfx</c>'s own defaults.
+/// </param>
 internal sealed record RenderJob(
     string Name,
     string? MgfxPath,
     string? FragmentPath,
     Dictionary<string, float[]> Uniforms,
     ExtraTexture[] DrawTextures,
-    ExtraTexture[] ExtraTextures);
+    ExtraTexture[] ExtraTextures,
+    RaylibUniformValue[]? RaylibUniforms = null);
+
+/// <summary>One raylib uniform value, typed as the converter declared it (issue #435).</summary>
+/// <param name="Name">The GLSL uniform name.</param>
+/// <param name="GlslType">The GLSL type (<c>float</c>, <c>vec2</c> ... <c>ivec4</c>).</param>
+/// <param name="ArrayLength">The element count of an array uniform, or 0.</param>
+/// <param name="Value">Every element's components, one element after another.</param>
+internal sealed record RaylibUniformValue(string Name, string GlslType, int ArrayLength, float[] Value);
 
 /// <summary>
 /// A sampler: the names its MonoGame effect parameter can have, and its raylib uniform name.
