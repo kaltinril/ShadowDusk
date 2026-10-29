@@ -613,7 +613,10 @@ internal static class VulkanTextureSamplerBindingRewriter
         };
     }
 
-    private static readonly Regex CallName =new(@"(?<![\w.])(?<fn>[A-Za-z_]\w*)\s*\(", RegexOptions.Compiled);
+    // A call by name, a method call (`h.Get(uv)`, a struct method) included: reachability errs toward
+    // reaching more, so a method's Sample calls still pair (a member call such as `Tex.Sample(` only
+    // marks a same-named function reachable, the conservative direction).
+    private static readonly Regex CallName = new(@"(?<!\w)(?<fn>[A-Za-z_]\w*)\s*\(", RegexOptions.Compiled);
 
     private static void Collect(
         Match m,

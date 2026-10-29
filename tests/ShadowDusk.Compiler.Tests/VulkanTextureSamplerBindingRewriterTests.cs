@@ -729,6 +729,25 @@ public sealed class VulkanTextureSamplerBindingRewriterTests
     }
 
     [Fact]
+    public void Rewrite_AStructMethodTheEntryPointCalls_IsReachable()
+    {
+        // `h.Get(uv)` is a call: the method's Sample pairs SpriteTexture with S (it used to be skipped as
+        // unreachable, leaving S a standalone sampler, SD0232, where the whole-file rewrite compiled it).
+        const string hlsl = """
+            Texture2D SpriteTexture; SamplerState U; SamplerState S;
+            struct Helper { float4 Get(float2 uv) { return SpriteTexture.Sample(S, uv); } };
+            float4 Unused(float2 uv) { return SpriteTexture.Sample(U, uv); }
+            float4 MainPS(float2 uv : TEXCOORD0) : SV_Target0 { Helper h; return h.Get(uv); }
+            """;
+
+        string result = RewriteFor(hlsl, "MainPS", out var aliases);
+
+        result.ShouldContain("Texture2D SpriteTexture : register(t0);", Case.Sensitive);
+        result.ShouldContain("SamplerState S : register(s0);", Case.Sensitive);
+        aliases.ShouldBeEmpty();
+    }
+
+    [Fact]
     public void Rewrite_ATexturePerPassSampler_IsOneDescriptorAtItsSlotInEachShader()
     {
         // RegisterSamplerPerPass.fx: each compiled shader is its own descriptor layout, so the
