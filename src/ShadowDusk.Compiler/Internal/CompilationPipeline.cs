@@ -3293,11 +3293,37 @@ internal sealed class CompilationPipeline
 
             // DXC's wording differs by path: the SPIR-V compiles say "variable 'X' will be placed in
             // $Globals so initializer ignored", the DXIL (DirectX 12) compile "Initializer of external
-            // global will be ignored". Both are untrue once the default is stored.
+            // global will be ignored". Both are untrue once the default is stored. The DXIL warning
+            // points at the declared name; the SPIR-V one points at the INITIALIZER, which is a later
+            // line when the brace list starts on its own line (`float4x4 M =` then `{ ... };`, KNI's
+            // OptimizedMatrix.fx). Its variable name cannot be trusted (DXC names the first initialized
+            // global in every such warning; measured with mgfxc 3.8.5's own DXC), so a warning off a
+            // declaration line belongs to the nearest declaration above it.
+            var declLines = new Dictionary<string, List<(int Line, bool Kept)>>(StringComparer.Ordinal);
+            void AddDecl(string file, int line, bool isKept)
+            {
+                string key = SourceBaseName(file);
+                if (!declLines.TryGetValue(key, out var list)) declLines[key] = list = [];
+                list.Add((line, isKept));
+            }
+            foreach (GlobalInitializerDefault d in read.Value.Defaults.Values) AddDecl(d.File, d.Line, kept.ContainsKey(d.Name));
+            foreach (GlobalInitializerFailure f in read.Value.Failures) AddDecl(f.File, f.Line, false);
+
+            bool BelongsToKept(ShaderError w)
+            {
+                string key = SourceBaseName(w.File);
+                if (keptSites.Contains((key, w.Line))) return true;
+                if (!declLines.TryGetValue(key, out var list)) return false;
+                (int Line, bool Kept)? nearest = null;
+                foreach (var decl in list)
+                    if (decl.Line <= w.Line && (nearest is null || decl.Line > nearest.Value.Line)) nearest = decl;
+                return nearest is { Kept: true };
+            }
+
             warnings.RemoveAll(w => w.Code == "X0000" &&
                 (w.Message.Contains("so initializer ignored", StringComparison.Ordinal) ||
                  w.Message.Contains("Initializer of external global will be ignored", StringComparison.Ordinal)) &&
-                keptSites.Contains((SourceBaseName(w.File), w.Line)));
+                BelongsToKept(w));
         }
 
         return kept;

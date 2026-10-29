@@ -304,6 +304,46 @@ public sealed class InitializerDefaultsTests
         }
     }
 
+    [Theory]
+    [InlineData(PlatformTarget.OpenGL)]
+    [InlineData(PlatformTarget.Vulkan)]
+    [InlineData(PlatformTarget.DirectX12)]
+    public async Task DxcsInitializerIgnoredWarning_IsGone_WhenTheBraceListStartsOnTheNextLine(PlatformTarget target)
+    {
+        // KNI's OptimizedMatrix.fx (validation/KniEffectTest*): `float4x4 ColorMatrix =` on one line and
+        // the brace list on the next. DXC's SPIR-V warning points at the `{` line, not the declaration,
+        // so a line match alone kept the now-untrue warning although the default was preserved.
+        const string src = """
+            #if defined(OPENGL)
+            #define SV_POSITION POSITION
+            #define PS_SHADERMODEL ps_3_0
+            #else
+            #define PS_SHADERMODEL ps_6_0
+            #endif
+            float4x4 ColorMatrix =
+            {
+                11, 21, 31, 41,
+                12, 22, 32, 42,
+                13, 23, 33, 43,
+                14, 24, 34, 44
+            };
+            float4 MainPS(float4 pos : SV_POSITION, float4 color : COLOR0, float2 tc : TEXCOORD0) : COLOR0
+            {
+                return float4(color.r * ColorMatrix._11, color.g * ColorMatrix._12, 0, 1);
+            }
+            technique SpriteDrawing { pass P0 { PixelShader = compile PS_SHADERMODEL MainPS(); } };
+            """;
+        var result = await new EffectCompiler().CompileAsync(
+            src, new CompilerOptions { Target = target, SourceFileName = "NextLineBrace.fx" });
+        result.IsSuccess.ShouldBeTrue(result.IsFailure ? string.Join(" | ", result.Error.Select(e => e.Message)) : "");
+        CompiledShader compiled = result.Value;
+
+        Floats(Param(compiled, "ColorMatrix").DefaultValue!)[0].ShouldBe(11f);
+        compiled.Warnings.ShouldNotContain(
+            w => w.Message.Contains("ignored", StringComparison.Ordinal) && w.Message.Contains("nitializer", StringComparison.Ordinal),
+            $"{target}: the preserved default must not keep DXC's warning");
+    }
+
     [Fact]
     public async Task AShaderWithNoInitializers_AddsNothing()
     {
