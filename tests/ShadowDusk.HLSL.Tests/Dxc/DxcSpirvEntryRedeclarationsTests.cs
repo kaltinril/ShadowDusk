@@ -189,10 +189,10 @@ public sealed class DxcSpirvEntryRedeclarationsTests
     }
 
     [Fact]
-    public void WithoutATrustworthyView_APrototypeBesideSeveralWrittenDefinitions_IsRefused()
+    public void AConditionalOnACompilerMacro_IsDecidedForBothOutcomes_SoAPrototypeBesideADefinitionPerBranchIsBlanked()
     {
-        // A conditional on a macro only the compiler defines: the managed view cannot say which
-        // branch DXC takes, so neither can this.
+        // The managed view cannot say which branch DXC takes, so both are built: each has the
+        // prototype and one definition, and the same blanked line is proven in both.
         string source =
             "float4 PS(float4 c : COLOR0) : SV_Target;\n" +
             "#if __HLSL_VERSION >= 2021\n" +
@@ -201,17 +201,37 @@ public sealed class DxcSpirvEntryRedeclarationsTests
             Definition + "\n" +
             "#endif\n";
 
+        Prepared(source).ShouldBe(BlankLines(source, 1));
+    }
+
+    /// <summary>A conditional the managed preprocessor cannot evaluate (DXC can): no view at all.</summary>
+    private const string NoView = "#if __has_feature(cxx_rtti)\n#define TINT 1\n#endif\n";
+
+    [Fact]
+    public void WithoutAView_APrototypeBesideSeveralWrittenDefinitions_IsRefused()
+    {
+        string source =
+            NoView +
+            "float4 PS(float4 c : COLOR0) : SV_Target;\n" +
+            "#if TINT\n" +
+            "float4 PS(float4 c : COLOR0) : SV_Target { return c.bgra; }\n" +
+            "#else\n" +
+            Definition + "\n" +
+            "#endif\n";
+
         ShaderError error = Refused(source);
 
-        error.Line.ShouldBe(1);
+        error.Line.ShouldBe(4);
         error.Message.ShouldContain("more than one written definition", Case.Sensitive);
+        // NIT 5: the cause is named in a few words, not the managed preprocessor's whole diagnostic.
+        error.Message.ShouldContain("(the preprocessed view could not be built: SD0009 at line 1 of t.fx)", Case.Sensitive);
     }
 
     [Fact]
-    public void WithoutATrustworthyView_ASingleDefinitionStillHasItsPrototypeBlanked()
+    public void WithoutAView_ASingleDefinitionStillHasItsPrototypeBlanked()
     {
         string source =
-            "#if __HLSL_VERSION >= 2021\n#define TINT 1\n#endif\n" +
+            NoView +
             "float4 PS(float4 c : COLOR0) : SV_Target;\n" +
             Definition + "\n";
 
@@ -514,23 +534,36 @@ public sealed class DxcSpirvEntryRedeclarationsTests
     }
 
     [Fact]
-    public void WithoutATrustworthyView_ADMacroThatCouldWriteTheEntry_IsRefused()
+    public void WithoutAView_ADMacroThatCouldWriteTheEntry_IsRefused()
     {
-        string source = "#if __HLSL_VERSION >= 2021\n#define TINT 1\n#endif\nPROTO\n" + Definition + "\n";
+        string source = NoView + "PROTO\n" + Definition + "\n";
 
         Result<string, ShaderError> result = DxcSpirvEntryRedeclarations.Prepare(
             source, "PS", "t.fx", [("PROTO", "float4 PS(float4 c : COLOR0) : SV_Target;")]);
 
         result.IsFailure.ShouldBeTrue(result.IsSuccess ? result.Value : "");
         result.Error.Code.ShouldBe("SD0236");
-        result.Error.Message.ShouldContain("may be declared more than once through a macro", Case.Sensitive);
+        result.Error.Line.ShouldBe(4);
+        result.Error.Message.ShouldContain("may be declared more than once through this macro", Case.Sensitive);
     }
 
     [Fact]
-    public void WithoutATrustworthyView_APrototypeAMacroTouches_IsRefused_BecauseNoEditCanBeProven()
+    public void WithAView_ADMacroThatWritesThePrototype_UnderACompilerMacroConditional_IsBlankedInEveryView()
+    {
+        string source = "#if __HLSL_VERSION >= 2021\n#define TINT 1\n#endif\nPROTO\n" + Definition + "\n";
+
+        Result<string, ShaderError> result = DxcSpirvEntryRedeclarations.Prepare(
+            source, "PS", "t.fx", [("PROTO", "float4 PS(float4 c : COLOR0) : SV_Target;")]);
+
+        result.IsSuccess.ShouldBeTrue(result.IsFailure ? result.Error.Message : "");
+        result.Value.ShouldBe(BlankLines(source, 4));
+    }
+
+    [Fact]
+    public void WithoutAView_APrototypeAMacroTouches_IsRefused_BecauseNoEditCanBeProven()
     {
         string source =
-            "#if __HLSL_VERSION >= 2021\n#define TINT 1\n#endif\n" +
+            NoView +
             "#define POS_OUT SV_Position\n" +
             "float4 VS(float4 p : POSITION0) : POS_OUT;\n" +
             "float4 VS(float4 p : POSITION0) : POS_OUT { return p; }\n";
@@ -555,5 +588,183 @@ public sealed class DxcSpirvEntryRedeclarationsTests
             DxcFlagBuilder.Build(PlatformTarget.DirectX12, ShaderStage.Pixel, "PS", [], new DxcCompileOptions())).ShouldBeFalse(
             "shipped DirectX 12 DXIL never had the fault and keeps its input");
         DxcSpirvEntryRedeclarations.AppliesTo(DxcFlagBuilder.BuildPreprocess([])).ShouldBeFalse();
+    }
+    // ---- Third review of 2026-10-29 -------------------------------------------------------
+
+    private const string Tech = "technique T { pass { PixelShader = compile ps_4_0 PS(); } }\n";
+
+    // BLOCKER: a source with NO prototype must reach DXC exactly as written, whatever its
+    // conditionals on compiler macros and whatever macros paste tokens or name the entry.
+    [Theory]
+    [InlineData("#define CAT(a,b) a##b\n#if __SHADER_TARGET_MAJOR >= 4\n#define SCALE 2\n#else\n#define SCALE 1\n#endif\n")]
+    [InlineData("#define CAT(a,b) a##b\n#ifdef __spirv__\n#define SCALE 2\n#else\n#define SCALE 1\n#endif\n")]
+    [InlineData("#define CAT(a,b) a##b\n#if defined(__HLSL_VERSION)\n#define SCALE 2\n#else\n#define SCALE 1\n#endif\n")]
+    [InlineData("#define ENTRY_NAME PS\n#if __SHADER_TARGET_MAJOR >= 4\n#define SCALE 2\n#else\n#define SCALE 1\n#endif\n")]
+    [InlineData("#define CAT(a,b) a##b\nstatic const float CAT(Sc,ale) = 2;\n#define SCALE Scale\n" + NoView)]
+    [InlineData("#define ENTRY_NAME PS\n#define SCALE 2\n" + NoView)]
+    public void ASourceWithoutAPrototype_IsHandedToDxcAsWritten_WhateverItsMacros(string prelude)
+    {
+        foreach (string definition in new[]
+                 {
+                     "float4 PS(float4 c : COLOR0) : COLOR0 { return c * SCALE; }\n",
+                     "float4 ENTRY_NAME(float4 c : COLOR0) : COLOR0 { return c * SCALE; }\n",
+                 })
+        {
+            if (definition.Contains("ENTRY_NAME", StringComparison.Ordinal) && !prelude.Contains("ENTRY_NAME", StringComparison.Ordinal))
+                continue;
+            string source = prelude + Tech + definition;
+            DxcSpirvEntryRedeclarations.Prepare(source, "PS", "t.fx").Value.ShouldBeSameAs(source);
+        }
+    }
+
+    [Theory]
+    [InlineData("#if __SHADER_TARGET_MAJOR >= 4\n#define SM4 1\n#endif\n")]
+    [InlineData(NoView)]
+    public void AMonoGameMacrosFxhSpriteShader_IsHandedToDxcAsWritten(string conditional)
+    {
+        // MonoGame's Macros.fxh pastes tokens (DECLARE_TEXTURE, SAMPLE_TEXTURE): nothing it pastes
+        // here can spell the entry's name.
+        string source =
+            "#define DECLARE_TEXTURE(Name, index) Texture2D<float4> Name : register(t##index); sampler Name##Sampler : register(s##index)\n" +
+            "#define SAMPLE_TEXTURE(Name, texCoord) Name.Sample(Name##Sampler, texCoord)\n" +
+            conditional +
+            "DECLARE_TEXTURE(Texture, 0);\n" +
+            "float4 SpritePS(float4 color : COLOR0, float2 uv : TEXCOORD0) : SV_Target { return SAMPLE_TEXTURE(Texture, uv) * color; }\n" +
+            "technique SpriteBatch { pass { PixelShader = compile ps_4_0 SpritePS(); } }\n";
+
+        DxcSpirvEntryRedeclarations.Prepare(source, "SpritePS", "t.fx").Value.ShouldBeSameAs(source);
+    }
+
+    [Fact]
+    public void AnEntryDeclaredTwiceThroughAMacro_IsBlankedWithAView_AndRefusedWithout()
+    {
+        const string Declarations =
+            "#define ENTRY_NAME PS\n" +
+            "float4 ENTRY_NAME(float4 c : COLOR0) : SV_Target;\n" +
+            "float4 ENTRY_NAME(float4 c : COLOR0) : SV_Target { return c; }\n";
+
+        string viewed = "#if __SHADER_TARGET_MAJOR >= 4\n#define SM4 1\n#endif\n" + Declarations;
+        Prepared(viewed).ShouldBe(BlankLines(viewed, 5));
+
+        // Without a view the raw text names PS nowhere a declaration could be read: both uses of
+        // the macro may write it, so it is refused rather than handed to DXC to crash on.
+        ShaderError error = Refused(NoView + Declarations);
+        error.Line.ShouldBe(5);
+        error.Message.ShouldContain("may be declared more than once through this macro", Case.Sensitive);
+    }
+
+    [Fact]
+    public void WithoutAView_APasteThatCanSpellTheEntry_CountsAsADeclaration()
+    {
+        string source = NoView + "#define CAT(a,b) a##b\nfloat4 CAT(P,S)(float4 c : COLOR0) : SV_Target;\n" + Definition + "\n";
+
+        Refused(source).Line.ShouldBe(5);
+    }
+
+    [Fact]
+    public void WithoutAView_TooManyCompilerMacroConditionals_FallBackToTheRawText_NamingTheMacros()
+    {
+        string conditionals = string.Concat(Enumerable.Range(1, 5).Select(i => $"#ifdef __X{i}__\n#define K{i} 1\n#endif\n"));
+
+        string plain = conditionals + "float4 PS(float4 c : COLOR0) : SV_Target;\n" + Definition + "\n";
+        Prepared(plain).ShouldBe(BlankLines(plain, 16));
+
+        string macro = conditionals + "#define DECLARE(n) float4 n(float4 c : COLOR0) : SV_Target;\nDECLARE(PS)\n" + Definition + "\n";
+        ShaderError error = Refused(macro);
+        error.Message.ShouldContain("conditionals on '__X1__', '__X2__'", Case.Sensitive);
+        error.Message.ShouldContain("select among more than 16 texts", Case.Sensitive);
+    }
+
+    // SHOULD-FIX 1: DXC defines more than the old list knew (measured). A conditional on one is
+    // decided both ways, never as if the macro were undefined.
+    [Theory]
+    [InlineData("#ifdef __GNUC__")]
+    [InlineData("#if __llvm__")]
+    [InlineData("#if __BYTE_ORDER__ == __ORDER_LITTLE_ENDIAN__")]
+    [InlineData("#ifdef __SOME_FUTURE_DXC_MACRO__")]
+    public void APrototypeUnderAConditionalOnAMacroDxcDefines_IsBlanked(string conditional)
+    {
+        string source = conditional + "\nfloat4 PS(float4 c : COLOR0) : SV_Target;\n#endif\n" + Definition + "\n";
+
+        Prepared(source).ShouldBe(BlankLines(source, 2));
+    }
+
+    [Fact]
+    public void AMacroThatDxcExpandsToCode_OnThePrototypesLine_IsKept()
+    {
+        // The managed view alone read EXTRA as empty (no __GNUC__), so the positional range also
+        // took EXTRA, which DXC expands to the overload the definition calls: a silent change.
+        string source =
+            "#ifdef __GNUC__\n#define EXTRA float4 Tint(float4 c) { return c * 2; }\n#else\n#define EXTRA\n#endif\n" +
+            "#define SEM : COLOR0\n" +
+            "float4 Tint(int4 c) { return float4(c); }\n" +
+            "EXTRA float4 PS(float4 c : COLOR0) SEM;\n" +
+            "float4 PS(float4 c : COLOR0) : COLOR0 { return Tint(c); }\n";
+
+        string prepared = Prepared(source);
+
+        string[] lines = prepared.Split('\n');
+        lines[7].ShouldBe("EXTRA" + new string(' ', "EXTRA float4 PS(float4 c : COLOR0) SEM;".Length - 5));
+        BlankLines(prepared, 8).ShouldBe(BlankLines(source, 8));
+    }
+
+    // SHOULD-FIX 2: a parenthesised declarator is a declaration to DXC.
+    [Theory]
+    [InlineData("float4 (PS)(float4 c : COLOR0) : SV_Target;\n" + Definition + "\n")]
+    [InlineData("float4 ((PS))(float4 c : COLOR0) : SV_Target;\n" + Definition + "\n")]
+    [InlineData("float4 PS(float4 c : COLOR0) : SV_Target;\nfloat4 (PS)(float4 c : COLOR0) : SV_Target { return c; }\n")]
+    public void AParenthesisedDeclaratorBesideAnotherDeclaration_IsRefused(string source)
+    {
+        Refused(source).Message.ShouldContain("cannot read as a declaration", Case.Sensitive);
+    }
+
+    [Fact]
+    public void AParenthesisedDefinitionAlone_IsHandedToDxcAsWritten()
+    {
+        string source = "float4 (PS)(float4 c : COLOR0) : SV_Target { return c; }\n";
+
+        DxcSpirvEntryRedeclarations.Prepare(source, "PS", "t.fx").Value.ShouldBeSameAs(source);
+    }
+
+    [Fact]
+    public void AParenthesisedCallBetweenThePrototypeAndTheDefinition_IsACall()
+    {
+        string source =
+            "float4 PS(float4 c : COLOR0) : SV_Target;\n" +
+            "float4 Half(float4 c : COLOR0) : SV_Target { return (PS)(c) * 0.5; }\n" +
+            Definition + "\n";
+
+        Refused(source).Message.ShouldContain("is called here, between its prototype and its definition", Case.Sensitive);
+    }
+
+    // NITs.
+    [Fact]
+    public void ABlankedCharacter_BecomesAsManySpacesAsItsUtf8Bytes_SoDxcColumnsDoNotMove()
+    {
+        const string Prototype = "float4 PS(float4 c /* é😀 */ : COLOR0) : SV_Target;";
+        string source = Prototype + "\n" + Definition + "\n";
+
+        string prepared = Prepared(source);
+
+        prepared.Split('\n')[0].ShouldBe(new string(' ', System.Text.Encoding.UTF8.GetByteCount(Prototype)));
+        prepared.Split('\n')[1].ShouldBe(Definition);
+    }
+
+    [Fact]
+    public void ACarriageReturnOnlySource_IsBlankedLikeAnyOther()
+    {
+        string source = "#define K 1\rfloat4 PS(float4 c : COLOR0) : SV_Target;\r" + Definition + "\r";
+
+        Prepared(source).ShouldBe("#define K 1\r" + new string(' ', 41) + "\r" + Definition + "\r");
+    }
+
+    [Fact]
+    public void MacroNamesAfterThePrototype_DoNotUseUpTheAttempts()
+    {
+        const string Prototype = "float4 PS(float4 c SEM) SEM;";
+        string tail = string.Concat(Enumerable.Repeat(" E", 40));
+        string source = "#define E ;\n#define SEM : COLOR0\n" + Prototype + tail + "\nfloat4 PS(float4 c : COLOR0) : COLOR0 { return c; }\n";
+
+        Prepared(source).Split('\n')[2].ShouldBe(new string(' ', Prototype.Length) + tail);
     }
 }

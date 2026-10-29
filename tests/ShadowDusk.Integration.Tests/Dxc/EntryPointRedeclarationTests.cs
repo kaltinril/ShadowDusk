@@ -72,6 +72,21 @@ public sealed class EntryPointRedeclarationTests
         ["semantic-only-on-proto"] = DxcError,        // DXC ignores a prototype's semantics and reports the gap itself
         ["second-declarator-proto"] = Refused,
         ["proto-and-defined-overloads"] = DxcError,   // DXC's front end reports the ambiguity before its back end runs
+        // Third review of 2026-10-29.
+        ["noproto-paste-shader-target"] = Same,       // the BLOCKER: no prototype, handed to DXC as written
+        ["noproto-paste-ifdef-spirv"] = Same,
+        ["noproto-paste-defined-hlsl-version"] = Same,
+        ["noproto-entry-name-define"] = Same,
+        ["noproto-macros-fxh-sprite"] = Ok,
+        ["macro-named-proto-and-def"] = Same,
+        ["ifdef-gnuc-proto"] = Same,                  // crashed: __GNUC__ was read as undefined
+        ["if-llvm-proto"] = Same,
+        ["gnuc-overload-on-proto-line"] = Same,       // was a silent change: the overload EXTRA writes is kept
+        ["paren-declarator-proto"] = Refused,         // crashed OpenGL
+        ["paren-declarator-def"] = Refused,
+        ["paren-declarator-def-alone"] = Ok,
+        ["utf8-comment-proto"] = Same,
+        ["cr-only-proto"] = Same,
     };
 
     /// <summary>
@@ -86,8 +101,17 @@ public sealed class EntryPointRedeclarationTests
         "OpenGL" => new(Spirv, StringComparer.Ordinal) { ["static-proto-and-def"] = DxcError },
         // Vulkan compiles every entry point as `main` (mgfxc's rename), which leaves a
         // macro-produced `PS` prototype an unrelated, unused declaration: nothing to refuse.
-        "Vulkan" => new(Spirv, StringComparer.Ordinal) { ["macro-proto-plus-code"] = Ok },
-        "DirectX" or "Fna" => new(Spirv, StringComparer.Ordinal)
+        // The same rename does not see a parenthesised declarator: that prototype is an unrelated
+        // declaration, and that definition is not found (DXC's own clean error, as on main).
+        "Vulkan" => new(Spirv, StringComparer.Ordinal)
+        {
+            ["macro-proto-plus-code"] = Ok,
+            ["paren-declarator-proto"] = Ok,
+            ["paren-declarator-def"] = DxcError,
+        },
+        // FNA's fx_2_0 has no DX10-style texture objects (its own clean SD0303, as before).
+        "Fna" => new(Expected("DirectX"), StringComparer.Ordinal) { ["noproto-macros-fxh-sprite"] = "DIAG SD0303" },
+        "DirectX" => new(Spirv, StringComparer.Ordinal)
         {
             ["ps-proto-without-definition"] = DxcError,         // vkd3d E5005, relabelled
             ["ps-proto-return-type-differs"] = "DIAG E5006",
@@ -101,6 +125,11 @@ public sealed class EntryPointRedeclarationTests
             ["semantic-only-on-proto"] = "DIAG E5004",
             ["second-declarator-proto"] = "DIAG E5000",
             ["proto-and-defined-overloads"] = "DIAG E5017",
+            // vkd3d's own verdicts, unchanged by this fix (it never touches the DXBC input).
+            ["paren-declarator-proto"] = "DIAG E5000",
+            ["paren-declarator-def"] = "DIAG E5000",
+            ["paren-declarator-def-alone"] = "DIAG E5000",
+            ["cr-only-proto"] = "DIAG E4000",
         },
         // DXC's DXIL front end calls an overload prototype without a definition ambiguous, as
         // it always has here (fxc compiles it); unchanged by this fix, which never touches
@@ -116,6 +145,8 @@ public sealed class EntryPointRedeclarationTests
             ["attribute-only-on-proto"] = Ok,
             ["nointerpolation-only-on-proto"] = Ok,
             ["second-declarator-proto"] = Ok,
+            ["paren-declarator-proto"] = Ok,
+            ["paren-declarator-def"] = Ok,
         },
         _ => throw new ArgumentOutOfRangeException(nameof(target), target, null),
     };

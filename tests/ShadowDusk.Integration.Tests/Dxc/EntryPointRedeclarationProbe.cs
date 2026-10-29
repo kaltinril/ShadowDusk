@@ -128,7 +128,55 @@ public static class EntryPointRedeclarationProbe
         new("second-declarator-proto", Fx("float4 Other(float x), PS(float4 c : COLOR0) : COLOR0;", TechPs, PsDef), null, true),
         // A prototype beside two definitions (overloads): DXC's front end reports the ambiguity.
         new("proto-and-defined-overloads", Fx(PsProto, TechPs, PsDef, "float4 PS(float2 uv : TEXCOORD0) : COLOR0 { return uv.xyxy; }"), null, true),
+
+        // Third review of 2026-10-29. BLOCKER: no prototype at all, with a conditional on a macro
+        // only DXC defines and a macro that pastes tokens or names the entry, compiled on main and
+        // was refused SD0236. Each must compile exactly as without the extra macro.
+        new("noproto-paste-shader-target", Fx(CatDefine, "#if __SHADER_TARGET_MAJOR >= 4", "#define SCALE 2", "#else", "#define SCALE 1", "#endif", TechPs, PsDefScaled),
+            Fx("", "#if __SHADER_TARGET_MAJOR >= 4", "#define SCALE 2", "#else", "#define SCALE 1", "#endif", TechPs, PsDefScaled), true),
+        new("noproto-paste-ifdef-spirv", Fx(CatDefine, "#ifdef __spirv__", "#define SCALE 2", "#else", "#define SCALE 1", "#endif", TechPs, PsDefScaled),
+            Fx("", "#ifdef __spirv__", "#define SCALE 2", "#else", "#define SCALE 1", "#endif", TechPs, PsDefScaled), true),
+        new("noproto-paste-defined-hlsl-version", Fx(CatDefine, "#if defined(__HLSL_VERSION)", "#define SCALE 2", "#else", "#define SCALE 1", "#endif", TechPs, PsDefScaled),
+            Fx("", "#if defined(__HLSL_VERSION)", "#define SCALE 2", "#else", "#define SCALE 1", "#endif", TechPs, PsDefScaled), true),
+        new("noproto-entry-name-define", Fx("#define ENTRY_NAME PS", "#if __SHADER_TARGET_MAJOR >= 4", "#define SCALE 2", "#else", "#define SCALE 1", "#endif",
+                TechPs, "float4 ENTRY_NAME(float4 c : COLOR0) : COLOR0 { return c * SCALE; }"),
+            Fx("", "#if __SHADER_TARGET_MAJOR >= 4", "#define SCALE 2", "#else", "#define SCALE 1", "#endif", TechPs, PsDefScaled), true),
+        new("noproto-macros-fxh-sprite", Fx(MacrosFxh, "#if __SHADER_TARGET_MAJOR >= 4", "#define TINT 1", "#endif", "DECLARE_TEXTURE(Texture, 0);",
+                "float4 SpritePS(float4 color : COLOR0, float2 uv : TEXCOORD0) : COLOR0 { return SAMPLE_TEXTURE(Texture, uv) * color; }",
+                "technique SpriteBatch { pass { PixelShader = compile PS_SM SpritePS(); } }"), null, true),
+        // An entry declared twice through a macro naming it: blanked (the view proves it).
+        new("macro-named-proto-and-def", Fx("#define ENTRY_NAME PS", "#if __SHADER_TARGET_MAJOR >= 4", "#define SCALE 2", "#else", "#define SCALE 1", "#endif",
+                "float4 ENTRY_NAME(float4 c : COLOR0) : COLOR0;", TechPs, "float4 ENTRY_NAME(float4 c : COLOR0) : COLOR0 { return c * SCALE; }"),
+            Fx("#define ENTRY_NAME PS", "#if __SHADER_TARGET_MAJOR >= 4", "#define SCALE 2", "#else", "#define SCALE 1", "#endif",
+                "", TechPs, "float4 ENTRY_NAME(float4 c : COLOR0) : COLOR0 { return c * SCALE; }"), true),
+        // SHOULD-FIX 1: a macro DXC defines that the old list did not know. This crashed.
+        new("ifdef-gnuc-proto", Fx("#ifdef __GNUC__", PsProto, "#endif", TechPs, PsDef), Fx("#ifdef __GNUC__", "", "#endif", TechPs, PsDef), true),
+        new("if-llvm-proto", Fx("#if __llvm__", PsProto, "#endif", TechPs, PsDef), Fx("#if __llvm__", "", "#endif", TechPs, PsDef), true),
+        // ... and a macro DXC expands to an overload definition on the prototype's line, which the
+        // positional range took too (DXC then picked the other overload): only the prototype goes.
+        new("gnuc-overload-on-proto-line", Fx(GnucExtra, "EXTRA float4 PS(float4 c : COLOR0) SEM;", TechPs, PsDefTint),
+            Fx(GnucExtra, "EXTRA", TechPs, PsDefTint), true),
+        // SHOULD-FIX 2: a parenthesised declarator crashed OpenGL.
+        new("paren-declarator-proto", Fx("float4 (PS)(float4 c : COLOR0) : COLOR0;", TechPs, PsDef), null, true),
+        new("paren-declarator-def", Fx(PsProto, TechPs, "float4 (PS)(float4 c : COLOR0) : COLOR0 { return c; }"), null, true),
+        new("paren-declarator-def-alone", Fx(TechPs, "float4 (PS)(float4 c : COLOR0) : COLOR0 { return c * float4(1, 0.5, 0.25, 1); }"), null, true),
+        // NITs: a non-ASCII comment in the blanked prototype; a carriage-return-only file.
+        new("utf8-comment-proto", Fx("float4 PS(float4 c /* é\U0001F600 */ : COLOR0) : COLOR0;", TechPs, PsDef), Fx("", TechPs, PsDef), true),
+        new("cr-only-proto", Fx(PsProto, TechPs, PsDef).Replace('\n', '\r'), Fx("", TechPs, PsDef).Replace('\n', '\r'), true),
     ];
+
+    private const string CatDefine = "#define CAT(a,b) a##b";
+    private const string PsDefScaled = "float4 PS(float4 c : COLOR0) : COLOR0 { return c * SCALE; }";
+
+    private const string MacrosFxh =
+        "#define DECLARE_TEXTURE(Name, index) Texture2D<float4> Name : register(t##index); sampler Name##Sampler : register(s##index)\n" +
+        "#define SAMPLE_TEXTURE(Name, texCoord) Name.Sample(Name##Sampler, texCoord)";
+
+    private const string GnucExtra =
+        "#ifdef __GNUC__\n#define EXTRA float4 Tint(float4 c) { return c * 2; }\n#else\n#define EXTRA\n#endif\n" +
+        "#define SEM : COLOR0\nfloat4 Tint(int4 c) { return float4(c); }";
+
+    private const string PsDefTint = "float4 PS(float4 c : COLOR0) : COLOR0 { return Tint(c); }";
 
     private const string PsDefUnused = "float4 PS(float4 c : COLOR0) : COLOR0 { return c * Unused; }";
 
