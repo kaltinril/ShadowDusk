@@ -83,7 +83,7 @@ ShadowDusk/
 │       │                               #   Gum (3), Apos.Shapes (3) + raylib/ (2, Phase 59's CRT and handheld-LCD effects)
 │       │                               #   + texture-arrays/ (3, issues #324/#339/#340: Texture2D Tex[N] with mgfxc 3.8.5
 │       │                               #   DirectX_12 + Vulkan goldens only; OpenGL fails in mgfxc, DX11 is tracked apart)
-│       │                               #   + register-slots/ (4: explicit registers not starting at t0 / with a gap, the Vulkan
+│       │                               #   + register-slots/ (6: explicit registers not starting at t0 / with a gap / in a space, the Vulkan
 │       │                               #   slot fix, mgfxc 3.8.5 Vulkan goldens; render row VsDrivenVulkan -- regslots)
 │       │                               #   plus slang-sksl/ (7 pixel-only .slang twins of .fx fixtures, the SkSL and raylib
 │       │                               #   converter evidence for both Slang routes, issue #253)

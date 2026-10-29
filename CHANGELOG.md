@@ -55,7 +55,18 @@ that loads and renders identically to `mgfxc`'s in the real MonoGame/KNI runtime
   binding 32, the shape that access-violates in DesktopVK). An unregistered texture read through a
   sampler with an explicit register (`Texture2D A; SamplerState S : register(s2);`) now takes the
   texture register DirectX gives it (slot 0, where SpriteBatch binds) instead of inheriting the
-  sampler's `s2`; no committed fixture has that shape. **Vulkan output changes** for
+  sampler's `s2`, and a sampler named only in its declaration (dead code) no longer holds a register
+  such a texture has to step past; no previously committed fixture has either shape. `SD0228` names every
+  texture and sampler below binding 32, and after the retry names only what the retry could not pin,
+  at its line.
+- **Vulkan: an explicit register space is dropped (`register(t1, space0)`).** A space is a Vulkan
+  descriptor set and MonoGame DesktopVK binds one per stage (pixel shaders: set 1), so a pixel
+  shader's `space0` texture, sampler or constant buffer was read from a set the runtime never writes
+  and the effect drew (0,0,0,0), exactly as `mgfxc` 3.8.5's own build of it does (measured; `mgfxc`
+  keeps the space). The space is now dropped on Vulkan, also behind a macro (through the
+  preprocessed retry), and a resource that still lands outside its stage's set is refused with the
+  new `SD0229`. Proven in real DesktopVK (`VsDrivenVulkan -- regslots`, `RegisterSpace0` vs `mgfxc`'s
+  build of the shader without the spaces, maxd 0). **Vulkan output changes** for
   `examples/ExLegacyTextureDiscard.fx` (its sprite sampler `s0` now reads slot 0, like DirectX)
   and `third-party/MonoGame/ParameterTypes.fx` (`Tex3D`/`TexCube` now slots 1/2, their
   registers); every other committed Vulkan entry and every DirectX 12, DirectX 11, OpenGL and FNA
