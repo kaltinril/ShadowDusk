@@ -27,11 +27,17 @@ that loads and renders identically to `mgfxc`'s in the real MonoGame/KNI runtime
   the usage and index `mgfxc` 3.8.4.1 writes (measured per semantic, including non-zero indices
   such as `TEXCOORD3` and `BLENDWEIGHT1`); a semantic `mgfxc` itself refuses on OpenGL (`MYSEM0`)
   is still `SD0210`, and so is `SAMPLE`. A matrix interpolant is split into one `vTexCoord{n}`
-  varying per register, packed one HLSL column per register as fxc packs it. Rendered in real
-  MonoGame DesktopGL and real KNI SDL2.GL (MGFX v10 and KNIFX) through a custom
-  `VertexDeclaration`, every element matches the `mgfxc` build at maxd 0
-  (`validation/VertexSemanticsGl`, `validation/VertexSemanticsKniGl`). Every shader that compiled
-  before compiles to the same bytes. Still open on OpenGL for skinned shaders: an `int4`/`uint4`
+  varying per register, laid out as fxc lays it out: one HLSL column per register, or one row per
+  register for an explicit `row_major` (read from the HLSL declaration, since DXC's output is
+  identical for the two), so a stage that reads the interpolant as separate vectors gets
+  `mgfxc`'s data. A semantic declared `row_major` in one place and `column_major` in another, and a
+  `float1xN` interpolant, are refused with `SD0210` rather than laid out by guess. Two vertex
+  inputs naming one element (`POSITION0` beside `SV_POSITION` or `Position0`) now share one
+  attribute record, as in `mgfxc`; before, the second read zero. Rendered in real MonoGame
+  DesktopGL and real KNI SDL2.GL (MGFX v10 and KNIFX) through a custom `VertexDeclaration`, every
+  element and every mixed-declaration packing case matches the `mgfxc` build at maxd 0
+  (`validation/VertexSemanticsGl`, `validation/VertexSemanticsKniGl`). Every corpus shader that
+  compiled before compiles to the same bytes. Still open on OpenGL for skinned shaders: an `int4`/`uint4`
   `BLENDINDICES` input and `float4x3` bone uniforms are refused (`SD0210`), and the stock
   `SkinnedEffect.fx` stops earlier at `SD0010` (macro-defined techniques).
 - **Techniques are read from the preprocessed source, like `mgfxc` (issue #407).** A technique

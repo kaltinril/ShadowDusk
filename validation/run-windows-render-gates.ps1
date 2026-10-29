@@ -84,8 +84,13 @@
                                    PSIZE / FOG / DEPTH / TEXCOORD3 / COLOR, each element shown alone
                                    through the effect's `Pick`, plus a float3x3 TEXCOORD2
                                    interpolant; vs the mgfxc OpenGL build (maxd <= 1) and the
-                                   element's CPU value, MGFX v10 on MonoGame, v10 + KNIFX on KNI. A
-                                   relabelled BINORMAL0 record must diverge (positive control).
+                                   element's CPU value, MGFX v10 on MonoGame, v10 + KNIFX on KNI;
+                                   plus 17 matrix-interpolant packing fixtures whose stages declare
+                                   the interpolant differently (column_major and row_major, 3x3 /
+                                   4x3 / 3x4 / 2x2). Controls that must diverge: a relabelled
+                                   BINORMAL0 record, and two row_major fixtures packed by columns.
+                                   A driver that refuses non-square GLSL (SD0403) reports those
+                                   packing cases NOT RUN, so this GPU run is where they execute.
     * Apos.Shapes GL render-proof - validation/VsDriven -- apos: a single shape plus a needle-thin
                                    ellipse vs the mgfxc OpenGL golden, tol 2/255. Uses the older
                                    apos-shapes.fx pin - the current revision's mgfxc GL compile is

@@ -58,8 +58,13 @@
 #                              interpolant, through a custom VertexDeclaration in REAL MonoGame
 #                              DesktopGL and REAL KNI SDL2.GL (MGFX v10 + KNIFX): each element's
 #                              render vs the committed mgfxc OpenGL build in the same process
-#                              (maxd <= 1) AND the element's CPU-known value, plus a relabelled
-#                              BINORMAL0 record that must diverge (positive control).
+#                              (maxd <= 1) AND the element's CPU-known value; 17 matrix-
+#                              interpolant packing fixtures whose stages declare it differently
+#                              (column_major / row_major, square and non-square) vs mgfxc; three
+#                              positive controls that must diverge (a relabelled BINORMAL0
+#                              record, two row_major fixtures packed by columns). Non-square
+#                              cases print NOT RUN on a driver that refuses non-square GLSL
+#                              (SD0403); the square ones still pin the row/column packing here.
 #   * Baseline+Candidate+compare.py — the 10-shader GL corpus, ShadowDusk vs the
 #                              committed mgfxc OpenGL goldens, real MonoGame DesktopGL. The
 #                              GL twin of the DX job's BaselineDx pair. Its distinct value is a

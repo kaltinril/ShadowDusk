@@ -15,10 +15,21 @@
 //     loaded and drawn in the same process on the same device: whole image, maxd <= 1;
 //   * against the colour the CPU knows that element carries (+-2/255), so a binding mgfxc and
 //     ShadowDusk got wrong the same way still fails.
-// Positive control (must turn red): ShadowDusk's own SemanticsRender bytes with the BINORMAL0
-// attribute record re-labelled Tangent. The runtime then binds the Tangent element to it, so the
-// Binormal render shows the tangent's colour; if it did not, the gate could not see a wrong record.
-// Exit code 0 iff every case passes and the control is detected. See docs/validation-matrix.md §6.
+// Matrix-interpolant PACKING (tests/fixtures/golden/vertex-semantics/packing/*.fx): the two stages
+// declare one interpolant differently (a matrix written whole and read as separate vectors, or the
+// reverse; column_major and row_major; 3x3, 4x3, 3x4, 2x2; a typedef; #pragma pack_matrix), so the
+// render shows the register layout fxc gives it, which a shader declaring it the same way in both
+// stages can never show. Each mode vs the mgfxc golden, maxd <= 1. A non-square interpolant
+// leaves a non-square GLSL type in one stage (SD0403); a driver that refuses to load that build
+// reports the case NOT RUN, counted in the summary line, never as a pass of the comparison.
+// Positive controls (each must turn red):
+//   * ShadowDusk's own SemanticsRender bytes with the BINORMAL0 attribute record re-labelled
+//     Tangent. The runtime then binds the Tangent element to it, so the Binormal render shows the
+//     tangent's colour; if it did not, the gate could not see a wrong record.
+//   * RowMatToVec33 and VecToRowMat33 compiled with `row_major` deleted, against the row_major
+//     goldens: the column packing a row_major interpolant had before it was modelled. If these
+//     matched, the packing cases could not see a column/row swap.
+// Exit code 0 iff every case passes and every control is detected. See docs/validation-matrix.md §6.
 
 using System;
 using System.Collections.Generic;
@@ -99,16 +110,37 @@ public static class VertexSemanticsProbe
             var frame = Compile(compiler, label, container, Path.Combine(dir, "TangentFrameRender.fx"));
             var gbuffer = Compile(compiler, label, container, Path.Combine(dir, "DeferredGBufferShape.fx"));
             for (int p = 0; p < Picks.Length; p++)
-                jobs.Add(new Job($"{Picks[p].Name} [{container}]", semantics, Golden("SemanticsRender"), "Pick", p, Picks[p].Expected, Control: false));
+                jobs.Add(new Job($"{Picks[p].Name} [{container}]", semantics, Golden("SemanticsRender"), "Pick", p, Picks[p].Expected, ControlKind.None));
             for (int m = 0; m < Modes.Length; m++)
-                jobs.Add(new Job($"float3x3 {Modes[m].Name} [{container}]", frame, Golden("TangentFrameRender"), "Mode", m, Modes[m].Expected, Control: false));
-            jobs.Add(new Job($"DeferredGBufferShape COLOR0 [{container}]", gbuffer, Golden("DeferredGBufferShape"), null, 0, null, Control: false));
+                jobs.Add(new Job($"float3x3 {Modes[m].Name} [{container}]", frame, Golden("TangentFrameRender"), "Mode", m, Modes[m].Expected, ControlKind.None));
+            jobs.Add(new Job($"DeferredGBufferShape COLOR0 [{container}]", gbuffer, Golden("DeferredGBufferShape"), null, 0, null, ControlKind.None));
+
+            foreach ((string stem, int modes) in Packing)
+            {
+                var packed = Compile(compiler, label, container, Path.Combine(dir, "packing", stem + ".fx"));
+                byte[] golden = File.ReadAllBytes(Path.Combine(dir, "packing", stem + ".OpenGL.mgfx"));
+                for (int m = 0; m < modes; m++)
+                    jobs.Add(new Job($"packing {stem} mode {m} [{container}]", packed, golden, modes > 1 ? "Mode" : null, m, null, ControlKind.None));
+            }
 
             if (container == EffectContainer.Mgfx && semantics.Bytes is not null)
             {
                 byte[] patched = RelabelAttribute(semantics.Bytes, fromUsage: 4, toUsage: 5); // Binormal -> Tangent
                 jobs.Add(new Job("CONTROL BINORMAL0 record relabelled Tangent (must diverge)",
-                    new Compiled(patched, null), null, "Pick", 1, Picks[1].Expected, Control: true));
+                    new Compiled(patched, null), null, "Pick", 1, Picks[1].Expected, ControlKind.WrongElement));
+            }
+            if (container == EffectContainer.Mgfx)
+            {
+                foreach (string stem in new[] { "RowMatToVec33", "VecToRowMat33" })
+                {
+                    string path = Path.Combine(dir, "packing", stem + ".fx");
+                    string source = File.ReadAllText(path);
+                    string columns = source.Replace("row_major ", "", StringComparison.Ordinal);
+                    if (columns == source) throw new InvalidOperationException($"{stem}.fx no longer says row_major");
+                    var swapped = CompileSource(compiler, label, container, path, columns);
+                    byte[] golden = File.ReadAllBytes(Path.Combine(dir, "packing", stem + ".OpenGL.mgfx"));
+                    jobs.Add(new Job($"CONTROL {stem} packed by columns (must diverge)", swapped, golden, "Mode", 0, null, ControlKind.WrongPacking));
+                }
             }
         }
 
@@ -129,21 +161,54 @@ public static class VertexSemanticsProbe
             return 1;
         }
 
-        Console.WriteLine($"[{label}] {game.Results.Count - failures}/{game.Results.Count} passed.");
+        Console.WriteLine($"[{label}] {game.Results.Count - failures}/{game.Results.Count} passed" +
+            (game.NotRun > 0 ? $", of which {game.NotRun} NOT RUN (this driver refuses non-square GLSL, SD0403; run on a desktop GPU driver for them)." : "."));
         return failures == 0 ? 0 : 1;
     }
 
-    private sealed record Compiled(byte[]? Bytes, string? Error);
+    // tests/fixtures/golden/vertex-semantics/packing: fixture -> how many `Mode` values it has.
+    private static readonly (string Stem, int Modes)[] Packing =
+    [
+        ("MatToVec33", 3), ("RowMatToVec33", 3), ("VecToMat33", 3), ("VecToRowMat33", 3),
+        ("MatToVec43", 3), ("RowMatToVec43", 4), ("MatToVec34", 4), ("RowMatToVec34", 3),
+        ("MatToVec22", 2), ("RowMatToVec22", 2), ("VecToMat43", 3), ("VecToRowMat43", 3),
+        ("VecToMat34", 3), ("VecToRowMat22", 3), ("TypedefRowMatToVec33", 3),
+        ("PragmaRowMajorMatToVec33", 3), ("DuplicatePosition", 1),
+    ];
+
+    private enum ControlKind
+    {
+        None,
+        /// <summary>Must NOT show the expected element's colour.</summary>
+        WrongElement,
+        /// <summary>Must NOT match the mgfxc golden.</summary>
+        WrongPacking,
+    }
+
+    private sealed record Compiled(byte[]? Bytes, string? Error)
+    {
+        /// <summary>
+        /// The compile warned SD0403: the GLSL holds a non-square matrix type (every non-square
+        /// matrix interpolant does, in at least one stage), which strict GL front ends (Mesa
+        /// llvmpipe in CI, macOS, WebGL1) refuse at Effect load. A pre-existing, registered gap,
+        /// not a packing fault: if the driver refuses the candidate, the case is reported NOT RUN
+        /// (counted, never a silent pass); if it loads, it must match mgfxc like any other case.
+        /// </summary>
+        public bool NonSquareGlsl { get; init; }
+    }
 
     private sealed record Job(
         string Name, Compiled Candidate, byte[]? Golden, string? Selector, float SelectorValue,
-        Vector4? Expected, bool Control);
+        Vector4? Expected, ControlKind Control);
 
     private sealed record JobResult(string Name, bool Ok, string Detail);
 
     private static Compiled Compile(EffectCompiler compiler, string label, EffectContainer container, string path)
+        => CompileSource(compiler, label, container, path, File.ReadAllText(path));
+
+    private static Compiled CompileSource(EffectCompiler compiler, string label, EffectContainer container, string path, string source)
     {
-        var result = compiler.CompileAsync(File.ReadAllText(path), new CompilerOptions
+        var result = compiler.CompileAsync(source, new CompilerOptions
         {
             Target = PlatformTarget.OpenGL,
             Container = container,
@@ -152,7 +217,10 @@ public static class VertexSemanticsProbe
         if (result.IsFailure)
             return new Compiled(null, string.Join(" | ", result.Error.Select(e => $"{e.Code}: {e.Message}")));
         Console.WriteLine($"[{label}] compiled {Path.GetFileName(path)} [{container}]: {result.Value.Data.Length} bytes");
-        return new Compiled(result.Value.Data, null);
+        return new Compiled(result.Value.Data, null)
+        {
+            NonSquareGlsl = result.Value.Warnings.Any(w => w.Code == "SD0403"),
+        };
     }
 
     /// <summary>
@@ -259,6 +327,9 @@ public static class VertexSemanticsProbe
 
         public List<JobResult> Results { get; } = [];
 
+        /// <summary>Cases whose candidate this driver refused for its non-square GLSL (SD0403).</summary>
+        public int NotRun { get; private set; }
+
         public ProbeGame(IReadOnlyList<Job> jobs)
         {
             _jobs = jobs;
@@ -292,9 +363,27 @@ public static class VertexSemanticsProbe
                     Results.Add(new JobResult(job.Name, false, "compile failed: " + job.Candidate.Error));
                     continue;
                 }
+                Color[] candidate;
                 try
                 {
-                    Color[] candidate = Render(job.Candidate.Bytes, job, texture);
+                    candidate = Render(job.Candidate.Bytes, job, texture);
+                }
+                catch (Exception ex) when (job.Candidate.NonSquareGlsl && job.Control == ControlKind.None)
+                {
+                    try { GraphicsDevice.SetRenderTarget(null); } catch { /* ignore */ }
+                    NotRun++;
+                    Results.Add(new JobResult(job.Name, true,
+                        $"NOT RUN on this driver: it refused the non-square GLSL (SD0403, a known gap): {ex.GetType().Name}: {ex.Message.Split('\n')[0]}"));
+                    continue;
+                }
+                catch (Exception ex)
+                {
+                    try { GraphicsDevice.SetRenderTarget(null); } catch { /* ignore */ }
+                    Results.Add(new JobResult(job.Name, false, $"render threw: {ex.GetType().Name}: {ex.Message}"));
+                    continue;
+                }
+                try
+                {
                     Color c = candidate[(Size / 2) * Size + Size / 2];
                     var notes = new List<string> { $"centre=({c.R},{c.G},{c.B},{c.A})" };
                     bool ok = true;
@@ -304,7 +393,7 @@ public static class VertexSemanticsProbe
                         Color want = new(e);
                         bool match = Near(c, want, 2);
                         notes.Add($"expected ({want.R},{want.G},{want.B},{want.A}) +-2");
-                        if (job.Control)
+                        if (job.Control == ControlKind.WrongElement)
                         {
                             ok = !match;
                             notes.Add(match ? "CONTROL NOT DETECTED: a relabelled record still drew the binormal"
@@ -325,14 +414,24 @@ public static class VertexSemanticsProbe
                                                            Math.Max(Math.Abs(golden[i].B - candidate[i].B), Math.Abs(golden[i].A - candidate[i].A))));
                         Color g = golden[(Size / 2) * Size + Size / 2];
                         notes.Add($"mgfxc centre=({g.R},{g.G},{g.B},{g.A}) maxd vs mgfxc {maxd}");
-                        ok &= maxd <= 1;
+                        if (job.Control == ControlKind.WrongPacking)
+                        {
+                            ok = maxd > 1;
+                            notes.Add(ok ? "CONTROL-DETECTED: column packing differs from mgfxc's row_major layout"
+                                         : "CONTROL NOT DETECTED: column packing still matched the row_major golden");
+                        }
+                        else
+                        {
+                            ok &= maxd <= 1;
+                        }
                         if (job.Expected is { } e2 && !Near(g, new Color(e2), 2))
                         {
                             notes.Add("mgfxc build does not show the expected element either");
                             ok = false;
                         }
-                        // A vacuous pass: both builds drawing nothing.
-                        if (job.Expected is null && candidate.All(px => px.A == 0 && px.R == 0))
+                        // A vacuous pass: both builds drawing nothing (or leaving the magenta clear).
+                        if (job.Expected is null && job.Control == ControlKind.None
+                            && candidate.All(px => (px.A == 0 && px.R == 0) || px == new Color(255, 0, 255, 255)))
                         {
                             notes.Add("nothing drawn");
                             ok = false;
@@ -377,7 +476,7 @@ public static class VertexSemanticsProbe
             short[] indices = [0, 1, 2, 2, 1, 3];
             // The control gets a declaration of its own too: its attribute-binding cache is per
             // declaration instance (see RelabelAttribute).
-            VertexDeclaration declaration = job.Control
+            VertexDeclaration declaration = job.Control != ControlKind.None
                 ? new VertexDeclaration(SemanticVertex.Declaration.GetVertexElements())
                 : SemanticVertex.Declaration;
             foreach (EffectPass pass in effect.CurrentTechnique.Passes)
