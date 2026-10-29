@@ -298,8 +298,8 @@ slot of the shader's first read of it (evaluation order), ahead of every modern 
 register, around every explicit `t` register (a register on the texture a `sampler_state` names
 only reserves). SpriteBatch binds the sprite to `t0`, so the difference picks which sampler reads
 the sprite. After each DX11 compile of an effect with a legacy sampler, `DxTextureSlotOrder` reads
-the evaluation order off a vkd3d compile's instruction stream (the shipped compile itself, or an
-extra vkd3d compile under the `d3dcompiler_47` option, whose own stream is scheduled) and the
+the evaluation order from the preprocessed source (`HlslReadOrder`; no compiled stream carries
+it: `d3dcompiler_47` schedules its reads and vkd3d swaps the operands of `>` and `<=`) and the
 surviving resources off the shipped compile's RDEF, and when the slots differ recompiles with every
 resource pinned by an explicit `register(tN)`; a shader whose slots already agree is not
 recompiled. What it cannot check or pin keeps the old slots and warns `SD0230`.

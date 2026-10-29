@@ -33,7 +33,7 @@ real MonoGame WindowsDX and real KNI WinForms.DX11, maxd 0 after.
 
 ## 2. The rule fxc follows (measured, `mgfxc` 3.8.4.1 `/Profile:DirectX_11`)
 
-On the 78 shapes of `tests/fixtures/golden/dx11-texture-slots/` (sources and goldens beside each
+On the 144 shapes of `tests/fixtures/golden/dx11-texture-slots/` (sources and goldens beside each
 other) plus the 27 of `legacy-sampler-units/`, per compiled shader:
 
 1. Every explicit `register(tN)` on a `t`-register declaration (any texture, `Buffer`,
@@ -67,15 +67,17 @@ effect that has a legacy sampler (`CompilationPipeline.ReorderDirectX11TextureSl
 
 - the shipped compile's RDEF gives the `t`-register resources that survived optimisation and their
   slots (`DxbcResourceUseOrder.TRegisterBindings`);
-- **a vkd3d compile's instruction stream gives the evaluation order**
-  (`DxbcResourceUseOrder.NamesInFirstReadOrder`, which decodes only the texture-reading opcodes).
-  It is the shipped compile itself on the default backend and an extra vkd3d compile of the same
-  source under `DxbcBackend.D3DCompiler`, because `d3dcompiler_47` schedules: it emits a read feeding
-  `clip`/`discard` first and reorders independent reads (`tex2D(A) * tex2D(B) + tex2D(C) * 2` is C
-  first). An earlier revision read the order off the shipped compile and broke `Dissolve`,
-  `BlendShader`, `SamplerStatesFull` and others under that option (maxd 255, found in review).
-  That vkd3d 2.1 keeps evaluation order is an assumption about the pinned native, guarded by the
-  d3dcompiler rows of `DirectX11TextureSlotOrderTests` and `LegacySamplerUnitTests`;
+- **the preprocessed SOURCE gives the evaluation order** (`HlslReadOrder`): token order, a read
+  after its own arguments, a user function's body after its arguments. Two earlier revisions read
+  the order off a compiled shader and both were wrong, found in review: `d3dcompiler_47`'s stream
+  is scheduled (a read feeding `clip`/`discard` first, independent reads reordered; `Dissolve`,
+  `BlendShader`, `SamplerStatesFull` broke under that option, maxd 255), and vkd3d 2.1's parser
+  swaps the operands of `>` and `<=` (`LESS(b, a)`, `GEQUAL(b, a)` in `hlsl.y`), emitting the
+  right-hand read first (maxd 128 on both backends). fxc numbers after inlining, unrolling and
+  folding compile-time conditions, but before algebraic dead-code removal (a dead store still
+  numbers its texture): the walk tracks which conditions are compile-time and REFUSES with
+  `SD0230` whenever such a branch could change the order (`D12_UnrollLoopIndex`), rather than
+  modelling fxc's folder;
 - the preprocessed view gives the legacy textures and every explicit `t` register
   (`GlSamplerSlots.ExplicitTextureRegisters`, stage-qualified registers included);
 - when the planned slots differ, the shader is recompiled with every `t` resource's top-level
@@ -90,7 +92,8 @@ every legacy shader's bytes and parameter naming).
 
 Every case the check cannot model or apply keeps the previous slots and warns `SD0230`: a
 declaration through a macro or in a declarator list, a resource array, an unreadable RDEF or
-instruction stream, a preprocessed view that cannot be built, a failed vkd3d order compile.
+a preprocessed view that cannot be built, an order that depends on a compile-time branch, an
+overloaded function or a texture passed as a value.
 
 ## 4. Which bytes changed
 
@@ -118,6 +121,12 @@ list changed.
   record. Pinned as a known divergence.
 - **vkd3d keeps reads fxc folds away** (`D01`..`D10`: `x * 0`, `lerp(a, b, 1)`, `a - a`,
   `dot(x, 0)`, `saturate(-1 - abs(x))`): the dead texture keeps a record and a slot on vkd3d only.
+- **An order that depends on a compile-time branch** (`D12_UnrollLoopIndex`, an `[unroll]` loop
+  reading under `if (i == 2)`): fxc reads in iteration order; the walk refuses with `SD0230`.
+- **Legacy samplers a macro declares** (`B02_MacroTexture`) are compiled natively by the backend:
+  texture slots match, the parameter is named after the sampler and the sampler slots differ
+  (pre-existing, `project_facts.md`). A legacy sampler in an `#include`d header compiles natively
+  the same way and joins under the sampler's name (no false `SD0230`).
 - **Declarator lists** (`sampler2D A, B;` sampler slots, `Texture2D TA, TB;` not compiling) and
   **resource arrays** beside a legacy sampler (`SD0230`), all recorded in
   `docs/validation-matrix.md` §7.
