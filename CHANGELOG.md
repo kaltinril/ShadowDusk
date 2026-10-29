@@ -79,12 +79,15 @@ that loads and renders identically to `mgfxc`'s in the real MonoGame/KNI runtime
   Each compiled shader is its own Vulkan descriptor layout, but the binding rewrite paired a texture
   once for the whole file, from its first `Sample` call: a texture read through a point sampler in
   one technique and a linear sampler in another (or through one sampler in the vertex shader and
-  another in the pixel shader) got an alias on slot 1 in the second shader, which SpriteBatch never
-  fills, so drawn through SpriteBatch alone that technique drew (0,0,0,0). A call in a function the
-  entry point never calls, or on a line an inactive `#if` drops (`#if 0`, the branch the macros do
-  not take, read by the managed preprocessor with the compile's macros), took the pairing the same
-  way, moving the live pair to an alias away from slot 0, or refusing a second texture on that
-  sampler as `SD0028`. Pairing now reads only the code each shader can run; a second sampler is
+  another in the pixel shader) left the second shader's sampler as a standalone descriptor, as in
+  `mgfxc`'s own build, which DesktopVK does not handle, so that technique drew nothing. A call in a
+  function the entry point never calls, or on a line an inactive `#if` drops (`#if 0`, the branch
+  the macros do not take, read by the managed preprocessor with the compile's macros), took the
+  pairing the same way: the live call's sampler shipped as a standalone descriptor, or a second
+  texture on that sampler was refused as `SD0028`. Pairing now reads only the code each shader can
+  run (except when a conditional tests a macro only DXC defines, the `SD0009` warning: then every
+  line still counts, as before, and a dead call that comes first gives the live one an alias and
+  `SD0235`); a second sampler is
   aliased only where both calls can be live (the two branches of one `#if` are resolved by the
   preprocessed retry instead); an alias whose original DXC removed keeps the original's parameter
   name; and an unregistered texture nothing live references (a legacy branch's synthesized
@@ -93,8 +96,7 @@ that loads and renders identically to `mgfxc`'s in the real MonoGame/KNI runtime
   identifier using the reserved `_SDVkAlias` suffix is refused on Vulkan with `SD0234` (other targets
   treat it as an ordinary name). Storage buffers (`StructuredBuffer`, `ByteAddressBuffer` and their
   `RW` forms) compiled silently as a uniform-buffer descriptor the runtime never fills, and a
-  `Buffer<T>` was refused as `SD0228` with advice that did not apply: both are now `SD0233`, like a
-  read-write texture. Proven in real DesktopVK (`VsDrivenVulkan -- regslots`: `RegisterSamplerPerPass`,
+  `Buffer<T>` compiled silently too: both are now `SD0233`, like a read-write texture. Proven in real DesktopVK (`VsDrivenVulkan -- regslots`: `RegisterSamplerPerPass`,
   both techniques through SpriteBatch alone, and `RegisterSamplerPerStage`, vs `mgfxc` on their
   one-sampler forms, maxd 0, every pixel the expected colour, Khronos validation layer clean), with a
   `whole-file-pairing` positive control that turns both red. **Vulkan output changes** for

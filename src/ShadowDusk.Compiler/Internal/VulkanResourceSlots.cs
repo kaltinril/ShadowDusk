@@ -42,7 +42,7 @@ namespace ShadowDusk.Compiler.Internal;
 /// (<c>Buffer&lt;T&gt;</c>, <c>RWBuffer&lt;T&gt;</c>) or a storage buffer (<c>StructuredBuffer</c>,
 /// <c>ByteAddressBuffer</c> and their <c>RW</c> forms). MonoGame's Vulkan effect format binds uniform buffers
 /// and sampled textures only. A storage buffer used to compile silently as a uniform-buffer descriptor
-/// the runtime never fills, and a <c>Buffer&lt;T&gt;</c> was refused as SD0228 with advice that did not apply.</item>
+/// the runtime never fills, and a <c>Buffer&lt;T&gt;</c> compiled silently too.</item>
 /// <item><c>SD0228</c>: a texture or sampler DXC auto-numbered below binding 32, so with no slot.
 /// <c>mgfxc</c>'s own arithmetic wraps such a slot to 224+.</item>
 /// <item><c>SD0229</c>: a resource outside its stage's descriptor set.</item>
