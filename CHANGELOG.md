@@ -18,6 +18,22 @@ that loads and renders identically to `mgfxc`'s in the real MonoGame/KNI runtime
 
 ### Fixed
 
+- **A forward-declared entry point no longer kills the process on OpenGL and Vulkan.** An
+  entry point declared before its definition (`float4 PS(float4 c : COLOR0) : COLOR0;` above
+  the technique, the definition below it), or declared again after it, ended the compile with an
+  `AccessViolationException` inside DXC's SPIR-V back end: an uncatchable crash that took down
+  the game, the MGCB build or the test host. It is a fault in the pinned DXC itself (a null read
+  in `dxcompiler`, reproduced through Vortice's own wrapper with no ShadowDusk code), hit by
+  every `-spirv` compile whose entry function has a redeclaration, so OpenGL, Vulkan, raylib and
+  SkSL, on every host including the browser. The entry point's redundant prototypes are now
+  blanked from DXC's input (lines and columns kept), which is what DXC's DXIL path and fxc
+  already do with them: the effect compiles to exactly the bytes of the same effect without the
+  prototype, and `mgfxc` 3.8.4.1 compiles these shapes too. An unused overload prototype
+  (different parameters, no definition) is dropped the same way, as fxc compiles past it. What
+  cannot be compiled safely is refused with the new `SD0234` instead of a crash: a call to the
+  entry point between its prototype and its definition, an overload prototype of an entry point
+  the source calls, and a prototype a macro produces. DirectX 11, DirectX 12 and FNA never had
+  the fault and are unchanged; no output changes for any effect without an entry-point prototype.
 - **Techniques are read from the preprocessed source, like `mgfxc` (issue #407).** A technique
   inside a false `#if` (or behind an unset `/Defines` value) was still compiled, a technique in an
   `#include`d file was not found (`SD0010`, or dropped beside the main file's own), and a macro

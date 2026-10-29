@@ -156,6 +156,19 @@ public sealed class DxcShaderCompiler : IDxcShaderCompiler, IDisposable
         if (NativeError(request.SourceFileName, usesValidator) is { } loadError)
             return Result<PlatformBlob, ShaderError>.Fail(loadError);
 
+        // DXC's SPIR-V back end crashes the process on an entry function that is declared more
+        // than once; its redundant prototypes are kept out of the input (SD0234 when that
+        // cannot be done safely). Returns the source unchanged when it has none.
+        string hlslSource = request.HlslSource;
+        if (DxcSpirvEntryRedeclarations.AppliesTo(arguments))
+        {
+            Result<string, ShaderError> prepared = DxcSpirvEntryRedeclarations.Prepare(
+                hlslSource, request.EntryPoint, request.SourceFileName);
+            if (prepared.IsFailure)
+                return Result<PlatformBlob, ShaderError>.Fail(prepared.Error);
+            hlslSource = prepared.Value;
+        }
+
         // A SPIR-V compile with debug information loads libdxcompiler by LEAF name from inside
         // DXC to read the source for OpSource (issue #332). Refused (SD0223) when the dynamic
         // linker would hand that load anything but the pinned build; no other request makes it.
@@ -172,7 +185,7 @@ public sealed class DxcShaderCompiler : IDxcShaderCompiler, IDisposable
         // (Phase 37 Finding B). DxcNativeInterop encodes the arguments per-platform.
         IDxcResult result = DxcNativeInterop.Compile(
             _compiler!,
-            request.HlslSource,
+            hlslSource,
             arguments,
             request.IncludeHandler);
 

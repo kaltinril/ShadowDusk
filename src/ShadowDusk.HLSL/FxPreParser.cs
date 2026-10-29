@@ -373,7 +373,7 @@ public sealed class FxPreParser
     /// by walking the source text and matching line/column coordinates.
     /// This is O(n) in source length and only called once per parse.
     /// </summary>
-    private static int[] ComputeCharacterOffsets(string source, IReadOnlyList<Token> tokens)
+    internal static int[] ComputeCharacterOffsets(string source, IReadOnlyList<Token> tokens)
     {
         var offsets = new int[tokens.Count];
 

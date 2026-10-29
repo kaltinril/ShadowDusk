@@ -2684,7 +2684,20 @@ internal sealed class CompilationPipeline
 
             var result = dxcCompiler.Value.Compile(request, ct);
             if (result.IsFailure)
-                return (Result<byte[], ShaderError>.Fail(result.Error), default, default, noAttributes, noUniforms, noWarnings);
+            {
+                // SD0234 names the entry point DXC was asked for; on Vulkan that is the "main" of the
+                // rename above, so put back the name the author wrote.
+                ShaderError error = result.Error;
+                if (string.Equals(error.Code, "SD0234", StringComparison.Ordinal)
+                    && !string.Equals(effectiveEntryPoint, entryPoint, StringComparison.Ordinal))
+                {
+                    error = error with
+                    {
+                        Message = error.Message.Replace($"'{effectiveEntryPoint}'", $"'{entryPoint}'", StringComparison.Ordinal),
+                    };
+                }
+                return (Result<byte[], ShaderError>.Fail(error), default, default, noAttributes, noUniforms, noWarnings);
+            }
 
             ReadOnlyMemory<byte> blob      = result.Value.Bytes;
             // DirectX12 ships raw SM6 DXIL directly (no transpile) and reflects from it via
