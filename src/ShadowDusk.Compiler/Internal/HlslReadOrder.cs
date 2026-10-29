@@ -19,38 +19,79 @@ namespace ShadowDusk.Compiler.Internal;
 /// <para><b>The model</b> (measured against <c>mgfxc</c>): fxc numbers in EVALUATION order, which in
 /// HLSL is token order with two exceptions handled here: a read <c>T.Sample(S, uv)</c> (or a legacy
 /// <c>tex2D(S, uv)</c> the rewrite did not reach) happens after its arguments, and a call to a user
-/// function evaluates its arguments, then the function's body. fxc numbers after it has inlined,
-/// unrolled loops and folded COMPILE-TIME conditions (an <c>[unroll]</c> loop's
-/// <c>if (i == 2)</c> reads in iteration order), but before algebraic dead-code removal (the read
-/// in <c>tex2D(B, uv) * 0</c> still counts where it is). So a read inside a region whose condition
-/// is a compile-time constant (a literal, a <c>static</c> global, a loop counter, a local or
-/// parameter computed only from those) may or may not be the place fxc numbers that texture: when
-/// that changes the order against another texture, the walk REFUSES rather than guess. A region
-/// whose condition depends on a uniform, a shader input or a texture read is evaluated at run time
-/// and keeps token order.</para>
+/// function evaluates its arguments, then the function's body. Both arms of a <c>?:</c> are read
+/// whatever the condition (measured with a literal <c>false</c>, a <c>static const</c> and
+/// <c>0 &gt; 1</c>). fxc numbers after it has inlined, unrolled loops and folded the conditions of
+/// <c>if</c>, <c>switch</c> and loops it can evaluate, but before algebraic dead-code removal (the
+/// read in <c>tex2D(B, uv) * 0</c> still counts where it is).</para>
+///
+/// <para><b>Which conditions fxc folds is not modelled.</b> It inlines and folds far beyond any
+/// syntactic test (a call returning a constant, a default argument, an <c>out</c> argument, one
+/// component of a vector, <c>k &gt; 0 &amp;&amp; false</c>, <c>saturate(-1 - abs(k)) &gt; 0</c>),
+/// yet leaves others (<c>k * 0 &gt; 1</c>, <c>k - k &gt; 0</c>), all measured. So EVERY read
+/// under an <c>if</c>, a <c>switch</c>, a loop that might run zero times, or after a
+/// <c>return</c>/<c>discard</c>/<c>break</c>/<c>continue</c> under one, is CONDITIONAL: fxc may or
+/// may not number its texture there. When that could change the order against another texture,
+/// the walk REFUSES rather than guess. The one exception is a condition that is CERTAINLY decided
+/// at run time: a uniform (a top-level global that is neither <c>static</c> nor <c>const</c>, not
+/// shadowed by a local) or an entry-point input the entry never assigns or passes as an
+/// <c>out</c> argument, of a signed numeric scalar, one component of such a vector, or a
+/// <c>bool</c>; bare, negated, or compared with a short literal or a different such value. fxc
+/// cannot fold that (measured: <c>k &gt; 0</c>, <c>uv.x &gt; 0.5</c>, a <c>bool</c> uniform with a
+/// <c>false</c> default, a <c>switch</c> on a uniform), so a read under it keeps its place. A
+/// <c>for</c> loop whose first iteration certainly runs (literal or <c>static const</c> bounds that
+/// hold, or a uniform bound) or a <c>do</c> loop is not conditional either.</para>
 ///
 /// <para>The walk also refuses: the entry point not found or overloaded, a call to an overloaded
-/// function, a legacy texture used other than as the object of a method call, a read in a
-/// <c>for</c> loop's increment clause (evaluated after the body), recursion, unbalanced brackets.
-/// The caller reports a refusal as <c>SD0230</c> and keeps the backend's slots.</para>
+/// function, a legacy texture used other than as the object of a method call, a legacy sampler
+/// passed through a parameter, a texture the shader binds that the walk never saw read, a read in a
+/// <c>for</c> loop's increment clause (evaluated after the body), a conditional read in a loop
+/// (fxc reads it in iteration order once it unrolls), recursion, unbalanced brackets. The caller
+/// reports a refusal as <c>SD0230</c> and keeps the backend's slots.</para>
 /// </summary>
 internal static class HlslReadOrder
 {
     private static readonly Regex LegacyIntrinsic = new(@"^tex(1D|2D|3D|CUBE)(bias|grad|lod|proj)?$", RegexOptions.CultureInvariant);
 
+    private static readonly Regex ShortLiteral = new(@"^(\d+(\.\d*)?|\.\d+)[fFhH]?$", RegexOptions.CultureInvariant);
+
+    private static readonly Regex OneComponent = new(@"^[xyzwrgba]$", RegexOptions.CultureInvariant);
+
     private static readonly HashSet<string> Truncating = new(StringComparer.Ordinal) { "return", "break", "continue", "discard" };
+
+    private static readonly HashSet<string> Relational = new(StringComparer.Ordinal) { "<", ">", "<=", ">=", "==", "!=" };
+
+    private static readonly HashSet<string> Assigning = new(StringComparer.Ordinal) { "=", "+=", "-=", "*=", "/=", "%=", "&=", "|=", "^=", "++", "--" };
+
+    /// <summary>Scalar types a run-time value can be compared in without fxc folding it by range (no <c>uint</c>).</summary>
+    private static readonly HashSet<string> NumericScalars = new(StringComparer.Ordinal)
+    {
+        "float", "half", "double", "int", "min16float", "min10float", "min16int", "min12int",
+    };
+
+    /// <summary>Intrinsics and methods that write through an argument.</summary>
+    private static readonly HashSet<string> WritesArguments = new(StringComparer.Ordinal) { "modf", "sincos", "frexp", "GetDimensions" };
+
+    /// <summary>Identifiers that can precede a name without declaring it.</summary>
+    private static readonly HashSet<string> NotTypes = new(StringComparer.Ordinal) { "return", "else", "case", "do" };
 
     private enum Kind { Ident, Number, Punct, String }
 
     private readonly record struct Tok(Kind Kind, string Text);
 
+    private sealed record Param(string Name, string? Type, bool Out, bool Uniform);
+
+    private sealed record Fn(string Name, int ParamOpen, int BodyStart, int BodyEnd, bool IsEntry);
+
     private sealed class Region
     {
         public required int Start;
         public required int End;
-        public required bool Foldable;
+        public required bool Conditional;
         public bool IsLoop;
-        public bool Truncates;
+        public bool IsSwitch;
+        /// <summary>Set by a return, discard, break or continue inside: after the region ends, reads up to this token are conditional.</summary>
+        public int TruncatesUntil = -1;
     }
 
     /// <summary>
@@ -61,7 +102,7 @@ internal static class HlslReadOrder
     /// <param name="entryPoint">The entry function.</param>
     /// <param name="legacyTextures">The textures legacy samplers sample through (rewritten reads <c>T.Sample(…)</c>).</param>
     /// <param name="legacySamplerTextures">Legacy sampler -> its texture (reads the rewrite did not reach, <c>tex2D(S, …)</c>).</param>
-    /// <param name="present">The legacy textures the compiled shader still binds; only their order matters.</param>
+    /// <param name="present">The legacy textures the compiled shader still binds; only their order matters, and every one must be seen read.</param>
     /// <param name="refusal">Why the order could not be determined, when the result is <c>null</c>.</param>
     public static IReadOnlyList<string>? FirstReads(
         string preprocessedSource,
@@ -80,9 +121,11 @@ internal static class HlslReadOrder
             return null;
         }
 
-        // ---- Top level: functions, and which globals are compile-time (static) ----------------
+        // ---- Top level: functions, and the uniform globals (fxc cannot fold their values) --------
         var functions = new Dictionary<string, List<(int ParamOpen, int BodyStart, int BodyEnd)>>(StringComparer.Ordinal);
-        var globals = new Dictionary<string, bool>(StringComparer.Ordinal); // name -> runtime
+        var uniformTypes = new Dictionary<string, string>(StringComparer.Ordinal); // name -> type
+        var notUniform = new HashSet<string>(StringComparer.Ordinal);
+        var constValues = new Dictionary<string, double>(StringComparer.Ordinal); // static const scalar = literal
         int depth = 0;
         int statementStart = 0;
         for (int i = 0; i < code.Count; i++)
@@ -91,10 +134,10 @@ internal static class HlslReadOrder
             if (t.Kind == Kind.Punct && t.Text == "{") { depth++; continue; }
             if (t.Kind == Kind.Punct && t.Text == "}") { depth--; if (depth == 0) statementStart = i + 1; continue; }
             if (t.Kind == Kind.Punct && t.Text == ";" && depth == 0) { statementStart = i + 1; continue; }
-            if (t.Kind != Kind.Ident)
-                continue;
+            if (t.Kind != Kind.Ident || depth != 0)
+                continue; // struct, cbuffer and technique members are not globals the walk can name
 
-            if (depth == 0 && i + 1 < code.Count && Is(code[i + 1], "("))
+            if (i + 1 < code.Count && Is(code[i + 1], "("))
             {
                 int close = match[i + 1];
                 int j = close + 1;
@@ -119,16 +162,36 @@ internal static class HlslReadOrder
                 && i + 1 < code.Count && code[i + 1].Kind == Kind.Punct
                 && code[i + 1].Text is ";" or "=" or ":" or "[" or "," or "<")
             {
-                bool isStatic = false;
+                bool isStatic = false, isConst = false;
                 for (int k = statementStart; k < i; k++)
                 {
-                    if (code[k].Kind == Kind.Ident && code[k].Text == "static")
-                        isStatic = true;
+                    if (code[k].Kind != Kind.Ident) continue;
+                    isStatic |= code[k].Text == "static";
+                    isConst |= code[k].Text == "const";
                 }
-                // Inside a cbuffer/struct (depth > 0) a member is a uniform/runtime value.
-                globals[t.Text] = depth > 0 || !isStatic;
+                bool folds = isStatic || isConst;
+                string type = code[i - 1].Kind == Kind.Ident ? code[i - 1].Text : ">";
+                // `static const int N = 8;`: a loop bound the walk can evaluate.
+                int literalEnd = i + 2 < code.Count && Is(code[i + 2], "-") ? i + 4 : i + 3;
+                if (isStatic && isConst && NumericScalars.Contains(type) && Is(code[i + 1], "=")
+                    && literalEnd < code.Count && Is(code[literalEnd], ";") && Literal(i + 2, literalEnd, out double value)
+                    && !constValues.ContainsKey(t.Text))
+                {
+                    constValues[t.Text] = value;
+                }
+                else if (constValues.ContainsKey(t.Text))
+                {
+                    constValues[t.Text] = double.NaN; // declared twice: not a known value
+                }
+                // Every declaration of the name must be a uniform of one type.
+                if (folds || (uniformTypes.TryGetValue(t.Text, out string? seen) && seen != type))
+                    notUniform.Add(t.Text);
+                else
+                    uniformTypes[t.Text] = type;
             }
         }
+        foreach (string name in notUniform.Concat(functions.Keys))
+            uniformTypes.Remove(name);
 
         if (!functions.TryGetValue(entryPoint, out var entry) || entry.Count != 1)
         {
@@ -136,36 +199,43 @@ internal static class HlslReadOrder
             return null;
         }
 
-        var occurrences = new List<(string Texture, bool Foldable, bool InLoop)>();
+        var occurrences = new List<(string Texture, bool Conditional, bool InLoop)>();
         var walking = new HashSet<string>(StringComparer.Ordinal);
+        var localNames = new Dictionary<string, HashSet<string>>(StringComparer.Ordinal);
         string? why = null;
 
-        // Entry parameters are shader inputs: run-time values.
-        var entryParams = ParamNames(entry[0].ParamOpen).ToDictionary(p => p.Name, _ => true, StringComparer.Ordinal);
-        if (!WalkFunction(entryPoint, entryParams, false, false))
+        var entryFn = new Fn(entryPoint, entry[0].ParamOpen, entry[0].BodyStart, entry[0].BodyEnd, IsEntry: true);
+        if (!WalkFunction(entryFn, false, false))
         {
             refusal = why ?? "the entry point's evaluation order is outside the model";
             return null;
         }
 
-        // ---- Order, and the refusal when a compile-time region makes it ambiguous --------------
+        // ---- Order, and the refusal when a condition makes it ambiguous -------------------------
         var first = new Dictionary<string, int>(StringComparer.Ordinal);
         for (int k = 0; k < occurrences.Count; k++)
         {
             if (present.Contains(occurrences[k].Texture))
                 first.TryAdd(occurrences[k].Texture, k);
         }
-        // An unrolled loop whose body reads under a compile-time condition (a branch on the counter)
-        // reads in ITERATION order, which the token order does not give.
-        if (first.Count >= 2 && occurrences.Any(o => o.Foldable && o.InLoop && present.Contains(o.Texture)))
+        string? unseen = present.Where(p => !first.ContainsKey(p)).Order(StringComparer.Ordinal).FirstOrDefault();
+        if (unseen is not null)
         {
-            refusal = "a loop reads a texture under a compile-time condition (a branch on the loop counter), so the reads " +
-                      "come in iteration order once fxc unrolls it";
+            refusal = $"the shader binds '{unseen}', but no read of it was found in '{entryPoint}' (read through a function parameter " +
+                      "or another form this check does not follow)";
+            return null;
+        }
+        // An unrolled loop whose body reads under a condition (a branch on the counter) reads in
+        // ITERATION order, which the token order does not give.
+        if (first.Count >= 2 && occurrences.Any(o => o.Conditional && o.InLoop && present.Contains(o.Texture)))
+        {
+            refusal = "a loop reads a texture under a condition fxc may evaluate (a branch on the loop counter, or a loop that may " +
+                      "run zero times), so the reads may come in iteration order once fxc unrolls it";
             return null;
         }
         foreach ((string texture, int p) in first)
         {
-            if (!occurrences[p].Foldable)
+            if (!occurrences[p].Conditional)
                 continue;
             // fxc may number this texture at any of its occurrences up to the first unconditional one.
             int last = p;
@@ -174,15 +244,16 @@ internal static class HlslReadOrder
                 if (!string.Equals(occurrences[k].Texture, texture, StringComparison.Ordinal))
                     continue;
                 last = k;
-                if (!occurrences[k].Foldable)
+                if (!occurrences[k].Conditional)
                     break;
             }
             foreach ((string other, int q) in first)
             {
                 if (!string.Equals(other, texture, StringComparison.Ordinal) && q > p && q <= last)
                 {
-                    refusal = $"whether fxc numbers '{texture}' before '{other}' depends on a compile-time condition " +
-                              "(a branch on a constant or a loop counter) this check does not evaluate";
+                    refusal = $"whether fxc numbers '{texture}' before '{other}' depends on a condition fxc may evaluate at compile " +
+                              "time (its first read is under an if, a switch or a loop, or after a return or discard under one), " +
+                              "which this check does not evaluate";
                     return null;
                 }
             }
@@ -191,49 +262,26 @@ internal static class HlslReadOrder
 
         // ---- Walking --------------------------------------------------------------------------
 
-        bool WalkFunction(string name, Dictionary<string, bool> paramRuntime, bool foldableContext, bool loopContext)
+        bool WalkFunction(Fn fn, bool conditionalContext, bool loopContext)
         {
-            if (!walking.Add(name))
+            if (!walking.Add(fn.Name))
             {
-                why = $"'{name}' calls itself";
+                why = $"'{fn.Name}' calls itself";
                 return false;
             }
-            var body = functions[name][0];
-            var vars = new Dictionary<string, bool>(paramRuntime, StringComparer.Ordinal);
-            bool ok = Walk(body.BodyStart, body.BodyEnd, vars, foldableContext, loopContext);
-            walking.Remove(name);
+            bool ok = Walk(fn, fn.BodyStart, fn.BodyEnd, conditionalContext, loopContext);
+            walking.Remove(fn.Name);
             return ok;
         }
 
-        bool IsRuntime(int start, int end, Dictionary<string, bool> vars)
-        {
-            for (int j = start; j < end; j++)
-            {
-                Tok t = code[j];
-                if (t.Kind != Kind.Ident || (j > 0 && Is(code[j - 1], ".")))
-                    continue;
-                if (vars.TryGetValue(t.Text, out bool local))
-                {
-                    if (local) return true;
-                    continue;
-                }
-                if (globals.TryGetValue(t.Text, out bool global) && global)
-                    return true;
-                if (legacyTextures.Contains(t.Text) || LegacyIntrinsic.IsMatch(t.Text) || functions.ContainsKey(t.Text))
-                    return true;
-            }
-            return false;
-        }
-
-        bool Walk(int start, int end, Dictionary<string, bool> vars, bool foldableContext, bool loopContext)
+        bool Walk(Fn fn, int start, int end, bool conditionalContext, bool loopContext)
         {
             var regions = new List<Region>();
-            bool truncated = false;
-            var pending = new Stack<(int Close, string? Read, bool Foldable, bool InLoop, string? Call, Dictionary<string, bool>? CallParams)>();
+            int truncatedUntil = -1;
+            var pending = new Stack<(int Close, string? Read, bool Conditional, bool InLoop, Fn? Call)>();
             int at = start;
             bool InLoop() => loopContext || regions.Any(r => r.IsLoop && r.Start < at);
-            bool Foldable() => foldableContext || truncated || regions.Any(r => r.Foldable && !r.IsLoop && r.Start < at);
-            bool InRuntimeRegion() => regions.Any(r => !r.Foldable && !r.IsLoop && r.Start < at);
+            bool Conditional() => conditionalContext || at <= truncatedUntil || regions.Any(r => r.Conditional && r.Start < at);
 
             for (int i = start; i < end; i++)
             {
@@ -242,66 +290,77 @@ internal static class HlslReadOrder
                 {
                     var done = pending.Pop();
                     if (done.Read is { } read)
-                        occurrences.Add((read, done.Foldable, done.InLoop));
-                    if (done.Call is { } call && !WalkFunction(call, done.CallParams!, done.Foldable, done.InLoop))
+                        occurrences.Add((read, done.Conditional, done.InLoop));
+                    if (done.Call is { } call && !WalkFunction(call, done.Conditional, done.InLoop))
                         return false;
                 }
                 for (int r = regions.Count - 1; r >= 0; r--)
                 {
                     if (regions[r].End < i)
                     {
-                        if (regions[r].Truncates)
-                            truncated = true;
+                        truncatedUntil = Math.Max(truncatedUntil, regions[r].TruncatesUntil);
                         regions.RemoveAt(r);
                     }
                 }
 
                 Tok t = code[i];
-                if (t.Kind == Kind.Punct && t.Text == "?")
-                {
-                    int condStart = ExpressionStart(i);
-                    bool runtime = IsRuntime(condStart, i, vars);
-                    int colon = MatchingColon(i, end);
-                    if (colon < 0)
-                    {
-                        why = "a conditional expression could not be parsed";
-                        return false;
-                    }
-                    int armEnd = ExpressionEnd(colon + 1, end);
-                    regions.Add(new Region { Start = i, End = armEnd, Foldable = !runtime });
-                    continue;
-                }
-
                 if (t.Kind != Kind.Ident)
                     continue;
                 bool afterDot = i > 0 && Is(code[i - 1], ".");
 
                 if (!afterDot && Truncating.Contains(t.Text))
                 {
-                    foreach (Region r in regions.Where(r => r.Foldable && r.Start < i))
-                        r.Truncates = true;
+                    // A return or discard ends the function, a break its loop or switch, a continue
+                    // the iteration. Folded true, the code after the conditional region up to there
+                    // is gone; folded false, it stays.
+                    Region? scope = t.Text switch
+                    {
+                        "break" => regions.Where(r => (r.IsLoop || r.IsSwitch) && r.Start < i).MaxBy(r => r.Start),
+                        "continue" => regions.Where(r => r.IsLoop && r.Start < i).MaxBy(r => r.Start),
+                        _ => null,
+                    };
+                    int until = scope?.End ?? int.MaxValue;
+                    foreach (Region r in regions.Where(r => r.Conditional && r.Start < i && (scope is null || r.Start > scope.Start)))
+                        r.TruncatesUntil = Math.Max(r.TruncatesUntil, until);
                     continue;
                 }
 
                 if (!afterDot && t.Text is "if" or "switch" && i + 1 < end && Is(code[i + 1], "("))
                 {
                     int close = match[i + 1];
-                    bool runtime = IsRuntime(i + 2, close, vars);
                     int stmtEnd = t.Text == "if" ? StatementEnd(i, end) : (close + 1 < end && Is(code[close + 1], "{") ? match[close + 1] : -1);
                     if (stmtEnd < 0)
                     {
                         why = $"an '{t.Text}' statement could not be parsed";
                         return false;
                     }
-                    regions.Add(new Region { Start = close, End = stmtEnd, Foldable = !runtime });
+                    regions.Add(new Region { Start = close, End = stmtEnd, Conditional = !CertainlyRuntime(fn, i + 2, close), IsSwitch = t.Text == "switch" });
                     continue;
                 }
 
-                if (!afterDot && t.Text is "for" or "while" or "do")
+                if (!afterDot && t.Text is "while" && i + 1 < end && Is(code[i + 1], "(") && !IsDoWhileTail(i))
                 {
                     int loopEnd = StatementEnd(i, end);
-                    if (loopEnd > i)
-                        regions.Add(new Region { Start = i, End = loopEnd, Foldable = false, IsLoop = true });
+                    if (loopEnd < 0)
+                    {
+                        why = "a while loop could not be parsed";
+                        return false;
+                    }
+                    regions.Add(new Region { Start = i, End = loopEnd, Conditional = !CertainlyRuntime(fn, i + 2, match[i + 1]), IsLoop = true });
+                    continue;
+                }
+
+                if (!afterDot && t.Text is "do")
+                {
+                    // The body runs at least once.
+                    int loopEnd = StatementEnd(i, end);
+                    if (loopEnd < 0)
+                    {
+                        why = "a do loop could not be parsed";
+                        return false;
+                    }
+                    regions.Add(new Region { Start = i, End = loopEnd, Conditional = false, IsLoop = true });
+                    continue;
                 }
 
                 if (!afterDot && t.Text == "for" && i + 1 < end && Is(code[i + 1], "("))
@@ -315,7 +374,8 @@ internal static class HlslReadOrder
                         else if (code[k].Kind == Kind.Punct && code[k].Text is ")" or "]" or "}") d--;
                         else if (d == 0 && Is(code[k], ";")) semis.Add(k);
                     }
-                    if (semis.Count != 2)
+                    int loopEnd = StatementEnd(i, end);
+                    if (semis.Count != 2 || loopEnd < 0)
                     {
                         why = "a for loop could not be parsed";
                         return false;
@@ -325,25 +385,21 @@ internal static class HlslReadOrder
                         why = "a for loop reads a texture in its increment clause, which runs after the body";
                         return false;
                     }
-                    // The loop counter is a compile-time value once fxc unrolls the loop.
-                    for (int k = open + 1; k < semis[0]; k++)
-                    {
-                        if (code[k].Kind == Kind.Ident && k + 1 < semis[0] && Is(code[k + 1], "="))
-                            vars[code[k].Text] = false;
-                    }
+                    bool runsOnce = FirstIterationRuns(fn, open + 1, semis[0], semis[1]);
+                    regions.Add(new Region { Start = i, End = loopEnd, Conditional = !runsOnce, IsLoop = true });
                     continue;
                 }
 
                 if (legacyTextures.Contains(t.Text) && !afterDot)
                 {
-                    if (vars.ContainsKey(t.Text))
+                    if (LocalNames(fn).Contains(t.Text))
                     {
                         why = $"a parameter or local shadows the legacy texture '{t.Text}'";
                         return false;
                     }
                     if (i + 3 < end && Is(code[i + 1], ".") && code[i + 2].Kind == Kind.Ident && Is(code[i + 3], "("))
                     {
-                        pending.Push((match[i + 3], t.Text, Foldable(), InLoop(), null, null));
+                        pending.Push((match[i + 3], t.Text, Conditional(), InLoop(), null));
                         i += 3;
                         continue;
                     }
@@ -359,9 +415,14 @@ internal static class HlslReadOrder
                         // natively) is its own key: its RDEF texture carries the sampler's name.
                         if (i + 2 < end && code[i + 2].Kind == Kind.Ident)
                         {
-                            string texture = legacySamplerTextures.TryGetValue(code[i + 2].Text, out string? bound)
-                                ? bound : code[i + 2].Text;
-                            pending.Push((match[i + 1], texture, Foldable(), InLoop(), null, null));
+                            string sampler = code[i + 2].Text;
+                            if (LocalNames(fn).Contains(sampler))
+                            {
+                                why = $"'{fn.Name}' reads through the sampler parameter or local '{sampler}', whose texture this check does not follow";
+                                return false;
+                            }
+                            string texture = legacySamplerTextures.TryGetValue(sampler, out string? bound) ? bound : sampler;
+                            pending.Push((match[i + 1], texture, Conditional(), InLoop(), null));
                             i += 1;
                         }
                         continue;
@@ -373,43 +434,10 @@ internal static class HlslReadOrder
                             why = $"'{t.Text}' is overloaded";
                             return false;
                         }
-                        // A parameter is compile-time inside the callee when its argument is.
-                        var args = Arguments(i + 1);
-                        var calleeParams = new Dictionary<string, bool>(StringComparer.Ordinal);
-                        var names = ParamNames(overloads[0].ParamOpen);
-                        for (int p = 0; p < names.Count; p++)
-                        {
-                            bool runtime = names[p].Out || p >= args.Count || IsRuntime(args[p].Start, args[p].End, vars);
-                            calleeParams[names[p].Name] = runtime;
-                        }
-                        pending.Push((match[i + 1], null, Foldable(), InLoop(), t.Text, calleeParams));
+                        var callee = new Fn(t.Text, overloads[0].ParamOpen, overloads[0].BodyStart, overloads[0].BodyEnd, IsEntry: false);
+                        pending.Push((match[i + 1], null, Conditional(), InLoop(), callee));
                         i += 1;
                         continue;
-                    }
-                }
-
-                // An assignment or a declaration with an initializer: track whether the variable is
-                // a run-time value. `x = …`, `x += …`, `x.y = …`, `float4 x = …`, `float4 x;`.
-                if (!afterDot)
-                {
-                    int k = i + 1;
-                    while (k + 1 < end && Is(code[k], ".") && code[k + 1].Kind == Kind.Ident)
-                        k += 2;
-                    while (k < end && Is(code[k], "["))
-                        k = match[k] + 1;
-                    if (k < end && code[k].Kind == Kind.Punct && code[k].Text is "=" or "+=" or "-=" or "*=" or "/=")
-                    {
-                        int rhsEnd = ExpressionEnd(k + 1, end);
-                        // A value assigned under a run-time condition is a run-time value.
-                        bool runtime = IsRuntime(k + 1, rhsEnd + 1, vars) || InRuntimeRegion();
-                        bool before = vars.TryGetValue(t.Text, out bool b) && b;
-                        bool partial = code[k].Text != "=" || k != i + 1; // compound, or one member/element
-                        vars[t.Text] = runtime || (partial && before);
-                    }
-                    else if (k == i + 1 && i > start && (code[i - 1].Kind == Kind.Ident || Is(code[i - 1], ">"))
-                             && k < end && code[k].Kind == Kind.Punct && code[k].Text is ";" or ",")
-                    {
-                        vars[t.Text] = true; // declared without a value: assume run time
                     }
                 }
             }
@@ -426,6 +454,232 @@ internal static class HlslReadOrder
             return true;
         }
 
+        // Whether the 'while' at `w` closes a do-while (its body ends right before it).
+        bool IsDoWhileTail(int w) => w > 0 && Is(code[w - 1], "}") && match[w - 1] > 0 && code[match[w - 1] - 1] is { Kind: Kind.Ident, Text: "do" };
+
+        // ---- Run-time conditions ---------------------------------------------------------------
+
+        // Whether the condition in [start, end) is CERTAINLY decided at run time: one run-time
+        // value, bare or negated, or a run-time value compared with a short literal or with a
+        // different run-time value. Anything else (calls, arithmetic, &&, ||, statics, locals) may
+        // be folded by fxc, measured, and is treated as a compile-time condition.
+        bool CertainlyRuntime(Fn fn, int start, int end)
+        {
+            while (end - start >= 2 && Is(code[start], "(") && match[start] == end - 1)
+            {
+                start++;
+                end--;
+            }
+            if (start >= end)
+                return false;
+            if (Is(code[start], "!"))
+                return CertainlyRuntime(fn, start + 1, end);
+            if (!Operand(fn, start, out int lhsEnd, out bool lhsRuntime, out string lhsText, out bool lhsBool))
+                return false;
+            if (lhsEnd == end)
+                return lhsRuntime;
+            if (lhsBool || !Relational.Contains(code[lhsEnd].Text) || code[lhsEnd].Kind != Kind.Punct)
+                return false;
+            if (!Operand(fn, lhsEnd + 1, out int rhsEnd, out bool rhsRuntime, out string rhsText, out bool rhsBool) || rhsEnd != end || rhsBool)
+                return false;
+            return (lhsRuntime || rhsRuntime) && !string.Equals(lhsText, rhsText, StringComparison.Ordinal);
+        }
+
+        // A run-time value or a short numeric literal (optionally negated).
+        bool Operand(Fn fn, int s, out int after, out bool runtime, out string text, out bool isBool)
+        {
+            runtime = false;
+            isBool = false;
+            text = "";
+            after = s;
+            int k = s;
+            if (k < code.Count && Is(code[k], "-"))
+                k++;
+            if (k < code.Count && code[k].Kind == Kind.Number && ShortLiteral.IsMatch(code[k].Text))
+            {
+                after = k + 1;
+                text = string.Concat(code.Skip(s).Take(after - s).Select(c => c.Text));
+                return true;
+            }
+            if (k != s || !RuntimeOperand(fn, s, out after, out isBool))
+                return false;
+            runtime = true;
+            text = string.Concat(code.Skip(s).Take(after - s).Select(c => c.Text));
+            return true;
+        }
+
+        // A uniform global or an unmodified shader input of a numeric scalar, one component of a
+        // numeric vector, or a bool.
+        bool RuntimeOperand(Fn fn, int s, out int after, out bool isBool)
+        {
+            after = s;
+            isBool = false;
+            if (s >= code.Count || code[s].Kind != Kind.Ident || (s > 0 && Is(code[s - 1], ".")))
+                return false;
+            string name = code[s].Text;
+            string? type = null;
+            if (fn.IsEntry && ParamsOf(fn.ParamOpen).FirstOrDefault(p => p.Name == name) is { } input)
+            {
+                if (input.Out || input.Uniform || !InputUnmodified(fn, name))
+                    return false; // a `uniform` entry parameter is a compile-time argument of the technique
+                type = input.Type;
+            }
+            else if (!LocalNames(fn).Contains(name) && uniformTypes.TryGetValue(name, out string? global))
+            {
+                type = global;
+            }
+            if (type is null)
+                return false;
+
+            int k = s + 1;
+            bool swizzled = k + 1 < code.Count && Is(code[k], ".") && code[k + 1].Kind == Kind.Ident;
+            if (swizzled)
+            {
+                if (!OneComponent.IsMatch(code[k + 1].Text))
+                    return false;
+                k += 2;
+            }
+            after = k;
+            if (type == "bool")
+            {
+                isBool = true;
+                return !swizzled;
+            }
+            if (NumericScalars.Contains(type))
+                return true;
+            // A vector: one component of it.
+            return swizzled && type.Length > 1 && type[^1] is '2' or '3' or '4' && NumericScalars.Contains(type[..^1]);
+        }
+
+        // Whether the entry function never assigns, increments or passes out the input `name`, nor
+        // declares a local of that name.
+        bool InputUnmodified(Fn fn, string name)
+        {
+            for (int j = fn.BodyStart; j < fn.BodyEnd; j++)
+            {
+                if (code[j].Kind != Kind.Ident || code[j].Text != name || Is(code[j - 1], "."))
+                    continue;
+                Tok prev = code[j - 1];
+                if ((prev.Kind == Kind.Ident && !NotTypes.Contains(prev.Text)) || Is(prev, ">") || Is(prev, "++") || Is(prev, "--"))
+                    return false;
+                int k = j + 1;
+                while (k < fn.BodyEnd)
+                {
+                    if (k + 1 < fn.BodyEnd && Is(code[k], ".") && code[k + 1].Kind == Kind.Ident) k += 2;
+                    else if (Is(code[k], "[")) k = match[k] + 1;
+                    else break;
+                }
+                if (k < fn.BodyEnd && code[k].Kind == Kind.Punct && Assigning.Contains(code[k].Text))
+                    return false;
+                // A whole argument: an out/inout parameter of a user function, or an intrinsic that writes it.
+                if ((Is(prev, "(") || Is(prev, ",")) && k < fn.BodyEnd && (Is(code[k], ")") || Is(code[k], ",")))
+                {
+                    int open = EnclosingParen(j);
+                    if (open > 0 && code[open - 1].Kind == Kind.Ident)
+                    {
+                        string callee = code[open - 1].Text;
+                        if (WritesArguments.Contains(callee) || callee.StartsWith("Interlocked", StringComparison.Ordinal))
+                            return false;
+                        if (functions.TryGetValue(callee, out var overloads)
+                            && overloads.Any(o => ParamsOf(o.ParamOpen).Any(p => p.Out)))
+                        {
+                            return false;
+                        }
+                    }
+                }
+            }
+            return true;
+        }
+
+        int EnclosingParen(int j)
+        {
+            int d = 0;
+            for (int k = j - 1; k >= 0; k--)
+            {
+                if (code[k].Kind != Kind.Punct) continue;
+                if (code[k].Text is ")" or "]" or "}") d++;
+                else if (code[k].Text is "(" or "[" or "{") { if (d == 0) return code[k].Text == "(" ? k : -1; d--; }
+            }
+            return -1;
+        }
+
+        // `for (init; cond; …)`: whether the first iteration certainly runs, or is decided at run
+        // time (`int i = 0; i < 3` or `i < Count` with a uniform Count).
+        bool FirstIterationRuns(Fn fn, int initStart, int initEnd, int condEnd)
+        {
+            // init: [type] i = [-]N
+            int k = initStart;
+            if (k + 1 < initEnd && code[k].Kind == Kind.Ident && code[k + 1].Kind == Kind.Ident)
+                k++;
+            if (k + 2 >= initEnd || code[k].Kind != Kind.Ident || !Is(code[k + 1], "="))
+                return false;
+            string counter = code[k].Text;
+            if (!Literal(k + 2, initEnd, out double initial))
+                return false;
+            // cond: i relop X, X a literal or a run-time value.
+            int c = initEnd + 1;
+            if (c + 2 >= condEnd || code[c].Kind != Kind.Ident || code[c].Text != counter
+                || code[c + 1].Kind != Kind.Punct || !Relational.Contains(code[c + 1].Text))
+            {
+                return false;
+            }
+            double bound = double.NaN;
+            bool known = Literal(c + 2, condEnd, out bound)
+                         || (c + 3 == condEnd && code[c + 2].Kind == Kind.Ident && !LocalNames(fn).Contains(code[c + 2].Text)
+                             && constValues.TryGetValue(code[c + 2].Text, out bound) && !double.IsNaN(bound));
+            if (known)
+            {
+                return code[c + 1].Text switch
+                {
+                    "<" => initial < bound,
+                    "<=" => initial <= bound,
+                    ">" => initial > bound,
+                    ">=" => initial >= bound,
+                    "!=" => initial != bound,
+                    _ => initial == bound,
+                };
+            }
+            return RuntimeOperand(fn, c + 2, out int after, out bool isBool) && after == condEnd && !isBool;
+        }
+
+        bool Literal(int s, int e, out double value)
+        {
+            value = 0;
+            bool negative = s < e && Is(code[s], "-");
+            int k = negative ? s + 1 : s;
+            if (k + 1 != e || code[k].Kind != Kind.Number || !ShortLiteral.IsMatch(code[k].Text))
+                return false;
+            if (!double.TryParse(code[k].Text.TrimEnd('f', 'F', 'h', 'H'), System.Globalization.NumberStyles.Float,
+                                 System.Globalization.CultureInfo.InvariantCulture, out value))
+            {
+                return false;
+            }
+            if (negative) value = -value;
+            return true;
+        }
+
+        // The parameters and every name declared in the body of `fn` (conservatively: any name
+        // that follows a type-like identifier).
+        HashSet<string> LocalNames(Fn fn)
+        {
+            if (localNames.TryGetValue(fn.Name, out var names))
+                return names;
+            names = new HashSet<string>(ParamsOf(fn.ParamOpen).Select(p => p.Name), StringComparer.Ordinal);
+            for (int j = fn.BodyStart; j < fn.BodyEnd; j++)
+            {
+                if (code[j].Kind != Kind.Ident || Is(code[j - 1], "."))
+                    continue;
+                Tok prev = code[j - 1];
+                if (((prev.Kind == Kind.Ident && !NotTypes.Contains(prev.Text)) || Is(prev, ">"))
+                    && j + 1 < fn.BodyEnd && code[j + 1].Kind == Kind.Punct && code[j + 1].Text is ";" or "=" or "," or "[" or ":" or ")")
+                {
+                    names.Add(code[j].Text);
+                }
+            }
+            localNames[fn.Name] = names;
+            return names;
+        }
+
         bool ReadsAnything(int start, int end)
         {
             for (int k = start; k < end; k++)
@@ -437,57 +691,6 @@ internal static class HlslReadOrder
                 }
             }
             return false;
-        }
-
-        // The first token of the expression whose operator is at `at` (a '?'): after the nearest
-        // unmatched '(' / '[', ',', '=', 'return', ';', '{', '}' or '?'/':' at the same depth.
-        int ExpressionStart(int at)
-        {
-            int d = 0;
-            for (int k = at - 1; k >= 0; k--)
-            {
-                Tok t = code[k];
-                if (t.Kind == Kind.Punct && t.Text is ")" or "]") { d++; continue; }
-                if (t.Kind == Kind.Punct && t.Text is "(" or "[") { if (d == 0) return k + 1; d--; continue; }
-                if (d != 0) continue;
-                if (t.Kind == Kind.Punct && t.Text is "," or ";" or "{" or "}" or "?" or ":" or "=" or "+=" or "-=" or "*=" or "/=")
-                    return k + 1;
-                if (t.Kind == Kind.Ident && t.Text == "return")
-                    return k + 1;
-            }
-            return 0;
-        }
-
-        // The ':' that closes the '?' at `q`.
-        int MatchingColon(int q, int limit)
-        {
-            int d = 0, nested = 0;
-            for (int k = q + 1; k < limit; k++)
-            {
-                Tok t = code[k];
-                if (t.Kind != Kind.Punct) continue;
-                if (t.Text is "(" or "[" or "{") d++;
-                else if (t.Text is ")" or "]" or "}") { if (d == 0) return -1; d--; }
-                else if (d == 0 && t.Text == "?") nested++;
-                else if (d == 0 && t.Text == ":") { if (nested == 0) return k; nested--; }
-                else if (d == 0 && t.Text == ";") return -1;
-            }
-            return -1;
-        }
-
-        // The last token of the expression starting at `from`.
-        int ExpressionEnd(int from, int limit)
-        {
-            int d = 0;
-            for (int k = from; k < limit; k++)
-            {
-                Tok t = code[k];
-                if (t.Kind != Kind.Punct) continue;
-                if (t.Text is "(" or "[" or "{") d++;
-                else if (t.Text is ")" or "]" or "}") { if (d == 0) return k - 1; d--; }
-                else if (d == 0 && t.Text is ";" or "," or ":") return k - 1;
-            }
-            return limit - 1;
         }
 
         // The last token of the statement starting at `s`.
@@ -547,27 +750,27 @@ internal static class HlslReadOrder
             return args;
         }
 
-        // The parameter names of the function whose parameter list opens at `open`, and whether each is out/inout.
-        List<(string Name, bool Out)> ParamNames(int open)
+        // The parameters of the function whose parameter list opens at `open`.
+        List<Param> ParamsOf(int open)
         {
-            var names = new List<(string, bool)>();
+            var list = new List<Param>();
             foreach ((int s, int e) in Arguments(open))
             {
-                string? name = null;
-                bool isOut = false;
+                string? name = null, type = null;
+                bool isOut = false, isUniform = false;
                 for (int k = s; k < e; k++)
                 {
                     Tok t = code[k];
                     if (t.Kind == Kind.Punct && t.Text is ":" or "=") break;
-                    if (t.Kind == Kind.Ident)
-                    {
-                        if (t.Text is "out" or "inout") isOut = true;
-                        name = t.Text;
-                    }
+                    if (t.Kind != Kind.Ident) continue;
+                    if (t.Text is "out" or "inout") isOut = true;
+                    else if (t.Text is "uniform") isUniform = true;
+                    if (name is not null) type = name;
+                    name = t.Text;
                 }
-                if (name is not null) names.Add((name, isOut));
+                if (name is not null) list.Add(new Param(name, type, isOut, isUniform));
             }
-            return names;
+            return list;
         }
     }
 

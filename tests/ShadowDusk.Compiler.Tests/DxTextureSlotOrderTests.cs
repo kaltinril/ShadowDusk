@@ -28,7 +28,8 @@ public sealed class DxTextureSlotOrderTests
             [("Tex2", 0), ("BloomSampler_SDTexture", 1)],
             firstReadOrder: ["BloomSampler_SDTexture", "Tex2"],
             Set("Tex2", "BloomSampler_SDTexture"),
-            NoRegisters);
+            NoRegisters,
+            out _);
 
         plan.ShouldNotBeNull();
         plan["BloomSampler_SDTexture"].ShouldBe(0);
@@ -38,21 +39,22 @@ public sealed class DxTextureSlotOrderTests
     [Fact]
     public void AlreadyInFirstReadOrder_IsNoPlan()
     {
-        DxTextureSlotOrder.Plan([("A", 0), ("B", 1)], ["A", "B"], Set("A", "B"), NoRegisters).ShouldBeNull();
+        DxTextureSlotOrder.Plan([("A", 0), ("B", 1)], ["A", "B"], Set("A", "B"), NoRegisters, out string? refusal).ShouldBeNull();
+        refusal.ShouldBeNull();
     }
 
     [Fact]
     public void NoLegacyTexture_IsNoPlan_EvenReadOutOfOrder()
     {
         // Modern-only shaders keep declaration order, which the backend already gives.
-        DxTextureSlotOrder.Plan([("T1", 0), ("T2", 1)], ["T2", "T1"], Set("Other"), NoRegisters).ShouldBeNull();
+        DxTextureSlotOrder.Plan([("T1", 0), ("T2", 1)], ["T2", "T1"], Set("Other"), NoRegisters, out _).ShouldBeNull();
     }
 
     [Fact]
     public void ModernResources_GoAfterEveryLegacyOne_InDeclarationOrder()
     {
         // `Texture2D T; SamplerState S; Texture2D U; sampler2D A;`, U read first, then A, then T.
-        var plan = DxTextureSlotOrder.Plan([("T", 0), ("U", 1), ("A", 2)], ["U", "A", "T"], Set("A"), NoRegisters);
+        var plan = DxTextureSlotOrder.Plan([("T", 0), ("U", 1), ("A", 2)], ["U", "A", "T"], Set("A"), NoRegisters, out _);
 
         plan.ShouldNotBeNull();
         plan.ShouldBe(new Dictionary<string, int> { ["A"] = 0, ["T"] = 1, ["U"] = 2 }, ignoreOrder: true);
@@ -64,7 +66,7 @@ public sealed class DxTextureSlotOrderTests
         // `Texture2D T : register(t1)` read; `texture Unused : register(t0)` never read; legacy B
         // read before legacy A.
         var plan = DxTextureSlotOrder.Plan(
-            [("A", 0), ("T", 1), ("B", 2)], ["B", "A", "T"], Set("A", "B"), [("T", 1), ("Unused", 0)]);
+            [("A", 0), ("T", 1), ("B", 2)], ["B", "A", "T"], Set("A", "B"), [("T", 1), ("Unused", 0)], out _);
 
         plan.ShouldNotBeNull();
         plan.ShouldBe(new Dictionary<string, int> { ["B"] = 2, ["T"] = 1, ["A"] = 3 }, ignoreOrder: true);
@@ -76,7 +78,7 @@ public sealed class DxTextureSlotOrderTests
         // `texture2D Diffuse : register(t1)` / `texture2D Spec : register(t0)`, named only by
         // sampler_state blocks: mgfxc puts the samplers' textures on t2/t3, in first-read order.
         var plan = DxTextureSlotOrder.Plan(
-            [("Diffuse", 0), ("Spec", 1)], ["Diffuse", "Spec"], Set("Diffuse", "Spec"), [("Diffuse", 1), ("Spec", 0)]);
+            [("Diffuse", 0), ("Spec", 1)], ["Diffuse", "Spec"], Set("Diffuse", "Spec"), [("Diffuse", 1), ("Spec", 0)], out _);
 
         plan.ShouldNotBeNull();
         plan.ShouldBe(new Dictionary<string, int> { ["Diffuse"] = 2, ["Spec"] = 3 }, ignoreOrder: true);
@@ -86,8 +88,25 @@ public sealed class DxTextureSlotOrderTests
     public void ABufferOnAnExplicitRegister_IsKept_AndTheLegacyTextureGoesAround()
     {
         // `Buffer<float4> Buf : register(t0); sampler2D A;`
-        DxTextureSlotOrder.Plan([("Buf", 0), ("A_SDTexture", 1)], ["Buf", "A_SDTexture"], Set("A_SDTexture"), [("Buf", 0)])
+        DxTextureSlotOrder.Plan([("Buf", 0), ("A_SDTexture", 1)], ["Buf", "A_SDTexture"], Set("A_SDTexture"), [("Buf", 0)], out string? refusal)
             .ShouldBeNull();
+        refusal.ShouldBeNull();
+    }
+
+    [Fact]
+    public void TwoResourcesUnderOneName_AreARefusal_NotASilentNoPlan()
+    {
+        DxTextureSlotOrder.Plan([("A", 0), ("A", 1)], ["A"], Set("A"), NoRegisters, out string? refusal).ShouldBeNull();
+        refusal.ShouldNotBeNull().ShouldContain("two resources named 'A'", Case.Sensitive);
+    }
+
+    [Fact]
+    public void ALegacyTextureWithNoFirstRead_IsARefusal_NeverPlacedLast()
+    {
+        // The walk never saw B read (passed through a function parameter): placing it after A by
+        // guess gave A t0 where mgfxc has B t0.
+        DxTextureSlotOrder.Plan([("A", 0), ("B", 1)], ["A"], Set("A", "B"), NoRegisters, out string? refusal).ShouldBeNull();
+        refusal.ShouldNotBeNull().ShouldContain("'B'", Case.Sensitive);
     }
 
     [Fact]

@@ -51,12 +51,22 @@ public sealed class DirectX11TextureSlotOrderTests
     /// <item><c>B02_MacroTexture</c>: legacy samplers a macro declares are compiled natively by the
     /// backend (the raw pre-parse cannot see them), which names the parameter after the sampler
     /// and ignores the sampler order; the TEXTURE slots match (pre-existing, <c>project_facts.md</c>).</item>
+    /// <item><c>K15_StaticFromUniform</c>, <c>K18_UniformTimesZero</c>, <c>K20_ReturnUnderCallZero</c>:
+    /// the first read of a texture is under a condition the walk cannot prove run-time
+    /// (<c>static float s = k</c>, <c>k * 0 &gt; 1</c>, which fxc does NOT fold, and a call fxc DOES
+    /// fold), so it refuses with <c>SD0230</c> and keeps declaration order, which is not
+    /// <c>mgfxc</c>'s here. Loud, never silent: the documented false-<c>SD0230</c> class.</item>
+    /// <item><c>K13_SamplerParam</c>: a legacy sampler passed to a function as an argument is
+    /// compiled natively, and its SAMPLER slot is <c>s0</c> where <c>mgfxc</c> has <c>s1</c>
+    /// (pre-existing native-path gap, like <c>B02_MacroTexture</c>); its texture slots warn
+    /// <c>SD0230</c>, since the walk does not follow the parameter.</item>
     /// </list>
     /// </summary>
     private static readonly HashSet<string> KnownDivergence = new(StringComparer.Ordinal)
     {
         "TwoSamplersShareOneTexture", "S13_ModernSampledAndStateNamed", "A02_DeclListLegacyReverse", "A01_TexArrayPlusLegacy",
-        "D12_UnrollLoopIndex", "B02_MacroTexture",
+        "D12_UnrollLoopIndex", "B02_MacroTexture", "K13_SamplerParam", "K15_StaticFromUniform", "K18_UniformTimesZero",
+        "K20_ReturnUnderCallZero",
     };
 
     /// <summary>
@@ -69,8 +79,24 @@ public sealed class DirectX11TextureSlotOrderTests
         "D01_MulZero", "D02_LerpOne", "D04_MulZeroOrder", "D06_SaturateNeg", "D07_MinusSelf", "D10_DotZero",
     };
 
-    /// <summary>Shapes whose compile is expected to warn SD0230 (the slots could not be checked).</summary>
-    private static readonly HashSet<string> ExpectedSD0230 = new(StringComparer.Ordinal) { "A01_TexArrayPlusLegacy", "D12_UnrollLoopIndex" };
+    /// <summary>
+    /// Shapes whose compile is expected to warn SD0230 (the slots could not be checked). The
+    /// <c>K*</c> shapes put a texture's first read under a condition fxc folds (a call returning a
+    /// constant, a local, a default or <c>out</c> argument, <c>&amp;&amp; false</c>, a vector
+    /// component, a value range, a static, a loop that runs zero times) beside a later read of it:
+    /// the source walk cannot evaluate those, so it must refuse, never guess (each guessed wrong
+    /// before, silently). <c>K13_SamplerParam</c> reads through a sampler parameter the walk does
+    /// not follow.
+    /// </summary>
+    private static readonly HashSet<string> ExpectedSD0230 = new(StringComparer.Ordinal)
+    {
+        "A01_TexArrayPlusLegacy", "D12_UnrollLoopIndex",
+        "K01_CallZeroCond", "K02_LocalFromCall", "K03_CallIgnoresRuntimeArg", "K04_DefaultArgBranch", "K05_OutParamZero",
+        "K06_TaintedByStaticBranch", "K07_AndFalse", "K08_AndMacroZero", "K09_VectorComponent", "K10_SaturateRange",
+        "K11_StructMemberShadowsStatic", "K13_SamplerParam", "K15_StaticFromUniform", "K18_UniformTimesZero",
+        "K20_ReturnUnderCallZero", "K21_LoopCallZero", "K26_IfFalseLiteral", "K31_ZeroTripLoop", "K36_InputAssigned",
+        "K37_WhileCallZero",
+    };
 
     public static TheoryData<string> AllShapes()
     {
@@ -87,7 +113,7 @@ public sealed class DirectX11TextureSlotOrderTests
     public void TheGoldenFolder_HoldsEveryShape()
     {
         // MemberData over a folder would silently pass with zero rows if the fixtures were not copied.
-        AllShapes().Count.ShouldBeGreaterThanOrEqualTo(144);
+        AllShapes().Count.ShouldBeGreaterThanOrEqualTo(180);
     }
 
     [Theory]
@@ -170,13 +196,16 @@ public sealed class DirectX11TextureSlotOrderTests
         Tables(clip).Single().ShouldContain("A@t0", Case.Sensitive);
     }
 
-    [Theory]
-    [InlineData(DxbcBackend.Vkd3d)]
-    [InlineData(DxbcBackend.D3DCompiler)]
-    public async Task ALegacySamplerInAnInclude_JoinsUnderTheSamplersName_WithoutAFalseSD0230(DxbcBackend backend)
+    [Fact]
+    public Task ALegacySamplerInAnInclude_JoinsUnderTheSamplersName_WithoutAFalseSD0230_Vkd3d() =>
+        ALegacySamplerInAnInclude_JoinsUnderTheSamplersName(DxbcBackend.Vkd3d);
+
+    [WindowsFact] // the d3dcompiler_47 oracle is Windows-only: skipped, not passed, elsewhere
+    public Task ALegacySamplerInAnInclude_JoinsUnderTheSamplersName_WithoutAFalseSD0230_D3DCompiler() =>
+        ALegacySamplerInAnInclude_JoinsUnderTheSamplersName(DxbcBackend.D3DCompiler);
+
+    private static async Task ALegacySamplerInAnInclude_JoinsUnderTheSamplersName(DxbcBackend backend)
     {
-        if (backend == DxbcBackend.D3DCompiler && !OperatingSystem.IsWindows())
-            return; // the d3dcompiler_47 oracle is Windows-only
         // `sampler SB = sampler_state { Texture = <TexB>; }` lives in a header the raw pre-parse does
         // not rewrite; the backend compiles it natively and its RDEF texture is named `SB`, while the
         // preprocessed view knows the texture as `TexB`. mgfxc 3.8.4.1: TexB@t0s1 SA@t1s0 (the

@@ -97,7 +97,8 @@ public sealed class LegacySamplerUnitTests
     public async Task DirectX11_D3DCompilerBackend_WholeTable_MatchesMgfxc(string shape)
     {
         // The public d3dcompiler_47 oracle backend schedules its reads, so the texture slot check
-        // takes the evaluation order from vkd3d; the shipped table must still be mgfxc's.
+        // takes the evaluation order from the source (HlslReadOrder), as on vkd3d; the shipped
+        // table must still be mgfxc's.
         using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(120));
         var result = await new EffectCompiler().CompileAsync(
             await File.ReadAllTextAsync(SourcePath(shape), cts.Token),

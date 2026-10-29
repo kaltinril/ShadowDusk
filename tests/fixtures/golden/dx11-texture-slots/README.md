@@ -8,6 +8,12 @@ MODERN resources, read in a different order from the one they are declared in;
 `S*`, `D*`, `A*`, `B*`, `C*`, `E*`, `F*`, `G*` and `ZZ_*` shapes came from the independent reviews of
 the fix (evaluation-order shapes, among them every comparison and intrinsic whose operands a compiler
 could emit out of order, dead-code and dead-store shapes, declaration forms the re-pin must handle).
+The `K*` shapes (2026-10-29) put a texture's first read under a condition: ones fxc folds at
+compile time though no syntactic test sees it (a call returning a constant, a local, a default or
+`out` argument, `&& false`, a vector component, a value range, a loop that runs zero times, a
+folded `return`), ones it cannot fold (a uniform, a shader input, a `switch` on a uniform), and
+`?:` arms, which fxc reads whatever the condition. The source walk must refuse the first kind
+with `SD0230` and keep token order for the others.
 
 What they pin (fxc's rule, per compiled shader): every explicit `register(tN)` on a `t`-register
 declaration takes `tN` out of circulation even when nothing reads the resource, and a modern
@@ -21,7 +27,9 @@ register on the `texture2D` a `sampler_state` names only reserves it, and a lega
 `d3dcompiler_47` option on Windows) and expects `mgfxc`'s table, except the shapes it lists as
 known divergences (one texture behind two samplers, declarator-list sampler slots, a resource array,
 an order decided by an unrolled loop's compile-time branch, macro-declared samplers compiled
-natively, and on vkd3d the reads fxc folds away).
+natively, a sampler passed as a function argument, the `K*` refusals whose `mgfxc` order is not
+declaration order, and on vkd3d the reads fxc folds away), and the shapes it expects to warn
+`SD0230`.
 
 Consumers: `tests/ShadowDusk.Integration.Tests/Reflection/DirectX11TextureSlotOrderTests.cs`, the
 "texture-slots" arm of `validation/DxModernFeatures` and the texture-slot rows of
