@@ -26,4 +26,21 @@ public sealed record VariableReflection
     public required int                  Elements       { get; init; }
     /// <summary>For struct variables, the nested member variables; otherwise <see langword="null"/>.</summary>
     public IReadOnlyList<VariableReflection>? Members   { get; init; }
+
+    /// <summary>
+    /// True for a matrix (or array of matrices) stored <c>row_major</c>: one buffer register per HLSL
+    /// row, from a <c>row_major</c> modifier, <c>#pragma pack_matrix(row_major)</c> or the compile's
+    /// packing flag. Internal: it decides the order of the default blob the writers get (issue #423
+    /// follow-up), and on OpenGL, whose matrix registers ShadowDusk's own rewriter lays out, the
+    /// pipeline ignores it.
+    /// </summary>
+    internal bool IsRowMajor { get; init; }
+
+    /// <summary>
+    /// True when the reflected Rows x Columns of a <see cref="IsRowMajor"/> matrix is the C x R
+    /// transpose of its HLSL R x C declaration, which is what Vulkan (SPIR-V) reflection reports for
+    /// it so that MonoGame's upload fills the one-register-per-row buffer. DirectX reflection
+    /// reports the declaration's R x C. Internal, like <see cref="IsRowMajor"/>.
+    /// </summary>
+    internal bool IsHeaderTransposed { get; init; }
 }

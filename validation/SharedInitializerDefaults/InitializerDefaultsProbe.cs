@@ -33,8 +33,12 @@ using Rectangle = Microsoft.Xna.Framework.Rectangle;
 
 namespace ShadowDusk.Validation.InitializerDefaults;
 
-/// <summary>One shader and the pixel its default value must produce.</summary>
-internal sealed record DefaultCase(string Fx, bool GlSupported, byte R, byte G, byte B, byte A, int Tolerance = 1);
+/// <summary>
+/// One shader and the pixel its default value must produce. <paramref name="OnDirectX"/>, when set, is the
+/// pixel on the DirectX targets instead (a shape whose default DirectX refuses with SD0017).
+/// </summary>
+internal sealed record DefaultCase(string Fx, bool GlSupported, byte R, byte G, byte B, byte A, int Tolerance = 1,
+    (byte R, byte G, byte B, byte A)? OnDirectX = null);
 
 public static class InitializerDefaultsProbe
 {
@@ -48,16 +52,35 @@ public static class InitializerDefaultsProbe
         new("G_PackedFloat3.fx", true, 128, 64, 255, 255), // issue #425: float3 packed behind a float, then a float4x4 (was SD0100 on GL)
         new("C_Vec2Mat2.fx",   false, 32,  96,  0, 255),   // float2 Offset + float2x2 0.5*I (mat2: not on GL, SD0210)
         new("D_IntBool.fx",    false, 128, 255, 0, 255),   // int Mode = 2; bool Flag = true; (int/bool: not on GL, SD0210)
+        // float2x3 + float3x2, every element distinct (issue #423: Vulkan reflected these transposed and
+        // shipped zeros, which renders black). Non-square matrices: not on GL, SD0210.
+        new("G_NonSquare.fx",  false, 191, 128, 64, 255),
+        // MatrixDefault.fx declared row_major, then under #pragma pack_matrix(row_major), then a row_major
+        // float2x2 (off GL). A row_major buffer holds one register per row, so the blob must be the rows in
+        // order; the column-by-column blob lands transposed and renders (64,0,0) (issue #423 follow-up).
+        new("H_RowMajorMatrix.fx",   true,  0, 128, 0, 255),
+        new("I_PackMatrixPragma.fx", true,  0, 128, 0, 255),
+        new("J_RowMajor2x2.fx",      false, 0, 128, 0, 255),
+        // TALL row_major float4x3: on DirectX MonoGame's upload reaches rows 0..2 only. A zero fourth row
+        // (an affine matrix) is kept, symmetric or not; a non-zero one is SD0017 and zeros there, black.
+        new("K_RowMajorTallSymmetric.fx",  false, 64, 128, 191, 255),
+        new("L_RowMajorTallAsymmetric.fx", false, 32, 128, 32, 255),
+        new("M_RowMajorTallFourthRow.fx",  false, 64, 128, 191, 255, OnDirectX: (0, 0, 0, 255)),
+        // An ARRAY of tall row_major float4x3: on DirectX each element is uploaded 3 registers after the last
+        // over a 4-register stride, so it is SD0017 and zeros there (black); Vulkan advances 4.
+        new("N_RowMajorTallArray.fx",      false, 32, 128, 32, 255, OnDirectX: (0, 0, 0, 255)),
     ];
 
     /// <summary>
     /// Runs the probe. <paramref name="mgfxcOpenGlControl"/> is true on the GL runtimes: the committed
-    /// mgfxc OpenGL build of RedDefault must render black. <paramref name="skipFloat2x2"/> skips C_Vec2Mat2 on
-    /// MonoGame DesktopVK, whose constant buffer throws on ANY float2x2 parameter (measured: the same throw with
-    /// the initializers removed), so it says nothing about defaults.
+    /// mgfxc OpenGL build of RedDefault must render black. C_Vec2Mat2 runs on DesktopVK too: it used to throw
+    /// there with or without initializers, because ShadowDusk's Vulkan reflection sized a buffer ending in a
+    /// float2x2 a register short (mgfxc's Vulkan build sizes it right) and MonoGame's upload ran past its end;
+    /// fixed in SpirvReflectionParser.
     /// </summary>
-    public static int Run(string label, PlatformTarget target, EffectContainer[] containers, bool mgfxcOpenGlControl, bool skipFloat2x2 = false, bool knifxReachRows = false)
+    public static int Run(string label, PlatformTarget target, EffectContainer[] containers, bool mgfxcOpenGlControl, bool knifxReachRows = false)
     {
+        WarnIfMapCountLow(label, target);
         var watchdog = new Thread(() =>
         {
             Thread.Sleep(240_000);
@@ -76,11 +99,12 @@ public static class InitializerDefaultsProbe
             foreach (DefaultCase c in Cases)
             {
                 if (!c.GlSupported && isGl) continue;
-                if (skipFloat2x2 && c.Fx == "C_Vec2Mat2.fx") continue;
                 string path = Path.Combine(dir, c.Fx);
                 jobs.Add(Compile(compiler, label, target, container, path, File.ReadAllText(path),
                     $"{Path.GetFileNameWithoutExtension(c.Fx)} [{container}]",
-                    new Expect(c.R, c.G, c.B, c.A, c.Tolerance), setR: null));
+                    target is PlatformTarget.DirectX or PlatformTarget.DirectX12 && c.OnDirectX is { } dx
+                        ? new Expect(dx.R, dx.G, dx.B, dx.A, c.Tolerance)
+                        : new Expect(c.R, c.G, c.B, c.A, c.Tolerance), setR: null));
             }
 
             // Control 1: the initializer removed. Must be black (the default IS what makes it red).
@@ -135,6 +159,30 @@ public static class InitializerDefaultsProbe
 
         Console.WriteLine($"[{label}] {results.Count - failures}/{results.Count} passed.");
         return failures == 0 ? 0 : 1;
+    }
+
+    /// <summary>
+    /// On Linux, warns when <c>vm.max_map_count</c> is too low for a Vulkan run on Mesa lavapipe. Measured
+    /// 2026-10-28 (Mesa 25.2.8, MonoGame 3.8.5 DesktopVK): MonoGame's <c>MGG_Shader_Create</c> allocates about
+    /// 13,500 descriptor sets per shader and never frees them, and lavapipe backs each set with its own buffer
+    /// mapping, so a process holds ~13,500 more mappings per shader created. At the kernel's limit lavapipe's
+    /// <c>lvp_descriptor_set_create</c> does not check the failed map and segfaults in <c>memset</c> (exit 139),
+    /// minutes into the run with no managed output. 262,144 (GitHub's ubuntu image) is ~19 shaders; 65,530 (the
+    /// kernel default) ~4. A GPU driver does not map per set. The CI job raises the limit.
+    /// </summary>
+    private static void WarnIfMapCountLow(string label, PlatformTarget target)
+    {
+        const long Needed = 1_048_576;
+        if (target != PlatformTarget.Vulkan || !OperatingSystem.IsLinux()) return;
+        try
+        {
+            if (long.TryParse(File.ReadAllText("/proc/sys/vm/max_map_count").Trim(), out long limit) && limit < Needed)
+                Console.WriteLine($"[{label}] WARNING: vm.max_map_count is {limit}. On Mesa lavapipe MonoGame DesktopVK " +
+                    $"holds ~13,500 mappings per shader, so this run may segfault (exit 139) after ~{limit / 13_500} shaders. " +
+                    $"Raise it first: sudo sysctl -w vm.max_map_count=2097152");
+        }
+        catch (IOException) { /* not readable: nothing to say */ }
+        catch (UnauthorizedAccessException) { }
     }
 
     /// <summary>
@@ -273,6 +321,9 @@ public static class InitializerDefaultsProbe
 
             foreach (Job job in _jobs)
             {
+                // Flushed before each job, so a native crash (no managed results) still names the case it was in.
+                Console.WriteLine($"[probe] drawing {job.Name}");
+                Console.Out.Flush();
                 if (job.Bytes is null)
                 {
                     Results.Add(new JobResult(job.Name, false, "compile failed: " + job.CompileError));

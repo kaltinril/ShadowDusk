@@ -1197,6 +1197,16 @@ internal sealed class CompilationPipeline
         // Global initializer defaults (`float R = 1;`): DXC and vkd3d drop the initializer, so it is
         // read off the preprocessed source and carried to the writers (deliberate deviation from
         // mgfxc, project_decisions.md). Every MGFX and KNIFX output gets them.
+        // A row_major matrix's default blob is written in register order (issue #423 follow-up). Not on
+        // OpenGL: every GL compile is row-major (-Zpr) and ShadowDusk's own rewriter rebuilds the
+        // matrix from the column-by-column blob, which is render-proven there.
+        if (options.Target == PlatformTarget.OpenGL)
+        {
+            for (int i = 0; i < allParameters.Count; i++)
+                if (allParameters[i].IsRowMajor)
+                    allParameters[i] = allParameters[i] with { IsRowMajor = false, IsHeaderTransposed = false };
+        }
+
         IReadOnlyDictionary<string, GlobalInitializerDefault> parameterDefaults =
             ResolveParameterDefaults(preprocessed.Text, sourceFileName, allParameters, runWarnings);
         IReadOnlyList<EffectParameterInfo> effectParameterInfoList =
@@ -3187,9 +3197,13 @@ internal sealed class CompilationPipeline
             GlobalInitializerDefault? def = null;
             if (defaults.TryGetValue(param.Name, out GlobalInitializerDefault? candidate))
             {
-                string? mismatch = DefaultShapeMismatch(param, candidate);
+                (GlobalInitializerDefault stored, RowMajorRefusal? refusal) = InStorageOrder(param, candidate);
+                string? mismatch = refusal?.Reason ?? DefaultShapeMismatch(param, stored);
                 if (mismatch is null)
-                    def = candidate;
+                    def = stored;
+                else if (refusal is not null)
+                    warnings.Add(DefaultNotPreserved(candidate.File, candidate.Line, candidate.Column, param.Name, mismatch,
+                        refusal.Advice));
                 else
                     warnings.Add(DefaultNotPreserved(candidate.File, candidate.Line, candidate.Column, param.Name, mismatch));
             }
@@ -3211,6 +3225,93 @@ internal sealed class CompilationPipeline
 
         return result;
     }
+
+    /// <summary>
+    /// The default as the writers must store it for <paramref name="param"/>'s buffer layout, or why
+    /// a <c>row_major</c> one cannot be. The reader's blob is column by column
+    /// (<c>Data[c * R + r] = M[r][c]</c>). MonoGame uploads a parameter with header Rh x Ch as Ch
+    /// registers of Rh floats, register j taking <c>Data[j * Rh .. j * Rh + Rh - 1]</c>: right as it
+    /// is for HLSL's default column-major packing (one register per column, header R x C). A
+    /// <c>row_major</c> buffer holds one register per HLSL row (register j is <c>M[j][0..C-1]</c>), so
+    /// its blob is <c>Data[j * Rh + k] = M[j][k]</c> for every row j the upload reaches (j &lt; Ch)
+    /// and every column k inside a register (k &lt; Rh), zeros elsewhere. On Vulkan the header is the
+    /// C x R transpose and every element is reached (the rows in order); on DirectX it is R x C, so a
+    /// square matrix is the rows in order, a TALL one (R &gt; C) reaches rows 0..C-1 only (an element
+    /// in a row j &gt;= C is refused, an all-zero tail is kept: an affine world or bone matrix's
+    /// fourth column), and a WIDE one (C &gt; R) uploads C registers over a matrix of R, so it is
+    /// refused (the upload runs into the next member, or past the end of the buffer). An ARRAY is
+    /// uploaded element after element, each <c>Ch</c> registers on from the last
+    /// (<c>ConstantBuffer.SetParameter</c>: <c>offset += ColumnCount * 16</c>), while a row_major
+    /// array's buffer holds R registers per element, so unless <c>Ch == R</c> (Vulkan, or a square
+    /// matrix) every element after the first lands in the wrong registers: a DirectX tall row_major
+    /// array is refused too. Before this, a row_major default was the column-major blob and arrived
+    /// transposed, with no warning.
+    /// </summary>
+    private static (GlobalInitializerDefault Stored, RowMajorRefusal? Refusal) InStorageOrder(
+        ParameterReflection param, GlobalInitializerDefault def)
+    {
+        if (!param.IsRowMajor || def.Class != (byte)EffectParameterClass.Matrix || param.Class != EffectParameterClass.Matrix)
+            return (def, null);
+
+        int rows = def.Rows, cols = def.Columns;              // the declaration, R x C
+        int rh = param.Rows, ch = param.Columns;              // the header MonoGame uploads by
+        if (rh * ch != rows * cols)
+            return (def, null);                               // DefaultShapeMismatch reports it
+
+        if (ch > rows)
+            return (def, new RowMajorRefusal(
+                $"it is a row_major {rows}x{cols} matrix, whose buffer holds {rows} registers, one per row, " +
+                $"and MonoGame uploads its {rh}x{ch} parameter as {ch} registers of {rh} floats, past the matrix",
+                "A Set cannot fill those registers either (and last in the globals the first Apply throws). " +
+                ColumnMajorAdvice));
+
+        if (Math.Max(1, param.Elements) > 1 && ch != rows)
+            return (def, new RowMajorRefusal(
+                $"it is an array of row_major {rows}x{cols} matrices, whose buffer holds {rows} registers per element, " +
+                $"and MonoGame uploads each element {ch} registers after the last, so every element after the first " +
+                "lands in the wrong registers on this target",
+                "A Set of the array lands those elements in the wrong registers too. " + ColumnMajorAdvice +
+                " Separate (non-array) parameters also work."));
+
+        var blobs = new List<byte[]>(def.ElementBlobs.Count);
+        foreach (byte[] blob in def.ElementBlobs)
+        {
+            if (blob.Length != rows * cols * 4)
+                return (def, null);                           // DefaultShapeMismatch reports it
+            var stored = new byte[blob.Length];
+            for (int j = 0; j < rows; j++)
+            {
+                for (int k = 0; k < cols; k++)
+                {
+                    int source = (k * rows + j) * 4;
+                    if (j < ch && k < rh)
+                    {
+                        Buffer.BlockCopy(blob, source, stored, (j * rh + k) * 4, 4);
+                    }
+                    else if (def.Type == (byte)EffectParameterType.Single
+                                 ? BitConverter.ToSingle(blob, source) != 0f   // numerically: -0.0 is zero
+                                 : BitConverter.ToInt32(blob, source) != 0)
+                    {
+                        return (def, new RowMajorRefusal(
+                            $"it is a row_major {rows}x{cols} matrix, whose buffer holds one register per row, " +
+                            $"and MonoGame uploads its {rh}x{ch} parameter as {ch} registers of {rh} floats, so " +
+                            $"row {j} (non-zero in the initializer) is never written on this target",
+                            $"A Set cannot reach rows {ch} and beyond either. " + ColumnMajorAdvice +
+                            $" A row_major {rows}x{cols} default is kept on this target only when those rows are zero."));
+                    }
+                }
+            }
+            blobs.Add(stored);
+        }
+        return (def with { Rows = rh, Columns = ch, ElementBlobs = blobs }, null);
+    }
+
+    /// <summary>Why a row_major default cannot be stored, and the advice for it (a runtime Set does not help).</summary>
+    private sealed record RowMajorRefusal(string Reason, string Advice);
+
+    private const string ColumnMajorAdvice =
+        "Declare the matrix column-major instead: remove its row_major modifier, or, if a " +
+        "#pragma pack_matrix(row_major) applies, declare it column_major or after #pragma pack_matrix(column_major).";
 
     /// <summary>
     /// Why the default read off the source cannot be attached to the reflected parameter, or null
@@ -3243,13 +3344,14 @@ internal sealed class CompilationPipeline
     private static IReadOnlyList<ShaderError> WithViewWarning(List<ShaderError> warnings, ShaderError? viewWarning) =>
         viewWarning is null ? warnings : [viewWarning, .. warnings];
 
-    internal static ShaderError DefaultNotPreserved(string file, int line, int column, string name, string reason) =>
+    internal static ShaderError DefaultNotPreserved(string file, int line, int column, string name, string reason,
+        string advice = "Set the parameter by name at runtime, or simplify the initializer.") =>
         new(File: file,
             Line: line,
             Column: column,
             Code: "SD0017",
             Message: $"the initializer of '{name}' was not preserved as its default value, so the effect ships " +
-                     $"a default of zero: {reason}. Set the parameter by name at runtime, or simplify the initializer.",
+                     $"a default of zero: {reason}. " + advice,
             Severity: ShaderErrorSeverity.Warning);
 
     /// <summary>
