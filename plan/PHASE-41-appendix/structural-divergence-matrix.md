@@ -25,7 +25,7 @@
   - Structurally **clean**: **98**
   - **Divergent** (>=1 level): **10**
   - Compile/parse **failures**: **10**
-- Non-golden census cells: **250** (**177** compile, **73** fail with a code)
+- Non-golden census cells: **274** (**198** compile, **76** fail with a code)
 
 ## Golden-backed fixtures — per-level structural verdict
 
@@ -373,6 +373,30 @@ is a CORRECT result, not a defect.
 | raylib/CrtFilter.fx | OpenGL | PASS |  |  |
 | raylib/RetroHandheld.fx | DirectX_11 | PASS |  |  |
 | raylib/RetroHandheld.fx | OpenGL | PASS |  |  |
+| register-slots/RegisterDeadSampler.fx | DirectX_11 | PASS |  |  |
+| register-slots/RegisterDeadSampler.fx | OpenGL | PASS |  |  |
+| register-slots/RegisterGapT0T2.fx | DirectX_11 | PASS |  |  |
+| register-slots/RegisterGapT0T2.fx | OpenGL | PASS |  |  |
+| register-slots/RegisterHelperPair.fx | DirectX_11 | PASS |  |  |
+| register-slots/RegisterHelperPair.fx | OpenGL | PASS |  |  |
+| register-slots/RegisterLoadOnly.fx | DirectX_11 | PASS |  |  |
+| register-slots/RegisterLoadOnly.fx | OpenGL | FAIL | SD0100 | SPIRV-Cross [build_combined_image_samplers]: texelFetch without sampler was found, but no dummy sampler has been created with build_dummy_sampler_for_combined_i... |
+| register-slots/RegisterLoneT1.fx | DirectX_11 | PASS |  |  |
+| register-slots/RegisterLoneT1.fx | OpenGL | PASS |  |  |
+| register-slots/RegisterMismatchedTS.fx | DirectX_11 | PASS |  |  |
+| register-slots/RegisterMismatchedTS.fx | OpenGL | PASS |  |  |
+| register-slots/RegisterPreprocessedPairs.fx | DirectX_11 | PASS |  |  |
+| register-slots/RegisterPreprocessedPairs.fx | OpenGL | PASS |  |  |
+| register-slots/RegisterSamplerPerPass.fx | DirectX_11 | PASS |  |  |
+| register-slots/RegisterSamplerPerPass.fx | OpenGL | PASS |  |  |
+| register-slots/RegisterSamplerPerStage.fx | DirectX_11 | PASS |  |  |
+| register-slots/RegisterSamplerPerStage.fx | OpenGL | FAIL | SD0210 | Vertex-stage texture sampling is not supported for the MonoGame/KNI OpenGL target: neither MonoGame's nor KNI's GL runtime assigns texture units to VERTEX-shade... |
+| register-slots/RegisterSpace0.fx | DirectX_11 | PASS |  |  |
+| register-slots/RegisterSpace0.fx | OpenGL | PASS |  |  |
+| register-slots/RegisterTexture2DArrayT1.fx | DirectX_11 | PASS |  |  |
+| register-slots/RegisterTexture2DArrayT1.fx | OpenGL | FAIL | SD0210 | Unsupported sampler type for the MonoGame/KNI GL target: 'sampler2DArray'. The MojoShader-dialect rewrite models 'sampler2D', 'samplerCube' and 'sampler3D'; a '... |
+| register-slots/RegisterTwoSamplers.fx | DirectX_11 | PASS |  |  |
+| register-slots/RegisterTwoSamplers.fx | OpenGL | PASS |  |  |
 | texture-arrays/SamplerArray2.fx | DirectX_11 | FAIL | SD0224 | DirectX 11 target: 'Samplers' is an array of 2 samplers ('SamplerState Samplers[2]'). Real mgfxc (3.8.4.1 and 3.8.5) refuses an array of samplers on every profi... |
 | texture-arrays/SamplerArray2.fx | OpenGL | FAIL | SD0100 | SPIRV-Cross [build_combined_image_samplers]: Attempting to use arrays or structs of separate samplers. This is not possible to statically remap to plain GLSL. |
 | texture-arrays/TextureArray2.fx | DirectX_11 | PASS |  |  |
@@ -493,17 +517,17 @@ is a CORRECT result, not a defect.
 ### Census failure codes
 
 - `SD0015`: 32 cell(s) — FnaMultiPassStates.fx [DirectX_11], examples/ExIntUniformMember.fx [DirectX_11], examples/ExMat3UniformMember.fx [DirectX_11], examples/ExProfileSm3BothArms.fx [DirectX_11], examples/ExProfileSm3OnDirectX.fx [DirectX_11], examples/ExProfileSm6OnDirectX.fx [DirectX_11], third-party/Gum/FnaSample-Shader.fx [DirectX_11], third-party/Gum/KniInCode-Shader.fx [DirectX_11], third-party/KNI/DeferredBasicEffect.fx [DirectX_11], third-party/KNI/NewSyntax_s0s1t0t1.fx [DirectX_11], third-party/KNI/NewSyntax_t0t1.fx [DirectX_11], third-party/KNI/OldSyntax_s0s1.fx [DirectX_11], third-party/KNI/OldSyntax_s0s1t0t1.fx [DirectX_11], third-party/KNI/OldSyntax_t0t1.fx [DirectX_11], third-party/KNI/OldSyntax_t1t0.fx [DirectX_11], third-party/KNI/OldSyntax_x.fx [DirectX_11], third-party/KNI/OptimizedMatrix.fx [DirectX_11], third-party/KNI/OptimizedMatrixArray.fx [DirectX_11], third-party/Nez/Bevels.fx [DirectX_11], third-party/Nez/BloomCombine.fx [DirectX_11], third-party/Nez/BloomExtract.fx [DirectX_11], third-party/Nez/Crosshatch.fx [DirectX_11], third-party/Nez/GaussianBlur.fx [DirectX_11], third-party/Nez/HeatDistortion.fx [DirectX_11], third-party/Nez/Letterbox.fx [DirectX_11], third-party/Nez/Noise.fx [DirectX_11], third-party/Nez/PixelGlitch.fx [DirectX_11], third-party/Nez/Reflection.fx [DirectX_11], third-party/Nez/SpriteBlinkEffect.fx [DirectX_11], third-party/Nez/SpriteLines.fx [DirectX_11], third-party/Nez/Twist.fx [DirectX_11], third-party/Nez/Vignette.fx [DirectX_11]
+- `SD0210`: 9 cell(s) — examples/ExIntUniformMember.fx [OpenGL], examples/ExMat3UniformMember.fx [OpenGL], examples/ExVsTextureFetch.fx [OpenGL], register-slots/RegisterSamplerPerStage.fx [OpenGL], register-slots/RegisterTexture2DArrayT1.fx [OpenGL], third-party/MonoGame/Instancing.fx [OpenGL], third-party/MonoGame/TextureArrayEffect.fx [OpenGL], third-party/MonoGame/VertexTextureEffect.fx [OpenGL], third-party/Nez/Crosshatch.fx [OpenGL]
 - `SD0010`: 8 cell(s) — minimal_vs_ps.fx [DirectX_11], minimal_vs_ps.fx [OpenGL], passthrough_vs.fx [DirectX_11], passthrough_vs.fx [OpenGL], textured_vs_ps.fx [DirectX_11], textured_vs_ps.fx [OpenGL], third-party/Gum/FnaSample-Shader.fx [OpenGL], third-party/MonoGame/ParameterTypes.fx [OpenGL]
-- `SD0210`: 7 cell(s) — examples/ExIntUniformMember.fx [OpenGL], examples/ExMat3UniformMember.fx [OpenGL], examples/ExVsTextureFetch.fx [OpenGL], third-party/MonoGame/Instancing.fx [OpenGL], third-party/MonoGame/TextureArrayEffect.fx [OpenGL], third-party/MonoGame/VertexTextureEffect.fx [OpenGL], third-party/Nez/Crosshatch.fx [OpenGL]
 - `SD0013`: 6 cell(s) — examples/ExProfileBogusLiteral.fx [DirectX_11], examples/ExProfileBogusLiteral.fx [OpenGL], examples/ExProfileTypo.fx [DirectX_11], examples/ExProfileTypo.fx [OpenGL], examples/ExProfileUndefinedMacro.fx [DirectX_11], examples/ExProfileUndefinedMacro.fx [OpenGL]
 - `X0000`: 5 cell(s) — third-party/Gum/KniInCode-Shader.fx [OpenGL], third-party/MonoGame/CustomSpriteBatchEffectComparisonSampler.fx [OpenGL], third-party/MonoGame/DefinesTest.fx [OpenGL], third-party/MonoGame/ParserTest.fx [OpenGL], third-party/MonoGame/PreprocessorTest.fx [OpenGL]
 - `SD0001`: 2 cell(s) — MinimalWithInclude.fx [DirectX_11], MinimalWithInclude.fx [OpenGL]
 - `SD0014`: 2 cell(s) — examples/ExProfileStageMismatch.fx [DirectX_11], examples/ExProfileStageMismatch.fx [OpenGL]
+- `SD0100`: 2 cell(s) — register-slots/RegisterLoadOnly.fx [OpenGL], texture-arrays/SamplerArray2.fx [OpenGL]
 - `SD0217`: 2 cell(s) — texture-arrays/TextureArray2.fx [OpenGL], texture-arrays/TextureArray4NoRegister.fx [OpenGL]
 - `FX0014`: 2 cell(s) — third-party/KNI/ComputeShader.fx [DirectX_11], third-party/KNI/ComputeShader.fx [OpenGL]
 - `FX0012`: 2 cell(s) — third-party/Nez/PaletteCycler.fx [DirectX_11], third-party/Nez/PaletteCycler.fx [OpenGL]
 - `SD0224`: 1 cell(s) — texture-arrays/SamplerArray2.fx [DirectX_11]
-- `SD0100`: 1 cell(s) — texture-arrays/SamplerArray2.fx [OpenGL]
 - `E5030`: 1 cell(s) — third-party/MonoGame/DefinesTest.fx [DirectX_11]
 - `E5017`: 1 cell(s) — third-party/MonoGame/ParameterTypes.fx [DirectX_11]
 - `E4000`: 1 cell(s) — third-party/MonoGame/PreprocessorTest.fx [DirectX_11]
