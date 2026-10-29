@@ -11,6 +11,12 @@
 //     "HACK: We don't have real default parameters from mojoshader!") renders black.
 // A control that turned red would mean the test cannot tell a default from a Set. Exit code 0 iff every
 // case and every control passes. See docs/validation-matrix.md section 6.
+//
+// With knifxReachRows (the KNI drivers), a second device on GraphicsProfile.Reach pins the shader model a
+// KNIFX container records for `*_4_0_level_9_1`: KNI's own pipeline records 2.0, which Reach (ceiling 2.0)
+// loads, for a pixel and a vertex shader, while `*_4_0_level_9_3` (3.0), `ps_4_0` (4.0) and, on GL,
+// `ps_3_0` (3.0) must be refused with KNI's own "Shader model X is not supported by the current graphics
+// profile 'Reach'". The refusals are the positive controls: they prove the Reach device checks the version.
 
 using System;
 using System.Collections.Generic;
@@ -50,7 +56,7 @@ public static class InitializerDefaultsProbe
     /// MonoGame DesktopVK, whose constant buffer throws on ANY float2x2 parameter (measured: the same throw with
     /// the initializers removed), so it says nothing about defaults.
     /// </summary>
-    public static int Run(string label, PlatformTarget target, EffectContainer[] containers, bool mgfxcOpenGlControl, bool skipFloat2x2 = false)
+    public static int Run(string label, PlatformTarget target, EffectContainer[] containers, bool mgfxcOpenGlControl, bool skipFloat2x2 = false, bool knifxReachRows = false)
     {
         var watchdog = new Thread(() =>
         {
@@ -96,36 +102,120 @@ public static class InitializerDefaultsProbe
                 new Expect(0, 0, 0, 255, 0), null));
         }
 
-        using var game = new ProbeGame(jobs);
-        game.Run();
+        var results = new List<JobResult>();
+        int expected = jobs.Count;
+        using (var game = new ProbeGame(jobs, GraphicsProfile.HiDef))
+        {
+            game.Run();
+            results.AddRange(game.Results);
+        }
+
+        if (knifxReachRows)
+        {
+            List<Job> reachJobs = ReachJobs(compiler, label, target, dir);
+            expected += reachJobs.Count;
+            using var reach = new ProbeGame(reachJobs, GraphicsProfile.Reach);
+            reach.Run();
+            results.AddRange(reach.Results);
+        }
 
         int failures = 0;
         Console.WriteLine($"[{label}] results:");
-        foreach (JobResult r in game.Results)
+        foreach (JobResult r in results)
         {
             Console.WriteLine($"  [{(r.Ok ? "PASS" : "FAIL")}] {r.Name,-52} {r.Detail}");
             if (!r.Ok) failures++;
         }
 
-        if (game.Results.Count != jobs.Count)
+        if (results.Count != expected)
         {
-            Console.WriteLine($"[{label}] FAIL: only {game.Results.Count} of {jobs.Count} cases ran");
+            Console.WriteLine($"[{label}] FAIL: only {results.Count} of {expected} cases ran");
             return 1;
         }
 
-        Console.WriteLine($"[{label}] {game.Results.Count - failures}/{game.Results.Count} passed.");
+        Console.WriteLine($"[{label}] {results.Count - failures}/{results.Count} passed.");
         return failures == 0 ? 0 : 1;
     }
 
+    /// <summary>
+    /// The KNIFX rows run on a <see cref="GraphicsProfile.Reach"/> device (ceiling 2.0). A_Tint with its
+    /// pixel profile set to <c>ps_4_0_level_9_1</c> (recorded 2.0) must load and render its default, and
+    /// the same shader at <c>ps_4_0_level_9_3</c> (3.0), <c>ps_4_0</c> (4.0) and, on OpenGL,
+    /// <c>ps_3_0</c> (3.0; below mgfxc's DirectX floor, so not a DirectX row) must be refused by KNI's
+    /// shader-model check. A vertex-shader pair does the same for the VS profile: <c>vs_4_0_level_9_1</c>
+    /// loads, <c>vs_4_0_level_9_3</c> (with a 2.0 pixel shader, so only the VS can trip it) is refused.
+    /// </summary>
+    private static List<Job> ReachJobs(EffectCompiler compiler, string label, PlatformTarget target, string dir)
+    {
+        const string Level91 = "#define PS_SHADERMODEL ps_4_0_level_9_1";
+        const string GlArm = "#define PS_SHADERMODEL ps_3_0";
+        string path = Path.Combine(dir, "A_Tint.fx");
+        string tint = File.ReadAllText(path);
+        if (!tint.Contains(Level91, StringComparison.Ordinal) || !tint.Contains(GlArm, StringComparison.Ordinal))
+            throw new InvalidOperationException($"A_Tint.fx no longer contains '{Level91}' and '{GlArm}'");
+
+        // Both arms of the header name the same profile, so the row tests that profile on either target.
+        string Ps(string profile) => tint
+            .Replace(Level91, "#define PS_SHADERMODEL " + profile, StringComparison.Ordinal)
+            .Replace(GlArm, "#define PS_SHADERMODEL " + profile, StringComparison.Ordinal);
+
+        static string Refused(string sm) => $"Shader model {sm} is not supported by the current graphics profile 'Reach'";
+        var red = new Expect(255, 0, 0, 255, 1);
+        var none = new Expect(0, 0, 0, 0, 0);
+
+        var jobs = new List<Job>
+        {
+            Compile(compiler, label, target, EffectContainer.Knifx, path, Ps("ps_4_0_level_9_1"),
+                "PS ps_4_0_level_9_1 [Knifx] loads on Reach", red, setR: null),
+            Compile(compiler, label, target, EffectContainer.Knifx, path, Ps("ps_4_0_level_9_3"),
+                "CONTROL PS ps_4_0_level_9_3 [Knifx] refused on Reach", none, setR: null, expectRefusal: Refused("3.0")),
+            Compile(compiler, label, target, EffectContainer.Knifx, path, Ps("ps_4_0"),
+                "CONTROL PS ps_4_0 [Knifx] refused on Reach", none, setR: null, expectRefusal: Refused("4.0")),
+        };
+        if (target == PlatformTarget.OpenGL)
+            jobs.Add(Compile(compiler, label, target, EffectContainer.Knifx, path, Ps("ps_3_0"),
+                "CONTROL PS ps_3_0 [Knifx] refused on Reach", none, setR: null, expectRefusal: Refused("3.0")));
+
+        jobs.Add(Compile(compiler, label, target, EffectContainer.Knifx, "ReachVs.fx", ReachVs("vs_4_0_level_9_1"),
+            "VS vs_4_0_level_9_1 [Knifx] loads on Reach", red, setR: null));
+        jobs.Add(Compile(compiler, label, target, EffectContainer.Knifx, "ReachVs.fx", ReachVs("vs_4_0_level_9_3"),
+            "CONTROL VS vs_4_0_level_9_3 [Knifx] refused on Reach", none, setR: null, expectRefusal: Refused("3.0")));
+        return jobs;
+    }
+
+    /// <summary>
+    /// A vertex + pixel effect for the Reach VS rows. The VS ignores SpriteBatch's transform and places
+    /// the quad from its texture coordinates, so a full-target sprite covers the target; the PS returns
+    /// the <c>Tint</c> default (red). The pixel profile is always <c>ps_4_0_level_9_1</c> (2.0).
+    /// </summary>
+    private static string ReachVs(string vsProfile) => $$"""
+        #if defined(OPENGL)
+        #define SV_POSITION POSITION
+        #endif
+        float4 Tint = float4(1, 0, 0, 1);
+        struct VsOut { float4 Pos : SV_POSITION; float4 Color : COLOR0; float2 Tc : TEXCOORD0; };
+        VsOut MainVS(float4 pos : POSITION0, float4 color : COLOR0, float2 tc : TEXCOORD0)
+        {
+            VsOut o;
+            o.Pos = float4(tc.x * 2 - 1, 1 - tc.y * 2, 0, 1);
+            o.Color = color;
+            o.Tc = tc;
+            return o;
+        }
+        float4 MainPS(VsOut i) : COLOR0 { return Tint; }
+        technique T { pass P0 { VertexShader = compile {{vsProfile}} MainVS(); PixelShader = compile ps_4_0_level_9_1 MainPS(); } }
+        """;
+
     private sealed record Expect(byte R, byte G, byte B, byte A, int Tolerance);
 
-    private sealed record Job(string Name, byte[]? Bytes, string? CompileError, Expect Expected, float? SetR);
+    /// <param name="ExpectRefusal">When set, <c>new Effect()</c> must THROW with a message containing this text.</param>
+    private sealed record Job(string Name, byte[]? Bytes, string? CompileError, Expect Expected, float? SetR, string? ExpectRefusal = null);
 
     private sealed record JobResult(string Name, bool Ok, string Detail);
 
     private static Job Compile(
         EffectCompiler compiler, string label, PlatformTarget target, EffectContainer container,
-        string path, string source, string name, Expect expected, float? setR)
+        string path, string source, string name, Expect expected, float? setR, string? expectRefusal = null)
     {
         var result = compiler.CompileAsync(source, new CompilerOptions
         {
@@ -135,15 +225,15 @@ public static class InitializerDefaultsProbe
         }).GetAwaiter().GetResult();
 
         if (result.IsFailure)
-            return new Job(name, null, string.Join(" | ", result.Error.Select(e => $"{e.Code}: {e.Message}")), expected, setR);
+            return new Job(name, null, string.Join(" | ", result.Error.Select(e => $"{e.Code}: {e.Message}")), expected, setR, expectRefusal);
 
         // A default that is preserved must not leave DXC's now-untrue warning behind.
         foreach (ShaderError w in result.Value.Warnings)
             if (w.Message.Contains("initializer ignored", StringComparison.Ordinal) && path.EndsWith("RedDefault.fx", StringComparison.Ordinal))
-                return new Job(name, null, $"unexpected warning: {w.Code}: {w.Message}", expected, setR);
+                return new Job(name, null, $"unexpected warning: {w.Code}: {w.Message}", expected, setR, expectRefusal);
 
         Console.WriteLine($"[{label}] compiled {name}: {result.Value.Data.Length} bytes");
-        return new Job(name, result.Value.Data, null, expected, setR);
+        return new Job(name, result.Value.Data, null, expected, setR, expectRefusal);
     }
 
     private sealed class ProbeGame : Game
@@ -154,14 +244,14 @@ public static class InitializerDefaultsProbe
 
         public List<JobResult> Results { get; } = [];
 
-        public ProbeGame(IReadOnlyList<Job> jobs)
+        public ProbeGame(IReadOnlyList<Job> jobs, GraphicsProfile profile)
         {
             _jobs = jobs;
             _ = new GraphicsDeviceManager(this)
             {
                 PreferredBackBufferWidth = Size,
                 PreferredBackBufferHeight = Size,
-                GraphicsProfile = GraphicsProfile.HiDef,
+                GraphicsProfile = profile,
             };
             Window.Title = "ShadowDusk initializer defaults (headless)";
         }
@@ -193,7 +283,17 @@ public static class InitializerDefaultsProbe
                 try { effect = new Effect(GraphicsDevice, job.Bytes); }
                 catch (Exception ex)
                 {
-                    Results.Add(new JobResult(job.Name, false, "new Effect() threw: " + ex.Message));
+                    bool refused = job.ExpectRefusal is { } want && ex.Message.Contains(want, StringComparison.Ordinal);
+                    Results.Add(new JobResult(job.Name, refused,
+                        (refused ? "refused as expected: " : "new Effect() threw: ") + ex.Message));
+                    continue;
+                }
+
+                if (job.ExpectRefusal is { } expectedRefusal)
+                {
+                    Results.Add(new JobResult(job.Name, false,
+                        $"new Effect() loaded, but the {GraphicsDevice.GraphicsProfile} device must refuse it: \"{expectedRefusal}\""));
+                    effect.Dispose();
                     continue;
                 }
 

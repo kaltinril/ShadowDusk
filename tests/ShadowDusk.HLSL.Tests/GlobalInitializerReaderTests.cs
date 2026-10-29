@@ -156,6 +156,45 @@ public sealed class GlobalInitializerReaderTests
         Ints(One("uint U = 7u;", "U").ElementBlobs[0]).ShouldBe(new[] { 7 });
     }
 
+    [Theory]
+    [InlineData("float X = 1;", GlobalInitializerKind.Float)]
+    [InlineData("half2 X = half2(1, 2);", GlobalInitializerKind.Float)]
+    [InlineData("float2x2 X = float2x2(1, 0, 0, 1);", GlobalInitializerKind.Float)]
+    [InlineData("int X = -1;", GlobalInitializerKind.Int)]
+    [InlineData("int3 X = int3(1, 2, 3);", GlobalInitializerKind.Int)]
+    [InlineData("uint X = 3000000000;", GlobalInitializerKind.UInt)]
+    [InlineData("dword X = 1;", GlobalInitializerKind.UInt)]
+    [InlineData("unsigned int X = 1;", GlobalInitializerKind.UInt)]
+    [InlineData("uint2 X = uint2(1, 2);", GlobalInitializerKind.UInt)]
+    [InlineData("bool X = true;", GlobalInitializerKind.Bool)]
+    [InlineData("bool2 X = bool2(true, false);", GlobalInitializerKind.Bool)]
+    public void Kind_IsTheDeclaredScalarKind(string hlsl, GlobalInitializerKind expected)
+    {
+        // Issue #427: Int32 reflection covers int, uint and (on Vulkan) bool, whose blob words read
+        // differently; only the declaration tells them apart.
+        One(hlsl, "X").Kind.ShouldBe(expected);
+    }
+
+    [Fact]
+    public void Kind_WithoutAnExplicitValue_FollowsTheMgfxType()
+    {
+        static GlobalInitializerDefault Make(byte type) =>
+            new("X", 0, type, 1, 1, 0, [new byte[4]], "f.fx", 1, 1);
+
+        Make(1).Kind.ShouldBe(GlobalInitializerKind.Bool);
+        Make(2).Kind.ShouldBe(GlobalInitializerKind.Int);
+        Make(3).Kind.ShouldBe(GlobalInitializerKind.Float);
+        (Make(2) with { Kind = GlobalInitializerKind.UInt }).Kind.ShouldBe(GlobalInitializerKind.UInt);
+    }
+
+    [Fact]
+    public void Uint_AboveTwoToThe31_KeepsItsBits()
+    {
+        GlobalInitializerDefault big = One("uint Big = 3000000000;", "Big");
+        big.Type.ShouldBe((byte)2);
+        big.ElementBlobs[0].ShouldBe(BitConverter.GetBytes(3000000000u));
+    }
+
     [Fact]
     public void Matrix_IsWrittenColumnByColumn_LikeEffectParameterSetValue()
     {

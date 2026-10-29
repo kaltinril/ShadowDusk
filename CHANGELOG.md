@@ -18,6 +18,22 @@ that loads and renders identically to `mgfxc`'s in the real MonoGame/KNI runtime
 
 ### Fixed
 
+- **KNIFX records the shader model KNI's own pipeline records for `*_4_0_level_9_1` and
+  `*_4_0_level_9_3`: 2.0 and 3.0, not 4.0.** ShadowDusk read the first `_N_N` of the profile, so a
+  KNIFX container always recorded 4.0 (version byte `08`) for a literal `ps_4_0_level_9_1`, which
+  KNI's runtime refuses on HiDef and Reach ("Shader model 4.0 is not supported by the current
+  graphics profile 'HiDef'"). Since the issue #407 fix below expanded macro `compile` targets, the
+  same happened to every MonoGame-template effect (`#define PS_SHADERMODEL ps_4_0_level_9_1`) built
+  as KNIFX for KNI DX, which was rejected on HiDef; before #407 those recorded 3.0 by accident.
+  Now `_level_9_1` is 2.0 (`04`) and `_level_9_3` is 3.0 (`06`), as measured with KNI's own MGCB
+  (Windows on 4.2.9001 and 4.3.9001, DesktopGL on 4.3.9001); every other profile is unchanged,
+  including the ones KNI's own pipeline refuses (`*_4_0_level_9_0`, SM6, `*_2_a`, `*_sw`), which
+  keep loading wherever they loaded before. Only KNIFX bytes change: one version byte per affected
+  shader record, plus each backend entry's 4-byte effect key; MGFX, FNA, DirectX 12 and Vulkan
+  output is untouched. `validation/InitializerDefaultsKniDx` and `InitializerDefaultsKniGl` now also
+  pin the version on a real Reach device. CI's DX WARP job reported the DX driver green while it
+  failed, because a multi-command `pwsh` step only reports its last command's exit code; every
+  such step now checks each command.
 - **Techniques are read from the preprocessed source, like `mgfxc` (issue #407).** A technique
   inside a false `#if` (or behind an unset `/Defines` value) was still compiled, a technique in an
   `#include`d file was not found (`SD0010`, or dropped beside the main file's own), and a macro
@@ -60,6 +76,23 @@ that loads and renders identically to `mgfxc`'s in the real MonoGame/KNI runtime
   SPIRV-Cross's other renames: `my__val` to `my_val`, and `_noise_1` beside a real `_noise`), and fails
   `SD0012` with a message naming the cause when that cannot be proven (a renamed uniform in a stage
   with two cbuffers). No shader in the fixture corpus changes bytes.
+- **A block comment that spans lines inside a `#define` (or any directive) no longer ends it** (issue #426).
+  ShadowDusk's managed preprocessed view, which the initializer defaults and the OpenGL sampler-register
+  decisions are read from, ended the directive at the comment's first line break and spilled the rest of the
+  macro into the code. So `#define SCALE /* the scale,` / `in pixels */ 2` defined an empty `SCALE`, the
+  declaration after it lost its default (`null` in `CompiledShader.Parameters`, no default in the file), and a
+  `register(SLOT)` spelled through such a macro reserved no OpenGL unit (`ps_s0` instead of the `ps_s1` the
+  issue #283 reservation gives the same macro written on one line).
+  A comment is now whitespace, as in DXC and fxc: the directive runs on to its real end, and every later line
+  keeps its number. A `#line` that spans lines now numbers the next line as DXC does (from the line its number
+  is on). DXC always compiled such sources correctly; only what ShadowDusk reads off the view changes, and an
+  effect without a multi-line comment in a directive is unchanged byte for byte.
+- **`ParameterReflection.DefaultValue` reads a `bool` as 0 or 1 on Vulkan and a `uint` above 2^31 as its unsigned value**
+  (issue #427). On Vulkan a `bool` parameter is `Int32` (SPIR-V has no bool in a uniform block, and real `mgfxc`'s
+  Vulkan build says `Int32` too), so `bool Flag = true;` reflected -1, indistinguishable from `int Flag = -1;`; and
+  every target reflects a `uint` as `Int32`, so `uint U = 3000000000;` reflected -1294967296. The value is now read by
+  the HLSL declaration's kind (exposed as the new `GlobalInitializerDefault.Kind` / `GlobalInitializerKind` in
+  `ShadowDusk.HLSL`). `ParameterReflection.Type` stays `Int32` on Vulkan, and no emitted byte changes. This changes what 0.22.0 reported for those two cases (its "Vulkan `bool` reads -1" note no longer applies).
 
 ## [0.22.0] - 2026-10-28
 
