@@ -1,7 +1,7 @@
 {
   "DirectX12.Debug/AlphaTestEffect.fx": {
-    "mgfx": "fcbe25cd51c6599a919f78a88b8c328a8bcd6bac4ac428df1ceae92dafc8c530",
-    "mgfxNormalized": "d86f65422699be1d8c2c69b038f364a79fa96d277886e7e2540ae4254325c79b",
+    "mgfx": "dd8137948782af7909c50a38635f408b91aff2af8b7cc874a9d5faffff6ac2e1",
+    "mgfxNormalized": "fbb7ee01d9f47169ea2a0db79ed9b4f03eda00c202e0ca034c4a8b6e2aff827e",
     "dxil": "91e851a4c8e1d5a3778eeef1a5b5be2913c76731e4ccf37dd905aa91b778e7ed",
     "warnings": []
   },
@@ -24,8 +24,8 @@
     "warnings": []
   },
   "DirectX12.Debug/BasicEffect.fx": {
-    "mgfx": "b50388958bba480c8579ecd066c3e74af6d6371221e3296325d0b07521293e3a",
-    "mgfxNormalized": "557f274ff7c679b240ddd2886172f26378afea49c95adbf7f72660e75f68c3d4",
+    "mgfx": "726b422abd6af950c301a7186cfac3a06b154b88b23af847a925b23a356a5f13",
+    "mgfxNormalized": "4a2940087479a4d168264ceb4ceb09d7b4a68bb4c49f9bbbc7fe79153f19486c",
     "dxil": "c0541b7e8009829cbff6e6b1bf6acb16c53f1d35f465269ce3c5c071107df7a8",
     "warnings": []
   },
@@ -48,8 +48,8 @@
     "warnings": []
   },
   "DirectX12.Debug/ClipShaderNew.fx": {
-    "mgfx": "e600fba6e0e4114f94f14ed021c0ca819ccdcf308c0c3dd53807af6eb3615b3a",
-    "mgfxNormalized": "122b677d529489ce061fcff03bfb5e817fc3253a9f9218100c360c0f2e9b1b78",
+    "mgfx": "4944a56b422f6d27d2d81d1216a043e743688209c65d6e440690e717e09d62d4",
+    "mgfxNormalized": "82f1be233b0347278d43779576b54a3cfef4d150516cbc94db2e8936b61ec9ab",
     "dxil": "3ebdd695b42d519c7d8e5327ebc0291fa06dbd544c7938d8ef63fb9aa77114bc",
     "warnings": []
   },
@@ -77,14 +77,14 @@
     "warnings": []
   },
   "DirectX12.Debug/DualTextureEffect.fx": {
-    "mgfx": "41811a6595c4c39c109b5fc50eed023d45788a475368b11cbca24274582da5a9",
-    "mgfxNormalized": "b70c7cd583e1765d90725270f5ac577bc7796afc76696f6185129b2bad272d26",
+    "mgfx": "44c69d0551cf0d0bf300dc706a4c963b296d213a4776e046024e432dae029a3b",
+    "mgfxNormalized": "46ebb14d6e024a4465466848536a98043c6c6db63429c2e5ef8985286b15daaa",
     "dxil": "061310cf32dbe63c8ef524067481685cc2c530b0faea3b6f292ae596011413ef",
     "warnings": []
   },
   "DirectX12.Debug/EnvironmentMapEffect.fx": {
-    "mgfx": "ddef308ff33e98f76c1fe2adf29aadc24f10b0a37bbd994a33fae7e6f3679bd3",
-    "mgfxNormalized": "2492c67bd887674adbc404195f580d9f1519dc9735f7c5bb757dbfbd36b9df80",
+    "mgfx": "a83e750b891d306b8efff67d4a5e109d0e2db14cee406dab98ebf0033d8075bb",
+    "mgfxNormalized": "b2d0024c54958cff42058c322d64adfb0219a2a2041556b85e800bdc73637343",
     "dxil": "b5e7dc2257823c624d9e5b9870d14a1f6be39a8b18e382ee9a6fcf11697262d7",
     "warnings": []
   },
@@ -163,26 +163,26 @@
     "warnings": []
   },
   "DirectX12.Debug/PenumbraHull.fx": {
-    "mgfx": "c876390804c3c9ce2d13618d092edf809c235817feeac9d4cd9bc6fb854bb226",
-    "mgfxNormalized": "d4075c16aa5485ce59f5cda70778c5e05915a5bac044aa5275785214916a2d89",
+    "mgfx": "15f5e0d8f691e4a5ea2dd82b526ceaaa6d10a46a89898f988a51f8f17b728ad3",
+    "mgfxNormalized": "0221b46f10aebe235fe6eeda98f4ab1b96b0aa6a71346c7bc18ef1a894609c9f",
     "dxil": "a48e6b8759d8ee896290549c4dd7046415220b50bb82e34eb0fbdf9940474d3c",
     "warnings": []
   },
   "DirectX12.Debug/PenumbraLight.fx": {
-    "mgfx": "d12f608f62686dc34a2135e5a7dec81c7229d87af511a57a6dce658aeec50f60",
-    "mgfxNormalized": "95fde78f1f8f9f37489f797900e3967cbc7a2c6fba4ac21ec00756276e99d404",
+    "mgfx": "c5ce2f184905f22a568447f0667b42c1a144f747e1f2c916ef0dfc631376850d",
+    "mgfxNormalized": "4530825cfc52675a2e19d7869cc91b28874542fd85cd92e9c100091c8f3e3a49",
     "dxil": "79a01e04af087e26ce95d4c1ec10402226c9d50c5cf5b5d9b2fa3f4a6d804bc8",
     "warnings": []
   },
   "DirectX12.Debug/PenumbraShadow.fx": {
-    "mgfx": "8308a492564b6ff444bd3f7582ba9c06a064d9b085391c5833a416f66f641354",
-    "mgfxNormalized": "5381c8e4b0d326e93e1f625ca846fc8f5ab20221e5a04ce0291eab10c8191c02",
+    "mgfx": "518e8544c0e38d31f1c1ebaf2a493ae51cdc941835afaf6a5fc30b39298d46c5",
+    "mgfxNormalized": "ee40c0787a169e0d28af0d979cddaf032fdaee8d6ee9f4290858ec5ddf96cb4e",
     "dxil": "d23e69ff42f28e2c22e9b480549c097683af5b83f68974b432bbf3dc806d5ea7",
     "warnings": []
   },
   "DirectX12.Debug/PenumbraTexture.fx": {
-    "mgfx": "8231672500e72b0b14777ca1729d6b5ef359dc147f0d39116ccaaafc10607349",
-    "mgfxNormalized": "c65af79e73cde01736a46882eb6b227ee4e0d78f11981ca93e97c402cc026296",
+    "mgfx": "176c269c6b3f10c3ed08a9075501e1ee648c402fdc4879b6afa5fad7f404e511",
+    "mgfxNormalized": "0c5533bdb9e75ccba15d063e62cd041b14c354244618d86acda68b798a3c2144",
     "dxil": "650958a6d5b59e89924c75963c94c63a6ae0a1e0636920a57ea51352a23cd19a",
     "warnings": []
   },
@@ -301,8 +301,8 @@
     "warnings": []
   },
   "DirectX12.Debug/SkinnedEffect.fx": {
-    "mgfx": "323f3183303f0328973f2949eac4cc1fe58b125625e4d533cdbd9ac3710b17c6",
-    "mgfxNormalized": "c10b51b48c44d6762241b72d8be360a2c3641b882277dbaef58d9bf672d936e8",
+    "mgfx": "e8667f9598917f79cc1387bdd57a20887bd7fbfb0dd8e471b83af5e09e9ab843",
+    "mgfxNormalized": "f44220d2458d0f6858514d96872164b43d5a4858b411ce91b790e30224da67d4",
     "dxil": "812fa7e9eef73cd9df8a4eee0937feb32f23f47517eb748de3e03308b65008ae",
     "warnings": []
   },
@@ -318,8 +318,8 @@
     "warnings": []
   },
   "DirectX12.Debug/SpriteEffect.fx": {
-    "mgfx": "915707f92a817fbdf810b3daf7f65ec70fc134a41eee897ef17fb414fd85e73a",
-    "mgfxNormalized": "0c0cd4a1b3924de9d78b4582b157cf56c888720e5b2275ec619002c608390f3b",
+    "mgfx": "a4b3965c030f269ad95bda3dbc9afd19674c1d99d25a078f7fdc96480b6dbf13",
+    "mgfxNormalized": "c175a04663b86b44b9a5db2c0f2d50a7759ae0cfe7b14b3e65345f5f5ed9455a",
     "dxil": "d637d6647c762b4bc76f4a16d17b4f44fc8e0227e1c5867f4f2bb4bdbefd0fb4",
     "warnings": []
   },
@@ -776,20 +776,20 @@
     ]
   },
   "DirectX12.Debug/third-party/Apos.Shapes/apos-shapes-aa.fx": {
-    "mgfx": "b2e0ca202ad37c0b588571403b1ba943c86cf45b7bd02de6ebf195dee2b9a6b4",
-    "mgfxNormalized": "533818582878024570c04ff74163126e1c8957c13a733ce2f66f7323952229f9",
+    "mgfx": "4ce7fc8f949a3922e7ca14a22c4096d1afdae3bcea6ceea57211a5ca2d22af01",
+    "mgfxNormalized": "782d579375b99a20820c92a85f7c78f9d2342b45e5917be5e08aa61ed92c21de",
     "dxil": "14b913ef336ee38527a21037e4449620fdf5ba96b6a072a8a6b43b2a991403df",
     "warnings": []
   },
   "DirectX12.Debug/third-party/Apos.Shapes/apos-shapes-sm6.fx": {
-    "mgfx": "e825d8f9cb24d1975dab0a878696af7320396be94aa04d380605fec0d301c42d",
-    "mgfxNormalized": "3f48f2a14bcde4e7764737c4732d3bafa712fd683200dff031979cac0448d151",
+    "mgfx": "4be48c438f92f482023895403fe2dd2e2b06d0bd08049340d87d3c4ad11445da",
+    "mgfxNormalized": "16aad7183b909b3f5e261be7ee69b714af0328ed5f5092a504bb255fe27736d7",
     "dxil": "a91721254580188fb36a0aa4b2db75c0baad30a70b44c5302367d9327514cc15",
     "warnings": []
   },
   "DirectX12.Debug/third-party/Apos.Shapes/apos-shapes.fx": {
-    "mgfx": "e63453f5c99572f669b8a9f0bfb199f23a5f4c2053fbb0cc2b13b8729c003b6a",
-    "mgfxNormalized": "e7b8cf5d6b1d6b31a31f73e3369c1d3d9a2f9498705033a526e99542ccdf07ee",
+    "mgfx": "737d5f6b586d25a82b0257d6258d594b89eac3c3afc3d388b38e61e094a960cd",
+    "mgfxNormalized": "b6e43b3823746ed739cff3ad10b2a178de2341ee1a5e8ca7d5a24566f8aa5abe",
     "dxil": "f4301de7d1ac0305bd32fa81aed041e523321e272bfd18c182353e67ae0b828b",
     "warnings": []
   },
@@ -828,14 +828,14 @@
     "warnings": []
   },
   "DirectX12.Debug/third-party/MonoGame/CustomSpriteBatchEffect.fx": {
-    "mgfx": "06286af3e70f2ff9f23550c51cdc8ff4bcbf7499e556230767e91237c8619c8d",
-    "mgfxNormalized": "0ec7071e88c291eba98237c329d070a99d86c120fc9580dae59a3640f4ba61ad",
+    "mgfx": "29731d9ef953442e1dcc11f9d341a63068257294208af896c6117df28f4101b8",
+    "mgfxNormalized": "7cc68bd91092145cc53c9664eab0286d75d2fdec050a8261bc0997d7ff75f262",
     "dxil": "65faf98ed922f63b07e951123bcf26d21a85a70a8b47455ef178ed6d936c5ce3",
     "warnings": []
   },
   "DirectX12.Debug/third-party/MonoGame/CustomSpriteBatchEffectComparisonSampler.fx": {
-    "mgfx": "cbee37b28001148540eb11755de3a5a4fd7bffd9be4bd7df984fd8d4ebc85ea5",
-    "mgfxNormalized": "2262f313ac353cd4bc46e355ccab06b1fe242223a72c6dded157274049e6ba4f",
+    "mgfx": "2ce7806919873775ceb96747ab944cdf1361e3713400f38b97b95676b7c914bb",
+    "mgfxNormalized": "95a0227ffbb3dacfd138f1d26770f98f79aa988bb3f3c99b596074627a9b86ea",
     "dxil": "84991471c46b01ac9e5afd3d3d1de1bfdd51d522f3fdac9d3543bedf663759b1",
     "warnings": []
   },
@@ -857,8 +857,8 @@
     "warnings": []
   },
   "DirectX12.Debug/third-party/MonoGame/Instancing.fx": {
-    "mgfx": "2a1ae6120dbbb26d018da49735ab24c3875957f11afb5a3ea3ca64b9f5cfb9e8",
-    "mgfxNormalized": "498540924a31c0da8d9262adce8088a3d5dc47b2e0c9b9723105a376e2cf4170",
+    "mgfx": "144dd5f58b82d9fdc140470fc8d0906646574d20fa0eaa28fc4bf13625190f7b",
+    "mgfxNormalized": "13282e8367fe1ba263c88ee6fa9aae90fefab20c40ea6709a36cba3f0eb1d3f9",
     "dxil": "6944478137fb416af2d43ce5481174b3cceee5ff5c00c511781ccc7f20f8ff2f",
     "warnings": []
   },
@@ -875,14 +875,14 @@
     "warnings": []
   },
   "DirectX12.Debug/third-party/MonoGame/ParameterTypes.fx": {
-    "mgfx": "a6a8e97c12e5b862976263e75c16feae9f6693990323b31643ad1a9020afd51f",
-    "mgfxNormalized": "036942b34a3c95ccec3eac2ebc669476c4819558587e969d74daaeb0e18cf6a9",
+    "mgfx": "47e28a015fa969013580ea23107bbfc3bb2f41b36c13e9aa4ec727da4bd3cbd6",
+    "mgfxNormalized": "d7104f44a66884faccf299f9ab033114637d027abecb38a4a6d784eec24d41df",
     "dxil": "29ea267ffe58d06850af8a62ca8d463e2a5d148e021deb986cce1c6375c17bc6",
     "warnings": []
   },
   "DirectX12.Debug/third-party/MonoGame/ParserTest.fx": {
-    "mgfx": "de91e50baacf1fce5552e1dfcaa508c72188e6c3ebafbb5659063806313dcff7",
-    "mgfxNormalized": "6554c808046382005f5af989975b047fd578068aa97da6c510ec9a180e15fc31",
+    "mgfx": "7626dd1db821545f5d9fe1ed0832e735947382c18fb492259f44b6d1ac7923f9",
+    "mgfxNormalized": "150f231560dfafee4ad0d582e7dee8d1d8ded4755def1c7731c417b182d23fa4",
     "dxil": "f9c8e1a8da118649fa2d539d59662da0bfc8f18b05f2f697b6446ca34d9f5772",
     "warnings": []
   },
@@ -898,8 +898,8 @@
     "warnings": []
   },
   "DirectX12.Debug/third-party/MonoGame/TextureArrayEffect.fx": {
-    "mgfx": "9eb1a4b387c689d779aa7f27ca555c042c45588561fa79a0ef187e7586afb09b",
-    "mgfxNormalized": "f091db65b335fc7ebc8605098b5037cd2c0461c07ffe383ca34251c7a51fb01d",
+    "mgfx": "6cfbcf3cbb48e32da7839b1f3d379bd3ae179a75e6b7c634b0c8e9432b6b2e7f",
+    "mgfxNormalized": "c8bc8be7c710a2caed97034ab83cf1f15a2d4dcd4c0cb9a21aef1ab883102654",
     "dxil": "8343b551c84055dd296c34cccf5c6a49f325e78a5ba02981a6b6b4e24a92b2e5",
     "warnings": []
   },
@@ -1034,8 +1034,8 @@
     "warnings": []
   },
   "DirectX12/AlphaTestEffect.fx": {
-    "mgfx": "6a6cde68a15873b3f166f72f4d1ffd0713d0d4770bf8cbf8ca0cdd98550212e6",
-    "mgfxNormalized": "fde7fcf54714f32cf2727eec8e26690257c32029b0a0a0ff6d4acb7c40a12b4f",
+    "mgfx": "00839f539fb1ad339750b3be7915e25f3657cbaf4e2cbf1d12d334ef735ea9ee",
+    "mgfxNormalized": "52094afb2ae4647b4ae646346c80ca7051657abd2b72a2c3d6039205dd842f3e",
     "dxil": "2509d0a689f1c92e58f176f2173a4d3f48d9ea7cac44621041f11f30093e3dca",
     "warnings": []
   },
@@ -1058,8 +1058,8 @@
     "warnings": []
   },
   "DirectX12/BasicEffect.fx": {
-    "mgfx": "af6749f28a170ee02e042567f2b1f42ee58d115d7f1350445a6ec69d6239de68",
-    "mgfxNormalized": "7138efa3409d9043feab2f44ad0a7476c668498bd2f9ae5f592be4e0a253a91f",
+    "mgfx": "4107457d7f51124f8e58a962b4d702a44d04dcadfe4c238580089eb707358bbc",
+    "mgfxNormalized": "09be376d048f2a6865ce9a1203126a1ff43b279fba3bdd69aaf57c4603aa574f",
     "dxil": "9f938e88254c150e12a3f642d5bc60bcd76bdc7ffee1db6cf4ad78e6dc2c3f42",
     "warnings": []
   },
@@ -1082,8 +1082,8 @@
     "warnings": []
   },
   "DirectX12/ClipShaderNew.fx": {
-    "mgfx": "6780bdb33adb785246b8192b656483a4054432dba990376b29f3dd6bf0c05456",
-    "mgfxNormalized": "e2d4ecb7c63a3bcee62dfedabf7cf9c6323e8c2a88ea0d5b87daf89ba2a4b5a5",
+    "mgfx": "25920ee6d38ae959c981a6fdd56c87530de399b41e388377d19e851cd3d680f3",
+    "mgfxNormalized": "daa2038ae10c57d31019282330f6fa5e52b4fe2eb7522dd5d13d5de7d27d1fa8",
     "dxil": "aa7e74467cff37bb4fa1f6a3d97d078eab1dc99ec9760d41cc469cb51c65f174",
     "warnings": []
   },
@@ -1111,14 +1111,14 @@
     "warnings": []
   },
   "DirectX12/DualTextureEffect.fx": {
-    "mgfx": "58bbff1cdc34606703b07dd1cbadee9cdd4dfde31238131705baf819d1843af1",
-    "mgfxNormalized": "768cd12dfc609eec44b0726769ad3cd9629b49e7b6a10a9114eca9f93e20a953",
+    "mgfx": "5bb663922b61f458a68caeeed5b04c57a5e251b1af7adbcb1e88d773138bace2",
+    "mgfxNormalized": "1bba6f4197b806022d9efa620d9e6fc992e090833dc587ec5e601734b39de9dd",
     "dxil": "907d68a19b4c3ee589f06e8668b2cc56715cdac90b3b517f5a3a62609bf4e29b",
     "warnings": []
   },
   "DirectX12/EnvironmentMapEffect.fx": {
-    "mgfx": "7adf2b3a0d3d604a7810a0aa11e4445ceb8b0dac346494326a3e682891bdb711",
-    "mgfxNormalized": "5c4bc5b5858cd28c5e4545964745dcfef72b52a7e22a029cff04456f42db70fa",
+    "mgfx": "f4977894ae9a0a8589c85cb800d0d08bc103d50d022df03238b52b4f6d41281a",
+    "mgfxNormalized": "3e57563ab63fc3974ca3adafca584a16ecd1d8b148b37f3e3a37dc6362c2046f",
     "dxil": "dfb8bfd47771482616cb8f09ccf30eac4663fc349e8413ef78714f2ea10e9475",
     "warnings": []
   },
@@ -1197,26 +1197,26 @@
     "warnings": []
   },
   "DirectX12/PenumbraHull.fx": {
-    "mgfx": "97979857d22fb95ce6c3b4dd0932039bb3ba924cf027983e0b20ec4d6ba42ba9",
-    "mgfxNormalized": "b68c8dfb43e97f9a72112e5eaf44534800313c5d0286a9859b9dce6de1790ab2",
+    "mgfx": "dcc288a6d1cf46ed853fe2e70e7a9cdf93cc24555c6c475269b77a0b134ea6eb",
+    "mgfxNormalized": "14a5a2c25039da77e86be3b51ea687098162d5127a8b8bba9f45ec02840149ca",
     "dxil": "4838d49d2a162986d4c7f2e2b03bbfba49b93298aa7ce069863363345e3c2a3a",
     "warnings": []
   },
   "DirectX12/PenumbraLight.fx": {
-    "mgfx": "8fe19995f922516a7d1ce67342438dfadb021f6868692bb6061fdd94ff2e2e45",
-    "mgfxNormalized": "7eae9a84c544a1bde0dc7cfce0f5fed8ac628077bc85310c8a42010d84c14c84",
+    "mgfx": "ad8f8565e4e47fdd0e361a602f15851c697ae7a6f5167871afe33f0c09438979",
+    "mgfxNormalized": "01485bee83ac8ecc5a85e133642030fa48136edbe7c6d88951debe70877f5cdb",
     "dxil": "c1d0d5c3f94bb97727a211c5bdaf0310a33372f1b84399a990319e07907e3a90",
     "warnings": []
   },
   "DirectX12/PenumbraShadow.fx": {
-    "mgfx": "15e226727e75b3ad75a4dfa790f599b885ebfffa83368a630190e642c1722f6e",
-    "mgfxNormalized": "76a1fd1ec826ab6358fc1f3257d2dd36022e27faa8fb815cddac934bf32c7e37",
+    "mgfx": "4cd304b7a89cc3f1c6b8c578bcb9825c56b3e14532eca8f5c74903fa1818f6b9",
+    "mgfxNormalized": "fd3391e5b531cbf91b43225de67e41a99120d828a1574c3f702b83e977f96a2b",
     "dxil": "83def6108cba06e12e97c3687f26b4638bc63d2dd308fb0739f3b49e0bb99787",
     "warnings": []
   },
   "DirectX12/PenumbraTexture.fx": {
-    "mgfx": "c3c7889fceb3fcd0bdf4c9f129451c66ec366b96ec9cf695cdd2597f1e035a19",
-    "mgfxNormalized": "72dd45729ca476fc6cb6cf8ac96b30ec8fd45a0a1a13762ff273535fd25de8cf",
+    "mgfx": "cb1da89828096975c4cccacdfadce68f0d628f4c7d26fb6ca7c9daed397bd637",
+    "mgfxNormalized": "f5aa0f78c1b06cca8c346d1137154b5d2e2f9334bd5fdb5efa23df0e45dc5c76",
     "dxil": "453d922618eca53bbadfe90bb94857b9842ce2a5c8729fe279b45adc400566f4",
     "warnings": []
   },
@@ -1335,8 +1335,8 @@
     "warnings": []
   },
   "DirectX12/SkinnedEffect.fx": {
-    "mgfx": "610612ef9271b0eb8dad76037a168dceaaa6711e3f59a11d4446674769999c1b",
-    "mgfxNormalized": "ebac2077857321ca8ef468d25fd441788704f4b4e0c2067b00088b37cb28d4ec",
+    "mgfx": "88d1e532b0864d9b0ac270a9f655bd4bfb46e0bd7d36a733a1e368b0f2d6adfa",
+    "mgfxNormalized": "1ac4db427beb61409320de0269c398adef452084e3fc11fca43f608be0b647eb",
     "dxil": "03dd7ff4ba3614fd64e2ba96364cbc8c784318957e3b4a3e6cf44f5eb65fa24d",
     "warnings": []
   },
@@ -1352,8 +1352,8 @@
     "warnings": []
   },
   "DirectX12/SpriteEffect.fx": {
-    "mgfx": "b56c03347893d6a19bd525ba71953772a2e9a37e982de0b07f084299529b32c4",
-    "mgfxNormalized": "018c157e3f53fd64a2d8d72ca13cafc8e52ac0826cb8d808e213f2ba9027ae54",
+    "mgfx": "b9f5e3bd405d3cce05a7064c4d1b2109877e8fc338d8cc3cc1eccac780d57b2e",
+    "mgfxNormalized": "82fb30428a51df9e89a7e5840b016aaec20992559f0d6399090554e9f4c59e8e",
     "dxil": "1ca53757d0aa913bafc5ab0b3dc569a1db095f4c8fbd10c9a5de763913ed6a76",
     "warnings": []
   },
@@ -1810,20 +1810,20 @@
     ]
   },
   "DirectX12/third-party/Apos.Shapes/apos-shapes-aa.fx": {
-    "mgfx": "9a9723992af3ea1ba9c32bb264b6516aa24400f52e59dea3bb88c23280cbfe2b",
-    "mgfxNormalized": "3682d126bdabe2efb708c63f83f38a306b78abec26ff65ad7a66880c0d5b0b9d",
+    "mgfx": "9090ae97c6b78de06a494aa2fc6eed644e7142b0d207e706ec5e38bc22189a7e",
+    "mgfxNormalized": "a5c27213abe80b4ba3b0ce8eb6ce92ed6f8909c2c30ffc4c055b06add5c73a63",
     "dxil": "7a35c9b2a905f423baefd7ccf36fde91d852524280b1503ee016068e1cee389a",
     "warnings": []
   },
   "DirectX12/third-party/Apos.Shapes/apos-shapes-sm6.fx": {
-    "mgfx": "d2717f14c359f4cd037ee1b5e31d133a3df1da781ec1e07d77f857af25ae19e8",
-    "mgfxNormalized": "31365f2fbf1a4838a8e0c624afdc26bdcbdabf665205043af314aa037d089495",
+    "mgfx": "d836f4ed1a2d51fc711f1ad26dbe19ddd0f720b78fd1f3342895477777166863",
+    "mgfxNormalized": "cd9366c05714dab9845ae5ae00a937a147886bf918aed9852165c139c6938d05",
     "dxil": "014e7e2693fbca7c07f6555bf5487a5adbf96ff81c830f5d2edf5707cdbef27c",
     "warnings": []
   },
   "DirectX12/third-party/Apos.Shapes/apos-shapes.fx": {
-    "mgfx": "fbe87fd6744c35747b2bf55479483b5cc58c309ab6b097102d0d9fab73efffdf",
-    "mgfxNormalized": "9d6ed3374eebea6c0393e57abbfb4a8d7174a64c9dd57861dfb37954951f5a97",
+    "mgfx": "537ab3c7dc2a5d46b616901ce099258f0d596e414b0014f3ea200a930e05dca0",
+    "mgfxNormalized": "30f83831bd1ba97add1d7217ae448ef50738267b6a94b24fdee0fd0fe725b5bb",
     "dxil": "3e027a8b8c8d4cce3be1054d5f56e72ffb7f62cf45d6f60973df93e9e6441463",
     "warnings": []
   },
@@ -1862,14 +1862,14 @@
     "warnings": []
   },
   "DirectX12/third-party/MonoGame/CustomSpriteBatchEffect.fx": {
-    "mgfx": "fe578199784d88d6388c312130264deb65a5ae3b1601b4f8d1f765596138e64c",
-    "mgfxNormalized": "c562ba9b674c0d4f3a5da647973a5fb2c6ef56c1becf0d7cb3be2589a3e2e0a0",
+    "mgfx": "35e9ae21f4431ba96bc6ddd280f2f19e6bb448a122440e778806ff42476eb45d",
+    "mgfxNormalized": "c10cd6f3608db1daeebbfc38a0a438ce6d5b45a1730a4547f3e9cec6b260fdb7",
     "dxil": "56fb2b5b5aa0315f734f93164ec37af6373c5b610bde79683bb1a7cf4021fc02",
     "warnings": []
   },
   "DirectX12/third-party/MonoGame/CustomSpriteBatchEffectComparisonSampler.fx": {
-    "mgfx": "4750fb08e143ab784ef80c3c749f775dd65b6b2fc4f6872a322a390733aedd7f",
-    "mgfxNormalized": "bd3fac325096e7a7b0ca13446d6e9be2a095dd95f55da95747850098fe40f569",
+    "mgfx": "1f89e4bf871f3a1ab5b042ca71e930debb563a82fab398d09c0981b52ce324e1",
+    "mgfxNormalized": "fb82f46d10a6e0fd24141ad4dfbfc0ac9fb4bb6ef5521d02afd172b702714ee9",
     "dxil": "13132999860586b85620e523239cef001bec1920dddac9dab486161bff8da443",
     "warnings": []
   },
@@ -1891,8 +1891,8 @@
     "warnings": []
   },
   "DirectX12/third-party/MonoGame/Instancing.fx": {
-    "mgfx": "363e7a686189f946981e097c4fed365030a215bf96dd7ee193ed37fd86c73918",
-    "mgfxNormalized": "2e0b6ece952b48e2cd469fb0966de15ba41da9e9ade7090c08e5099cd4d0f3db",
+    "mgfx": "cb7f88082765b9670249adc94706cc513dd763122fddf3579201a8028a809cd1",
+    "mgfxNormalized": "12a9ba741265af757068779713be9d6165055ce3f655b279a547defc28f567cf",
     "dxil": "30812c8738d083bc3d61930de8aa5dfc950579d8513b9a459f0816a1296c1c7f",
     "warnings": []
   },
@@ -1909,14 +1909,14 @@
     "warnings": []
   },
   "DirectX12/third-party/MonoGame/ParameterTypes.fx": {
-    "mgfx": "68de715fcb5dfc8d7b1e5ff4b0826bbe1f13f4e9326d702bd98f080fd7417090",
-    "mgfxNormalized": "7fbdbab224bf3b3e83d50f69f1fe859f711c6ad8a6f102ba5436e88349627c4c",
+    "mgfx": "73f81ff9faf4445aedd398942ceda3108a91eb2f17d060f8888055e4813fbecd",
+    "mgfxNormalized": "464dbd2584236bbc77b73e3103e65721ceb9e536253cd3266347ecd929d66164",
     "dxil": "4d93326fb9f95768c564dea27c7fb4e72399e7d2fa02b50c3a97c1096d47b204",
     "warnings": []
   },
   "DirectX12/third-party/MonoGame/ParserTest.fx": {
-    "mgfx": "d3f3720c37f58ceda91779cc137f9f7bfc13eeb5ff04253273039055addcf51d",
-    "mgfxNormalized": "bd73c7254cdae28e6259e4d3c83feba124be601a6b12290827fa5924e685c328",
+    "mgfx": "d44e844d2b8cd142438b237ae0f4cb4ce9ff58fa490948ffdddd89e07873a65f",
+    "mgfxNormalized": "3ee42b4db2abaed85a0a5f185c7173771ffbedd0e9559cc6d7d995af8fcf79d8",
     "dxil": "15befa81c259ec94c0e1fc42de89160041b70860f00a3e2c8379bfff933ca96f",
     "warnings": []
   },
@@ -1932,8 +1932,8 @@
     "warnings": []
   },
   "DirectX12/third-party/MonoGame/TextureArrayEffect.fx": {
-    "mgfx": "fc90be2353e28fd41cf08b40652a8a71744e0a2f95ac0f9266f3dc6ee95ac1bc",
-    "mgfxNormalized": "f7456914c8ebb014da5f31c14d3a2b75171a43fbda9c18704b028f4ba539aadd",
+    "mgfx": "2de305cf16c30d1223396c533a26b9ad1515c1dfdc266e783d8dbbb5ae3af55c",
+    "mgfxNormalized": "32bee404aeb9ed8ed649a7edcd63899a560e3b0419e49591d15cc4c458cc14d8",
     "dxil": "c47b4e73f1b2981f40f3d8930cba3a2f24ef84ad81b717812e2b88c44f65658a",
     "warnings": []
   },
@@ -2068,7 +2068,7 @@
     "warnings": []
   },
   "Vulkan.Debug/AlphaTestEffect.fx": {
-    "mgfx": "dc6ef4afafc21494c040d2d9796c035090282a17cabadf6a5fbf16b2dc186330",
+    "mgfx": "cc60ac95469fb80ee790c08cb075d0afc44367cbd4b3bc0e8f9a604ffaf678da",
     "spirv": "bea6b295183e30ae1f279f98cdd218c808043ac1015e45b5823156376c14c6ae",
     "warnings": []
   },
@@ -2088,7 +2088,7 @@
     "warnings": []
   },
   "Vulkan.Debug/BasicEffect.fx": {
-    "mgfx": "3335bef4195272a7544e24ae5c78356e42dce3019c410b0b73ccf23772bf05e1",
+    "mgfx": "7bbb922e6fb8ff4446cb7a3fa198a6e3de3337ec924b436e2033b8c3f9d7e2ff",
     "spirv": "2e6bb996538e3cc23d8b8a9bc4981761a09e2cd706c745af5343496855715503",
     "warnings": []
   },
@@ -2108,7 +2108,7 @@
     "warnings": []
   },
   "Vulkan.Debug/ClipShaderNew.fx": {
-    "mgfx": "b8ee03d3b874b98d0f29d5529085e0d3734e9ced29f3d8b27ebcca65082b7d78",
+    "mgfx": "d8c039e5292879c8438ed29ad241077a8a9e4278c162921235feb8af372ebb5b",
     "spirv": "4a918b7d5c75500b64b989f354dc22355d0ac108b3c460b6878bee4a734761b0",
     "warnings": []
   },
@@ -2133,12 +2133,12 @@
     "warnings": []
   },
   "Vulkan.Debug/DualTextureEffect.fx": {
-    "mgfx": "9c7617f7afc7626f2dbb0013ee82336d479dfa8a62bb5c29279fa7d9048d531a",
+    "mgfx": "9ebf24fc57402b159289bfb74915308a7acbc7586944d2d60057e1511b56e9fa",
     "spirv": "138a399d02963d316b2ddb0088c0af68edc8316e892dc39856771d09c66fe7bc",
     "warnings": []
   },
   "Vulkan.Debug/EnvironmentMapEffect.fx": {
-    "mgfx": "b8f3f5e7c82cb8d313033b8004858d7ea7a8ad8c560172a25e74bf0bfa2bf3e0",
+    "mgfx": "0a0d975e812a39dd171bddd7ae11bd3f2b973a9303d0f2b60368a3ca11da5df9",
     "spirv": "c7d42fd83b00cd0beecc804bf3932acbd479f73058e1ba67d0c4a8ae3abc8edd",
     "warnings": []
   },
@@ -2205,7 +2205,7 @@
     "warnings": []
   },
   "Vulkan.Debug/PenumbraHull.fx": {
-    "mgfx": "a800c0cb07ce710cedb48d78b75212896fc348c6df06e2435ed417b034b9087a",
+    "mgfx": "72d4b093f3e844c5428df8564e6a43cfff7e2cd11d656a1e37d878b172d76257",
     "spirv": "be49e41a0c07175aadbef5849461943f1bdee22de7ceeb5516a5a652d7a111d2",
     "warnings": []
   },
@@ -2320,7 +2320,7 @@
     "warnings": []
   },
   "Vulkan.Debug/SkinnedEffect.fx": {
-    "mgfx": "4be99b4ef1aa6da799e67b58e7484fc477446f5a0f466b22e74775df39ad7df0",
+    "mgfx": "06fe5394dee76eb24d51ab031323babf655338aa63cf54849057c449fad830b8",
     "spirv": "b78e6e1dcc3dc784123c0359abc67e90346733bc7bc3a8ceb1be629c4716f85e",
     "warnings": []
   },
@@ -2335,7 +2335,7 @@
     "warnings": []
   },
   "Vulkan.Debug/SpriteEffect.fx": {
-    "mgfx": "e1ec997f6ae000bb425cc498ebd43a5c46307ea48b0355da3b6e31997c46e688",
+    "mgfx": "65febfd247064d5817227c3c548651d10f51dcab18c2ee05ba51ea0dfd921fc1",
     "spirv": "d0680b11b517cf83c13e33fb395165a2fca5024630ebb2e67f121c7e74f5c5f7",
     "warnings": []
   },
@@ -2720,17 +2720,17 @@
     ]
   },
   "Vulkan.Debug/third-party/Apos.Shapes/apos-shapes-aa.fx": {
-    "mgfx": "b82277e19afefb19678faecd0a31c2fe30ec58ffc1d254ebcb4b350b9923bd50",
+    "mgfx": "91263dd72950eddbf1d0c764cb77d32b6fb45d83728156e3744d120cdccf5cb4",
     "spirv": "e927682b26407694333e9ae141d3f3aa42cbd1e18f3cd2f893049b077ad19be8",
     "warnings": []
   },
   "Vulkan.Debug/third-party/Apos.Shapes/apos-shapes-sm6.fx": {
-    "mgfx": "8d2c5c7f1ea6cfaf28e1c04d73507af980417327684841470ff9c6758f1d68d2",
+    "mgfx": "51d4fae14125ed76a00969cf7cb08a793d42ac7f0615bd9d5c4f2bec1b23d525",
     "spirv": "9eadeedb6d78be5b4a9c9c605d7d62db8d7d2308631c5661bae9800b4e936567",
     "warnings": []
   },
   "Vulkan.Debug/third-party/Apos.Shapes/apos-shapes.fx": {
-    "mgfx": "4a52d33d478206ec6b8d806545df19d0844c492ddf7c430fda96468c411da97c",
+    "mgfx": "d9ef1eb375b515a9046681c9bda53543d87b9878c099489228b0e31e85cd2f54",
     "spirv": "c122bea1fe04dc3efc8e9ef94ff70676214ed16254543d8cdd07d0d34bcafae2",
     "warnings": []
   },
@@ -2765,12 +2765,12 @@
     "warnings": []
   },
   "Vulkan.Debug/third-party/MonoGame/CustomSpriteBatchEffect.fx": {
-    "mgfx": "17cbe02dc99fbcef8cad44b0a1fa5c0db6340f5d06bb0bc44db17f2a0e765786",
+    "mgfx": "b127a2313a341e356f5c8d45df295009c46dd6c75a2e7325ea0fb5eb815554d0",
     "spirv": "35a5c67479982f86ea35653a438e3d8b7232ee6d759edeebcfaaf35f0ce83e0c",
     "warnings": []
   },
   "Vulkan.Debug/third-party/MonoGame/CustomSpriteBatchEffectComparisonSampler.fx": {
-    "mgfx": "18ebf56b516778437d61d87d7bf63316514f254e1bf958574bd759d05c6bd926",
+    "mgfx": "e584088a5c16eb69f042902053b67a1ee4d8dd893da49bb8498e90198f727f4c",
     "spirv": "198d9364dc6d23fa56b920c5cbbaaff9e982b3d5f02dd2d59266815d8112f126",
     "warnings": []
   },
@@ -2790,7 +2790,7 @@
     "warnings": []
   },
   "Vulkan.Debug/third-party/MonoGame/Instancing.fx": {
-    "mgfx": "2d8ec62d281d121e4b633a70801c92e4fdfe2c8549bcc80b3660b7bad73272e0",
+    "mgfx": "48f1e6d60c91e0c99c8b7a5065921006d6f5057cb2130b49dfc6c9e9967db993",
     "spirv": "580db45b25dd89d911a493918cecc876dcca60a538f0a6e0d8e09743df7d6aa1",
     "warnings": []
   },
@@ -2805,12 +2805,12 @@
     "warnings": []
   },
   "Vulkan.Debug/third-party/MonoGame/ParameterTypes.fx": {
-    "mgfx": "b0a6cee7b4eae419c2496a0f280b56f06cd875e967645003c06f4f33e31ec9e2",
+    "mgfx": "6279da10efc8a7e523478b1b865977d6098e7e8ce59feb87c8f803e60d50ca9b",
     "spirv": "04fb23da0c3484f8a83bc55e91e82b7276292978814fe1e42402fd9eaf97f41c",
     "warnings": []
   },
   "Vulkan.Debug/third-party/MonoGame/ParserTest.fx": {
-    "mgfx": "d901929a95a5c0d2de3168a8ed3b0a71c0bf2d511247e738b6c7211e0cef1998",
+    "mgfx": "b8100026dca11ed20eba7a122cdf38b709090aa3926e332ac233a87409e36468",
     "spirv": "24c420c40dc20a1708f6df8347811410977ad57b3ed3addaccc3aff1d1d7b6d8",
     "warnings": []
   },
@@ -2825,7 +2825,7 @@
     "warnings": []
   },
   "Vulkan.Debug/third-party/MonoGame/TextureArrayEffect.fx": {
-    "mgfx": "452446051907545079f08853ccb9bfa14f9bf97edbe21261e139290e62703064",
+    "mgfx": "6acb173d59816dbaaa7747e6cba9c0a6c0d0648f669972157edc3d95deeebdc1",
     "spirv": "d57271af3be22e91651887b3242df142e7c6379fae8be86e66841e9baf30b69c",
     "warnings": []
   },
@@ -2940,7 +2940,7 @@
     "warnings": []
   },
   "Vulkan/AlphaTestEffect.fx": {
-    "mgfx": "390c812281b68eebf7efe846b3296ff1187cfe8209e143f8c07d885691ce27d4",
+    "mgfx": "9248c89ea75a1faea08daf05603845775f476f86976ecbe0747c6f1b350f1535",
     "spirv": "3b079975aacfde19234963b66dc8ec418ec69ac3884bc3888bacd4f41966abbb",
     "warnings": []
   },
@@ -2960,7 +2960,7 @@
     "warnings": []
   },
   "Vulkan/BasicEffect.fx": {
-    "mgfx": "1710b669535797620c5a60a5427c8525888abe9ea3e0f71b344db52299673c3d",
+    "mgfx": "93d82905cf9788c870d580be2d3f924fe2dbbd41cf441c6dbdc41e02cf2be1a1",
     "spirv": "3fdacddf7087a48fc11c8f086d58fbf1214db14d64d4ee1d677c4a35077a0d14",
     "warnings": []
   },
@@ -2980,7 +2980,7 @@
     "warnings": []
   },
   "Vulkan/ClipShaderNew.fx": {
-    "mgfx": "0759671c8326f051ff7a7436c4bc759b8df663fcba7e4e4aa44f87e34d77aa5d",
+    "mgfx": "aa068ab5af8035a44baed87d0d78cde771840e9b700ffa21c1b22a240e06456a",
     "spirv": "857c4f51f6407d7fabee46d64460cb5d1f986874e7cccc1cd863251294c1027e",
     "warnings": []
   },
@@ -3005,12 +3005,12 @@
     "warnings": []
   },
   "Vulkan/DualTextureEffect.fx": {
-    "mgfx": "0a05d28dc6cdc925fe0276bd8d59f9e1b3162b29855fbaa2387aa18eee08d135",
+    "mgfx": "96c835a05f3bdc2981fd45f8c6865fb62f99d56fa7716193ea053632e2eb10d7",
     "spirv": "ef63cf9ee3f0e50505bbca6db4ed465931178f0d5f9d8afeaa8df8cf02582f16",
     "warnings": []
   },
   "Vulkan/EnvironmentMapEffect.fx": {
-    "mgfx": "ca93ee8b33f239b1095976534a6df5e9af59996e183ddc739545246303030a76",
+    "mgfx": "3f9c24dc5de14e79ac4a6792124b03e7fc67f7c16483cb78281c5b6f21dd6c94",
     "spirv": "f5a162cfff542a02d0c8bfb877c70c7de55027618939891a0fe62e8778b2b632",
     "warnings": []
   },
@@ -3077,7 +3077,7 @@
     "warnings": []
   },
   "Vulkan/PenumbraHull.fx": {
-    "mgfx": "88d32f0b68c496f7344250f7bea46ac117338c7d295672d07dfa791f765d708f",
+    "mgfx": "8bb5f19bebb295f2294dc9c5284c150f1e0bd4bc53753e823a2d29af59ef0678",
     "spirv": "3c8d460c0aedf133dba954e95b633b1b94d7c690889540c9cccfd007a87c4f58",
     "warnings": []
   },
@@ -3192,7 +3192,7 @@
     "warnings": []
   },
   "Vulkan/SkinnedEffect.fx": {
-    "mgfx": "3fa27afff1f0a38d5905a6b3cb6c578c1d951f73b0482dc94eb88277da8d07a9",
+    "mgfx": "3b7a09efebeed6c51f7b64da7deb98b0b71d997434365a718991177d43596051",
     "spirv": "2297103754cb0602c5547184e4776053c7234f0902d4765839ae738230dda980",
     "warnings": []
   },
@@ -3207,7 +3207,7 @@
     "warnings": []
   },
   "Vulkan/SpriteEffect.fx": {
-    "mgfx": "126b83ba761a10306786a67a00c2d685f71a1968fdf03c7b9a38af98c5880adb",
+    "mgfx": "46d6837c9f254ca4a0eb1dac2dba1d4fb36339f99f188199657a0c2b9ca40526",
     "spirv": "b85a5c0b5a26dbb11e1a427fcc9950dfaf48bfaafc7d422aa196966b3f00a973",
     "warnings": []
   },
@@ -3592,17 +3592,17 @@
     ]
   },
   "Vulkan/third-party/Apos.Shapes/apos-shapes-aa.fx": {
-    "mgfx": "3ee2187e64207d58d4a0a65ab6378859fddf86ba44e450134905b96b39ca1f13",
+    "mgfx": "33346bd7b59f63cf5eaf29f443ba521b521c1b0a2b8e79e765d6851de1178fc8",
     "spirv": "401ee1206b325aeacde62782f41b2f37c9369b1be3a8754aa0d954b128869485",
     "warnings": []
   },
   "Vulkan/third-party/Apos.Shapes/apos-shapes-sm6.fx": {
-    "mgfx": "a62e1047d228bfe3995e778856365b883432cccf86bf41afbd8d2feb4a039a38",
+    "mgfx": "e05ab4c2475b68baa3f0157bd7afc4f8011d4e70abd1e6fba98256cce188f3ad",
     "spirv": "4d9488884d9299b1ab6dfa12d8753721c94f66d2f4c2d04f74c06ea4eb6c9289",
     "warnings": []
   },
   "Vulkan/third-party/Apos.Shapes/apos-shapes.fx": {
-    "mgfx": "48b2e0070bf8b7046631f241b84b2e7487d135d30ace85b67321a418905b7566",
+    "mgfx": "d1ad4e0ce80e4b90319f232af8fdf0aa1c9dd0c3880c9b18613396c557af2fd5",
     "spirv": "656613449547cf4e28d9f3b3891e75a832fb52edc99d98be9b43d3b314edd7a6",
     "warnings": []
   },
@@ -3637,12 +3637,12 @@
     "warnings": []
   },
   "Vulkan/third-party/MonoGame/CustomSpriteBatchEffect.fx": {
-    "mgfx": "9f5f007dd669686a0fd86f182cc11288cc5b61b2981b881201ca37a0bf3982a2",
+    "mgfx": "fb295eda6eef32a7ead21d4b4651651c7550c3e0f7854e90bd8d5872b9bffb2e",
     "spirv": "8e93f91019dddf2c42a80777bd1441c3912258d8a78131ebe1755c02169e4bf2",
     "warnings": []
   },
   "Vulkan/third-party/MonoGame/CustomSpriteBatchEffectComparisonSampler.fx": {
-    "mgfx": "1b18d7216a15dab721742d65ac7c8f407039e9994cc2e9b6fae15b5073cdd8b5",
+    "mgfx": "2d56578eb70e6301c0601803c33fd99f7384a6ff02947bb4ec64b9a383b0a93d",
     "spirv": "c15d66eb2be8ecc224ac0b96386d57d5f807e4f7b200a8534679b6a9a6b392d0",
     "warnings": []
   },
@@ -3662,7 +3662,7 @@
     "warnings": []
   },
   "Vulkan/third-party/MonoGame/Instancing.fx": {
-    "mgfx": "a65f3b69bfc63ea3cf877a63fb78e56004d34a1cffd971edddc037530a9c2cce",
+    "mgfx": "d9ba4231f840dbb583352a4fdd515f24e1bfde287bbce44afab639cbe8c259bf",
     "spirv": "2a134d992e4caea434376ba5878b72cb1ca47702feafa381dbb1a47808793bd4",
     "warnings": []
   },
@@ -3677,12 +3677,12 @@
     "warnings": []
   },
   "Vulkan/third-party/MonoGame/ParameterTypes.fx": {
-    "mgfx": "f71d7379779ed12c2f0f1da01bb32fc227bc0650a753659e3338ec5528ed854a",
+    "mgfx": "c11e8ab34178b8878d869a22de8f26b252efae95fdb707080c72c818f19d74d5",
     "spirv": "69e44ed3cba93f1dfede95a2919d98fd7a161cfaee68bcb51205457448a16691",
     "warnings": []
   },
   "Vulkan/third-party/MonoGame/ParserTest.fx": {
-    "mgfx": "c27ff29812e69f8403d4cde0fccb9a247bf256c6decffcccef146c7700827aaa",
+    "mgfx": "ad1ca3b0879a464a2bb2f782b8453c7ea5bb779b6f4f916b00a130611a40c7a0",
     "spirv": "9136502374353badaab0c966eb0bb0dbb11ea5cfae49579fc77befb08985731a",
     "warnings": []
   },
@@ -3697,7 +3697,7 @@
     "warnings": []
   },
   "Vulkan/third-party/MonoGame/TextureArrayEffect.fx": {
-    "mgfx": "5208fd995b94c0eaaf4c9df54f05f05fc4620b1a7406fc5eed1926e96409580e",
+    "mgfx": "85b52618bea5fd6cde0b3905e1870970da365cfa1bdbb03848cc175187063996",
     "spirv": "035d3d2caf8a843a98d88767aedd200e700bb8183f0dc9958bef045eb10f4fb5",
     "warnings": []
   },

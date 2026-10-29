@@ -274,6 +274,35 @@ public sealed class Fx2EffectWriterTests
     // Happy path — written binary passes the independent MojoShader-rule validator
     // -------------------------------------------------------------------------
 
+    // fxc /T fx_2_0 writes an anonymous technique's and pass's name as a present, one-byte
+    // empty string (length 1, a lone NUL), never as the zero-length "no string" (measured
+    // with fxc 10.0.19041). MojoShader turns a zero length into a NULL name, which FNA
+    // reports as a null EffectTechnique/EffectPass.Name; the empty string reports "".
+    [Fact]
+    public void Write_AnonymousTechniqueAndPass_WriteFxcsEmptyNameString()
+    {
+        var desc = TexturedDesc() with
+        {
+            Techniques =
+            [
+                new Fx2Technique("", [
+                    new Fx2Pass("", VertexShaderIndex: -1, PixelShaderIndex: 0, []),
+                    new Fx2Pass("", VertexShaderIndex: -1, PixelShaderIndex: 0, []),
+                ]),
+                new Fx2Technique("Named", [new Fx2Pass("", VertexShaderIndex: -1, PixelShaderIndex: 0, [])]),
+            ],
+        };
+
+        var effect = Fx2BinaryValidator.Parse(WriteOk(desc));
+
+        effect.Techniques.Count.ShouldBe(2);
+        effect.Techniques[0].Name.ShouldBe("");
+        effect.Techniques[0].NameIsNull.ShouldBeFalse("fxc writes the anonymous technique name as a present empty string");
+        effect.Techniques[0].Passes.Select(p => (p.Name, p.NameIsNull)).ShouldBe([("", false), ("", false)]);
+        effect.Techniques[1].Name.ShouldBe("Named");
+        effect.Techniques[1].Passes.ShouldHaveSingleItem().NameIsNull.ShouldBeFalse();
+    }
+
     [Fact]
     public void Write_TexturedDesc_ValidatesAndModelMatches()
     {

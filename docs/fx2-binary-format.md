@@ -76,6 +76,11 @@ A string in the pool is:
   (vkd3d does exactly this, `fx.c:2134` "First entry is always zeroed and skipped"); then any
   name/semantic offset of `0` reads `len==0` → `NULL`. Use offset `0` for every absent semantic
   and anonymous typedef.
+- **An anonymous technique or pass is NOT offset 0**: fxc `/T fx_2_0` (10.0.19041, measured
+  2026-10-28) writes its name as a present one-byte string (`len == 1`, a lone `\0`), so
+  MojoShader returns `""` and FNA reports `EffectTechnique.Name`/`EffectPass.Name == ""`. Offset 0
+  would make the name `NULL` (a null `Name` in FNA, whose single-pass `EffectPassCollection[string]`
+  calls `Name.Equals`). `Fx2EffectWriter` writes fxc's form.
 - MojoShader imposes no alignment on reads, but fxc/vkd3d pad each string blob so the *next* pool
   item starts 4-byte aligned (`fx.c:1655–1669`). Do the same: pad `4 + len` up to a multiple of 4
   with zero bytes.

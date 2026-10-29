@@ -18,6 +18,13 @@ that loads and renders identically to `mgfxc`'s in the real MonoGame/KNI runtime
 
 ### Fixed
 
+- **An anonymous pass is named `""`, as `mgfxc`, KNI and `fxc` name it.** `technique T { pass { ... } }`
+  wrote the synthesized name `P0` (`P1`, ...), so `EffectPass.Name` read `"P0"` in MonoGame, KNI and
+  FNA; `mgfxc` 3.8.4.1 (MGFX, OpenGL and DirectX_11), KNI's own pipeline 4.2.9001/4.3.9001 (KNIFX) and
+  `fxc /T fx_2_0` all write an empty name. Every container now writes `""`, and several anonymous
+  passes in one technique compile (`mgfxc` accepts them). On FNA the anonymous technique's name is now
+  the one-byte empty string `fxc` writes, so FNA reports `EffectTechnique.Name == ""` instead of
+  `null`. Passes are still applied by index; only those names change in the output bytes.
 - **Techniques are read from the preprocessed source, like `mgfxc` (issue #407).** A technique
   inside a false `#if` (or behind an unset `/Defines` value) was still compiled, a technique in an
   `#include`d file was not found (`SD0010`, or dropped beside the main file's own), and a macro

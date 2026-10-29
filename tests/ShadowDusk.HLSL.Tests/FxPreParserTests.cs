@@ -459,6 +459,54 @@ public sealed class FxPreParserTests
         result.Error.Code.ShouldBe(FxParseErrorCode.DuplicatePassName);
     }
 
+    // An anonymous pass carries an EMPTY name, as mgfxc (MGFX), KNI's pipeline (KNIFX) and
+    // fxc fx_2_0 all write it; ShadowDusk used to synthesize "P<index>". Several anonymous
+    // passes in one technique are legal (mgfxc 3.8.4.1 compiles them) and are not duplicates.
+    [Fact]
+    public void Parse_AnonymousPasses_HaveEmptyNames_AndAreNotDuplicates()
+    {
+        const string source = """
+            technique
+            {
+                pass { PixelShader = compile ps_3_0 PS(); }
+                pass { PixelShader = compile ps_3_0 PS2(); }
+            }
+            technique Named
+            {
+                pass First { PixelShader = compile ps_3_0 PS(); }
+                pass { PixelShader = compile ps_3_0 PS2(); }
+            }
+            """;
+
+        var result = FxPreParser.Parse(source, sourceFile: "test.fx");
+
+        result.IsSuccess.ShouldBeTrue();
+        result.Value.Techniques.Count.ShouldBe(2);
+        result.Value.Techniques[0].Name.ShouldBe("");
+        result.Value.Techniques[0].Passes.Select(p => p.Name).ShouldBe(["", ""]);
+        result.Value.Techniques[0].Passes.Select(p => p.PixelEntryPoint).ShouldBe(["PS", "PS2"]);
+        result.Value.Techniques[1].Name.ShouldBe("Named");
+        result.Value.Techniques[1].Passes.Select(p => p.Name).ShouldBe(["First", ""]);
+    }
+
+    [Fact]
+    public void Parse_NamedDuplicateBesideAnonymousPass_StillReturnsFX0006()
+    {
+        const string source = """
+            technique T
+            {
+                pass { PixelShader = compile ps_3_0 PS(); }
+                pass A { PixelShader = compile ps_3_0 PS(); }
+                pass A { PixelShader = compile ps_3_0 PS(); }
+            }
+            """;
+
+        var result = FxPreParser.Parse(source, sourceFile: "test.fx");
+
+        result.IsFailure.ShouldBeTrue();
+        result.Error.Code.ShouldBe(FxParseErrorCode.DuplicatePassName);
+    }
+
     // -------------------------------------------------------------------------
     // T15 — unclosed annotation block → FX0007
     // -------------------------------------------------------------------------
