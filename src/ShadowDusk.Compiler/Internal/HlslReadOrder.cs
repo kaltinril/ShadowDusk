@@ -46,11 +46,17 @@ namespace ShadowDusk.Compiler.Internal;
 /// integer arithmetic.</para>
 ///
 /// <para>The walk also refuses: the entry point not found or overloaded, a call to an overloaded
-/// function, a legacy texture used other than as the object of a method call, a legacy sampler
-/// passed through a parameter, a texture the shader binds that the walk never saw read, a read in a
-/// <c>for</c> loop's increment clause, a <c>switch</c> arm that falls through, recursion, a
-/// statement it cannot parse, unbalanced brackets. The caller reports a refusal as <c>SD0230</c>
-/// and keeps the backend's slots.</para>
+/// function, a legacy texture used other than as the object of a <c>Sample</c>/<c>SampleGrad</c>
+/// call (fxc gives <c>GetDimensions</c>, <c>Load</c> and the like a texture record of their own),
+/// a legacy sampler passed through a parameter, a texture the shader binds that the walk never saw
+/// read, a read in a <c>for</c> loop's increment clause, a statement (or <c>for</c> init clause)
+/// that reads and is a bare call whose value is discarded, other than a user function's,
+/// <c>clip</c> or <c>sincos</c> (fxc drops <c>tex2D(B, uv);</c> and <c>float4(tex2D(B, uv));</c>
+/// before it numbers, measured), a read or a user-function call in a global initializer (fxc
+/// numbers it before the entry point's), a function defined inside a struct, class, interface or
+/// namespace, a <c>switch</c> arm that falls through, recursion, a statement it cannot parse,
+/// unbalanced brackets. The caller reports a refusal as <c>SD0230</c> and keeps the backend's
+/// slots.</para>
 /// </summary>
 internal static class HlslReadOrder
 {
@@ -134,6 +140,7 @@ internal static class HlslReadOrder
         // ---- Top level: functions, and `static const int N = <literal>;` (a loop bound) ---------
         var functions = new Dictionary<string, List<(int ParamOpen, int BodyStart, int BodyEnd)>>(StringComparer.Ordinal);
         var staticConstInts = new Dictionary<string, long?>(StringComparer.Ordinal); // null: declared twice
+        string? nestedFunction = null;
         int depth = 0;
         int statementStart = 0;
         for (int i = 0; i < code.Count; i++)
@@ -147,12 +154,21 @@ internal static class HlslReadOrder
                 statementStart = i + 1;
                 continue;
             }
-            if (t.Kind != Kind.Ident || depth != 0 || i + 1 >= code.Count || !Is(code[i + 1], "("))
+            if (t.Kind != Kind.Ident || i + 1 >= code.Count || !Is(code[i + 1], "("))
                 continue;
             int close = match[i + 1];
             int j = close + 1;
             while (j + 1 < code.Count && Is(code[j], ":") && code[j + 1].Kind == Kind.Ident)
                 j += 2; // a semantic
+            if (depth != 0)
+            {
+                // A function defined inside a struct, class, interface or namespace: its calls
+                // (`s.Get(uv)`, `N::F(uv)`) are never walked, and fxc numbers the reads in them
+                // (measured: a struct method and a namespace function reading B first, mgfxc B@t0).
+                if (j < code.Count && Is(code[j], "{"))
+                    nestedFunction ??= t.Text;
+                continue;
+            }
             if (j < code.Count && Is(code[j], "{"))
             {
                 if (!functions.TryGetValue(t.Text, out var list))
@@ -165,10 +181,52 @@ internal static class HlslReadOrder
             i = close;
         }
 
+        if (nestedFunction is not null)
+        {
+            refusal = $"the function '{nestedFunction}' is defined inside a struct, class, interface or namespace, whose calls this " +
+                      "check does not follow";
+            return null;
+        }
+
         if (!functions.TryGetValue(entryPoint, out var entry) || entry.Count != 1)
         {
             refusal = $"the entry point '{entryPoint}' was not found exactly once";
             return null;
+        }
+
+        // ---- Global initializers --------------------------------------------------------------
+        // fxc numbers a read in a global initializer (`static float4 G = tex2D(B, uv);`, through a
+        // helper, in an array initializer) BEFORE the entry point's, even when nothing uses the
+        // global (measured: mgfxc B@t0 for an unused one). Not modelled: any read or call to a
+        // user function outside a function body refuses.
+        {
+            var inBody = new bool[code.Count];
+            foreach (var overloads in functions.Values)
+            {
+                foreach (var f in overloads)
+                {
+                    for (int b = f.BodyStart; b < f.BodyEnd; b++)
+                        inBody[b] = true;
+                }
+            }
+            for (int i = 0; i + 1 < code.Count; i++)
+            {
+                Tok t = code[i];
+                if (inBody[i] || t.Kind != Kind.Ident || (i > 0 && Is(code[i - 1], ".")))
+                    continue;
+                bool read = legacyTextures.Contains(t.Text) && Is(code[i + 1], ".");
+                // `float4 F(` declares F (a definition, a prototype, a technique's `compile ps_4_0 P()`);
+                // after anything else, `F(` calls it.
+                bool call = Is(code[i + 1], "(") && (LegacyIntrinsic.IsMatch(t.Text) || functions.ContainsKey(t.Text))
+                            && !(i > 0 && ((code[i - 1].Kind == Kind.Ident && !NotTypes.Contains(code[i - 1].Text))
+                                           || (Is(code[i - 1], ">") && ClosesTemplate(i - 1))));
+                if (read || call)
+                {
+                    refusal = $"a global initializer reads a texture or calls a function ('{t.Text}'), which fxc evaluates " +
+                              "before the entry point; this check does not follow it";
+                    return null;
+                }
+            }
         }
 
         // Every read in evaluation order, with the guards it sits under (empty: certainly kept).
@@ -411,8 +469,53 @@ internal static class HlslReadOrder
                 default:
                     // A declaration or an expression statement. (`discard` is one too: fxc numbers
                     // the reads after it, measured.)
-                    return WalkExpression(fn, k, last, ctx);
+                    return WalkDiscardable(fn, k, last, ctx);
             }
+        }
+
+        // An expression statement (or a for loop's init clause) [s, e). fxc DROPS some whose value
+        // is discarded before it numbers textures, reads and all, measured against mgfxc: a bare
+        // read `tex2D(B, uv);` (parenthesized, in a block, in a void helper, `Tb.Sample(SB, uv);`,
+        // `tex2Dgrad`), a constructor `float4(tex2D(B, uv));`, `float2(tex2D(B, uv).r, 0);`. It
+        // KEEPS `tex2D(B, uv).r;`, `* 2;`, `-x;`, a cast, `?:`, a comma, an assignment, a declaration,
+        // `max(...)`, `clip(...)`, `sincos(...)` and a user function's call. Which call statements it
+        // drops is not modelled: one that reads and is a bare call other than a user function's,
+        // `clip` or `sincos` refuses (an intrinsic fxc keeps refuses with it, harmlessly).
+        bool WalkDiscardable(Fn fn, int s, int e, Ctx ctx)
+        {
+            int before = occurrences.Count;
+            if (!WalkExpression(fn, s, e, ctx))
+                return false;
+            if (occurrences.Count == before || !BareCall(s, e))
+                return true;
+            return Fail($"a statement in '{fn.Name}' discards the value of a call that reads a texture (fxc drops some of " +
+                        "these before it numbers textures: a bare read, a constructor), which this check does not decide");
+        }
+
+        // [s, e), outer parentheses removed, is exactly one call `F(…)`, `F<…>(…)` or `a.b.F(…)`,
+        // other than a user function's, `clip`'s or `sincos`'s.
+        bool BareCall(int s, int e)
+        {
+            while (s < e && Is(code[s], "(") && match[s] == e - 1)
+            {
+                s++;
+                e--;
+            }
+            if (s >= e || code[s].Kind != Kind.Ident)
+                return false;
+            int p = s + 1;
+            while (p + 1 < e && Is(code[p], ".") && code[p + 1].Kind == Kind.Ident)
+                p += 2;
+            if (p == s + 1 && p < e && Is(code[p], "<"))
+            {
+                // A template constructor, `vector<float, 4>(…)`.
+                while (p < e && !Is(code[p], ">") && !Is(code[p], "("))
+                    p++;
+                p++;
+            }
+            if (p >= e || !Is(code[p], "(") || match[p] != e - 1)
+                return false;
+            return p != s + 1 || !(functions.ContainsKey(code[s].Text) || code[s].Text is "clip" or "sincos");
         }
 
         // `for (init; cond; step) body`: init and the first test run once; the body only when the
@@ -432,7 +535,7 @@ internal static class HlslReadOrder
                 return Fail($"a 'for' loop in '{fn.Name}' could not be parsed");
             if (ReadsAnything(semis[1] + 1, close))
                 return Fail("a for loop reads a texture in its increment clause, which runs after the body");
-            if (!WalkExpression(fn, open + 1, semis[0], ctx) || !WalkExpression(fn, semis[0] + 1, semis[1], ctx))
+            if (!WalkDiscardable(fn, open + 1, semis[0], ctx) || !WalkExpression(fn, semis[0] + 1, semis[1], ctx))
                 return false;
             var loop = new Scope { Parent = ctx.Scope, IsFrame = false, IsLoop = true };
             Ctx body = (FirstIterationRuns(open + 1, semis[0], semis[1]) ? ctx : Guarded(ctx)) with { Scope = loop };
@@ -567,6 +670,14 @@ internal static class HlslReadOrder
                         return Fail($"a parameter or local shadows the legacy texture '{t.Text}'");
                     if (i + 3 < e && Is(code[i + 1], ".") && code[i + 2].Kind == Kind.Ident && Is(code[i + 3], "("))
                     {
+                        // Only the methods the legacy rewrite emits (tex2D -> Sample, tex2Dgrad ->
+                        // SampleGrad). fxc gives any other use of the texture (GetDimensions, Load,
+                        // Gather, measured) a texture record of its own, numbered apart.
+                        if (code[i + 2].Text is not ("Sample" or "SampleGrad"))
+                        {
+                            return Fail($"the legacy texture '{t.Text}' is used through its method '{code[i + 2].Text}', which fxc " +
+                                        "gives a texture record of its own");
+                        }
                         pending.Push((match[i + 3], t.Text, null));
                         i += 3;
                         continue;

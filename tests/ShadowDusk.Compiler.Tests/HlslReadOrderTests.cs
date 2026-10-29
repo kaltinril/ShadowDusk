@@ -233,6 +233,108 @@ public sealed class HlslReadOrderTests
         refusal.ShouldNotBeNull().ShouldContain(reason, Case.Sensitive);
     }
 
+    // ---- Statements whose value is discarded ---------------------------------------------------
+
+    // fxc DROPS these, reads and all, before it numbers (mgfxc 3.8.4.1 numbers TB after TA; the
+    // U* goldens). Which call statements it drops is not modelled, so a bare call that reads
+    // refuses, an intrinsic fxc keeps (max) included.
+    [Theory]
+    [InlineData("", "TB.Sample(B, uv); ")]                                                     // U01
+    [InlineData("", "(TB.Sample(B, uv)); ")]                                                   // U02
+    [InlineData("", "float4(TB.Sample(B, uv)); ")]                                             // U03
+    [InlineData("", "float2(TB.Sample(B, uv).r, 0); ")]                                        // U04
+    [InlineData("", "TB.SampleGrad(B, uv, 0, 0); ")]                                           // U05
+    [InlineData("", "{ TB.Sample(B, uv); } ")]                                                 // U06
+    [InlineData("", "for (int i = 0; i < 2; i++) { TB.Sample(B, uv); } ")]                     // U07
+    [InlineData("", "TB.Sample(B, TC.Sample(C, uv).xy); ")]                                    // U08
+    [InlineData("", "if (k > 0) c = 1; TB.Sample(B, uv); ")]                                   // U09
+    [InlineData("void H(float2 uv) { TB.Sample(B, uv); }\n", "H(uv); ")]                       // U10
+    [InlineData("void H(float2 uv, inout float4 c) { c += 1; TB.Sample(B, uv); }\n", "H(uv, c); ")] // U11
+    [InlineData("", "for (TB.Sample(B, uv); c.x < 1; c += 1) { } ")]                           // U12
+    [InlineData("", "tex2D(B, uv); ")]                                                         // an unrewritten intrinsic
+    [InlineData("", "vector<float, 4>(TB.Sample(B, uv)); ")]                                   // a template constructor
+    [InlineData("", "max(TB.Sample(B, uv), 0); ")]                                             // U50: fxc keeps it (a false refusal)
+    public void ABareCallThatReads_IsRefused(string helpers, string statement)
+    {
+        Order("float4 c = 0; " + statement + ProbeTail, out string? refusal, helpers).ShouldBeNull();
+        refusal.ShouldNotBeNull().ShouldContain("discards the value of a call that reads", Case.Sensitive);
+    }
+
+    // fxc KEEPS these (measured): TB is numbered first.
+    [Theory]
+    [InlineData("", "TB.Sample(B, uv).r; ")]                                                   // U20
+    [InlineData("", "TB.Sample(B, uv) * 2; ")]                                                 // U21
+    [InlineData("", "TB.Sample(B, uv) * 0; ")]                                                 // U22
+    [InlineData("", "-TB.Sample(B, uv); ")]                                                    // U23
+    [InlineData("", "(float4)TB.Sample(B, uv); ")]                                             // U25
+    [InlineData("", "clip(TB.Sample(B, uv).r + 1); ")]                                         // U26
+    [InlineData("", "clip(TB.Sample(B, uv).a - 0.5); ")]                                       // U27
+    [InlineData("", "float s, co; sincos(TB.Sample(B, uv).r, s, co); c = s + co; ")]            // U28
+    [InlineData("float4 F(float2 uv) { return TB.Sample(B, uv); }\n", "F(uv); ")]               // U29
+    [InlineData("float4 F(float2 uv) { return TB.Sample(B, uv); }\n", "(F(uv)); ")]             // U30
+    [InlineData("void H(float2 uv, inout float4 c) { c += TB.Sample(B, uv); }\n", "H(uv, c); ")] // U32
+    [InlineData("void H(float2 uv) { clip(TB.Sample(B, uv).a - 0.5); }\n", "H(uv); ")]          // U43
+    [InlineData("", "TB.Sample(B, uv), c = 1; ")]                                              // U34
+    [InlineData("", "c = 1, TB.Sample(B, uv); ")]                                              // U35
+    [InlineData("", "k > 0 ? TB.Sample(B, uv) : 0; ")]                                         // U37
+    [InlineData("", "float4 u = TB.Sample(B, uv); ")]                                          // U38
+    [InlineData("", "for (float4 t = TB.Sample(B, uv); c.x < 1; c += 1) { } ")]                // U39
+    [InlineData("", "float4(TB.Sample(B, uv)).r; ")]                                           // U40
+    [InlineData("", "(TB.Sample(B, uv)).r; ")]                                                 // U41
+    [InlineData("", "(c = TB.Sample(B, uv)).r; ")]                                             // U42
+    public void ADiscardedValueFxcKeeps_IsNumbered(string helpers, string statement)
+    {
+        Order("float4 c = 0; " + statement + ProbeTail, out string? refusal, helpers)!.ShouldBe(["TB", "TA"], refusal);
+    }
+
+    // ---- Methods the rewrite never emits ------------------------------------------------------
+
+    [Theory]
+    [InlineData("float w, h; TB.GetDimensions(w, h); return TA.Sample(A, uv) * w + TB.Sample(B, uv);", "GetDimensions")] // U60
+    [InlineData("return TB.Load(int3(0, 0, 0)) + TA.Sample(A, uv) + TB.Sample(B, uv);", "Load")]                       // U62
+    [InlineData("return TB.SampleLevel(B, uv, 0) + TA.Sample(A, uv);", "SampleLevel")]                                 // U64
+    public void ALegacyTextureMethodTheRewriteDoesNotEmit_IsRefused(string body, string method)
+    {
+        // fxc gives that use a texture record of its own (mgfxc A@t0 Tb@t1 Tb@t2); counted as the
+        // legacy read it put TB on t0.
+        Order(body, out string? refusal).ShouldBeNull();
+        refusal.ShouldNotBeNull().ShouldContain($"through its method '{method}'", Case.Sensitive);
+    }
+
+    // ---- Global initializers, nested functions ---------------------------------------------------
+
+    [Theory]
+    [InlineData("static float4 G = TB.Sample(B, float2(0.5, 0.5));\n", "TB")]                                    // U70 (unused)
+    [InlineData("float4 F() { return TB.Sample(B, float2(0.5, 0.5)); }\nstatic float4 G = F();\n", "F")]         // U71
+    [InlineData("static float4 G[2] = { TB.Sample(B, float2(0.5, 0.5)), float4(0, 0, 0, 0) };\n", "TB")]         // U72
+    [InlineData("static float4 G = tex2D(B, float2(0.5, 0.5));\n", "tex2D")]
+    [InlineData("float Half() { return 0.5; }\nstatic const float H = Half();\n", "Half")]                       // no read: refused anyway
+    public void AGlobalInitializerThatReadsOrCalls_IsRefused(string globals, string name)
+    {
+        // fxc numbers it before the entry point's reads (mgfxc B@t0 for U70, whose G nothing uses).
+        Order("return TA.Sample(A, uv) + TB.Sample(B, uv);", out string? refusal, globals).ShouldBeNull();
+        refusal.ShouldNotBeNull().ShouldContain($"global initializer reads a texture or calls a function ('{name}')", Case.Sensitive);
+    }
+
+    [Fact]
+    public void APrototype_ATechniquesCompile_AndAConstantInitializer_AreNotReads()
+    {
+        const string globals = "static const float3 Luma = float3(0.3, 0.59, 0.11);\nfloat4 F(float2 uv);\n" +
+                               "struct V { float4 p : POSITION; };\nfloat4 F(float2 uv) { return TB.Sample(B, uv); }\n";
+        Order("return F(uv) + TA.Sample(A, uv);", out string? refusal, globals)!.ShouldBe(["TB", "TA"], refusal);
+    }
+
+    [Theory]
+    [InlineData("struct S { float4 Get(float2 uv) { return TB.Sample(B, uv); } };\n", "S s; return s.Get(uv) * TA.Sample(A, uv);", "Get")] // U81
+    [InlineData("struct S { float4 Get(float2 uv) { return TB.Sample(B, uv); } };\n", "S s; return TA.Sample(A, uv) + s.Get(uv);", "Get")] // U82
+    [InlineData("namespace N { float4 F(float2 uv) { return TB.Sample(B, uv); } }\n", "return N::F(uv) + TA.Sample(A, uv);", "F")]          // U83
+    public void AFunctionInsideAStructOrNamespace_IsRefused(string globals, string body, string name)
+    {
+        // Its calls are never walked; fxc numbers the reads in it (mgfxc B@t0 for U81 and U83).
+        Order(body, out string? refusal, globals).ShouldBeNull();
+        refusal.ShouldNotBeNull().ShouldContain($"the function '{name}' is defined inside a struct", Case.Sensitive);
+    }
+
     [Fact]
     public void AMissingEntryPoint_IsRefused()
     {
