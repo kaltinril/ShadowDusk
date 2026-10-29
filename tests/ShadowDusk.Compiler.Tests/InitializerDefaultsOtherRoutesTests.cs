@@ -14,7 +14,10 @@ namespace ShadowDusk.Compiler.Tests;
 /// route a <c>SKRuntimeEffect</c> source, both fed by DXC, which drops the initializer. The
 /// uniform is declared WITHOUT a value, so it starts at the host library's own default (zero in
 /// raylib and Skia) until the game sets it. This is the documented current behavior, pinned so a
-/// change to it is deliberate; it is not a statement that it is the desirable end state.
+/// change to it is deliberate; it is not a statement that it is the desirable end state. Since
+/// issue #435 the default is reported beside the shader instead (<c>SkslUniform.DefaultValue</c>,
+/// <c>RaylibUniform.DefaultValue</c>, pinned by <c>ConverterUniformDefaultsTests</c>), and the text
+/// pinned here is unchanged by that.
 /// Needs the DXC and SPIRV-Cross natives, like the converters' other tests.
 /// </summary>
 public sealed class InitializerDefaultsOtherRoutesTests

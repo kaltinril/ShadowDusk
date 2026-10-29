@@ -14,6 +14,31 @@ that loads and renders identically to `mgfxc`'s in the real MonoGame/KNI runtime
 
 ### Added
 
+- **The SkSL and raylib conversion results report each uniform's declared default (issue #435).**
+  `SkslConversion.Uniforms` (new, a list of the new `SkslUniform`: name, SkSL type, array length)
+  and `RaylibUniform` both gain `DefaultValue`: the default the HLSL declaration gives the uniform
+  (`float Thickness = 1.0;`), with the same values and layout as `ParameterReflection.DefaultValue`
+  on the MGFX route for the same source (row-major matrices, array element after element, `bool` 0
+  or 1, `uint` unsigned), or `null` when there is no initializer, it cannot be evaluated (with the
+  MGFX route's `SD0017` warning), or the uniform is synthesized (`ShadowDusk_Color`,
+  `ShadowDusk_Resolution`). Both converted shaders still declare every uniform without a value
+  (an unset uniform reads 0 in Skia and raylib), so a caller that wants the author's default sets
+  it from `DefaultValue`: on Skia the list goes straight to `SKRuntimeEffectUniforms` (DXC's
+  `matRxC` columns are the HLSL rows, so even a matrix needs no reordering). Reflection only: the
+  emitted SkSL and GLSL are byte-identical for every fixture (all 202 `.fx`/`.slang` fixtures
+  diffed against the previous build), and issue #424's "emit the initializer into the shader"
+  option is not taken. Proven in the real runtimes: `validation/SkiaVsKni` and
+  `validation/RaylibRoute` each gain an `UnsetDefaults` case drawn with the reported defaults set on
+  Skia / raylib and nothing set on KNI / MonoGame GL (the `.mgfx` defaults apply), plus a
+  `Defaults-zeros` match and a `control-unset-defaults` control that must diverge (and, on Skia, a
+  `control-transposed-matrix` control).
+  A uniform SPIRV-Cross renamed (`input` to `_input`, `a__b` to `a_b`, `gl_X`, a clash suffix) is paired
+  with its HLSL global through the SPIR-V member names, and a global with a default that no uniform
+  pairs with is an `SD0017` warning, never a silent `null`. The value is the MGFX route's for an
+  OpenGL build (the converters' macro set). **Record equality:** `RaylibUniform` and `SkslUniform`
+  equality now includes `DefaultValue` (compared element by element), so two entries for the same
+  uniform with different declared defaults are no longer equal.
+
 ### Changed
 
 ### Fixed
@@ -49,6 +74,33 @@ that loads and renders identically to `mgfxc`'s in the real MonoGame/KNI runtime
   an `FX0005`; a real duplicate is still reported, on the preprocessed text. A view that cannot be built (`__has_include`, a conditional on `__HLSL_VERSION`) keeps the raw technique list and adds an `SD0009` warning; `#region`/`#endregion` are ignored by the view. MGFX v10 records no shader
   model; the committed byte-identity manifests (OpenGL, DirectX 11,
   DirectX 12, Vulkan, FNA) are unchanged.
+- **OpenGL no longer fails with `SD0100` when HLSL packing puts a uniform mid-register** (issue #425).
+  A `float3` or `float2` declared after a `float` (`float Gain; float3 Axis;`, loose or in a
+  `cbuffer`, in either stage, such as the `float3` ahead of a `float4x4` the issue was reported with)
+  failed the OpenGL, KNIFX, raylib and SkSL compiles: DXC laid the uniform block out with HLSL cbuffer
+  packing, which puts the `float3` at byte 4, and SPIRV-Cross's GLSL can only express std140, so it
+  refused the block ("cannot be expressed as any of std430, std140, scalar"). A member packed into an
+  array's last register (`float W[2]; float B;`) failed the same way as `SD0210`. The OpenGL compile
+  now asks DXC for the std140 layout (`-fvk-use-gl-layout`). Each uniform gets its own
+  `ps_uniforms_vec4[]` register in declaration order, as before and as in `mgfxc`'s build. Every
+  shader that compiled before is byte-identical (all 579 OpenGL v10, v11 and KNIFX outputs of the
+  fixture corpus, checked before and after), and the vendored Nez `Reflection.fx` now compiles for
+  OpenGL. Vulkan keeps the HLSL packing, since it ships the SPIR-V. An explicit `packoffset` that puts a
+  vector mid-register (`float3 b : packoffset(c0.y)`) still cannot compile for OpenGL (it was `SD0100`);
+  it is now `SD0210` naming the `packoffset`, with DXC's validator text kept, instead of DXC's
+  "file a bug report" internal error.
+- **OpenGL: a uniform named after a GLSL reserved word no longer lands in another uniform's register when
+  uniforms pack** (found reviewing issue #425). SPIRV-Cross renames such a uniform (`noise` to `_noise`,
+  also `filter`, `output`, ...), and the step that maps it back to its parameter matched the reflected
+  byte offset to `register * 16`, which only holds when nothing packs. `float a; float b; float noise;
+  float4 c;` put `c` in `noise`'s register and gave `noise` a dead one, so `SetValue` on either drew
+  wrong, silently. A renamed `float3`/`float2` behind a `float`, which compiles now that the entry
+  above is fixed, would have done the same on the desktop but not in the browser host, which reflects
+  the std140 SPIR-V. The mapping now uses
+  declaration order with every other uniform's name checked, identically on every host (also for
+  SPIRV-Cross's other renames: `my__val` to `my_val`, and `_noise_1` beside a real `_noise`), and fails
+  `SD0012` with a message naming the cause when that cannot be proven (a renamed uniform in a stage
+  with two cbuffers). No shader in the fixture corpus changes bytes.
 - **A block comment that spans lines inside a `#define` (or any directive) no longer ends it** (issue #426).
   ShadowDusk's managed preprocessed view, which the initializer defaults and the OpenGL sampler-register
   decisions are read from, ended the directive at the comment's first line break and spilled the rest of the

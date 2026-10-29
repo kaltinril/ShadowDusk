@@ -35,6 +35,14 @@
 //   * control-flipped-v        Fading's SkSL with its texture V flipped (Y orientation);
 //   * control-wrong-resolution Pixelated with ShadowDusk_Resolution at half the child size.
 //
+// Issue #435, declared defaults: UnsetDefaults (a Gum-Outline-style shader with a scalar, vector,
+// float-array and float4x4 initializer) is drawn on KNI with NONE of its uniforms set (the .mgfx
+// default applies) and on Skia with every uniform set from SkslUniform.DefaultValue by a generic
+// loop; the two must match. Defaults-zeros sets every uniform to zero on both arms and must match
+// too (zero is what an unset uniform reads in Skia). Two more controls must diverge:
+//   * control-unset-defaults   Skia leaves the defaults unset (zeros) against KNI's defaults;
+//   * control-transposed-matrix Skia gets ColorMatrix's reported default transposed.
+//
 // Single process: Skia's CPU raster needs no window or GL context.
 // Exit: 0 pass (or no GL context without SHADOWDUSK_REQUIRE_GL=1), 1 divergence, 2 setup error.
 // =============================================================================
@@ -170,6 +178,66 @@ foreach ((string name, string file) in cases)
     }
 }
 
+// ---- issue #435: declared defaults reported by the conversion, set by the caller on Skia ----
+// The KNI arm sets NONE of the shader's own uniforms: the .mgfx carries each HLSL initializer as
+// the parameter's default (issue #422, rung-4 proven on real KNI by validation/InitializerDefaultsKniGl).
+// The Skia arm sets every uniform to SkslUniform.DefaultValue, by a generic loop over
+// conversion.Uniforms (no value is written by hand here), so a wrong value, a wrong matrix layout or
+// a wrong array order diverges. A second pair sets every uniform to zero on both arms (what an unset
+// uniform reads in Skia), and the control below compares Skia's zeros against KNI's defaults.
+var defaultsUnset = new Dictionary<string, float[]>(StringComparer.Ordinal);
+{
+    string path = Path.Combine(outDir, "UnsetDefaults.fx");
+    await File.WriteAllTextAsync(path, UnsetDefaultsFx());
+    var mgfx = await new EffectCompiler().CompileAsync(UnsetDefaultsFx(), new CompilerOptions
+    {
+        Target = PlatformTarget.OpenGL,
+        SourceFileName = path,
+    });
+    var converted = SkslConverter.Convert(UnsetDefaultsFx(), new SkslConvertOptions { SourceName = path });
+    if (mgfx.IsFailure)
+        setupErrors.Add($"UnsetDefaults: OpenGL compile failed: {string.Join(" | ", mgfx.Error.Select(e => $"{e.Code}: {e.Message}"))}");
+    else if (converted.IsFailure)
+        setupErrors.Add($"UnsetDefaults: SkSL conversion refused: {string.Join(" | ", converted.Error.Select(e => $"{e.Code}: {e.Message}"))}");
+    else
+    {
+        SkslConversion conversion = converted.Value;
+        await File.WriteAllBytesAsync(Path.Combine(outDir, "UnsetDefaults.mgfx"), mgfx.Value.Data);
+        await File.WriteAllTextAsync(Path.Combine(outDir, "UnsetDefaults.sksl"), conversion.SkslText);
+        if (conversion.SkslText.Split('\n').Any(l => l.TrimStart().StartsWith("uniform ", StringComparison.Ordinal) && l.Contains('=')))
+            setupErrors.Add("UnsetDefaults: the SkSL declares a uniform WITH a value; the defaults must be reflection only");
+
+        var fromDefaults = new Dictionary<string, float[]>(StringComparer.Ordinal);
+        foreach (SkslUniform u in conversion.Uniforms.Where(u => !conversion.SynthesizedUniforms.Contains(u.Name)))
+        {
+            if (u.DefaultValue is null)
+            {
+                setupErrors.Add($"UnsetDefaults: uniform '{u.Name}' reports no default, so this case cannot prove it");
+                continue;
+            }
+            fromDefaults[u.Name] = u.DefaultValue.ToArray();
+            defaultsUnset[u.Name] = new float[u.DefaultValue.Count];
+        }
+        foreach (string expected in new[] { "Thickness", "OutlineColor", "Weights", "ColorMatrix" })
+            if (!fromDefaults.ContainsKey(expected))
+                setupErrors.Add($"UnsetDefaults: the conversion reports no default for '{expected}'");
+
+        Console.WriteLine($"[skia-kni] UnsetDefaults: reported defaults " +
+                          string.Join(", ", fromDefaults.Select(kv => $"{kv.Key}=[{string.Join(",", kv.Value)}]")));
+
+        var none = new Dictionary<string, float[]>(StringComparer.Ordinal);
+        foreach ((string label, byte[] rgba) in tints)
+        {
+            kniJobs.Add(new KniJob($"Defaults-{label}", mgfx.Value.Data, rgba, none));
+            skiaJobs.Add(new SkiaJob($"Defaults-{label}", conversion.SkslText, conversion.ChildShaders, rgba, fromDefaults,
+                Resolution: [Images.Size, Images.Size]));
+        }
+        kniJobs.Add(new KniJob("Defaults-zeros", mgfx.Value.Data, tints[0].Rgba, defaultsUnset));
+        skiaJobs.Add(new SkiaJob("Defaults-zeros", conversion.SkslText, conversion.ChildShaders, tints[0].Rgba, defaultsUnset,
+            Resolution: [Images.Size, Images.Size]));
+    }
+}
+
 // ---- positive controls: Skia-only renders compared against an unmutated case's KNI image ----
 var controls = new List<(string Name, string Against)>();
 void AddControl(string name, string against, Func<SkiaJob, SkiaJob?> mutate)
@@ -196,6 +264,22 @@ AddControl("control-flipped-v", "Fading-white",
     j => FlipV(j.Sksl) is { } flipped && flipped != j.Sksl ? j with { Sksl = flipped } : null);
 AddControl("control-wrong-resolution", "Pixelated-white",
     j => j with { Resolution = [Images.Size / 2, Images.Size / 2] });
+// Issue #435: the caller does NOT set the reported defaults, so Skia reads every uniform as zero
+// (Gum's unset Thickness): that must differ from KNI drawing the same .mgfx with its defaults.
+AddControl("control-unset-defaults", "Defaults-white",
+    j => defaultsUnset.Count > 0 ? j with { Uniforms = defaultsUnset } : null);
+// The matrix layout: the reported ColorMatrix default handed to Skia transposed (column by column,
+// the order of its blob in the .mgfx) must differ too.
+AddControl("control-transposed-matrix", "Defaults-white",
+    j => j.Uniforms.TryGetValue("ColorMatrix", out float[]? m) && m.Length == 16
+        ? j with
+        {
+            Uniforms = new Dictionary<string, float[]>(j.Uniforms, StringComparer.Ordinal)
+            {
+                ["ColorMatrix"] = Enumerable.Range(0, 16).Select(i => m[(i % 4) * 4 + i / 4]).ToArray(),
+            },
+        }
+        : null);
 
 if (setupErrors.Count > 0)
 {
@@ -262,7 +346,11 @@ foreach (KniJob job in kniJobs)
     byte[] s = skiaImages[job.Name];
     (int maxd, int over) = Images.Compare(k, s, tolerance);
     int distinct = Images.DistinctColors(k);
-    bool nontrivial = distinct > 16;
+    // Defaults-zeros is the "0 case" by design: every uniform zero gives an opaque black sprite on
+    // both arms, so it must be exactly that image rather than a varied one.
+    bool nontrivial = job.Name == "Defaults-zeros"
+        ? distinct == 1 && k[0] == 0 && k[1] == 0 && k[2] == 0 && k[3] == 255
+        : distinct > 16;
     bool match = over == 0;
     ok &= match && nontrivial;
     Console.WriteLine($"[skia-kni] {job.Name,-18} maxd {maxd,3}  px over tol {over,5}/{Images.Size * Images.Size}  " +
@@ -284,6 +372,56 @@ Console.WriteLine($"\n[skia-kni] {(ok ? "PASS" : "FAIL")}: XnaFiddle texture-onl
 return ok ? 0 : 1;
 
 // -----------------------------------------------------------------------------
+
+// Issue #435: a Gum-Outline-style sprite shader whose picture depends on four declared defaults of
+// different shapes (a scalar, a vector, a float array read at constant indices, which SkSL needs,
+// and an asymmetric float4x4, so a transposed matrix shows). Every shape is one the MonoGame
+// OpenGL target models. Unset on Skia, every one reads zero: Thickness 0 removes the edge band and
+// a zero ColorMatrix turns the sprite black. Written by this driver, not under tests/fixtures/shaders,
+// so it does not join the compiled fixture corpus.
+static string UnsetDefaultsFx() => """
+    #if OPENGL
+    #define SV_POSITION POSITION
+    #define PS_SHADERMODEL ps_3_0
+    #else
+    #define PS_SHADERMODEL ps_4_0_level_9_1
+    #endif
+
+    Texture2D SpriteTexture;
+    sampler2D SpriteTextureSampler = sampler_state { Texture = <SpriteTexture>; };
+
+    float Thickness = 1.0;
+    float4 OutlineColor = float4(1.0, 0.25, 0.0, 1.0);
+    float Weights[3] = { 0.5, 0.3, 0.2 };
+    float4x4 ColorMatrix = float4x4(0.6, 0.2, 0.1, 0.0,
+                                    0.1, 0.7, 0.1, 0.0,
+                                    0.2, 0.0, 0.5, 0.0,
+                                    0.0, 0.05, 0.1, 1.0);
+
+    struct VertexShaderOutput
+    {
+        float4 Position : SV_POSITION;
+        float4 Color : COLOR0;
+        float2 TextureCoordinates : TEXCOORD0;
+    };
+
+    float4 MainPS(VertexShaderOutput input) : COLOR
+    {
+        float4 c = tex2D(SpriteTextureSampler, input.TextureCoordinates) * input.Color;
+        float4 graded = mul(float4(c.rgb, 1.0), ColorMatrix);
+        float luma = dot(c.rgb, float3(Weights[0], Weights[1], Weights[2]));
+        float edge = saturate(Thickness * abs(input.TextureCoordinates.x - 0.5) * 2.0);
+        return float4(lerp(graded.rgb, OutlineColor.rgb * luma, edge * 0.5), 1.0);
+    }
+
+    technique SpriteDrawing
+    {
+        pass P0
+        {
+            PixelShader = compile PS_SHADERMODEL MainPS();
+        }
+    };
+    """;
 
 // The flip control: the converter derives the interpolated UV as `vec2 _sd_uv = coord /
 // ShadowDusk_Resolution;` (issue #371). Flip its V right after that definition, so every

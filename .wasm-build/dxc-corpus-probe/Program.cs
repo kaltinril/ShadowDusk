@@ -144,9 +144,20 @@ sealed class CapturingDxc(MethodInfo buildFlags) : IDxcShaderCompiler, IDisposab
 
     public async Task<Result<PlatformBlob, ShaderError>> CompileAsync(
         DxcCompileRequest request, CancellationToken cancellationToken = default)
-    {
-        var result = await _inner.CompileAsync(request, cancellationToken);
+        => Capture(request, await _inner.CompileAsync(request, cancellationToken));
 
+    // The pipeline compiles through the synchronous entry point too; capture both.
+    public Result<PlatformBlob, ShaderError> Compile(
+        DxcCompileRequest request, CancellationToken cancellationToken = default)
+        => Capture(request, _inner.Compile(request, cancellationToken));
+
+    public Result<string, ShaderError> Preprocess(
+        DxcPreprocessRequest request, CancellationToken cancellationToken = default)
+        => _inner.Preprocess(request, cancellationToken);
+
+    private Result<PlatformBlob, ShaderError> Capture(
+        DxcCompileRequest request, Result<PlatformBlob, ShaderError> result)
+    {
         if (request.Platform == PlatformTarget.OpenGL && result.IsSuccess &&
             result.Value.Kind == BlobKind.Spirv)
         {

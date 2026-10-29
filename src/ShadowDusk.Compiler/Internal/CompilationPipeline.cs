@@ -1071,16 +1071,18 @@ internal sealed class CompilationPipeline
                     {
                         // Fallback (B10): SPIRV-Cross renames a free uniform whose name
                         // collides with a GLSL reserved word (e.g. `noise` -> `_noise`,
-                        // legal+required GLSL), so the GLSL layout's name no longer
+                        // legal+required GLSL; also underscore runs and collisions), so the
+                        // GLSL layout's name no longer
                         // matches the reflected parameter (still `noise`) and the name
-                        // join misses. Recover the parameter through an OFFSET BRIDGE:
-                        // the GL uniform's BaseRegister * 16 is its byte offset, which
-                        // the reflected cbuffer variable carries as StartOffset — so the
-                        // variable's ORIGINAL name recovers the parameter without ever
-                        // trusting the SPIRV-Cross-emitted spelling. The parameter stays
-                        // exposed under its original name in the .mgfx; only the INDEX is
-                        // needed here. See docs/glsl-uniform-naming.md "Design notes".
-                        paramIndex = IndexOfParamByRegister(allConstantBuffers, allParameters, u.BaseRegister);
+                        // join misses. Recover the parameter by DECLARATION ORDER: the
+                        // reflected cbuffer variable at this member's position carries the
+                        // ORIGINAL name, so the parameter is found without trusting the
+                        // SPIRV-Cross-emitted spelling. Never by byte offset: packing makes
+                        // offsets differ between the DXIL and SPIR-V reflections (issue
+                        // #425). The parameter stays exposed under its original name in the
+                        // .mgfx; only the INDEX is needed here.
+                        paramIndex = IndexOfParamByDeclarationOrder(
+                            allConstantBuffers, allParameters, layout, u);
                     }
                     if (paramIndex < 0)
                         return Fail(new ShaderError(
@@ -1088,9 +1090,13 @@ internal sealed class CompilationPipeline
                             Line: 0,
                             Column: 0,
                             Code: "SD0012",
-                            Message: $"internal: GL uniform '{u.Name}' (shader #{i}) has no " +
-                                     "matching effect parameter — the GLSL uniform layout and " +
-                                     "the reflected parameter list diverged"), runWarnings);
+                            Message: $"GL uniform '{u.Name}' (shader #{i}) has no matching " +
+                                     "effect parameter: the GLSL uniform layout and the reflected " +
+                                     "parameter list diverged. SPIRV-Cross renames some uniforms " +
+                                     "(a GLSL reserved word, noise -> _noise; a run of underscores, " +
+                                     "my__val -> my_val; a name collision, _noise_1); a renamed " +
+                                     "uniform can only be mapped back when the stage's uniforms are " +
+                                     "all loose globals or in one cbuffer, so rename it otherwise"), runWarnings);
                     paramIndices.Add(paramIndex);
                     paramOffsets.Add((ushort)(u.BaseRegister * 16));
                     backedParamIndices.Add(paramIndex);
@@ -3004,44 +3010,80 @@ internal sealed class CompilationPipeline
     }
 
     /// <summary>
-    /// The OFFSET BRIDGE for the GL cbuffer/parameter join (B10), used ONLY when the
-    /// primary name match fails — which happens exactly when SPIRV-Cross renamed a
-    /// free uniform whose name collides with a GLSL reserved word (e.g. <c>noise</c> →
-    /// <c>_noise</c>). The GL uniform's byte offset is <c>baseRegister * 16</c>; the
-    /// reflected cbuffer variable at that <see cref="VariableReflection.StartOffset"/>
-    /// carries the ORIGINAL HLSL name, which recovers the effect-parameter index
-    /// without ever trusting the SPIRV-Cross-emitted spelling. Returns the parameter
-    /// index, or -1 if it cannot be resolved unambiguously (caller then keeps the loud
-    /// <c>SD0012</c> guard).
+    /// The DECLARATION-ORDER BRIDGE for the GL cbuffer/parameter join (B10), used ONLY
+    /// when the primary name match fails, which happens exactly when SPIRV-Cross renamed
+    /// a uniform: one named after a GLSL reserved word (<c>noise</c> → <c>_noise</c>; also
+    /// <c>filter</c>, <c>output</c>, …), one with a run of underscores (<c>my__val</c> →
+    /// <c>my_val</c>), or one whose rename collides with another name (<c>_noise_1</c>).
+    /// The rewriter's layout lists the block's members in declaration order, and the
+    /// reflected cbuffer lists its variables in that same order (every layout keeps it), so
+    /// the renamed <paramref name="uniform"/> is the reflected variable at its position
+    /// in the layout, whose ORIGINAL name recovers the effect-parameter index
+    /// without trusting the SPIRV-Cross spelling. Returns the parameter index, or -1 when
+    /// the mapping is not provably unambiguous (the caller then fails with
+    /// <c>SD0012</c>).
     ///
-    /// <para><b>Single-cbuffer only, by design (correctness over coverage).</b> The
-    /// reserved-word case is always a free global, which DXC reflects as a single
-    /// <c>$Globals</c> cbuffer — there a variable's effective byte offset is exactly
-    /// its <c>StartOffset</c>, so <c>StartOffset == baseRegister * 16</c> holds
-    /// directly. With MULTIPLE cbuffers the rewriter merges them into one packed
-    /// register space in GLSL-declaration order, which is NOT guaranteed to match the
-    /// reflection's cbuffer order, so the per-cbuffer base offset cannot be reliably
-    /// reconstructed here. Rather than risk MIS-mapping to the wrong parameter, this
-    /// declines (returns -1) for the multi-cbuffer case and lets <c>SD0012</c> stand.</para>
+    /// <para><b>Never by byte offset</b> (issue #425 review). The previous bridge matched
+    /// <c>StartOffset == baseRegister * 16</c>, which holds only when no member is packed
+    /// mid-register: after <c>float g;</c> a renamed <c>float3 noise</c> sits at byte 4 in
+    /// the DXIL reflection (HLSL packing) and byte 16 in the SPIR-V one (std140), so the
+    /// desktop mapped it onto the next variable and the browser did not; a packed scalar
+    /// (<c>float a; float b; float noise;</c>) mis-mapped on both. Position is the same on
+    /// every reflection source.</para>
+    ///
+    /// <para><b>Proven, not assumed:</b> the bridge requires a single reflected cbuffer
+    /// (the reserved-word case is always a free global in <c>$Globals</c>; with several
+    /// cbuffers the rewriter's merge order is not reconstructed), the same member count on
+    /// both sides, and every position to agree by name: exactly, or, at a renamed
+    /// position, a GLSL spelling that is not itself a parameter and an original name that
+    /// appears nowhere else in the layout. SPIRV-Cross's rename rules are deliberately not
+    /// modelled (an earlier prefix-only check refused valid underscore and collision
+    /// renames). Anything else declines.</para>
     /// </summary>
-    private static int IndexOfParamByRegister(
+    private static int IndexOfParamByDeclarationOrder(
         IReadOnlyList<ConstantBufferReflection> constantBuffers,
         IReadOnlyList<ParameterReflection> parameters,
-        int baseRegister)
+        IReadOnlyList<MonoGameGlslUniform> layout,
+        MonoGameGlslUniform uniform)
     {
-        // Only the unambiguous single-cbuffer ($Globals) case is bridged — see the
-        // remarks above for why the multi-cbuffer merge order is not reconstructed.
         if (constantBuffers.Count != 1)
             return -1;
 
-        int targetOffset = baseRegister * 16;
-        foreach (VariableReflection variable in constantBuffers[0].Variables)
+        int layoutIndex = -1;
+        for (int j = 0; j < layout.Count; j++)
+            if (ReferenceEquals(layout[j], uniform))
+                layoutIndex = j;
+
+        // Declaration order; OrderBy is stable, so equal offsets keep the reflected order.
+        var variables = constantBuffers[0].Variables.OrderBy(v => v.StartOffset).ToList();
+        if (variables.Count != layout.Count || layoutIndex < 0 || layoutIndex >= layout.Count)
+            return -1;
+
+        for (int j = 0; j < layout.Count; j++)
         {
-            if (variable.StartOffset == targetOffset)
-                return IndexOfParam(parameters, variable.Name);
+            string glslName = layout[j].Name;
+            string reflectedName = variables[j].Name;
+            if (glslName == reflectedName)
+                continue;
+            // A renamed position: SPIRV-Cross's spelling must not be some other parameter's
+            // name, and the original name must not appear elsewhere in the layout. The rename
+            // rule itself is not modelled (it prefixes reserved words, collapses runs of
+            // underscores and suffixes collisions): position is the proof.
+            bool renamed = IndexOfParam(parameters, glslName) < 0
+                && !LayoutHasName(layout, reflectedName);
+            if (!renamed)
+                return -1;
         }
 
-        return -1;
+        return IndexOfParam(parameters, variables[layoutIndex].Name);
+    }
+
+    private static bool LayoutHasName(IReadOnlyList<MonoGameGlslUniform> layout, string name)
+    {
+        foreach (MonoGameGlslUniform u in layout)
+            if (u.Name == name)
+                return true;
+        return false;
     }
 
     private static int IndexOfCbuffer(IReadOnlyList<ConstantBufferReflection> cbuffers, string name)
@@ -3302,7 +3344,7 @@ internal sealed class CompilationPipeline
     private static IReadOnlyList<ShaderError> WithViewWarning(List<ShaderError> warnings, ShaderError? viewWarning) =>
         viewWarning is null ? warnings : [viewWarning, .. warnings];
 
-    private static ShaderError DefaultNotPreserved(string file, int line, int column, string name, string reason,
+    internal static ShaderError DefaultNotPreserved(string file, int line, int column, string name, string reason,
         string advice = "Set the parameter by name at runtime, or simplify the initializer.") =>
         new(File: file,
             Line: line,

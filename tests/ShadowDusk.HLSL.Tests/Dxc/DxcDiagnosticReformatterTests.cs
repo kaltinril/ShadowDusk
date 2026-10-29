@@ -170,6 +170,26 @@ public sealed class DxcDiagnosticReformatterTests
         primary.Line.ShouldBe(10);
     }
 
+    // Issue #425: OpenGL compiles std140, so a packoffset that puts a vector mid-register fails
+    // DXC's SPIR-V validation with a "please file a DXC bug" note. It is the shader's shape, not
+    // a DXC bug: SD0210 names it, with DXC's text kept verbatim.
+    [Fact]
+    public void SelectPrimary_Std140LayoutViolation_IsSd0210_WithDxcTextKept()
+    {
+        const string raw = """
+            fatal error: generated SPIR-V is invalid: Structure id 3 decorated as Block for variable in Uniform storage class must follow standard uniform buffer layout rules: member 1 at offset 4 is not aligned to 16
+              %type_C = OpTypeStruct %float %v3float
+            note: please file a bug report on https://github.com/Microsoft/DirectXShaderCompiler/issues with source code if possible
+            """;
+        var primary = DxcDiagnosticReformatter.SelectPrimary(raw, "po.fx", "no diagnostics");
+
+        primary.Code.ShouldBe("SD0210");
+        primary.Severity.ShouldBe(ShaderErrorSeverity.Error);
+        primary.Message.ShouldContain("packoffset", Case.Sensitive);
+        primary.Message.ShouldContain("member 1 at offset 4 is not aligned to 16", Case.Sensitive);
+        primary.RawDiagnostics!.ShouldContain("please file a bug report", Case.Sensitive);
+    }
+
     [Fact]
     public void SelectPrimary_CarriesTheCompleteRawText()
     {

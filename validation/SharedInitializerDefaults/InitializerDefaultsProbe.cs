@@ -49,6 +49,7 @@ public static class InitializerDefaultsProbe
         new("B_Scale.fx",      true,  128, 128, 128, 255), // float Scale = 0.5;
         new("E_Array.fx",      true,  128, 128, 0, 255),   // float4 Colors[2] = { red, green };
         new("MatrixDefault.fx", true, 0,   128, 0, 255),   // float4x4 with M[0][1] = 1: a transposed blob gives (64,0,0)
+        new("G_PackedFloat3.fx", true, 128, 64, 255, 255), // issue #425: float3 packed behind a float, then a float4x4 (was SD0100 on GL)
         new("C_Vec2Mat2.fx",   false, 32,  96,  0, 255),   // float2 Offset + float2x2 0.5*I (mat2: not on GL, SD0210)
         new("D_IntBool.fx",    false, 128, 255, 0, 255),   // int Mode = 2; bool Flag = true; (int/bool: not on GL, SD0210)
         // float2x3 + float3x2, every element distinct (issue #423: Vulkan reflected these transposed and

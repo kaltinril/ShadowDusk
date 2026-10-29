@@ -81,6 +81,19 @@ internal sealed class KniArm : Game
                     EffectParameter? p = effect.Parameters[name];
                     if (p is null)
                         continue;
+                    // Issue #435's case: an array takes its elements one after another, a matrix
+                    // its 16 values in HLSL row-major order (XNA's M11..M44 are HLSL's M[0][0]..M[3][3]).
+                    if (p.Elements.Count > 0)
+                    {
+                        p.SetValue(v);
+                        continue;
+                    }
+                    if (p.ParameterClass == EffectParameterClass.Matrix && v.Length == 16)
+                    {
+                        p.SetValue(new Matrix(v[0], v[1], v[2], v[3], v[4], v[5], v[6], v[7],
+                            v[8], v[9], v[10], v[11], v[12], v[13], v[14], v[15]));
+                        continue;
+                    }
                     switch (v.Length)
                     {
                         case 1: p.SetValue(v[0]); break;

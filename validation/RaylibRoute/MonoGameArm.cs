@@ -100,6 +100,12 @@ internal sealed class MonoGameArm : Game
                 EffectParameter? p = effect.Parameters[name];
                 if (p is null)
                     continue;
+                // An array parameter takes its elements one after another (issue #435's zero case).
+                if (p.Elements.Count > 0)
+                {
+                    p.SetValue(v);
+                    continue;
+                }
                 switch (v.Length)
                 {
                     case 1: p.SetValue(v[0]); break;

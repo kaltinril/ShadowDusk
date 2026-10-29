@@ -66,7 +66,12 @@ internal static unsafe class RaylibArm
                 continue;
             }
 
-            foreach ((string name, float[] v) in job.Uniforms)
+            if (job.RaylibUniforms is { } typed)
+            {
+                foreach (RaylibUniformValue u in typed)
+                    SetTyped(shader, u);
+            }
+            else foreach ((string name, float[] v) in job.Uniforms)
             {
                 int loc = Raylib.GetShaderLocation(shader, name);
                 if (loc < 0)
@@ -114,6 +119,49 @@ internal static unsafe class RaylibArm
         Raylib.UnloadTexture(extra);
         Raylib.CloseWindow();
         return 0;
+    }
+
+    // A typed uniform the way a consumer sets one: SetShaderValueV with the declared type and the
+    // element count, so an array uniform is set whole (issue #435).
+    private static void SetTyped(Shader shader, RaylibUniformValue u)
+    {
+        int loc = Raylib.GetShaderLocation(shader, u.Name);
+        if (loc < 0)
+            return;
+        ShaderUniformDataType type = u.GlslType switch
+        {
+            "float" => ShaderUniformDataType.Float,
+            "vec2" => ShaderUniformDataType.Vec2,
+            "vec3" => ShaderUniformDataType.Vec3,
+            "vec4" => ShaderUniformDataType.Vec4,
+            "int" => ShaderUniformDataType.Int,
+            "ivec2" => ShaderUniformDataType.IVec2,
+            "ivec3" => ShaderUniformDataType.IVec3,
+            "ivec4" => ShaderUniformDataType.IVec4,
+            "uint" => ShaderUniformDataType.UInt,
+            "uvec2" => ShaderUniformDataType.UIVec2,
+            "uvec3" => ShaderUniformDataType.UIVec3,
+            "uvec4" => ShaderUniformDataType.UIVec4,
+            _ => throw new InvalidDataException($"uniform {u.Name}: the gate does not set a '{u.GlslType}'"),
+        };
+        int count = Math.Max(1, u.ArrayLength);
+        if (type is ShaderUniformDataType.UInt or ShaderUniformDataType.UIVec2 or ShaderUniformDataType.UIVec3 or ShaderUniformDataType.UIVec4)
+        {
+            uint[] uints = u.Value.Select(f => (uint)f).ToArray();
+            fixed (uint* p = uints)
+                Raylib.SetShaderValueV(shader, loc, p, type, count);
+        }
+        else if (type is ShaderUniformDataType.Int or ShaderUniformDataType.IVec2 or ShaderUniformDataType.IVec3 or ShaderUniformDataType.IVec4)
+        {
+            int[] ints = u.Value.Select(f => (int)f).ToArray();
+            fixed (int* p = ints)
+                Raylib.SetShaderValueV(shader, loc, p, type, count);
+        }
+        else
+        {
+            fixed (float* p = u.Value)
+                Raylib.SetShaderValueV(shader, loc, p, type, count);
+        }
     }
 
     private static Shader LoadFragment(string fragment)
