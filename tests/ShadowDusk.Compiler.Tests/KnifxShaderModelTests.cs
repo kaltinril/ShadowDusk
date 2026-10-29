@@ -27,6 +27,8 @@ public sealed class KnifxShaderModelTests
     [InlineData("vs_5_0", 5, 0)]
     [InlineData("ps_5_0", 5, 0)]
     [InlineData("ps_3_0", 3, 0)]
+    [InlineData("vs_3_0", 3, 0)]
+    [InlineData("ps_2_0", 2, 0)]
     [InlineData("vs_2_0", 2, 0)]
     public void Parse_MatchesWhatKnisOwnPipelineRecords(string profile, int major, int minor)
     {

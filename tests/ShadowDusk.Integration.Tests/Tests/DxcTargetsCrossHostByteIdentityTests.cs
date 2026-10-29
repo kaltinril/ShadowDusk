@@ -85,13 +85,15 @@ public sealed class DxcTargetsCrossHostByteIdentityTests
     /// <c>HLModule::CreateElementGlobalVariableDebugInfo</c> appending each element in the order
     /// DXC's HLSL scalar-replacement pass processes them; on the same source and commit that
     /// order differs by host build, so it is a host-build fact, not one of the 28 commits the
-    /// Linux build lacks. Values are this host's canonical digests (see the class remarks).
+    /// Linux build lacks. Values are this host's canonical digests (see the class remarks),
+    /// re-measured on macos-latest whenever the DXC command line changes (DXIL debug info
+    /// embeds it), last for the <c>-D__TIMESTAMP__</c> define.
     /// </summary>
     private static readonly Dictionary<string, (string Dxil, string MgfxNormalized)> MacOsDivergences = new(StringComparer.Ordinal)
     {
         ["DirectX12.Debug/ForwardLighting.fx"] = (
-            Dxil: "0045db21d136ae6dfe34aaae454e3908e9e66fb86d4eb921b14e50a4e5a5b2f2",
-            MgfxNormalized: "3e8c03831a06d4901ac3689304cea07de5f8359067e32f05836472d03438652a"),
+            Dxil: "a221049752469030b6075b320f1aacf75c726e1597228aae1221232d6a5b1f60",
+            MgfxNormalized: "24f6dc7ede4d6f699e6193f4d8fa0fec57339b6579b52234832269365f4b7a71"),
     };
 
     private static string ShadersRoot => Path.Combine(AppContext.BaseDirectory, "fixtures", "shaders");

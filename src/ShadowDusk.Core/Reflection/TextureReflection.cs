@@ -7,14 +7,20 @@ public sealed record TextureReflection
 {
     /// <summary>The texture's name.</summary>
     public required string           Name      { get; init; }
-    /// <summary>The texture's bind slot.</summary>
+    /// <summary>
+    /// The texture's bind slot. A DXIL or DXBC reflection reports the register (<c>t1</c> is 1).
+    /// The SPIR-V reflector reports the texture's position among the stage's textures in
+    /// binding order (0, 1, 2, ...); on the Vulkan target the compiler replaces that with
+    /// <c>RawBinding - 32</c>, the slot mgfxc writes and MonoGame's Vulkan runtime reads, which
+    /// is the register again.
+    /// </summary>
     public required int              BindSlot  { get; init; }
     /// <summary>The texture's dimensionality (2D, cube, 3D, …).</summary>
     public required TextureDimension Dimension { get; init; }
     /// <summary>
-    /// The raw SPIR-V <c>Binding</c> decoration (unlike <see cref="BindSlot"/>, which is a
-    /// class-relative renumbering for the DXIL-oracle-equivalent GL/DX record shape). Used
-    /// only by the Vulkan container's descriptor-layout table. Default 0 for non-Vulkan.
+    /// The raw SPIR-V <c>Binding</c> decoration (unlike <see cref="BindSlot"/>). Used by the
+    /// Vulkan target, for the container's descriptor-layout table and to derive the slot.
+    /// Default 0 for a DXIL or DXBC reflection.
     /// </summary>
     public int RawBinding { get; init; }
     /// <summary>The raw SPIR-V <c>DescriptorSet</c> decoration. See <see cref="RawBinding"/>.</summary>
@@ -28,4 +34,15 @@ public sealed record TextureReflection
     /// <c>BindCount</c> when that is above 1 (issue #324).
     /// </summary>
     public int? ArrayLength { get; init; }
+    /// <summary>
+    /// True when the texture is a read-write (storage) image, an HLSL <c>RWTexture*</c>. Set by the
+    /// SPIR-V reflection from <c>OpTypeImage</c>'s Sampled operand (2); false from DXIL/DXBC.
+    /// </summary>
+    public bool IsStorage { get; init; }
+    /// <summary>
+    /// True when the resource is a texel buffer (an HLSL <c>Buffer&lt;T&gt;</c> or <c>RWBuffer&lt;T&gt;</c>), not
+    /// a texture: <c>OpTypeImage</c> with <c>Dim Buffer</c>. Set by the SPIR-V reflection only; the Vulkan
+    /// target refuses it (<c>SD0233</c>), MonoGame's Vulkan effect format having no texel-buffer descriptor.
+    /// </summary>
+    internal bool IsTexelBuffer { get; init; }
 }

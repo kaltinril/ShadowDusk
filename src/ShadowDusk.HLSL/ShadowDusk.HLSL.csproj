@@ -25,6 +25,9 @@
 
   <ItemGroup>
     <InternalsVisibleTo Include="ShadowDusk.HLSL.Tests" />
+    <!-- The pipeline names DxcSpirvEntryRedeclarations.ErrorCode (SD0236) when it puts the
+         author's entry-point name back into a Vulkan diagnostic, instead of a copied literal. -->
+    <InternalsVisibleTo Include="ShadowDusk.Compiler" />
     <!-- Phase 19: the WASM/browser JsDxcShaderCompiler reuses DxcFlagBuilder to
          build identical DXC argument lists before handing source+args to the
          host-provided [JSImport] DXC backend. Phase 4.1: WasmVkd3dShaderCompiler
@@ -38,6 +41,17 @@
          call and the result accessors one step at a time, to prove which ones reach DXC's
          setlocale and so must sit inside DxcForkGate. -->
     <InternalsVisibleTo Include="ShadowDusk.Integration.Tests" />
+    <!-- KniDirectXProfileTests sweeps FxPreParser.KnownProfileNames, the whole recognized set. -->
+    <InternalsVisibleTo Include="ShadowDusk.Compiler.Tests" />
+    <!-- The DirectX 11 texture slot check (DxTextureSlotOrder, HlslReadOrder) reads the explicit
+         t registers (GlSamplerSlots.ExplicitTextureRegisters), preprocesses the compiled text
+         (FxMacroPreprocessor), and warns SD0230 when the view cannot be built, which only matters
+         when the raw pre-parse found a legacy sampler (FxParseResult.LegacySamplerTextures). All
+         internal, so none of it is public API of the shipped ShadowDusk.HLSL package. -->
+    <!-- The Vulkan binding rewrite (VulkanTextureSamplerBindingRewriter) asks the managed
+         preprocessor which lines an untaken #if drops (FxMacroPreprocessor.SkippedLines), so a
+         Sample call in '#if 0' does not decide a texture's sampler. -->
+    <InternalsVisibleTo Include="ShadowDusk.Compiler" />
   </ItemGroup>
 
   <ItemGroup>

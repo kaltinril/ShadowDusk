@@ -184,6 +184,28 @@ public sealed class SkslConverterTests
         result.Error.Single().Message.ShouldContain("MainVS", Case.Sensitive);
     }
 
+    // An anonymous pass is named "" (as mgfxc names it), so the diagnostic names it by index.
+    [Fact]
+    public void AnonymousVertexShaderPass_IsNamedByIndex_InTheDiagnostic()
+    {
+        const string fx = """
+            struct V { float4 Position : SV_Position; };
+            V MainVS(float4 p : POSITION) { V v; v.Position = p; return v; }
+            float4 MainPS() : SV_Target { return float4(1, 0, 0, 1); }
+            technique { pass {
+                VertexShader = compile vs_3_0 MainVS();
+                PixelShader = compile ps_3_0 MainPS();
+            } }
+            """;
+
+        var result = SkslConverter.Convert(fx, new SkslConvertOptions { SourceName = "vs.fx" });
+
+        result.IsFailure.ShouldBeTrue();
+        ShaderError error = result.Error.Single();
+        error.Code.ShouldBe("SD0610");
+        error.Message.ShouldStartWith("pass #0 (anonymous) compiles a vertex shader", Case.Sensitive);
+    }
+
     [Fact]
     public void MultiPassEffect_IsRejected_RatherThanConvertingOnePassSilently()
     {

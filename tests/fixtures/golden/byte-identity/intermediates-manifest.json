@@ -51,6 +51,10 @@
     "glsl": "61e0745409c0376deef28a9f8c475e7ac0b8c26f7670c2646dc51a384c0fc85c",
     "spirv": "16ab48d75f6b9d0386b64ff12479b29c06235b3dd4780bbce34b78dcc1b73eeb"
   },
+  "OpenGL/HalfGlobals.fx": {
+    "glsl": "df68adf8a5531c61a36dfdc7206db5c46cd7c67fe78f2f6385b40bf810a4b4f7",
+    "spirv": "d3f2ea0113f4f929a9553437714deb684e85986dc99493ccb398f1afa7eaa193"
+  },
   "OpenGL/ImplicitTruncationWarning.fx": {
     "glsl": "ac9e7d56d0ccb9c0bb4389252fa6e61f318f1dd268b4a7b77184c7137a1f3275",
     "spirv": "f56041297bbadf1f452020eb31f8433dbb0da0f1e48e297896e3c247e0ca06a6"

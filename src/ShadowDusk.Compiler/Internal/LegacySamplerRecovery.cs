@@ -117,7 +117,7 @@ internal static class LegacySamplerRecovery
         if (parsed.IsFailure)
         {
             // An FXnnnn diagnostic is the pre-parser's verdict on the preprocessed source, which
-            // is the text mgfxc parses too: it is the effect's real error (a tex2Dlod inside a
+            // is the text mgfxc parses too: it is the effect's real error (a texCUBE inside a
             // macro is FX0012, with its location). Anything else is the view failing to build.
             return parsed.Error.Code.StartsWith("FX", StringComparison.Ordinal)
                 ? new Outcome.Rejected(parsed.Error)
@@ -129,6 +129,35 @@ internal static class LegacySamplerRecovery
 
         if (parsed.Value.CompilerPredefinedMacro is { } predefinedInRaw)
             return new Outcome.Unmodelled(PredefinedMacroError(predefinedInRaw));
+
+        return new Outcome.Retry(parsed.Value, flattenedRaw.Value.Text, flattenedRaw.Value.Warnings);
+    }
+
+    /// <summary>
+    /// The preprocessed pre-parse alone, for a recovery that is not about legacy sampler syntax:
+    /// the Vulkan retry after <c>SD0228</c>, where a texture or sampler DECLARATION comes out of a
+    /// macro (<c>#define DECL_TEX(x) Texture2D x##Tex;</c>) and so is invisible to the Vulkan
+    /// binding rewrite on the raw text. On the preprocessed text the declaration is literal and
+    /// gets its register. Returns <see langword="null"/> when that text cannot be built faithfully
+    /// (a view error, or a conditional on a compiler-predefined macro), in which case the first
+    /// attempt's diagnostics stand.
+    /// </summary>
+    public static Outcome.Retry? PreprocessedRetry(
+        string rawSource,
+        string sourceFileName,
+        MacroSet macros,
+        IIncludeResolver includeResolver,
+        IReadOnlyList<string> additionalIncludePaths)
+    {
+        Result<PreprocessedSource, ShaderError> flattenedRaw = new Preprocessor().Flatten(
+            rawSource, sourceFileName, macros, includeResolver, additionalIncludePaths);
+        if (flattenedRaw.IsFailure)
+            return null;
+
+        Result<FxPreprocessedParse, ShaderError> parsed =
+            FxPreParser.ParsePreprocessed(flattenedRaw.Value.Text, sourceFileName);
+        if (parsed.IsFailure || parsed.Value.CompilerPredefinedMacro is not null)
+            return null;
 
         return new Outcome.Retry(parsed.Value, flattenedRaw.Value.Text, flattenedRaw.Value.Warnings);
     }
@@ -199,7 +228,8 @@ internal static class LegacySamplerRecovery
         Message: $"legacy D3D9 sampler syntax ('{residue.Token}') is still in the source after ShadowDusk's SM4 " +
                  "rewrite ran on the preprocessed effect, so the compiler was given a construct it does not " +
                  "have. The rewrite models a global 'sampler' / 'sampler2D' declaration (bare, with a " +
-                 "register, or with a sampler_state block) read by tex2D or tex2Dgrad; it does not model " +
+                 "register, or with a sampler_state block) read by tex2D, tex2Dgrad, tex2Dlod, tex2Dbias or " +
+                 "tex2Dproj; it does not model " +
                  "this shape (for example a sampler2D function parameter). Use Texture2D + SamplerState + " +
                  ".Sample for it. The FNA (fx_2_0) and DirectX_11 targets compile legacy sampler syntax " +
                  "natively.");

@@ -878,13 +878,14 @@ internal sealed class HlslEmitter
                 RegisterChannelArg(call);
                 if (call.Args.Count == 3)
                 {
-                    // texture(sampler, uv, bias) would map to tex2Dbias, but that legacy intrinsic is
-                    // NOT compilable on the GL/DX (SM4-rewrite) targets (only FNA's fx_2_0 path accepts
-                    // it). Rather than emit something that fails on the primary target, reject loudly at
-                    // convert time so the boundary is explicit and located.
+                    // texture(sampler, uv, bias) would map to tex2Dbias. That legacy intrinsic compiled
+                    // only on FNA's fx_2_0 path until 2026-10-28; the FX pre-parser now rewrites it on
+                    // every target, but this route has never been render-validated with it (the ShaderToy
+                    // gates bind no mip chain), so reject loudly at convert time and keep the boundary
+                    // explicit and located.
                     throw Reject(call,
                         $"The mip-bias texture form '{name}(sampler, uv, bias)' is outside the supported " +
-                        "subset (its tex2Dbias mapping does not compile on the OpenGL/DirectX targets).");
+                        "subset of the ShaderToy route (it is not yet render-validated there).");
                 }
 
                 if (call.Args.Count != 2)
@@ -916,25 +917,24 @@ internal sealed class HlslEmitter
                     throw Reject(call, "'textureLod' expects (sampler, uv, lod).");
                 }
 
-                // textureLod(s, uv, 0) is base-level sampling: emit a plain tex2D. The legacy tex2Dlod
-                // intrinsic does NOT rewrite to a modern Texture method on the OpenGL/DirectX targets (it
-                // compiles only on FNA's fx_2_0 path, FX0012), and the single-pass harness binds each
-                // iChannelN without mipmaps, so mip 0 is the only level and tex2D is equivalent. This keeps
-                // the common `textureLod(iChannel0, uv, 0.)` form working on every backend.
+                // textureLod(s, uv, 0) is base-level sampling: emit a plain tex2D. The single-pass
+                // harness binds each iChannelN without mipmaps, so mip 0 is the only level and tex2D is
+                // equivalent. This keeps the common `textureLod(iChannel0, uv, 0.)` form working on
+                // every backend.
                 if (IsLiteralZero(call.Args[2]))
                 {
                     return $"tex2D({args[0]}, {args[1]})";
                 }
 
-                // A NON-zero LOD would emit the legacy tex2Dlod intrinsic, which — exactly like the
-                // mip-bias form rejected above — does NOT compile through the OpenGL/DirectX
-                // legacy-FX9 pipeline (FX0012: its arguments do not rewrite 1:1 to a modern Texture
-                // method). Emitting it would fail later with an error pointing at generated HLSL, so
-                // reject loudly at convert time instead, keeping the boundary explicit and located.
+                // A NON-zero LOD would emit the legacy tex2Dlod intrinsic. That intrinsic compiled only
+                // on FNA's fx_2_0 path until 2026-10-28 (FX0012 elsewhere); the FX pre-parser now
+                // rewrites it on every target, but this route has never been render-validated with it
+                // (the ShaderToy gates bind no mip chain), so the subset stays closed and the boundary
+                // stays an explicit, located convert-time reject, like the mip-bias form above.
                 throw Reject(call,
                     "The explicit-LOD texture form 'textureLod(sampler, uv, lod)' with a non-zero " +
-                    "lod is outside the supported subset (its tex2Dlod mapping does not compile on " +
-                    "the OpenGL/DirectX targets). A base-level 'textureLod(sampler, uv, 0.)' is " +
+                    "lod is outside the supported subset of the ShaderToy route (it is not yet " +
+                    "render-validated there). A base-level 'textureLod(sampler, uv, 0.)' is " +
                     "supported and lowers to a plain tex2D.");
 
             case "textureGrad":

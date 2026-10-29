@@ -94,7 +94,7 @@ const REQUIRE_MODULE = process.argv.includes('--require-module');
 const TARGETS = { DirectX_Vkd3d: 'DirectX', FNA: 'Fna' };
 
 // The manifest entries whose bytes depend on the vkd3d compile options.
-const OPTION_DEPENDENT = new Set(['DirectX_Vkd3d/Sm3SemanticStructs.fx']);
+const OPTION_DEPENDENT = new Set(['DirectX_Vkd3d/Sm3SemanticStructs.fx', 'DirectX_Vkd3d/HalfGlobals.fx']);
 // The manifest entries that compile WITH a non-fatal vkd3d diagnostic (issue #335): their
 // warnings-manifest lists must be non-empty, which is what arms the warnings comparison.
 const WARNING_BEARING = ['DirectX_Vkd3d/ImplicitTruncationWarning.fx', 'FNA/ImplicitTruncationWarning.fx'];

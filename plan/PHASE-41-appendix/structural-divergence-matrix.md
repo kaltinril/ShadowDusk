@@ -22,10 +22,10 @@
 ## Headline
 
 - Golden-backed cells (fixture x target): **118**
-  - Structurally **clean**: **87**
-  - **Divergent** (>=1 level): **21**
+  - Structurally **clean**: **98**
+  - **Divergent** (>=1 level): **10**
   - Compile/parse **failures**: **10**
-- Non-golden census cells: **226** (**164** compile, **62** fail with a code)
+- Non-golden census cells: **274** (**198** compile, **76** fail with a code)
 
 ## Golden-backed fixtures — per-level structural verdict
 
@@ -33,13 +33,13 @@ Legend: `OK` = match, `XX` = diverge, `--` = compile/parse failed (see notes). L
 
 | Fixture | Target | Params | Cbuf | Samp | Tech+St | Annot | Notes |
 |---|---|:--:|:--:|:--:|:--:|:--:|---|
-| AlphaTestEffect | DirectX_11 | OK | OK | OK | XX | OK | `AlphaTestEffect_LTGT` pass[0] name `P0` vs ``; `AlphaTestEffect_LTGT_NoFog` pass[0] name `P0` vs ``; `AlphaTestEffect_LTGT_VertexColor` pass[0] name `P0` vs ``; `AlphaTestEffect_LTGT_VertexColor_NoFog` pass[0] name `P0` vs ``; `AlphaTestEffect_EQNE` pass[0] name `P0` vs ``; `AlphaTestEffect_EQNE_NoFog` pass[0] name `P0` vs ``; `AlphaTestEffect_EQNE_VertexColor` pass[0] name `P0` vs ``; `AlphaTestEffect_EQNE_VertexColor_NoFog` pass[0] name `P0` vs `` |
+| AlphaTestEffect | DirectX_11 | OK | OK | OK | OK | OK |  |
 | AlphaTestEffect | OpenGL | -- | -- | -- | -- | -- | COMPILE FAIL SD0010: Effect source contains no techniques |
 | ArrayUniform | DirectX_11 | OK | OK | OK | OK | OK |  |
 | ArrayUniform | OpenGL | OK | OK | OK | OK | OK |  |
 | ArrayUniformVs | DirectX_11 | OK | OK | OK | OK | OK |  |
 | ArrayUniformVs | OpenGL | OK | OK | OK | OK | OK |  |
-| BasicEffect | DirectX_11 | OK | OK | OK | XX | OK | `BasicEffect` pass[0] name `P0` vs ``; `BasicEffect_NoFog` pass[0] name `P0` vs ``; `BasicEffect_VertexColor` pass[0] name `P0` vs ``; `BasicEffect_VertexColor_NoFog` pass[0] name `P0` vs ``; `BasicEffect_Texture` pass[0] name `P0` vs ``; `BasicEffect_Texture_NoFog` pass[0] name `P0` vs ``; `BasicEffect_Texture_VertexColor` pass[0] name `P0` vs ``; `BasicEffect_Texture_VertexColor_NoFog` pass[0] name `P0` vs ``; `BasicEffect_VertexLighting` pass[0] name `P0` vs ``; `BasicEffect_VertexLighting_NoFog` pass[0] name `P0` vs ``; `BasicEffect_VertexLighting_VertexColor` pass[0] name `P0` vs ``; `BasicEffect_VertexLighting_VertexColor_NoFog` pass[0] name `P0` vs ``; `BasicEffect_VertexLighting_Texture` pass[0] name `P0` vs ``; `BasicEffect_VertexLighting_Texture_NoFog` pass[0] name `P0` vs ``; `BasicEffect_VertexLighting_Texture_VertexColor` pass[0] name `P0` vs ``; `BasicEffect_VertexLighting_Texture_VertexColor_NoFog` pass[0] name `P0` vs ``; `BasicEffect_OneLight` pass[0] name `P0` vs ``; `BasicEffect_OneLight_NoFog` pass[0] name `P0` vs ``; `BasicEffect_OneLight_VertexColor` pass[0] name `P0` vs ``; `BasicEffect_OneLight_VertexColor_NoFog` pass[0] name `P0` vs ``; `BasicEffect_OneLight_Texture` pass[0] name `P0` vs ``; `BasicEffect_OneLight_Texture_NoFog` pass[0] name `P0` vs ``; `BasicEffect_OneLight_Texture_VertexColor` pass[0] name `P0` vs ``; `BasicEffect_OneLight_Texture_VertexColor_NoFog` pass[0] name `P0` vs ``; `BasicEffect_PixelLighting` pass[0] name `P0` vs ``; `BasicEffect_PixelLighting_NoFog` pass[0] name `P0` vs ``; `BasicEffect_PixelLighting_VertexColor` pass[0] name `P0` vs ``; `BasicEffect_PixelLighting_VertexColor_NoFog` pass[0] name `P0` vs ``; `BasicEffect_PixelLighting_Texture` pass[0] name `P0` vs ``; `BasicEffect_PixelLighting_Texture_NoFog` pass[0] name `P0` vs ``; `BasicEffect_PixelLighting_Texture_VertexColor` pass[0] name `P0` vs ``; `BasicEffect_PixelLighting_Texture_VertexColor_NoFog` pass[0] name `P0` vs `` |
+| BasicEffect | DirectX_11 | OK | OK | OK | OK | OK |  |
 | BasicEffect | OpenGL | -- | -- | -- | -- | -- | COMPILE FAIL SD0010: Effect source contains no techniques |
 | BasicShader | DirectX_11 | OK | OK | OK | OK | OK |  |
 | BasicShader | OpenGL | OK | OK | OK | OK | OK |  |
@@ -47,8 +47,8 @@ Legend: `OK` = match, `XX` = diverge, `--` = compile/parse failed (see notes). L
 | BlendShader | OpenGL | OK | OK | OK | OK | OK |  |
 | ClipShader | DirectX_11 | OK | OK | OK | OK | OK |  |
 | ClipShader | OpenGL | OK | OK | OK | OK | OK |  |
-| ClipShaderNew | DirectX_11 | OK | OK | OK | XX | OK | `SpriteBatch` pass[0] name `P0` vs `` |
-| ClipShaderNew | OpenGL | OK | OK | OK | XX | OK | `SpriteBatch` pass[0] name `P0` vs `` |
+| ClipShaderNew | DirectX_11 | OK | OK | OK | OK | OK |  |
+| ClipShaderNew | OpenGL | OK | OK | OK | OK | OK |  |
 | ClipShaderSpriteTarget | DirectX_11 | OK | OK | OK | OK | OK |  |
 | ClipShaderSpriteTarget | OpenGL | OK | OK | OK | OK | OK |  |
 | DeferredSprite | DirectX_11 | OK | OK | OK | OK | OK |  |
@@ -57,9 +57,9 @@ Legend: `OK` = match, `XX` = diverge, `--` = compile/parse failed (see notes). L
 | Dissolve | OpenGL | OK | OK | OK | OK | OK |  |
 | Dots | DirectX_11 | OK | OK | OK | OK | OK |  |
 | Dots | OpenGL | OK | OK | OK | OK | OK |  |
-| DualTextureEffect | DirectX_11 | OK | OK | OK | XX | OK | `DualTextureEffect` pass[0] name `P0` vs ``; `DualTextureEffect_NoFog` pass[0] name `P0` vs ``; `DualTextureEffect_VertexColor` pass[0] name `P0` vs ``; `DualTextureEffect_VertexColor_NoFog` pass[0] name `P0` vs `` |
+| DualTextureEffect | DirectX_11 | OK | OK | OK | OK | OK |  |
 | DualTextureEffect | OpenGL | -- | -- | -- | -- | -- | COMPILE FAIL SD0010: Effect source contains no techniques |
-| EnvironmentMapEffect | DirectX_11 | OK | OK | OK | XX | OK | `EnvironmentMapEffect` pass[0] name `P0` vs ``; `EnvironmentMapEffect_NoFog` pass[0] name `P0` vs ``; `EnvironmentMapEffect_Fresnel` pass[0] name `P0` vs ``; `EnvironmentMapEffect_Fresnel_NoFog` pass[0] name `P0` vs ``; `EnvironmentMapEffect_Specular` pass[0] name `P0` vs ``; `EnvironmentMapEffect_Specular_NoFog` pass[0] name `P0` vs ``; `EnvironmentMapEffect_Fresnel_Specular` pass[0] name `P0` vs ``; `EnvironmentMapEffect_Fresnel_Specular_NoFog` pass[0] name `P0` vs ``; `EnvironmentMapEffect_OneLight` pass[0] name `P0` vs ``; `EnvironmentMapEffect_OneLight_NoFog` pass[0] name `P0` vs ``; `EnvironmentMapEffect_OneLight_Fresnel` pass[0] name `P0` vs ``; `EnvironmentMapEffect_OneLight_Fresnel_NoFog` pass[0] name `P0` vs ``; `EnvironmentMapEffect_OneLight_Specular` pass[0] name `P0` vs ``; `EnvironmentMapEffect_OneLight_Specular_NoFog` pass[0] name `P0` vs ``; `EnvironmentMapEffect_OneLight_Fresnel_Specular` pass[0] name `P0` vs ``; `EnvironmentMapEffect_OneLight_Fresnel_Specular_NoFog` pass[0] name `P0` vs `` |
+| EnvironmentMapEffect | DirectX_11 | OK | OK | OK | OK | OK |  |
 | EnvironmentMapEffect | OpenGL | -- | -- | -- | -- | -- | COMPILE FAIL SD0010: Effect source contains no techniques |
 | Fading | DirectX_11 | OK | OK | OK | OK | OK |  |
 | Fading | OpenGL | OK | OK | OK | OK | OK |  |
@@ -79,13 +79,13 @@ Legend: `OK` = match, `XX` = diverge, `--` = compile/parse failed (see notes). L
 | MultiTexture | OpenGL | OK | OK | OK | OK | OK |  |
 | MultiTextureOverlay | DirectX_11 | OK | OK | OK | OK | OK |  |
 | MultiTextureOverlay | OpenGL | OK | OK | OK | OK | OK |  |
-| PenumbraHull | DirectX_11 | OK | XX | OK | XX | OK | cbuffer `` size 64 vs 16; `Main` pass[0] name `P0` vs `` |
+| PenumbraHull | DirectX_11 | OK | XX | OK | OK | OK | cbuffer `` size 64 vs 16 |
 | PenumbraHull | OpenGL | -- | -- | -- | -- | -- | COMPILE FAIL SD0010: Effect source contains no techniques |
-| PenumbraLight | DirectX_11 | OK | OK | OK | XX | OK | `PointLight` pass[0] name `P0` vs ``; `Spotlight` pass[0] name `P0` vs ``; `TexturedLight` pass[0] name `P0` vs ``; `DebugLight` pass[0] name `P0` vs `` |
+| PenumbraLight | DirectX_11 | OK | OK | OK | OK | OK |  |
 | PenumbraLight | OpenGL | -- | -- | -- | -- | -- | COMPILE FAIL SD0010: Effect source contains no techniques |
-| PenumbraShadow | DirectX_11 | OK | OK | OK | XX | OK | `Main` pass[0] name `P0` vs ``; `Debug` pass[0] name `P0` vs `` |
+| PenumbraShadow | DirectX_11 | OK | OK | OK | OK | OK |  |
 | PenumbraShadow | OpenGL | -- | -- | -- | -- | -- | COMPILE FAIL SD0010: Effect source contains no techniques |
-| PenumbraTexture | DirectX_11 | OK | OK | OK | XX | OK | `Main` pass[0] name `P0` vs `` |
+| PenumbraTexture | DirectX_11 | OK | OK | OK | OK | OK |  |
 | PenumbraTexture | OpenGL | -- | -- | -- | -- | -- | COMPILE FAIL SD0010: Effect source contains no techniques |
 | Pixelated | DirectX_11 | OK | OK | OK | OK | OK |  |
 | Pixelated | OpenGL | OK | OK | OK | OK | OK |  |
@@ -125,13 +125,13 @@ Legend: `OK` = match, `XX` = diverge, `--` = compile/parse failed (see notes). L
 | SharedSamplerPair | OpenGL | XX | OK | OK | OK | OK | param `TextureSampler+DiffuseMap` missing (golden class=3 type=7); param `TextureSampler+Lightmap` missing (golden class=3 type=7); extra value-class param `DiffuseMap` (class=3 type=7); extra value-class param `Lightmap` (class=3 type=7) |
 | SimpleLightShader | DirectX_11 | OK | OK | OK | OK | OK |  |
 | SimpleLightShader | OpenGL | OK | OK | OK | OK | OK |  |
-| SkinnedEffect | DirectX_11 | OK | OK | OK | XX | OK | `SkinnedEffect_VertexLighting_OneBone` pass[0] name `P0` vs ``; `SkinnedEffect_VertexLighting_OneBone_NoFog` pass[0] name `P0` vs ``; `SkinnedEffect_VertexLighting_TwoBone` pass[0] name `P0` vs ``; `SkinnedEffect_VertexLighting_TwoBone_NoFog` pass[0] name `P0` vs ``; `SkinnedEffect_VertexLighting_FourBone` pass[0] name `P0` vs ``; `SkinnedEffect_VertexLighting_FourBone_NoFog` pass[0] name `P0` vs ``; `SkinnedEffect_OneLight_OneBone` pass[0] name `P0` vs ``; `SkinnedEffect_OneLight_OneBone_NoFog` pass[0] name `P0` vs ``; `SkinnedEffect_OneLight_TwoBone` pass[0] name `P0` vs ``; `SkinnedEffect_OneLight_TwoBone_NoFog` pass[0] name `P0` vs ``; `SkinnedEffect_OneLight_FourBone` pass[0] name `P0` vs ``; `SkinnedEffect_OneLight_FourBone_NoFog` pass[0] name `P0` vs ``; `SkinnedEffect_PixelLighting_OneBone` pass[0] name `P0` vs ``; `SkinnedEffect_PixelLighting_OneBone_NoFog` pass[0] name `P0` vs ``; `SkinnedEffect_PixelLighting_TwoBone` pass[0] name `P0` vs ``; `SkinnedEffect_PixelLighting_TwoBone_NoFog` pass[0] name `P0` vs ``; `SkinnedEffect_PixelLighting_FourBone` pass[0] name `P0` vs ``; `SkinnedEffect_PixelLighting_FourBone_NoFog` pass[0] name `P0` vs `` |
+| SkinnedEffect | DirectX_11 | OK | OK | OK | OK | OK |  |
 | SkinnedEffect | OpenGL | -- | -- | -- | -- | -- | COMPILE FAIL SD0010: Effect source contains no techniques |
 | Sm3SemanticStructs | DirectX_11 | OK | OK | OK | OK | OK |  |
 | Sm3SemanticStructs | OpenGL | OK | OK | OK | OK | OK |  |
 | SpriteAlphaTest | DirectX_11 | OK | OK | OK | OK | OK |  |
 | SpriteAlphaTest | OpenGL | OK | OK | OK | OK | OK |  |
-| SpriteEffect | DirectX_11 | OK | OK | OK | XX | OK | `SpriteBatch` pass[0] name `P0` vs `` |
+| SpriteEffect | DirectX_11 | OK | OK | OK | OK | OK |  |
 | SpriteEffect | OpenGL | -- | -- | -- | -- | -- | COMPILE FAIL SD0010: Effect source contains no techniques |
 | StateBlendAdditive | DirectX_11 | OK | OK | OK | OK | OK |  |
 | StateBlendAdditive | OpenGL | OK | OK | OK | OK | OK |  |
@@ -178,8 +178,8 @@ counts techniques on the RAW source BEFORE macro expansion and deliberately igno
 forms. The pipeline now applies a GATED zero-technique fallback: when the raw pre-parse yields zero
 techniques AND the target's macros select the modern (SM4/SM6) branch, it DXC-preprocesses (`-P`)
 the source and re-parses the expanded text, recovering the literal `technique` blocks. On
-**DirectX_11 these effects now compile** (structurally clean apart from the known anonymous-pass
-`P0` naming class). On **OpenGL they still report SD0010**: the GL macro set is deliberately
+**DirectX_11 these effects now compile** and are structurally clean (an anonymous pass carries
+mgfxc's empty name). On **OpenGL they still report SD0010**: the GL macro set is deliberately
 `{MGFX, GLSL, OPENGL}` with NO SM4/SM6, so the stock effects expand to their legacy DX9/SM2 branch
 (`sampler2D`/`tex2D`/`vs_2_0`) which the modern DXC -> SPIR-V GL backend cannot compile (it crashes
 DXC's native codegen), so that target is gated OUT of the recovery and keeps the loud SD0010. This
@@ -196,12 +196,6 @@ The OpenGL cell now compiles and structural-matches the golden (see the matrix a
 ## Divergence-class summary (the triage-feeding output)
 
 Distinct classes of divergence observed across the matrix, grouped by shape:
-
-### Anonymous-pass naming (`P0` vs empty) — KNOWN, render-irrelevant (12 cell(s))
-
-For an anonymous `pass { ... }` (no name), mgfxc stores an empty pass name while ShadowDusk synthesizes `P0`. MonoGame addresses passes by INDEX (and by name only when the user named them), so a synthesized name for an unnamed pass does not change which pass runs. Render-irrelevant; not a defect.
-
-Affected cells: AlphaTestEffect [DirectX_11], BasicEffect [DirectX_11], ClipShaderNew [DirectX_11], ClipShaderNew [OpenGL], DualTextureEffect [DirectX_11], EnvironmentMapEffect [DirectX_11], PenumbraHull [DirectX_11], PenumbraLight [DirectX_11], PenumbraShadow [DirectX_11], PenumbraTexture [DirectX_11], SkinnedEffect [DirectX_11], SpriteEffect [DirectX_11]
 
 ### Object-class (texture/sampler) parameter shape (6 cell(s))
 
@@ -249,6 +243,8 @@ is a CORRECT result, not a defect.
 | AnnotatedTechnique.fx | OpenGL | PASS |  |  |
 | FnaMultiPassStates.fx | DirectX_11 | FAIL | SD0015 | compile target 'vs_2_0' is below the DirectX target's floor — mgfxc rejects it with "Invalid profile 'vs_2_0'. Vertex shader 'MainVS' must be SM 4.0 level 9.1 o... |
 | FnaMultiPassStates.fx | OpenGL | PASS |  |  |
+| HalfGlobals.fx | DirectX_11 | PASS |  |  |
+| HalfGlobals.fx | OpenGL | PASS |  |  |
 | ImplicitTruncationWarning.fx | DirectX_11 | PASS |  |  |
 | ImplicitTruncationWarning.fx | OpenGL | PASS |  |  |
 | Minimal.fx | DirectX_11 | PASS |  |  |
@@ -342,7 +338,7 @@ is a CORRECT result, not a defect.
 | examples/ExVsColorReturn.fx | DirectX_11 | PASS |  |  |
 | examples/ExVsColorReturn.fx | OpenGL | PASS |  |  |
 | examples/ExVsTextureFetch.fx | DirectX_11 | PASS |  |  |
-| examples/ExVsTextureFetch.fx | OpenGL | FAIL | SD0210 | Vertex-stage texture sampling is not supported for the MonoGame OpenGL target: MonoGame 3.8.2's GL runtime never assigns texture units to VERTEX-shader samplers... |
+| examples/ExVsTextureFetch.fx | OpenGL | FAIL | SD0210 | Vertex-stage texture sampling is not supported for the MonoGame/KNI OpenGL target: neither MonoGame's nor KNI's GL runtime assigns texture units to VERTEX-shade... |
 | examples/Issue106Repro.fx | DirectX_11 | PASS |  |  |
 | examples/Issue106Repro.fx | OpenGL | PASS |  |  |
 | examples/Issue107DoWhile.fx | DirectX_11 | PASS |  |  |
@@ -377,6 +373,30 @@ is a CORRECT result, not a defect.
 | raylib/CrtFilter.fx | OpenGL | PASS |  |  |
 | raylib/RetroHandheld.fx | DirectX_11 | PASS |  |  |
 | raylib/RetroHandheld.fx | OpenGL | PASS |  |  |
+| register-slots/RegisterDeadSampler.fx | DirectX_11 | PASS |  |  |
+| register-slots/RegisterDeadSampler.fx | OpenGL | PASS |  |  |
+| register-slots/RegisterGapT0T2.fx | DirectX_11 | PASS |  |  |
+| register-slots/RegisterGapT0T2.fx | OpenGL | PASS |  |  |
+| register-slots/RegisterHelperPair.fx | DirectX_11 | PASS |  |  |
+| register-slots/RegisterHelperPair.fx | OpenGL | PASS |  |  |
+| register-slots/RegisterLoadOnly.fx | DirectX_11 | PASS |  |  |
+| register-slots/RegisterLoadOnly.fx | OpenGL | FAIL | SD0100 | SPIRV-Cross [build_combined_image_samplers]: texelFetch without sampler was found, but no dummy sampler has been created with build_dummy_sampler_for_combined_i... |
+| register-slots/RegisterLoneT1.fx | DirectX_11 | PASS |  |  |
+| register-slots/RegisterLoneT1.fx | OpenGL | PASS |  |  |
+| register-slots/RegisterMismatchedTS.fx | DirectX_11 | PASS |  |  |
+| register-slots/RegisterMismatchedTS.fx | OpenGL | PASS |  |  |
+| register-slots/RegisterPreprocessedPairs.fx | DirectX_11 | PASS |  |  |
+| register-slots/RegisterPreprocessedPairs.fx | OpenGL | PASS |  |  |
+| register-slots/RegisterSamplerPerPass.fx | DirectX_11 | PASS |  |  |
+| register-slots/RegisterSamplerPerPass.fx | OpenGL | PASS |  |  |
+| register-slots/RegisterSamplerPerStage.fx | DirectX_11 | PASS |  |  |
+| register-slots/RegisterSamplerPerStage.fx | OpenGL | FAIL | SD0210 | Vertex-stage texture sampling is not supported for the MonoGame/KNI OpenGL target: neither MonoGame's nor KNI's GL runtime assigns texture units to VERTEX-shade... |
+| register-slots/RegisterSpace0.fx | DirectX_11 | PASS |  |  |
+| register-slots/RegisterSpace0.fx | OpenGL | PASS |  |  |
+| register-slots/RegisterTexture2DArrayT1.fx | DirectX_11 | PASS |  |  |
+| register-slots/RegisterTexture2DArrayT1.fx | OpenGL | FAIL | SD0210 | Unsupported sampler type for the MonoGame/KNI GL target: 'sampler2DArray'. The MojoShader-dialect rewrite models 'sampler2D', 'samplerCube' and 'sampler3D'; a '... |
+| register-slots/RegisterTwoSamplers.fx | DirectX_11 | PASS |  |  |
+| register-slots/RegisterTwoSamplers.fx | OpenGL | PASS |  |  |
 | texture-arrays/SamplerArray2.fx | DirectX_11 | FAIL | SD0224 | DirectX 11 target: 'Samplers' is an array of 2 samplers ('SamplerState Samplers[2]'). Real mgfxc (3.8.4.1 and 3.8.5) refuses an array of samplers on every profi... |
 | texture-arrays/SamplerArray2.fx | OpenGL | FAIL | SD0100 | SPIRV-Cross [build_combined_image_samplers]: Attempting to use arrays or structs of separate samplers. This is not possible to statically remap to plain GLSL. |
 | texture-arrays/TextureArray2.fx | DirectX_11 | PASS |  |  |
@@ -399,6 +419,28 @@ is a CORRECT result, not a defect.
 | third-party/Gum/KniInCode-Shader.fx | OpenGL | FAIL | X0000 | use of undeclared identifier 'CurrentTexture' |
 | third-party/Gum/MonoGameInCode-Grayscale.fx | DirectX_11 | PASS |  |  |
 | third-party/Gum/MonoGameInCode-Grayscale.fx | OpenGL | PASS |  |  |
+| third-party/KNI/ComputeShader.fx | DirectX_11 | FAIL | FX0014 | 'ComputeShader' assigns a compute shader, which the consumer runtime cannot load: MonoGame's and KNI's Effect has exactly two shader stages, vertex and pixel, s... |
+| third-party/KNI/ComputeShader.fx | OpenGL | FAIL | FX0014 | 'ComputeShader' assigns a compute shader, which the consumer runtime cannot load: MonoGame's and KNI's Effect has exactly two shader stages, vertex and pixel, s... |
+| third-party/KNI/DeferredBasicEffect.fx | DirectX_11 | FAIL | SD0015 | compile target 'vs_2_0' is below the DirectX target's floor — mgfxc rejects it with "Invalid profile 'vs_2_0'. Vertex shader 'VertexShaderFunction' must be SM 4... |
+| third-party/KNI/DeferredBasicEffect.fx | OpenGL | PASS |  |  |
+| third-party/KNI/NewSyntax_s0s1t0t1.fx | DirectX_11 | FAIL | SD0015 | compile target 'ps_2_0' is below the DirectX target's floor — mgfxc rejects it with "Invalid profile 'ps_2_0'. Pixel shader 'PS_Main' must be SM 4.0 level 9.1 o... |
+| third-party/KNI/NewSyntax_s0s1t0t1.fx | OpenGL | PASS |  |  |
+| third-party/KNI/NewSyntax_t0t1.fx | DirectX_11 | FAIL | SD0015 | compile target 'ps_2_0' is below the DirectX target's floor — mgfxc rejects it with "Invalid profile 'ps_2_0'. Pixel shader 'PS_Main' must be SM 4.0 level 9.1 o... |
+| third-party/KNI/NewSyntax_t0t1.fx | OpenGL | PASS |  |  |
+| third-party/KNI/OldSyntax_s0s1.fx | DirectX_11 | FAIL | SD0015 | compile target 'ps_2_0' is below the DirectX target's floor — mgfxc rejects it with "Invalid profile 'ps_2_0'. Pixel shader 'PS_Main' must be SM 4.0 level 9.1 o... |
+| third-party/KNI/OldSyntax_s0s1.fx | OpenGL | PASS |  |  |
+| third-party/KNI/OldSyntax_s0s1t0t1.fx | DirectX_11 | FAIL | SD0015 | compile target 'ps_2_0' is below the DirectX target's floor — mgfxc rejects it with "Invalid profile 'ps_2_0'. Pixel shader 'PS_Main' must be SM 4.0 level 9.1 o... |
+| third-party/KNI/OldSyntax_s0s1t0t1.fx | OpenGL | PASS |  |  |
+| third-party/KNI/OldSyntax_t0t1.fx | DirectX_11 | FAIL | SD0015 | compile target 'ps_2_0' is below the DirectX target's floor — mgfxc rejects it with "Invalid profile 'ps_2_0'. Pixel shader 'PS_Main' must be SM 4.0 level 9.1 o... |
+| third-party/KNI/OldSyntax_t0t1.fx | OpenGL | PASS |  |  |
+| third-party/KNI/OldSyntax_t1t0.fx | DirectX_11 | FAIL | SD0015 | compile target 'ps_2_0' is below the DirectX target's floor — mgfxc rejects it with "Invalid profile 'ps_2_0'. Pixel shader 'PS_Main' must be SM 4.0 level 9.1 o... |
+| third-party/KNI/OldSyntax_t1t0.fx | OpenGL | PASS |  |  |
+| third-party/KNI/OldSyntax_x.fx | DirectX_11 | FAIL | SD0015 | compile target 'ps_2_0' is below the DirectX target's floor — mgfxc rejects it with "Invalid profile 'ps_2_0'. Pixel shader 'PS_Main' must be SM 4.0 level 9.1 o... |
+| third-party/KNI/OldSyntax_x.fx | OpenGL | PASS |  |  |
+| third-party/KNI/OptimizedMatrix.fx | DirectX_11 | FAIL | SD0015 | compile target 'ps_2_0' is below the DirectX target's floor — mgfxc rejects it with "Invalid profile 'ps_2_0'. Pixel shader 'PS_Main' must be SM 4.0 level 9.1 o... |
+| third-party/KNI/OptimizedMatrix.fx | OpenGL | PASS |  |  |
+| third-party/KNI/OptimizedMatrixArray.fx | DirectX_11 | FAIL | SD0015 | compile target 'ps_2_0' is below the DirectX target's floor — mgfxc rejects it with "Invalid profile 'ps_2_0'. Pixel shader 'PS_Main' must be SM 4.0 level 9.1 o... |
+| third-party/KNI/OptimizedMatrixArray.fx | OpenGL | PASS |  |  |
 | third-party/MonoGame/Bevels.fx | DirectX_11 | PASS |  |  |
 | third-party/MonoGame/Bevels.fx | OpenGL | PASS |  |  |
 | third-party/MonoGame/BlackOut.fx | DirectX_11 | PASS |  |  |
@@ -427,8 +469,8 @@ is a CORRECT result, not a defect.
 | third-party/MonoGame/RainbowH.fx | OpenGL | PASS |  |  |
 | third-party/MonoGame/TextureArrayEffect.fx | DirectX_11 | PASS |  |  |
 | third-party/MonoGame/TextureArrayEffect.fx | OpenGL | FAIL | SD0210 | Unsupported sampler type for the MonoGame/KNI GL target: 'sampler2DArray'. The MojoShader-dialect rewrite models 'sampler2D', 'samplerCube' and 'sampler3D'; a '... |
-| third-party/MonoGame/VertexTextureEffect.fx | DirectX_11 | FAIL | FX0012 | The legacy D3D9 sampling intrinsic 'tex2Dlod' is not supported on this target: its arguments do not map 1:1 onto a modern Texture method, so ShadowDusk cannot r... |
-| third-party/MonoGame/VertexTextureEffect.fx | OpenGL | FAIL | FX0012 | The legacy D3D9 sampling intrinsic 'tex2Dlod' is not supported on this target: its arguments do not map 1:1 onto a modern Texture method, so ShadowDusk cannot r... |
+| third-party/MonoGame/VertexTextureEffect.fx | DirectX_11 | PASS |  |  |
+| third-party/MonoGame/VertexTextureEffect.fx | OpenGL | FAIL | SD0210 | Vertex-stage texture sampling is not supported for the MonoGame/KNI OpenGL target: neither MonoGame's nor KNI's GL runtime assigns texture units to VERTEX-shade... |
 | third-party/Nez/Bevels.fx | DirectX_11 | FAIL | SD0015 | compile target 'ps_2_0' is below the DirectX target's floor — mgfxc rejects it with "Invalid profile 'ps_2_0'. Pixel shader 'PixelShaderFunction' must be SM 4.0... |
 | third-party/Nez/Bevels.fx | OpenGL | PASS |  |  |
 | third-party/Nez/BloomCombine.fx | DirectX_11 | FAIL | SD0015 | compile target 'ps_2_0' is below the DirectX target's floor — mgfxc rejects it with "Invalid profile 'ps_2_0'. Pixel shader 'PixelShaderFunction' must be SM 4.0... |
@@ -445,8 +487,8 @@ is a CORRECT result, not a defect.
 | third-party/Nez/Letterbox.fx | OpenGL | PASS |  |  |
 | third-party/Nez/Noise.fx | DirectX_11 | FAIL | SD0015 | compile target 'ps_3_0' is below the DirectX target's floor — mgfxc rejects it with "Invalid profile 'ps_3_0'. Pixel shader 'PixelShaderFunction' must be SM 4.0... |
 | third-party/Nez/Noise.fx | OpenGL | PASS |  |  |
-| third-party/Nez/PaletteCycler.fx | DirectX_11 | FAIL | FX0012 | The legacy D3D9 sampling intrinsic 'tex1D' is not supported on this target: its arguments do not map 1:1 onto a modern Texture method, so ShadowDusk cannot rewr... |
-| third-party/Nez/PaletteCycler.fx | OpenGL | FAIL | FX0012 | The legacy D3D9 sampling intrinsic 'tex1D' is not supported on this target: its arguments do not map 1:1 onto a modern Texture method, so ShadowDusk cannot rewr... |
+| third-party/Nez/PaletteCycler.fx | DirectX_11 | FAIL | FX0012 | The legacy D3D9 sampling intrinsic 'tex1D' is not supported on this target: ShadowDusk rewrites the 2D sampler family (tex2D, tex2Dgrad, tex2Dlod, tex2Dbias, te... |
+| third-party/Nez/PaletteCycler.fx | OpenGL | FAIL | FX0012 | The legacy D3D9 sampling intrinsic 'tex1D' is not supported on this target: ShadowDusk rewrites the 2D sampler family (tex2D, tex2Dgrad, tex2Dlod, tex2Dbias, te... |
 | third-party/Nez/PixelGlitch.fx | DirectX_11 | FAIL | SD0015 | compile target 'ps_3_0' is below the DirectX target's floor — mgfxc rejects it with "Invalid profile 'ps_3_0'. Pixel shader 'MainPS' must be SM 4.0 level 9.1 or... |
 | third-party/Nez/PixelGlitch.fx | OpenGL | PASS |  |  |
 | third-party/Nez/Reflection.fx | DirectX_11 | FAIL | SD0015 | compile target 'vs_2_0' is below the DirectX target's floor — mgfxc rejects it with "Invalid profile 'vs_2_0'. Vertex shader 'mirrorVertex' must be SM 4.0 level... |
@@ -474,17 +516,18 @@ is a CORRECT result, not a defect.
 
 ### Census failure codes
 
-- `SD0015`: 22 cell(s) — FnaMultiPassStates.fx [DirectX_11], examples/ExIntUniformMember.fx [DirectX_11], examples/ExMat3UniformMember.fx [DirectX_11], examples/ExProfileSm3BothArms.fx [DirectX_11], examples/ExProfileSm3OnDirectX.fx [DirectX_11], examples/ExProfileSm6OnDirectX.fx [DirectX_11], third-party/Gum/FnaSample-Shader.fx [DirectX_11], third-party/Gum/KniInCode-Shader.fx [DirectX_11], third-party/Nez/Bevels.fx [DirectX_11], third-party/Nez/BloomCombine.fx [DirectX_11], third-party/Nez/BloomExtract.fx [DirectX_11], third-party/Nez/Crosshatch.fx [DirectX_11], third-party/Nez/GaussianBlur.fx [DirectX_11], third-party/Nez/HeatDistortion.fx [DirectX_11], third-party/Nez/Letterbox.fx [DirectX_11], third-party/Nez/Noise.fx [DirectX_11], third-party/Nez/PixelGlitch.fx [DirectX_11], third-party/Nez/Reflection.fx [DirectX_11], third-party/Nez/SpriteBlinkEffect.fx [DirectX_11], third-party/Nez/SpriteLines.fx [DirectX_11], third-party/Nez/Twist.fx [DirectX_11], third-party/Nez/Vignette.fx [DirectX_11]
+- `SD0015`: 32 cell(s) — FnaMultiPassStates.fx [DirectX_11], examples/ExIntUniformMember.fx [DirectX_11], examples/ExMat3UniformMember.fx [DirectX_11], examples/ExProfileSm3BothArms.fx [DirectX_11], examples/ExProfileSm3OnDirectX.fx [DirectX_11], examples/ExProfileSm6OnDirectX.fx [DirectX_11], third-party/Gum/FnaSample-Shader.fx [DirectX_11], third-party/Gum/KniInCode-Shader.fx [DirectX_11], third-party/KNI/DeferredBasicEffect.fx [DirectX_11], third-party/KNI/NewSyntax_s0s1t0t1.fx [DirectX_11], third-party/KNI/NewSyntax_t0t1.fx [DirectX_11], third-party/KNI/OldSyntax_s0s1.fx [DirectX_11], third-party/KNI/OldSyntax_s0s1t0t1.fx [DirectX_11], third-party/KNI/OldSyntax_t0t1.fx [DirectX_11], third-party/KNI/OldSyntax_t1t0.fx [DirectX_11], third-party/KNI/OldSyntax_x.fx [DirectX_11], third-party/KNI/OptimizedMatrix.fx [DirectX_11], third-party/KNI/OptimizedMatrixArray.fx [DirectX_11], third-party/Nez/Bevels.fx [DirectX_11], third-party/Nez/BloomCombine.fx [DirectX_11], third-party/Nez/BloomExtract.fx [DirectX_11], third-party/Nez/Crosshatch.fx [DirectX_11], third-party/Nez/GaussianBlur.fx [DirectX_11], third-party/Nez/HeatDistortion.fx [DirectX_11], third-party/Nez/Letterbox.fx [DirectX_11], third-party/Nez/Noise.fx [DirectX_11], third-party/Nez/PixelGlitch.fx [DirectX_11], third-party/Nez/Reflection.fx [DirectX_11], third-party/Nez/SpriteBlinkEffect.fx [DirectX_11], third-party/Nez/SpriteLines.fx [DirectX_11], third-party/Nez/Twist.fx [DirectX_11], third-party/Nez/Vignette.fx [DirectX_11]
+- `SD0210`: 9 cell(s) — examples/ExIntUniformMember.fx [OpenGL], examples/ExMat3UniformMember.fx [OpenGL], examples/ExVsTextureFetch.fx [OpenGL], register-slots/RegisterSamplerPerStage.fx [OpenGL], register-slots/RegisterTexture2DArrayT1.fx [OpenGL], third-party/MonoGame/Instancing.fx [OpenGL], third-party/MonoGame/TextureArrayEffect.fx [OpenGL], third-party/MonoGame/VertexTextureEffect.fx [OpenGL], third-party/Nez/Crosshatch.fx [OpenGL]
 - `SD0010`: 8 cell(s) — minimal_vs_ps.fx [DirectX_11], minimal_vs_ps.fx [OpenGL], passthrough_vs.fx [DirectX_11], passthrough_vs.fx [OpenGL], textured_vs_ps.fx [DirectX_11], textured_vs_ps.fx [OpenGL], third-party/Gum/FnaSample-Shader.fx [OpenGL], third-party/MonoGame/ParameterTypes.fx [OpenGL]
-- `SD0210`: 6 cell(s) — examples/ExIntUniformMember.fx [OpenGL], examples/ExMat3UniformMember.fx [OpenGL], examples/ExVsTextureFetch.fx [OpenGL], third-party/MonoGame/Instancing.fx [OpenGL], third-party/MonoGame/TextureArrayEffect.fx [OpenGL], third-party/Nez/Crosshatch.fx [OpenGL]
 - `SD0013`: 6 cell(s) — examples/ExProfileBogusLiteral.fx [DirectX_11], examples/ExProfileBogusLiteral.fx [OpenGL], examples/ExProfileTypo.fx [DirectX_11], examples/ExProfileTypo.fx [OpenGL], examples/ExProfileUndefinedMacro.fx [DirectX_11], examples/ExProfileUndefinedMacro.fx [OpenGL]
 - `X0000`: 5 cell(s) — third-party/Gum/KniInCode-Shader.fx [OpenGL], third-party/MonoGame/CustomSpriteBatchEffectComparisonSampler.fx [OpenGL], third-party/MonoGame/DefinesTest.fx [OpenGL], third-party/MonoGame/ParserTest.fx [OpenGL], third-party/MonoGame/PreprocessorTest.fx [OpenGL]
-- `FX0012`: 4 cell(s) — third-party/MonoGame/VertexTextureEffect.fx [DirectX_11], third-party/MonoGame/VertexTextureEffect.fx [OpenGL], third-party/Nez/PaletteCycler.fx [DirectX_11], third-party/Nez/PaletteCycler.fx [OpenGL]
 - `SD0001`: 2 cell(s) — MinimalWithInclude.fx [DirectX_11], MinimalWithInclude.fx [OpenGL]
 - `SD0014`: 2 cell(s) — examples/ExProfileStageMismatch.fx [DirectX_11], examples/ExProfileStageMismatch.fx [OpenGL]
+- `SD0100`: 2 cell(s) — register-slots/RegisterLoadOnly.fx [OpenGL], texture-arrays/SamplerArray2.fx [OpenGL]
 - `SD0217`: 2 cell(s) — texture-arrays/TextureArray2.fx [OpenGL], texture-arrays/TextureArray4NoRegister.fx [OpenGL]
+- `FX0014`: 2 cell(s) — third-party/KNI/ComputeShader.fx [DirectX_11], third-party/KNI/ComputeShader.fx [OpenGL]
+- `FX0012`: 2 cell(s) — third-party/Nez/PaletteCycler.fx [DirectX_11], third-party/Nez/PaletteCycler.fx [OpenGL]
 - `SD0224`: 1 cell(s) — texture-arrays/SamplerArray2.fx [DirectX_11]
-- `SD0100`: 1 cell(s) — texture-arrays/SamplerArray2.fx [OpenGL]
 - `E5030`: 1 cell(s) — third-party/MonoGame/DefinesTest.fx [DirectX_11]
 - `E5017`: 1 cell(s) — third-party/MonoGame/ParameterTypes.fx [DirectX_11]
 - `E4000`: 1 cell(s) — third-party/MonoGame/PreprocessorTest.fx [DirectX_11]

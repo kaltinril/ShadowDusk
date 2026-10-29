@@ -117,7 +117,7 @@ public sealed class Vkd3dCompileContractTests
     // -------------------------------------------------------------------------
 
     [Fact]
-    public void ResolveCompileOptions_DxbcTpf_IsBackwardCompatibilityMapSemanticNames()
+    public void ResolveCompileOptions_DxbcTpf_IsBackwardCompatibilityMapSemanticNamesAndAllowHalfGlobals()
     {
         // The desktop marshals this list into vkd3d_shader_compile_info and the browser
         // sends it through its shim into the WASM wrapper. Issue #295 was the browser
@@ -128,11 +128,25 @@ public sealed class Vkd3dCompileContractTests
 
         options.Count.ShouldBe(1);
         options[0].Name.ShouldBe(Vkd3dCompileOptionName.BackwardCompatibility);
-        options[0].Value.ShouldBe((uint)Vkd3dBackwardCompatibility.MapSemanticNames);
+        options[0].Value.ShouldBe(
+            (uint)(Vkd3dBackwardCompatibility.MapSemanticNames | Vkd3dBackwardCompatibility.AllowHalfGlobals));
         Vkd3dCompileContract.FlattenCompileOptions(options).ShouldBe(
-            [0x00000008, 0x00000001],
-            customMessage: "VKD3D_SHADER_COMPILE_OPTION_BACKWARD_COMPATIBILITY = 8, " +
-                           "VKD3D_SHADER_COMPILE_OPTION_BACKCOMPAT_MAP_SEMANTIC_NAMES = 1");
+            [0x00000008, 0x00000009],
+            customMessage: "VKD3D_SHADER_COMPILE_OPTION_BACKWARD_COMPATIBILITY = 8, value " +
+                           "VKD3D_SHADER_COMPILE_OPTION_BACKCOMPAT_MAP_SEMANTIC_NAMES (1) | " +
+                           "VKD3D_SHADER_COMPILE_OPTION_BACKCOMPAT_ALLOW_HALF_GLOBALS (8)");
+    }
+
+    [Fact]
+    public void BackwardCompatibilityBits_MatchVkd3d21Header()
+    {
+        // vkd3d 2.1 vkd3d_shader.h, enum vkd3d_shader_compile_option_backward_compatibility.
+        // ALLOW_HALF_GLOBALS (\since 2.1) is the vkd3d half of fxc's
+        // D3DCOMPILE_ENABLE_BACKWARDS_COMPATIBILITY, which mgfxc's DirectX_11 compile always
+        // sets: without it a `half4 Tint = ...;` global is E5002 on DirectX while mgfxc
+        // compiles it as a float4.
+        ((uint)Vkd3dBackwardCompatibility.MapSemanticNames).ShouldBe(0x00000001u);
+        ((uint)Vkd3dBackwardCompatibility.AllowHalfGlobals).ShouldBe(0x00000008u);
     }
 
     [Fact]
@@ -156,11 +170,12 @@ public sealed class Vkd3dCompileContractTests
     {
         // The options hang off the target type the profile routes to, the same value both
         // hosts pass to vkd3d, so an SM4+ profile always carries the option and an SM1-3
-        // profile never does.
+        // profile never does (the FNA reference, fxc /T fx_2_0 with default flags, rejects
+        // a `half` global itself, so ALLOW_HALF_GLOBALS stays off there).
         int targetType = Vkd3dCompileContract.ResolveTargetType(profile);
 
         Vkd3dCompileContract.FlattenCompileOptions(Vkd3dCompileContract.ResolveCompileOptions(targetType))
-            .ShouldBe(Vkd3dCompileContract.IsSm3OrBelow(profile) ? [] : [8, 1]);
+            .ShouldBe(Vkd3dCompileContract.IsSm3OrBelow(profile) ? [] : [8, 9]);
     }
 
     [Fact]

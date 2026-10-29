@@ -59,17 +59,21 @@ if (!Directory.Exists(fixtures))
 // tests/ShadowDusk.Integration.Tests/Tests/CrossHostByteIdentityTests.cs):
 // the MGFX baseline corpus (DX SM5) plus the SM ≤ 3 render-proven corpus (DX + FNA).
 //
-// Sm3SemanticStructs.fx (issue #295) is the one fixture whose DXBC depends on the vkd3d
-// compile options: SM1-3 semantics on struct fields, which only
-// BACKWARD_COMPATIBILITY = MAP_SEMANTIC_NAMES turns into SV_Position / SV_Target. Every
-// other fixture here compiles to the same bytes with or without the option, which is
-// how the browser module passing NO options went unnoticed by this gate. It must stay.
+// Sm3SemanticStructs.fx (issue #295) and HalfGlobals.fx are the two fixtures whose DXBC
+// depends on the vkd3d compile options: SM1-3 semantics on struct fields, which only
+// BACKWARD_COMPATIBILITY = MAP_SEMANTIC_NAMES turns into SV_Position / SV_Target, and
+// `half` globals, which vkd3d refuses (E5002) without ALLOW_HALF_GLOBALS. Every other
+// fixture here compiles to the same bytes with or without the option, which is how the
+// browser module passing NO options went unnoticed by this gate. Both must stay.
 // -----------------------------------------------------------------------------
 
 string[] coreMgfxFixtures =
 [
     "Minimal.fx", "textured.fx", "cbuffer.fx", "multipass.fx", "multitechnique.fx",
     "render-states.fx", "annotations.fx", "platform-macros.fx", "basiceffect-mini.fx",
+    // XNA-era `half` globals: the DirectX compile depends on the vkd3d compile option bit
+    // ALLOW_HALF_GLOBALS (E5002 without it). DX only here; FNA refuses it as fxc fx_2_0 does.
+    "HalfGlobals.fx",
 ];
 
 string[] sm3Fixtures =

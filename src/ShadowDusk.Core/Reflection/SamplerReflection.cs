@@ -7,13 +7,18 @@ public sealed record SamplerReflection
 {
     /// <summary>The sampler's name.</summary>
     public required string  Name        { get; init; }
-    /// <summary>The sampler's bind slot.</summary>
+    /// <summary>
+    /// The sampler's bind slot. Same meaning per reflection as
+    /// <see cref="TextureReflection.BindSlot"/>: the register from DXIL or DXBC, the position in
+    /// binding order from the SPIR-V reflector, and <c>RawBinding - 32</c> on the Vulkan target.
+    /// </summary>
     public required int     BindSlot    { get; init; }
     /// <summary>The name of the texture this sampler is paired with, if known.</summary>
     public string?          TextureName { get; init; }
     /// <summary>
-    /// The raw SPIR-V <c>Binding</c> decoration (unlike <see cref="BindSlot"/>). Used only
-    /// by the Vulkan container's descriptor-layout table. Default 0 for non-Vulkan.
+    /// The raw SPIR-V <c>Binding</c> decoration (unlike <see cref="BindSlot"/>). Used by the
+    /// Vulkan target, for the container's descriptor-layout table and to derive the slot.
+    /// Default 0 for a DXIL or DXBC reflection.
     /// </summary>
     public int RawBinding { get; init; }
     /// <summary>The raw SPIR-V <c>DescriptorSet</c> decoration. See <see cref="RawBinding"/>.</summary>

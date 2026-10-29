@@ -56,11 +56,43 @@ internal sealed class FxMacroPreprocessor
     // The first compiler-predefined macro a conditional tested, which this preprocessor cannot
     // know the value of (DXC defines it; nothing here does).
     private CompilerPredefinedMacroUse? _predefinedUse;
+    // The (1-based) physical lines of non-directive text inside a conditional group that is not
+    // taken, when the caller asked for them (SkippedLines).
+    private HashSet<int>? _skippedLines;
+    // Whether the names only DXC predefines (__GNUC__, __llvm__, ...) count as compiler-defined
+    // too. Only the Vulkan register pairing (SkippedLines) asks: it must know which lines DXC may
+    // compile. The technique list, legacy-sampler recovery and initializer defaults read the view
+    // mgfxc's own preprocessor sees, which defines none of them (see IsCompilerPredefined).
+    private readonly bool _dxcPredefines;
 
-    private FxMacroPreprocessor(string sourceFile, bool compilerInput = false)
+    private FxMacroPreprocessor(string sourceFile, bool compilerInput = false, bool dxcPredefines = false)
     {
         _file = sourceFile;
         _compilerInput = compilerInput;
+        _dxcPredefines = dxcPredefines;
+    }
+
+    /// <summary>
+    /// The lines of <paramref name="flattenedSource"/> the preprocessor drops because they sit in
+    /// a conditional group that is not taken (<c>#if 0</c>, the other branch of an
+    /// <c>#if</c>/<c>#else</c>): 1-based physical line numbers of the text as given, directive lines
+    /// themselves not included. <c>#define</c> bodies are NOT skipped lines (a macro is still used
+    /// where it is expanded). Also reports whether a conditional tested a compiler-predefined macro,
+    /// which the evaluation assumes undefined (see <see cref="ProcessForCompiler"/>), and returns the
+    /// compiler-input view itself (<c>View</c>: every macro expanded, line N of the view holding what
+    /// line N of the source held), so a caller can read what the code calls with no macro in the way.
+    /// Its one caller is the Vulkan binding rewrite, which must know every line DXC may compile, so
+    /// here a conditional on a name only DXC predefines (<c>__GNUC__</c>, <c>__llvm__</c>, ...) is
+    /// reported too (see <see cref="IsCompilerPredefined(string, bool)"/>).
+    /// </summary>
+    internal static Result<(IReadOnlySet<int> Lines, CompilerPredefinedMacroUse? PredefinedMacroUse, string View), ShaderError> SkippedLines(
+        string flattenedSource, string sourceFile)
+    {
+        var preprocessor = new FxMacroPreprocessor(sourceFile, compilerInput: true, dxcPredefines: true) { _skippedLines = new HashSet<int>() };
+        Result<string, ShaderError> view = preprocessor.Run(flattenedSource);
+        return view.IsFailure
+            ? Result<(IReadOnlySet<int>, CompilerPredefinedMacroUse?, string), ShaderError>.Fail(view.Error)
+            : Result<(IReadOnlySet<int>, CompilerPredefinedMacroUse?, string), ShaderError>.Ok((preprocessor._skippedLines!, preprocessor._predefinedUse, view.Value));
     }
 
     /// <summary>
@@ -105,6 +137,8 @@ internal sealed class FxMacroPreprocessor
     /// <see cref="CompilerInput.PredefinedMacroUse"/> so the caller can refuse to compile a
     /// text that may not be the one DXC would have produced.</para>
     /// </summary>
+    /// <param name="flattenedSource">The flattened source (includes inlined, macros prepended).</param>
+    /// <param name="sourceFile">Display name used in diagnostics.</param>
     internal static Result<CompilerInput, ShaderError> ProcessForCompiler(string flattenedSource, string sourceFile)
     {
         var preprocessor = new FxMacroPreprocessor(sourceFile, compilerInput: true);
@@ -246,7 +280,13 @@ internal sealed class FxMacroPreprocessor
 
             if (!isDirective)
             {
-                if (Active())
+                if (!Active())
+                {
+                    // Every physical line of the logical one (continuations included).
+                    for (int skipped = physicalLine; skipped <= i + 1; skipped++)
+                        _skippedLines?.Add(skipped);
+                }
+                else
                 {
                     if (pending.Count == 0)
                     {
@@ -895,17 +935,36 @@ internal sealed class FxMacroPreprocessor
     /// </summary>
     private void NoteCompilerPredefined(string name, int line)
     {
-        if (_predefinedUse is null && !_macros.ContainsKey(name) && IsCompilerPredefined(name))
+        if (_predefinedUse is null && !_macros.ContainsKey(name) && IsCompilerPredefined(name, _dxcPredefines))
             _predefinedUse = new CompilerPredefinedMacroUse(name, _file, line);
     }
 
     /// <summary>
-    /// The macro names DXC (and the clang front end it is built on) defines without being asked:
-    /// <c>__hlsl_dx_compiler</c>, <c>__HLSL_VERSION</c>, <c>__SHADER_TARGET_*</c>,
-    /// <c>__DXC_VERSION_*</c>, <c>__spirv__</c> (with <c>-spirv</c>) and the standard
-    /// <c>__LINE__</c> / <c>__FILE__</c> family.
+    /// Whether <paramref name="name"/> is a macro the compiler defines without being asked, so a
+    /// conditional on it may not take the branch this preprocessor (which never defines it) takes.
+    /// <list type="bullet">
+    ///   <item><description>Always: <c>__hlsl_dx_compiler</c>, <c>__HLSL_VERSION</c>,
+    ///   <c>__SHADER_TARGET_*</c>, <c>__DXC_VERSION_*</c>, <c>__spirv__</c>, <c>__clang*</c>, the
+    ///   <c>__has_*</c> builtins and the standard <c>__LINE__</c> / <c>__FILE__</c> family (the list
+    ///   0.22.1 shipped, kept as it was).</description></item>
+    ///   <item><description>Only when <paramref name="dxcPredefines"/> (the Vulkan register
+    ///   pairing's <see cref="SkippedLines"/>, which must know every line DXC may compile): the
+    ///   rest of what the pinned DXC (<c>dxcoob 1.7.2212.40</c>) was measured to define with
+    ///   <c>-P</c> over a probe of every candidate name, with the OpenGL and Vulkan argument sets
+    ///   (2026-10-29): <c>__llvm__</c>, <c>__GNUC__</c>, <c>__GNUC_MINOR__</c>,
+    ///   <c>__GNUC_PATCHLEVEL__</c>, <c>__GXX_ABI_VERSION</c>, <c>__ORDER_LITTLE_ENDIAN__</c> /
+    ///   <c>_BIG_</c> / <c>_PDP_</c>, <c>__BYTE_ORDER__</c>, <c>__LITTLE_ENDIAN__</c>, the
+    ///   <c>__FLT_*</c> and <c>__DBL_*</c> families, <c>__DECIMAL_DIG__</c> and
+    ///   <c>__is_identifier</c>. The technique list, legacy-sampler recovery and initializer
+    ///   defaults leave them undefined on every target, as <c>mgfxc</c>'s preprocessor (which
+    ///   defines none of them) does and as 0.22.1 did, so <c>#ifdef __GNUC__</c> around a
+    ///   technique gives the technique list <c>mgfxc</c> gives.</description></item>
+    /// </list>
+    /// Any other name, including the rest of the reserved namespace (<c>_XBOX</c>, <c>_DEBUG</c>,
+    /// <c>__PSSL__</c>), is undefined unless the source or the compile's macros define it: neither
+    /// compiler defines it.
     /// </summary>
-    internal static bool IsCompilerPredefined(string name) =>
+    internal static bool IsCompilerPredefined(string name, bool dxcPredefines) =>
         name.StartsWith("__SHADER_", StringComparison.Ordinal) ||
         name.StartsWith("__HLSL_", StringComparison.Ordinal) ||
         name.StartsWith("__hlsl_", StringComparison.Ordinal) ||
@@ -916,8 +975,17 @@ internal sealed class FxMacroPreprocessor
         name.StartsWith("__has_", StringComparison.Ordinal) ||
         name is "__LINE__" or "__FILE__" or "__COUNTER__" or "__DATE__" or "__TIME__" or "__TIMESTAMP__"
             or "__INCLUDE_LEVEL__" or "__BASE_FILE__" or "__cplusplus" or "__STDC__"
-            or "__STDC_VERSION__" or "__STDC_HOSTED__" or "__VERSION__";
+            or "__STDC_VERSION__" or "__STDC_HOSTED__" or "__VERSION__" ||
+        (dxcPredefines && IsDxcOnlyPredefined(name));
 
+    /// <summary>The names only DXC (its clang front end) defines; see <see cref="IsCompilerPredefined(string, bool)"/>.</summary>
+    private static bool IsDxcOnlyPredefined(string name) =>
+        name.StartsWith("__GNUC", StringComparison.Ordinal) ||
+        name.StartsWith("__GXX_", StringComparison.Ordinal) ||
+        name.StartsWith("__ORDER_", StringComparison.Ordinal) ||
+        name.StartsWith("__FLT_", StringComparison.Ordinal) ||
+        name.StartsWith("__DBL_", StringComparison.Ordinal) ||
+        name is "__llvm__" or "__BYTE_ORDER__" or "__LITTLE_ENDIAN__" or "__DECIMAL_DIG__" or "__is_identifier";
     /// <summary>Integer constant-expression evaluator over the C operator set.</summary>
     private sealed class ExpressionEvaluator
     {

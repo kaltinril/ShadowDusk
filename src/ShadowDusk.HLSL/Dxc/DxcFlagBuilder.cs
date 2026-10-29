@@ -6,6 +6,29 @@ namespace ShadowDusk.HLSL.Dxc;
 
 internal static class DxcFlagBuilder
 {
+    /// <summary>
+    /// The value every DXC call gives <c>__TIMESTAMP__</c>: clang's own text for a file whose
+    /// modification time it cannot read, a string literal.
+    /// </summary>
+    /// <remarks>
+    /// The pinned DXC (Vortice.Dxc 3.3.4's <c>dxcompiler</c>) ends the process with a fail-fast
+    /// (<c>0xC0000409</c>) whenever its preprocessor EXPANDS the built-in <c>__TIMESTAMP__</c>
+    /// (the modification time of the in-memory input, which it cannot stat): in a preprocess-only
+    /// run as in a compile, on every target, also when the name is assembled by token pasting
+    /// (<c>__TIME ## STAMP__</c>), so no reading of the source can find every use (issue #444).
+    /// Defining the macro on the command line replaces the built-in, so the faulting code never
+    /// runs, and the value is the one clang itself substitutes when the time is unknown
+    /// (measured 2026-10-29: <c>-P</c> expands it to this string, a full compile reaches its front
+    /// end like any other source). Redefining a built-in macro is a warning
+    /// (<c>-Wbuiltin-macro-redefined</c>) that <c>-WX</c> makes an error, so every call that
+    /// defines it also passes <see cref="NoBuiltinMacroRedefinedWarning"/>. Nothing in a shader can
+    /// depend on an effect's build time, and <c>mgfxc</c>'s fxc gives no time either.
+    /// </remarks>
+    internal const string TimestampDefine = "-D__TIMESTAMP__=\"??? ??? ?? ??:??:?? ????\"";
+
+    /// <summary>Silences the warning (an error under <c>-WX</c>) <see cref="TimestampDefine"/> raises.</summary>
+    internal const string NoBuiltinMacroRedefinedWarning = "-Wno-builtin-macro-redefined";
+
     public static IReadOnlyList<string> Build(
         PlatformTarget platform,
         ShaderStage stage,
@@ -194,6 +217,10 @@ internal static class DxcFlagBuilder
                 args.Add(DxcDebugSpirvSource.InputName);
         }
 
+        // Issue #444: __TIMESTAMP__ is defined, never DXC's built-in (which crashes the process).
+        args.Add(NoBuiltinMacroRedefinedWarning);
+        args.Add(TimestampDefine);
+
         foreach ((string name, string? value) in macros)
         {
             if (value is null)
@@ -210,12 +237,14 @@ internal static class DxcFlagBuilder
     /// includes/macros/conditionals and emit the flat HLSL text. Deliberately carries NO
     /// <c>-E</c>/<c>-T</c> (no entry/profile — preprocessing is stage-agnostic) and NO
     /// <c>-WX</c> (warnings-as-errors must not fail a pure expansion). Only the macro
-    /// defines are forwarded so the right <c>#if</c> branch (e.g. <c>SM4</c>) is taken.
+    /// defines are forwarded so the right <c>#if</c> branch (e.g. <c>SM4</c>) is taken, after
+    /// <see cref="TimestampDefine"/> (issue #444: DXC's built-in <c>__TIMESTAMP__</c> crashes the
+    /// process even in a preprocess-only run).
     /// </summary>
     public static IReadOnlyList<string> BuildPreprocess(
         IReadOnlyList<(string Name, string? Value)> macros)
     {
-        var args = new List<string> { "-P" };
+        var args = new List<string> { "-P", NoBuiltinMacroRedefinedWarning, TimestampDefine };
 
         foreach ((string name, string? value) in macros)
         {

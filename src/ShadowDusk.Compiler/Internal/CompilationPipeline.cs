@@ -64,10 +64,38 @@ internal sealed class CompilationPipeline
         CompilerOptions options,
         CancellationToken cancellationToken = default)
     {
+        var helpers = new List<RestructuredHelperDefinition>();
         Result<CompiledShader, ShaderError[]> first = RunCore(
-            hlslSource, options, recovered: null, out ShaderCompileFailure? compileFailure, cancellationToken);
+            hlslSource, options, recovered: null, out ShaderCompileFailure? compileFailure, cancellationToken,
+            helpers);
         if (first.IsSuccess || compileFailure is null)
+            return NameRestructuredHelpersAsWritten(first, helpers, options);
+
+        // Vulkan: a texture or sampler the binding rewrite could not see on the raw text (its
+        // declaration comes out of a macro) was auto-numbered below binding 32 (SD0228), a register space it could not see put a
+        // resource outside the stage's descriptor set (SD0229), or a sampler ended up with no texture on
+        // its binding because the pairing was hidden by a macro or an inactive #if (SD0232). Compile
+        // once more from the preprocessed source, where the declaration is literal. Only after
+        // that failure, so an effect that compiles from its raw source keeps exactly its bytes.
+        if (compileFailure.UnpinnedVulkanResource)
+        {
+            LegacySamplerRecovery.Outcome.Retry? retry = LegacySamplerRecovery.PreprocessedRetry(
+                hlslSource,
+                compileFailure.SourceFileName,
+                compileFailure.Macros,
+                compileFailure.IncludeResolver,
+                options.AdditionalIncludePaths);
+            if (retry is null)
+                return first;
+            Result<CompiledShader, ShaderError[]> second = RunCore(hlslSource, options, retry, out _, cancellationToken);
+            // A retry that still fails with one of VulkanResourceSlots' codes names what the preprocessed source could not pin
+            // either, located through its #line map (the first attempt may name a resource the
+            // retry already pinned, a macro-declared one, with no line). Any other retry failure is
+            // the retry's own, so the first attempt's diagnostics stand.
+            if (second.IsSuccess || second.Error.Any(e => VulkanResourceSlots.Codes.Contains(e.Code)))
+                return second;
             return first;
+        }
 
         // Legacy-sampler recovery (issue #308). A DXC shader compile failed. If the text DXC was
         // given still holds legacy D3D9 sampler syntax once preprocessed (a declaration in an
@@ -85,8 +113,57 @@ internal sealed class CompilationPipeline
         // The outcome handling is LegacySamplerRecovery.Apply, shared with the raylib and SkSL
         // converters (issue #327). A retry that still fails with legacy syntax left in the
         // compiler's input gets SD0016 appended after the compiler's own verbatim diagnostics.
-        return LegacySamplerRecovery.Apply(
-            first, outcome, retry => RunCore(hlslSource, options, retry, out _, cancellationToken));
+        // DirectX 11 sent a deferred tex2Dlod-family call here before compiling (see RunCore). When
+        // the recovery does not apply, nothing it could rewrite is live: the include does not
+        // resolve (whose error is the real one), or the call sits in a branch this configuration
+        // does not compile. Either way the normal raw path is the answer, as it was before.
+        if (compileFailure.DeferredLegacyCall && outcome is LegacySamplerRecovery.Outcome.NotApplicable)
+        {
+            return NameRestructuredHelpersAsWritten(
+                RunCore(hlslSource, options, recovered: null, out _, cancellationToken, helpers, deferToRecovery: false),
+                helpers, options);
+        }
+
+        return NameRestructuredHelpersAsWritten(
+            LegacySamplerRecovery.Apply(
+                first, outcome, retry => RunCore(hlslSource, options, retry, out _, cancellationToken, helpers)),
+            helpers, options);
+    }
+
+    /// <summary>
+    /// FxPreParser rewrites tex2Dlod / tex2Dbias / tex2Dproj to a call of a helper it names
+    /// <c>tex2Dlod_SD&lt;n&gt;</c>, so a compiler error about a CALL names a function the author
+    /// never wrote ("no matching function for call to 'tex2Dproj_SD0'"). This names the intrinsic
+    /// instead in <see cref="ShaderError.Message"/>, keeping the compiler's own text, unchanged, in
+    /// <see cref="ShaderError.RawDiagnostics"/>. Only the helpers the pre-parse that produced the
+    /// compiled text defined are renamed (never an identifier an <c>#include</c> or the author
+    /// wrote), only in an error located in the main file, and never one located inside a helper's
+    /// own definition: an error there is about the helper's placement, and the intrinsic's name
+    /// would mislead.
+    /// </summary>
+    private static Result<CompiledShader, ShaderError[]> NameRestructuredHelpersAsWritten(
+        Result<CompiledShader, ShaderError[]> result,
+        IReadOnlyList<RestructuredHelperDefinition> helpers,
+        CompilerOptions options)
+    {
+        if (result.IsSuccess || helpers.Count == 0)
+            return result;
+
+        string mainFile = (options.SourceFileName ?? "<source>").Replace('\\', '/');
+        var pattern = new Regex(@"\b(?:" + string.Join("|", helpers.Select(h => Regex.Escape(h.Name))) + @")\b");
+        var intrinsicOf = helpers.ToDictionary(h => h.Name, h => h.Intrinsic, StringComparer.Ordinal);
+
+        return Result<CompiledShader, ShaderError[]>.Fail(result.Error.Select(e =>
+        {
+            if (!pattern.IsMatch(e.Message) ||
+                !string.Equals(e.File.Replace('\\', '/'), mainFile, StringComparison.OrdinalIgnoreCase) ||
+                helpers.Any(h => h.Line == e.Line && h.StartColumn <= e.Column && e.Column < h.EndColumn))
+            {
+                return e;
+            }
+            string renamed = pattern.Replace(e.Message, m => intrinsicOf[m.Value]);
+            return e with { Message = renamed, RawDiagnostics = e.RawDiagnostics ?? e.FxcFormattedMessage };
+        }).ToArray());
     }
 
     /// <summary>
@@ -96,7 +173,12 @@ internal sealed class CompilationPipeline
     private sealed record ShaderCompileFailure(
         string SourceFileName,
         MacroSet Macros,
-        IIncludeResolver IncludeResolver);
+        IIncludeResolver IncludeResolver,
+        bool DeferredLegacyCall = false)
+    {
+        /// <summary>The failure is a Vulkan <c>SD0228</c> or <c>SD0229</c> (see <see cref="Run"/>), not a DXC compile failure.</summary>
+        public bool UnpinnedVulkanResource { get; init; }
+    }
 
     /// <summary>
     /// A failed shader compile is a candidate for the legacy-sampler recovery only on a target
@@ -124,7 +206,9 @@ internal sealed class CompilationPipeline
         CompilerOptions options,
         LegacySamplerRecovery.Outcome.Retry? recovered,
         out ShaderCompileFailure? compileFailure,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        List<RestructuredHelperDefinition>? helpers = null,
+        bool deferToRecovery = true)
     {
         compileFailure = null;
         cancellationToken.ThrowIfCancellationRequested();
@@ -171,6 +255,11 @@ internal sealed class CompilationPipeline
 
             fxParsed = parseResult.Value;
         }
+        if (helpers is not null)
+        {
+            helpers.Clear();
+            helpers.AddRange(fxParsed.RestructuredHelpers);
+        }
 
         // Stage 2: Preprocessor — inject platform macros and flatten #includes.
         // Pre-check (no exception-as-control-flow): an unsupported target is reported
@@ -203,6 +292,19 @@ internal sealed class CompilationPipeline
         // must see one call per include, not one per pass.
         IIncludeResolver includeResolver = MemoizingIncludeResolver.Wrap(options.IncludeResolver ?? new FileSystemIncludeResolver());
         var preprocessor = new Preprocessor();
+
+        // A tex2Dlod / tex2Dbias / tex2Dproj call the raw pre-parse left verbatim because its
+        // rewrite depends on the #if branch that compiles. The DXC targets fail on it and recover
+        // from the preprocessed source as for any legacy residue; DirectX 11's compiler would take
+        // the unrewritten call silently (measured: vkd3d compiled one to an effect with no texture
+        // parameter), so it goes to the same recovery up front. Its FX0012 is the error when the
+        // recovery cannot apply.
+        if (deferToRecovery && recovered is null && options.Target == PlatformTarget.DirectX &&
+            fxParsed.DeferredLegacyIntrinsicCalls.Count > 0)
+        {
+            compileFailure = new ShaderCompileFailure(sourceFileName, macros, includeResolver, DeferredLegacyCall: true);
+            return Fail(FromFxParseError(fxParsed.DeferredLegacyIntrinsicCalls[0]));
+        }
 
         PreprocessedSource preprocessed;
         if (recovered is not null)
@@ -424,9 +526,14 @@ internal sealed class CompilationPipeline
         // Texture2D/SamplerState declarations.
         PreprocessedSource glCompileSource = monoGameGl
             ? preprocessed with { Text = GlStructOutputColorRewriter.Rewrite(preprocessed.Text, fxParsed.Techniques) }
-            : options.Target == PlatformTarget.Vulkan
-                ? preprocessed with { Text = VulkanTextureSamplerBindingRewriter.Rewrite(preprocessed.Text) }
-                : preprocessed;
+            : preprocessed;
+
+        // Vulkan: the binding rewrite runs PER COMPILED SHADER (VulkanShaderSource below), because
+        // each shader is its own descriptor layout: a texture read through sampler A in one pass
+        // and B in another is one combined descriptor in each, never an alias.
+        bool vulkan = options.Target == PlatformTarget.Vulkan;
+        if (vulkan && VulkanReservedName(preprocessed.Text, sourceFileName) is { } reservedName)
+            return Fail(reservedName);
 
         // Stages 3–5: Compile each pass's entry points, reflect, and transpile.
         // The preprocessor has already flattened all #includes so no include handler is needed for DXC.
@@ -531,7 +638,13 @@ internal sealed class CompilationPipeline
         // them, so a legacy SM3 effect compiled here and then failed the consumer's real
         // Content Pipeline build. DirectX only — see DirectX11FloorCheck's remarks for why
         // the OpenGL/Vulkan/DX12 equivalents are deliberately not enforced here.
+        //
+        // A KNIFX container on DirectX takes KNI's floor instead of mgfxc's: KNI's own DirectX
+        // pipeline also accepts *_2_0 and *_3_0, compiling them as *_4_0_level_9_1 / _9_3 (see
+        // KniDirectXProfile). Choosing the KNIFX container is choosing KNI's pipeline; MGFX keeps
+        // mgfxc's refusal.
         bool enforceDx11Floor = directX;
+        bool kniDirectXFloor = directX && effectiveContainer == EffectContainer.Knifx;
         // A profile a macro produced is validated through the macro name the author wrote, so DXC
         // expands it with -P as before issue #407. (The Android emulator hangs the first SPIR-V
         // compile after the corpus' effects stop making those -P calls: a DXC-spawned thread is
@@ -549,7 +662,8 @@ internal sealed class CompilationPipeline
                         pass.VertexProfileMacroName ?? pass.VertexProfileToken, pass.VertexProfileSpan, ShaderStage.Vertex,
                         dxcCompiler, macros, preprocessed, sourceFileName,
                         profileExpansionCache, enforceStagePrefix: true, cancellationToken,
-                        enforceDirectX11Floor: enforceDx11Floor, entryPoint: pass.VertexEntryPoint);
+                        enforceDirectX11Floor: enforceDx11Floor, entryPoint: pass.VertexEntryPoint,
+                        kniDirectXFloor: kniDirectXFloor);
                     if (v is { } vErr)
                         return Fail(vErr);
                 }
@@ -560,7 +674,8 @@ internal sealed class CompilationPipeline
                         pass.PixelProfileMacroName ?? pass.PixelProfileToken, pass.PixelProfileSpan, ShaderStage.Pixel,
                         dxcCompiler, macros, preprocessed, sourceFileName,
                         profileExpansionCache, enforceStagePrefix: true, cancellationToken,
-                        enforceDirectX11Floor: enforceDx11Floor, entryPoint: pass.PixelEntryPoint);
+                        enforceDirectX11Floor: enforceDx11Floor, entryPoint: pass.PixelEntryPoint,
+                        kniDirectXFloor: kniDirectXFloor);
                     if (p is { } pErr)
                         return Fail(pErr);
                 }
@@ -579,6 +694,55 @@ internal sealed class CompilationPipeline
         // carries no warnings of its own.
         var runWarnings  = new List<ShaderError>(preprocessWarnings);
         var seenWarnings = new HashSet<(string File, int Line, int Column, string Code, string Message)>();
+
+        var vulkanSources = new Dictionary<(string, ShaderStage), PreprocessedSource>();
+        // The lines an untaken #if drops from the text DXC compiles, and the macro-expanded view the
+        // rewrite reads each function's calls from, both from the managed preprocessor with this
+        // compile's macros (they head the flattened text). Unknown (null) when the view cannot be
+        // built or a conditional tests a macro only DXC defines (the view may then not be the code DXC
+        // compiles, and the preprocessed retry that backs the per-shader pairing is unavailable too):
+        // the rewrite then pairs over the whole file, every line and every function counting, as the
+        // released rewrite did.
+        (IReadOnlySet<int> Lines, string View)? vulkanLiveCode = null;
+        bool vulkanLiveCodeRead = false;
+        // Keyed by stage too: a vertex shader has fewer texture slots than a pixel shader
+        // (VulkanTextureSamplerBindingRewriter.MaxVertexTextureSlots), and no alias goes past them.
+        PreprocessedSource VulkanShaderSource(string entryPoint, ShaderStage stage)
+        {
+            if (vulkanSources.TryGetValue((entryPoint, stage), out PreprocessedSource? cached))
+                return cached;
+            if (!vulkanLiveCodeRead)
+            {
+                vulkanLiveCodeRead = true;
+                var skipped = ShadowDusk.HLSL.Preprocessing.FxMacroPreprocessor.SkippedLines(preprocessed.Text, sourceFileName);
+                if (skipped.IsSuccess && skipped.Value.PredefinedMacroUse is null)
+                    vulkanLiveCode = (skipped.Value.Lines, skipped.Value.View);
+            }
+            IReadOnlyList<VulkanTextureSamplerBindingRewriter.Alias> aliases;
+            int textureSlots = stage == ShaderStage.Vertex
+                ? VulkanTextureSamplerBindingRewriter.MaxVertexTextureSlots
+                : VulkanTextureSamplerBindingRewriter.MaxPixelTextureSlots;
+            string text = vulkanLiveCode is { } live
+                ? VulkanTextureSamplerBindingRewriter.Rewrite(preprocessed.Text, entryPoint, live.Lines, live.View, out aliases, textureSlots)
+                : VulkanTextureSamplerBindingRewriter.Rewrite(preprocessed.Text, entryPoint: null, skippedLines: null, out aliases, textureSlots);
+            foreach (var alias in aliases)
+            {
+                var (file, line, column) = VulkanTextureSamplerBindingRewriter.Locate(text, alias.Offset);
+                AccumulateWarnings(runWarnings, seenWarnings, [new ShaderError(
+                    File:     string.IsNullOrEmpty(file) ? sourceFileName : file,
+                    Line:     line,
+                    Column:   column,
+                    Code:     "SD0235",
+                    Message:  $"Vulkan target: texture '{alias.Texture}' is sampled through a second sampler, '{alias.Sampler}', " +
+                              $"in shader '{entryPoint}'. MonoGame's DesktopVK binds a texture and a sampler as one combined " +
+                              "descriptor, so ShadowDusk gives this pairing a second descriptor holding the same texture, bound " +
+                              $"to the '{alias.Texture}' effect parameter. Set '{alias.Texture}' through Effect.Parameters: " +
+                              "SpriteBatch fills only the first texture slot, so a sprite texture read this way reaches only " +
+                              "the first sampler.",
+                    Severity: ShaderErrorSeverity.Warning)]);
+            }
+            return vulkanSources[(entryPoint, stage)] = preprocessed with { Text = text };
+        }
 
         // OpenGL sampler-register reservations (issue #283): which modern
         // `SamplerState X : register(sN)` declarations take a GL sampler register out of
@@ -601,7 +765,9 @@ internal sealed class CompilationPipeline
         IReadOnlySet<string> legacyGlTextures = new HashSet<string>(StringComparer.Ordinal);
         IReadOnlyDictionary<string, string> legacySamplerTextureView = new Dictionary<string, string>(StringComparer.Ordinal);
         ShaderError? reservationError = null;
+        IReadOnlyDictionary<string, EntryPointMatrixInterpolants>? glEntryInterpolants = null;
         IReadOnlyDictionary<string, int> legacySamplerRegisters = new Dictionary<string, int>(StringComparer.Ordinal);
+        DxTextureSlotInputs? dxTextureSlots = null;
         if (options.Target == PlatformTarget.OpenGL)
         {
             // A recovery pass (issue #308) has the flattened raw source in hand already, and its
@@ -617,6 +783,7 @@ internal sealed class CompilationPipeline
                 legacySamplerRegisters = reservation.Value.LegacySamplerRegisters;
                 legacyGlTextures = reservation.Value.LegacyTextures;
                 legacySamplerTextureView = reservation.Value.LegacySamplerTextures;
+                glEntryInterpolants = reservation.Value.EntryPointInterpolants;
             }
             else
             {
@@ -651,6 +818,35 @@ internal sealed class CompilationPipeline
             {
                 legacySamplerRegisters = view.Value.LegacySamplerRegisters;
                 legacySamplerTextureView = view.Value.LegacySamplerTextures;
+                // DirectX 11 texture slots (DxTextureSlotOrder): fxc puts a legacy sampler's
+                // texture on the slot of its first read, ahead of every unregistered modern
+                // texture, around every explicit texture register; the backend numbers the SM4
+                // rewrite in declaration order. Each DX11 shader whose slots differ is recompiled
+                // with them pinned. Left null on every other target and for an effect with no
+                // legacy sampler, so those bytes cannot move. The evaluation order is read from
+                // the source (HlslReadOrder), the same on every backend and host.
+                if (directX && view.Value.LegacySamplerTextures.Count > 0)
+                {
+                    dxTextureSlots = new DxTextureSlotInputs(
+                        new HashSet<string>(view.Value.LegacySamplerTextures.Values, StringComparer.Ordinal),
+                        view.Value.LegacySamplerTextures,
+                        view.Value.ExplicitTextureRegisters,
+                        view.Value.ModernMethodTextures);
+                }
+            }
+            else if (directX && fxParsed.LegacySamplerTextures.Count > 0)
+            {
+                // Fail loudly: without the view the DirectX 11 texture slots cannot be checked.
+                runWarnings.Add(new ShaderError(
+                    File: sourceFileName,
+                    Line: 0,
+                    Column: 0,
+                    Code: "SD0230",
+                    Message: "DirectX 11: the legacy samplers' textures could not be checked against the slots fxc (and so " +
+                             $"mgfxc) gives them: the preprocessed view could not be built ({view.Error.Code}: {view.Error.Message}). " +
+                             "They keep the backend's declaration-order slots, so GraphicsDevice.Textures[N] and SpriteBatch's " +
+                             "texture (slot 0) can reach a different texture than in mgfxc's build.",
+                    Severity: ShaderErrorSeverity.Warning));
             }
         }
 
@@ -661,7 +857,8 @@ internal sealed class CompilationPipeline
         // rewritten `SamplerState A;` for this target only (registers read off the preprocessed
         // view, so a dead #if branch does not count; every rewritten declaration of the name
         // gets the live register, which is harmless in the branch that does not compile). The
-        // texture keeps the slot fxc's own order gives it. OpenGL decides units from the
+        // texture slots are fxc's too (DxTextureSlotOrder, per compiled shader, after the
+        // compile). OpenGL decides units from the
         // register itself (SpirvCombinedSamplerPairs.ResolveSlots); DirectX 12 and Vulkan are
         // left as they were: mgfxc 3.8.5 offers no reference for legacy samplers there.
         if (directX && legacySamplerRegisters.Count > 0)
@@ -730,7 +927,7 @@ internal sealed class CompilationPipeline
                         dxcCompiler,
                         dxbcCompiler,
                         glslTranspiler,
-                        glCompileSource,
+                        vulkan ? VulkanShaderSource(pass.VertexEntryPoint, ShaderStage.Vertex) : glCompileSource,
                         pass.VertexEntryPoint,
                         ShaderStage.Vertex,
                         options.Target,
@@ -747,6 +944,8 @@ internal sealed class CompilationPipeline
                         reservedGlSamplerSlots: reservedGlSamplerSlots,
                         glTextureDeclarationOrder: options.GlTextureDeclarationOrder,
                         legacyGlTextures: legacyGlTextures,
+                        glInterpolants: GlInterpolantPacking(glEntryInterpolants, pass.VertexEntryPoint, ShaderStage.Vertex),
+                        dxTextureSlots: dxTextureSlots,
                         cancellationToken);
 
                     if (compileOutput.Blob.IsFailure)
@@ -791,7 +990,7 @@ internal sealed class CompilationPipeline
                         dxcCompiler,
                         dxbcCompiler,
                         glslTranspiler,
-                        glCompileSource,
+                        vulkan ? VulkanShaderSource(pass.PixelEntryPoint, ShaderStage.Pixel) : glCompileSource,
                         pass.PixelEntryPoint,
                         ShaderStage.Pixel,
                         options.Target,
@@ -805,6 +1004,8 @@ internal sealed class CompilationPipeline
                         reservedGlSamplerSlots: reservedGlSamplerSlots,
                         glTextureDeclarationOrder: options.GlTextureDeclarationOrder,
                         legacyGlTextures: legacyGlTextures,
+                        glInterpolants: GlInterpolantPacking(glEntryInterpolants, pass.PixelEntryPoint, ShaderStage.Pixel),
+                        dxTextureSlots: dxTextureSlots,
                         cancellationToken);
 
                     if (compileOutput.Blob.IsFailure)
@@ -918,6 +1119,11 @@ internal sealed class CompilationPipeline
 
                     ReflectedEffect reflected = reflectResult.Value;
 
+                    // The text this stage was compiled from (on Vulkan its own per-shader rewrite), for locating diagnostics.
+                    string stageSource = vulkan
+                        ? VulkanShaderSource(blobIndex == vsIndex ? pass.VertexEntryPoint! : pass.PixelEntryPoint!, blobIndex == vsIndex ? ShaderStage.Vertex : ShaderStage.Pixel).Text
+                        : glCompileSource.Text;
+
                     // Issue #324: an ARRAY of textures or samplers has no representation in
                     // MonoGame's Vulkan effect format (real mgfxc 3.8.5 reflects it as nothing
                     // at all), and used to be silently dropped here too. Refuse it by name. On
@@ -938,9 +1144,31 @@ internal sealed class CompilationPipeline
                         return Fail(samplerArrayError, runWarnings);
                     }
                     if (options.Target == PlatformTarget.Vulkan
-                        && ResourceArrayDiagnostics.VulkanError(reflected, glCompileSource.Text, sourceFileName) is { } arrayError)
+                        && ResourceArrayDiagnostics.VulkanError(reflected, stageSource, sourceFileName) is { } arrayError)
                     {
                         return Fail(arrayError, runWarnings);
+                    }
+
+                    // Vulkan: a texture's or sampler's slot is its SPIR-V binding minus 32, as
+                    // mgfxc writes it and as MonoGame's DesktopVK descriptor writer reads it
+                    // (binding - 32). The reflector's ordinal numbering only coincides with that
+                    // when the registers have no gap from 0, so an explicit `register(t1)` with
+                    // nothing at t0 used to land its parameter on the wrong device slot.
+                    // Every host reflects Vulkan from SPIR-V, so desktop, browser and Android
+                    // all go through this one rule.
+                    if (options.Target == PlatformTarget.Vulkan)
+                    {
+                        Result<ReflectedEffect, ShaderError> slotted =
+                            VulkanResourceSlots.FromBindings(reflected, compiledShaderBlobs[blobIndex].Stage, stageSource, sourceFileName);
+                        if (slotted.IsFailure)
+                        {
+                            // A first pass only: the retry from the preprocessed source (Run)
+                            // is never retried again.
+                            if (recovered is null)
+                                compileFailure = new ShaderCompileFailure(sourceFileName, macros, includeResolver) { UnpinnedVulkanResource = true };
+                            return Fail(slotted.Error, runWarnings);
+                        }
+                        reflected = slotted.Value;
                     }
                     if (options.Target == PlatformTarget.DirectX12
                         && ResourceArrayDiagnostics.DirectX12Warning(reflected, glCompileSource.Text, sourceFileName) is { } arrayWarning)
@@ -956,6 +1184,21 @@ internal sealed class CompilationPipeline
 
                     foreach (ParameterReflection param in reflected.Parameters)
                     {
+                        // A Vulkan texture ALIAS (a second declaration of one texture, for its
+                        // second sampler; VulkanTextureSamplerBindingRewriter) is not an effect
+                        // parameter of its own: its record binds the original's.
+                        if (options.Target == PlatformTarget.Vulkan && IsVulkanTextureAlias(param.Name))
+                        {
+                            // Normally the original is in the same shader and owns the parameter.
+                            // If DXC removed it (only the alias is live), the alias IS the texture:
+                            // keep it under the original's name so its record still has a parameter.
+                            string baseName = VulkanTextureAliasBase(param.Name);
+                            if (reflected.Parameters.Any(p => p.Name == baseName))
+                                continue;
+                            if (seenParamNames.Add(baseName))
+                                allParameters.Add(param with { Name = baseName });
+                            continue;
+                        }
                         if (seenParamNames.Add(param.Name))
                             allParameters.Add(param);
                     }
@@ -1027,10 +1270,42 @@ internal sealed class CompilationPipeline
         // texture). Done before ANY index into the table is taken, so the cbuffer and sampler
         // records below all see the final list; texture lookups go through
         // TextureParameterName. Rendering is unchanged: the records point at the same texture.
-        Dictionary<string, string> textureParameterNames =
-            ApplySynthesizedSamplerParameterNames(allParameters, fxParsed.SynthesizedSamplerTextures);
-        string TextureParameterName(string textureName) =>
-            textureParameterNames.TryGetValue(textureName, out string? parameterName) ? parameterName : textureName;
+        //
+        // KNIFX is the exception, because KNI's own content pipeline is its reference: there such a
+        // sampler is NO effect parameter and its sampler record binds -1 (measured 2026-10-28, KNI
+        // 4.2.9001 and 4.3.9001, DesktopGL and Windows: `sampler s0;`, `sampler2D S : register(s0);`
+        // and a `sampler_state` without `Texture =` alike; a textured sampler beside it is unchanged).
+        // It matters at run time: KNI's EffectPass.Apply writes every bound texture parameter into
+        // GraphicsDevice.Textures, so a parameter the game never set replaced the texture it bound
+        // directly with null (KNI EffectTest OldSyntax_x / OldSyntax_s0s1). MGFX keeps mgfxc's shape.
+        bool kniTexturelessSamplers = effectiveContainer == EffectContainer.Knifx;
+        HashSet<string> unboundSamplerTextures = kniTexturelessSamplers
+            ? DropSynthesizedSamplerParameters(allParameters, fxParsed.SynthesizedSamplerTextures)
+            : new HashSet<string>(StringComparer.Ordinal);
+        Dictionary<string, string> textureParameterNames = kniTexturelessSamplers
+            ? new Dictionary<string, string>(StringComparer.Ordinal)
+            : ApplySynthesizedSamplerParameterNames(allParameters, fxParsed.SynthesizedSamplerTextures);
+        string TextureParameterName(string textureName)
+        {
+            // Only Vulkan declares aliases; elsewhere a name ending in the suffix is the author's own.
+            if (options.Target == PlatformTarget.Vulkan)
+                textureName = VulkanTextureAliasBase(textureName);
+            return textureParameterNames.TryGetValue(textureName, out string? parameterName) ? parameterName : textureName;
+        }
+        // The effect parameter a sampler record binds for a reflected texture: -1 for a KNIFX
+        // texture-less legacy sampler (deliberate, as KNI writes it), else the join by name. A
+        // miss of that join (-1) fails loudly: in the MGFX writer (SD0022), and for KNIFX, where
+        // -1 is a legal "no parameter" the writer cannot tell apart, through SD0018 below.
+        var unjoinedSamplerTextures = new List<string>();
+        int TextureParameterIndex(string textureName)
+        {
+            if (unboundSamplerTextures.Contains(textureName))
+                return -1;
+            int index = IndexOfParam(allParameters, TextureParameterName(textureName));
+            if (index < 0 && kniTexturelessSamplers)
+                unjoinedSamplerTextures.Add(textureName);
+            return index;
+        }
 
         // GL (Phase 43 F4/F5): one cbuffer record PER SHADER, built from the uniform
         // register layout the GLSL rewriter returned for that shader, deduplicated
@@ -1343,7 +1618,7 @@ internal sealed class CompilationPipeline
                             // separate divergence tracked in Phase 51, not changed here because
                             // it needs its own DX12 render re-proof.
                             Name:        directX ? string.Empty : $"ps_s{slot}",
-                            Parameter:   IndexOfParam(allParameters, TextureParameterName(tex.Name)),
+                            Parameter:   TextureParameterIndex(tex.Name),
                             State:       matchedSamp is null
                                              ? null
                                              : samplerStateByName.GetValueOrDefault(matchedSamp.Name)));
@@ -1422,7 +1697,7 @@ internal sealed class CompilationPipeline
                             TextureSlot: (byte)glSamplerSlots[k],
                             SamplerSlot: (byte)glSamplerSlots[k],
                             Name:        $"ps_s{glSamplerSlots[k]}",
-                            Parameter:   IndexOfParam(allParameters, TextureParameterName(pair.TextureName)),
+                            Parameter:   TextureParameterIndex(pair.TextureName),
                             // Keyed on the .fx sampler identifier, which survives the SM4
                             // rewrite verbatim, so the baked sampler_state follows the SAMPLER
                             // half of the pair — two pairs sharing one texture but different
@@ -1468,21 +1743,24 @@ internal sealed class CompilationPipeline
                     // never by GLSL name, and VulkanTextureSamplerBindingRewriter has already
                     // co-located each texture+sampler pair on matching registers — so the
                     // reflected sampler list IS the binding list here.
+                    //
+                    // The slot is the binding minus 32 (VulkanResourceSlots, applied right after
+                    // reflection), mgfxc's own rule and the one MonoGame's descriptor writer
+                    // reads back, so an explicit register(t1) is slot 1 as on DirectX.
                     foreach (SamplerReflection samp in samplerRefs)
                     {
                         int slot = samp.BindSlot;
-                        // Pair the sampler with its texture (by slot, then first) so the
-                        // sampler-type byte can carry the texture's DIMENSION. The dimension
-                        // is reflected identically by BOTH the DXIL oracle and the pure-managed
-                        // SpirvReflector, so this stays byte-transparent across the desktop
-                        // and WASM reflection paths.
+                        // Pair the sampler with the texture on its descriptor (the same raw
+                        // binding, which is what makes the two one combined descriptor), then
+                        // first, so the sampler-type byte can carry the texture's DIMENSION and
+                        // the record names the texture's parameter.
                         TextureReflection? matchedTex =
-                            textureRefs.FirstOrDefault(t => t.BindSlot == slot)
+                            textureRefs.FirstOrDefault(t => t.RawBinding == samp.RawBinding)
                             ?? textureRefs.FirstOrDefault();
                         // No Math.Max(0, …) clamp — see the DirectX branch (bug-hunt N11).
                         int paramIndex = matchedTex is null
                             ? 0
-                            : IndexOfParam(allParameters, TextureParameterName(matchedTex.Name));
+                            : TextureParameterIndex(matchedTex.Name);
                         samplers.Add(new MgfxSamplerInfo(
                             Type:        SamplerTypeByte(matchedTex?.Dimension),
                             TextureSlot: (byte)slot,
@@ -1492,6 +1770,25 @@ internal sealed class CompilationPipeline
                             // The reflected sampler name is the .fx sampler identifier —
                             // the key the parsed sampler_state members were resolved under.
                             State:       samplerStateByName.GetValueOrDefault(samp.Name)));
+                    }
+
+                    // A texture with NO sampler on its binding (read with Load / operator[]) is a
+                    // SAMPLED_IMAGE descriptor, which DesktopVK binds, but with no record above its
+                    // parameter was never bound to a device slot and the shader read (0,0,0,0).
+                    // mgfxc 3.8.5 writes such a texture one record of its own: texture slot =
+                    // binding - 32, sampler slot 255 (none), an empty name, no state (measured; its
+                    // build draws the texture in real DesktopVK). Written the same way, in slot order.
+                    foreach (TextureReflection tex in textureRefs
+                                 .Where(t => samplerRefs.All(s => s.RawBinding != t.RawBinding))
+                                 .OrderBy(t => t.BindSlot))
+                    {
+                        samplers.Add(new MgfxSamplerInfo(
+                            Type:        SamplerTypeByte(tex.Dimension),
+                            TextureSlot: (byte)tex.BindSlot,
+                            SamplerSlot: byte.MaxValue,
+                            Name:        string.Empty,
+                            Parameter:   IndexOfParam(allParameters, TextureParameterName(tex.Name)),
+                            State:       null));
                     }
                 }
             }
@@ -1551,6 +1848,9 @@ internal sealed class CompilationPipeline
                 ConstantBufferIndices = cbIndices,
             };
         }
+
+        if (UnjoinedSamplerTextureError(unjoinedSamplerTextures, options.SourceFileName) is { } unjoined)
+            return Fail(unjoined, runWarnings);
 
         ShaderIR ir = ShaderIRBuilder.Build(
             compiledShaderBlobs,
@@ -1689,7 +1989,8 @@ internal sealed class CompilationPipeline
         bool enforceStagePrefix,
         CancellationToken cancellationToken,
         bool enforceDirectX11Floor = false,
-        string? entryPoint = null)
+        string? entryPoint = null,
+        bool kniDirectXFloor = false)
     {
         // A missing profile cannot be validated (and never reaches a compile with a real
         // target) — leave the existing SM3 fallback behavior untouched.
@@ -1700,7 +2001,7 @@ internal sealed class CompilationPipeline
         // (IsKnownProfile is case-insensitive, so the lowercased form is fine here.)
         if (FxPreParser.IsKnownProfile(profile))
             return ResolvedProfileChecks(
-                profile, stage, span, sourceFileName, enforceStagePrefix, enforceDirectX11Floor, entryPoint);
+                profile, stage, span, sourceFileName, enforceStagePrefix, enforceDirectX11Floor, entryPoint, kniDirectXFloor);
 
         // Profile-SHAPED but NOT a known profile (e.g. 'ps_9_9', 'ps_2_5'): unconditionally
         // invalid — no macro could rescue a literal that already looks like a profile — so
@@ -1731,7 +2032,7 @@ internal sealed class CompilationPipeline
 
         if (expanded is not null && FxPreParser.IsKnownProfile(expanded))
             return ResolvedProfileChecks(
-                expanded, stage, span, sourceFileName, enforceStagePrefix, enforceDirectX11Floor, entryPoint);
+                expanded, stage, span, sourceFileName, enforceStagePrefix, enforceDirectX11Floor, entryPoint, kniDirectXFloor);
 
         return ProfileError(profile, span, sourceFileName);
     }
@@ -1751,15 +2052,18 @@ internal sealed class CompilationPipeline
         string sourceFileName,
         bool enforceStagePrefix,
         bool enforceDirectX11Floor,
-        string? entryPoint)
+        string? entryPoint,
+        bool kniDirectXFloor)
     {
         ShaderError? stagePrefix = StagePrefixCheck(knownProfile, stage, span, sourceFileName, enforceStagePrefix);
         if (stagePrefix is not null)
             return stagePrefix;
 
-        return enforceDirectX11Floor
-            ? DirectX11FloorCheck(knownProfile, stage, span, sourceFileName, entryPoint)
-            : null;
+        if (!enforceDirectX11Floor)
+            return null;
+        return kniDirectXFloor
+            ? KniDirectXFloorCheck(knownProfile, stage, span, sourceFileName, entryPoint)
+            : DirectX11FloorCheck(knownProfile, stage, span, sourceFileName, entryPoint);
     }
 
     /// <summary>
@@ -1932,6 +2236,10 @@ internal sealed class CompilationPipeline
     /// compiler is mgfxc <b>3.8.5</b>, which is not the pinned golden oracle and is not
     /// installed here, so its floor has never been measured — guessing it would be the
     /// opposite of the empirical rule this check is built on.
+    ///
+    /// <para>This is the MGFX container's floor. A KNIFX container on DirectX is checked
+    /// against KNI's own pipeline instead (<see cref="KniDirectXFloorCheck"/>), which also
+    /// accepts <c>*_2_0</c> and <c>*_3_0</c>.</para>
     /// </remarks>
     private static ShaderError? DirectX11FloorCheck(
         string knownProfile, ShaderStage stage, SourceSpan? span, string sourceFileName, string? entryPoint)
@@ -1954,6 +2262,35 @@ internal sealed class CompilationPipeline
                      $"profiles such as {prefix}_6_0 are refused too). Use the standard " +
                      "'#if OPENGL … #else …' header so the DirectX arm defines " +
                      "VS_SHADERMODEL/PS_SHADERMODEL as the *_4_0_level_9_1 pair");
+    }
+
+    /// <summary>
+    /// The DirectX floor for a KNIFX container: the compile targets KNI's own DirectX pipeline
+    /// accepts (<see cref="KniDirectXProfile.Accepts"/>), which are mgfxc's DirectX_11 set plus
+    /// <c>*_2_0</c> and <c>*_3_0</c> (compiled as <c>*_4_0_level_9_1</c> / <c>*_4_0_level_9_3</c>).
+    /// Everything else KNI's MGCB refuses ("Invalid profile 'ps_2_a'. Pixel shader 'P'.", or for SM1
+    /// "... must be at least SM 2.0.", measured on 4.2.9001 and 4.3.9001), and so does this check,
+    /// with the same <c>SD0015</c> the MGFX floor reports.
+    /// </summary>
+    private static ShaderError? KniDirectXFloorCheck(
+        string knownProfile, ShaderStage stage, SourceSpan? span, string sourceFileName, string? entryPoint)
+    {
+        if (KniDirectXProfile.Accepts(knownProfile))
+            return null;
+
+        string stageWord = stage == ShaderStage.Vertex ? "vertex" : "pixel";
+        string prefix    = stage == ShaderStage.Vertex ? "vs" : "ps";
+        string named     = entryPoint is null ? string.Empty : $" (the {stageWord} shader '{entryPoint}')";
+        return new ShaderError(
+            File: sourceFileName,
+            Line: span?.StartLine ?? 0,
+            Column: span?.StartColumn ?? 0,
+            Code: "SD0015",
+            Message: $"compile target '{knownProfile}'{named} is not one KNI's DirectX pipeline accepts — " +
+                     "KNI's own effect processor refuses it as an invalid profile. For the KNIFX container on " +
+                     $"DirectX, KNI accepts only {prefix}_2_0 and {prefix}_3_0 (which it compiles as " +
+                     $"{prefix}_4_0_level_9_1 and {prefix}_4_0_level_9_3), {prefix}_4_0_level_9_1, " +
+                     $"{prefix}_4_0_level_9_3, {prefix}_4_0, {prefix}_4_1, and {prefix}_5_0");
     }
 
     /// <summary>
@@ -2455,6 +2792,72 @@ internal sealed class CompilationPipeline
         }
     }
 
+    /// <summary>
+    /// What the OpenGL rewriter must know about ONE entry point's matrix interpolants, from the
+    /// declarations its own signature carries in the preprocessed source (DXC's GLSL is identical
+    /// for row_major and column_major, and for <c>float1xN</c> and a vector, while fxc lays each out
+    /// differently). The vertex stage's interpolants are what it writes, the pixel stage's what it
+    /// reads; each stage is laid out as fxc lays out its own declaration, so two techniques, or a
+    /// VS and a PS, may declare one semantic differently. Every matrix semantic the signature
+    /// declares is listed, so the rewrite can refuse a matrix interpolant it has no declaration
+    /// for instead of guessing column packing. A degenerate <c>float1xN</c> / <c>row_major
+    /// floatNx1</c> interpolant is split over N one-component registers, as fxc lays it out; as a
+    /// vertex INPUT (fxc: N attributes) it is refused, as is one semantic declared twice in one
+    /// signature.
+    /// </summary>
+    private static MonoGameGlslInterpolantPacking GlInterpolantPacking(
+        IReadOnlyDictionary<string, EntryPointMatrixInterpolants>? entryPoints, string? entryPoint, ShaderStage stage)
+    {
+        var rowMajor = new HashSet<string>(StringComparer.Ordinal);
+        var declared = new HashSet<string>(StringComparer.Ordinal);
+        var refused = new Dictionary<string, string>(StringComparer.Ordinal);
+        var refusedInputs = new Dictionary<string, string>(StringComparer.Ordinal);
+        var unmodelled = new List<string>();
+        if (entryPoints is null || entryPoint is null || !entryPoints.TryGetValue(entryPoint, out EntryPointMatrixInterpolants? found))
+            return new MonoGameGlslInterpolantPacking(rowMajor, refused) { Declared = declared, RefusedVertexInputs = refusedInputs };
+
+        static string Degenerate(MatrixInterpolantDeclaration d) =>
+            $"'{d.Name}' is a {(d.RowMajor ? "row_major " : "")}{d.Rows}x{d.Columns} matrix, which fxc spreads over " +
+            $"{Math.Max(d.Rows, d.Columns)} registers of one component each, but which reaches the OpenGL rewrite as " +
+            "a single vector attribute; declare it as a vector instead.";
+
+        bool vertex = stage == ShaderStage.Vertex;
+        IReadOnlyList<MatrixInterpolantDeclaration> interpolants = vertex ? found.Outputs : found.Inputs;
+        var split = new Dictionary<string, int>(StringComparer.Ordinal);
+        foreach (IGrouping<string, MatrixInterpolantDeclaration> group in interpolants.GroupBy(d => d.Semantic))
+        {
+            if (group.Count() > 1)
+            {
+                refused[group.Key] = $"'{entryPoint}' declares it more than once.";
+                continue;
+            }
+            MatrixInterpolantDeclaration only = group.Single();
+            if (only.IsDegenerate)
+            {
+                // fxc gives a float1xN (column_major) / row_major floatNx1 N registers of one
+                // component; DXC hands the rewrite one vecN, so the rewrite splits it the same way.
+                split[group.Key] = Math.Max(only.Rows, only.Columns);
+                continue;
+            }
+            declared.Add(group.Key);
+            if (only.RowMajor)
+                rowMajor.Add(group.Key);
+        }
+        if (vertex)
+        {
+            foreach (MatrixInterpolantDeclaration d in found.Inputs.Where(d => d.IsDegenerate))
+                refusedInputs[d.Semantic] = Degenerate(d);
+        }
+        unmodelled.AddRange(found.Unmodelled);
+        return new MonoGameGlslInterpolantPacking(rowMajor, refused)
+        {
+            Declared = declared,
+            Split = split,
+            RefusedVertexInputs = refusedInputs,
+            Unmodelled = unmodelled,
+        };
+    }
+
     private static (Result<byte[], ShaderError> Blob, ReadOnlyMemory<byte> DxilBlob, ReadOnlyMemory<byte> SpirvBlob, IReadOnlyList<MgfxVertexAttributeInfo> Attributes, IReadOnlyList<MonoGameGlslUniform> Uniforms, IReadOnlyList<ShaderError> Warnings)
         CompileEntryPoint(
             Lazy<IDxcShaderCompiler> dxcCompiler,
@@ -2471,6 +2874,8 @@ internal sealed class CompilationPipeline
             IReadOnlySet<int> reservedGlSamplerSlots,
             IReadOnlyDictionary<string, int> glTextureDeclarationOrder,
             IReadOnlySet<string> legacyGlTextures,
+            MonoGameGlslInterpolantPacking? glInterpolants,
+            DxTextureSlotInputs? dxTextureSlots,
             CancellationToken ct)
     {
         IReadOnlyList<MgfxVertexAttributeInfo> noAttributes = Array.Empty<MgfxVertexAttributeInfo>();
@@ -2501,7 +2906,16 @@ internal sealed class CompilationPipeline
                     WaveQuadIntrinsics.Relabel(dxbcResult.Error, platform, "DXBC compiler") ?? dxbcResult.Error), default, default, noAttributes, noUniforms, noWarnings);
 
             ReadOnlyMemory<byte> dxbc = dxbcResult.Value.Bytes;
-            return (Result<byte[], ShaderError>.Ok(dxbc.ToArray()), dxbc, default, noAttributes, noUniforms, dxbcResult.Value.Warnings);
+            IReadOnlyList<ShaderError> dxbcWarnings = dxbcResult.Value.Warnings;
+            if (dxTextureSlots is not null
+                && ReorderDirectX11TextureSlots(dxbcCompiler, dxbcRequest, dxbc, dxTextureSlots, ct) is { } reordered)
+            {
+                if (reordered.Bytes is { } pinned)
+                    dxbc = pinned;
+                else if (reordered.Warning is { } slotWarning)
+                    dxbcWarnings = [.. dxbcWarnings, slotWarning];
+            }
+            return (Result<byte[], ShaderError>.Ok(dxbc.ToArray()), dxbc, default, noAttributes, noUniforms, dxbcWarnings);
         }
 
         if (platform == PlatformTarget.OpenGL)
@@ -2600,7 +3014,7 @@ internal sealed class CompilationPipeline
                     }
 
                     MonoGameGlslResult rewritten =
-                        MonoGameGlslRewriter.Rewrite(transpileResult.Value.Text, stage, samplerSlots);
+                        MonoGameGlslRewriter.Rewrite(transpileResult.Value.Text, stage, samplerSlots, glInterpolants);
                     glslText = rewritten.Glsl;
                     // The shader's uniform register layout — the pipeline builds the
                     // per-shader {vs,ps}_uniforms_vec4 cbuffer record from THIS, so
@@ -2683,7 +3097,20 @@ internal sealed class CompilationPipeline
 
             var result = dxcCompiler.Value.Compile(request, ct);
             if (result.IsFailure)
-                return (Result<byte[], ShaderError>.Fail(result.Error), default, default, noAttributes, noUniforms, noWarnings);
+            {
+                // SD0236 names the entry point DXC was asked for; on Vulkan that is the "main" of the
+                // rename above, so put back the name the author wrote.
+                ShaderError error = result.Error;
+                if (string.Equals(error.Code, DxcSpirvEntryRedeclarations.ErrorCode, StringComparison.Ordinal)
+                    && !string.Equals(effectiveEntryPoint, entryPoint, StringComparison.Ordinal))
+                {
+                    error = error with
+                    {
+                        Message = error.Message.Replace($"'{effectiveEntryPoint}'", $"'{entryPoint}'", StringComparison.Ordinal),
+                    };
+                }
+                return (Result<byte[], ShaderError>.Fail(error), default, default, noAttributes, noUniforms, noWarnings);
+            }
 
             ReadOnlyMemory<byte> blob      = result.Value.Bytes;
             // DirectX12 ships raw SM6 DXIL directly (no transpile) and reflects from it via
@@ -2906,6 +3333,88 @@ internal sealed class CompilationPipeline
         return renamed;
     }
 
+    private static readonly System.Text.RegularExpressions.Regex VulkanTextureAlias = new(
+        "^(?<base>.+)" + System.Text.RegularExpressions.Regex.Escape(VulkanTextureSamplerBindingRewriter.AliasSuffix) + @"\d+$",
+        System.Text.RegularExpressions.RegexOptions.CultureInvariant);
+
+    private static bool IsVulkanTextureAlias(string name) => VulkanTextureAlias.IsMatch(name);
+
+    // The texture a Vulkan alias stands for, or the name itself.
+    private static string VulkanTextureAliasBase(string name)
+    {
+        var m = VulkanTextureAlias.Match(name);
+        return m.Success ? m.Groups["base"].Value : name;
+    }
+
+    /// <summary>
+    /// <c>SD0234</c>: on Vulkan, an identifier of the source uses the suffix the binding rewrite
+    /// reserves for its texture aliases (<see cref="VulkanTextureSamplerBindingRewriter.AliasSuffix"/>),
+    /// so an alias could collide with it (a redefinition DXC would report against text the author
+    /// never wrote), and its record would be bound to the wrong parameter. Located at the first
+    /// such identifier.
+    /// </summary>
+    private static ShaderError? VulkanReservedName(string source, string sourceFileName)
+    {
+        System.Text.RegularExpressions.Match m = System.Text.RegularExpressions.Regex.Match(
+            ResourceArrayDiagnostics.MaskCommentsAndStrings(source),
+            @"\b\w*" + System.Text.RegularExpressions.Regex.Escape(VulkanTextureSamplerBindingRewriter.AliasSuffix) + @"\w*\b");
+        if (!m.Success)
+            return null;
+        var (file, line, column) = VulkanTextureSamplerBindingRewriter.Locate(source, m.Index);
+        return new ShaderError(
+            File:    string.IsNullOrEmpty(file) ? sourceFileName : file,
+            Line:    line,
+            Column:  column,
+            Code:    "SD0234",
+            Message: $"Vulkan target: the identifier '{m.Value}' uses the suffix '{VulkanTextureSamplerBindingRewriter.AliasSuffix}', " +
+                     "which ShadowDusk reserves on Vulkan for the second descriptor it declares when one texture is sampled " +
+                     "through two samplers. Rename it.");
+    }
+
+    /// <summary>
+    /// The KNIFX counterpart of <see cref="ApplySynthesizedSamplerParameterNames"/>: for each
+    /// texture the SM4 rewrite synthesized for a texture-less legacy sampler that reached the
+    /// table, removes that texture's parameter and the standalone sampler parameter of the
+    /// sampler's name (OpenGL reflects one), as KNI's pipeline emits no parameter for such a
+    /// sampler. Returns the reflected names of the removed textures, whose sampler records bind -1.
+    /// </summary>
+    internal static ShaderError? UnjoinedSamplerTextureError(IReadOnlyList<string> unjoinedTextures, string? sourceFileName)
+    {
+        if (unjoinedTextures.Count == 0)
+            return null;
+
+        return new ShaderError(
+            File: sourceFileName ?? "<source>",
+            Line: 0,
+            Column: 0,
+            Code: "SD0018",
+            Message: "Internal: KNIFX sampler record(s) for texture(s) " +
+                     string.Join(", ", unjoinedTextures.Distinct(StringComparer.Ordinal).Select(t => $"'{t}'")) +
+                     " name no effect parameter, so the texture could not be bound. Only a texture-less " +
+                     "legacy sampler binds no parameter (-1); this one is a reflection/parameter-table " +
+                     "mismatch, a ShadowDusk bug.");
+    }
+
+    private static HashSet<string> DropSynthesizedSamplerParameters(
+        List<ParameterReflection> parameters,
+        IReadOnlyDictionary<string, string> synthesizedSamplerTextures)
+    {
+        var unbound = new HashSet<string>(StringComparer.Ordinal);
+        var samplers = new HashSet<string>(StringComparer.Ordinal);
+        foreach ((string samplerName, string textureName) in synthesizedSamplerTextures)
+        {
+            if (parameters.Exists(p => p.Class == EffectParameterClass.Object && p.Name == textureName))
+            {
+                unbound.Add(textureName);
+                samplers.Add(samplerName);
+            }
+        }
+
+        parameters.RemoveAll(p => p.Class == EffectParameterClass.Object
+            && (unbound.Contains(p.Name) || samplers.Contains(p.Name)));
+        return unbound;
+    }
+
     /// <summary>
     /// <c>SD0227</c>: two legacy samplers read by ONE compiled stage share an explicit
     /// <c>register(sN)</c>, which fxc refuses (<c>X4500</c>). Located at the second declaration in
@@ -2972,6 +3481,174 @@ internal sealed class CompilationPipeline
             }
         }
         return (line, offset - lineStart + 1, offset);
+    }
+
+    /// <summary>
+    /// What the DirectX 11 texture slot re-assignment (<see cref="DxTextureSlotOrder"/>) needs from
+    /// the preprocessed view: the textures legacy samplers sample through, each legacy sampler's
+    /// texture (to join a natively compiled sampler's RDEF name), every explicit <c>t</c>
+    /// register, and the legacy textures the source also calls a method on (refused, see
+    /// <c>GlSamplerSlots.ModernMethodTextures</c>). The compiled source's own preprocessed text is cached per text, since every entry
+    /// point of an effect compiles the same text.
+    /// </summary>
+    private sealed record DxTextureSlotInputs(
+        IReadOnlySet<string> LegacyTextures,
+        IReadOnlyDictionary<string, string> LegacySamplerTextures,
+        IReadOnlyList<ExplicitTextureRegister> ExplicitRegisters,
+        IReadOnlySet<string> ModernMethodTextures)
+    {
+        private string? _cachedText;
+        private Result<string, ShaderError>? _cachedView;
+
+        public Result<string, ShaderError> Preprocessed(string text, string sourceFile)
+        {
+            if (_cachedView is null || !ReferenceEquals(_cachedText, text))
+            {
+                _cachedText = text;
+                _cachedView = ShadowDusk.HLSL.Preprocessing.FxMacroPreprocessor.Process(text, sourceFile);
+            }
+            return _cachedView.Value;
+        }
+
+        private string? _nativeText;
+        private IReadOnlySet<string>? _native;
+
+        /// <summary>
+        /// Samplers still read with a legacy intrinsic (<c>tex2D(S, …)</c>) in the preprocessed
+        /// compiled text: legacy samplers the rewrite did not reach, which the backend compiles
+        /// natively under the sampler's own name.
+        /// </summary>
+        public IReadOnlySet<string> NativeLegacySamplers(string preprocessed)
+        {
+            if (_native is null || !ReferenceEquals(_nativeText, preprocessed))
+            {
+                _nativeText = preprocessed;
+                _native = System.Text.RegularExpressions.Regex
+                    .Matches(preprocessed, @"(?<![A-Za-z0-9_.])tex(?:1D|2D|3D|CUBE)(?:bias|grad|lod|proj)?\s*\(\s*([A-Za-z_]\w*)")
+                    .Select(m => m.Groups[1].Value)
+                    .ToHashSet(StringComparer.Ordinal);
+            }
+            return _native;
+        }
+    }
+
+    /// <summary>
+    /// DirectX 11: when the shipped compile's <c>t</c> slots differ from fxc's
+    /// (<see cref="DxTextureSlotOrder"/>), recompiles with each resource pinned to its fxc slot.
+    /// <c>null</c> when nothing needs to move (the first compile's bytes stand, unchanged). Every
+    /// case where the slots cannot be checked or applied keeps the first compile and reports
+    /// <c>SD0230</c>, never silently.
+    /// </summary>
+    private static (ReadOnlyMemory<byte>? Bytes, ShaderError? Warning)? ReorderDirectX11TextureSlots(
+        IDxbcShaderCompiler dxbcCompiler,
+        D3DCompileRequest request,
+        ReadOnlyMemory<byte> dxbc,
+        DxTextureSlotInputs inputs,
+        CancellationToken ct)
+    {
+        if (inputs.LegacyTextures.Count == 0)
+            return null;
+
+        string described = "";
+        ShaderError Unplaced(string why) => new(
+            File: request.SourceFileName,
+            Line: 0,
+            Column: 0,
+            Code: "SD0230",
+            Message: $"DirectX 11: the textures of '{request.EntryPoint}' could not be put on the slots fxc (and so mgfxc) " +
+                     $"gives them{described}: {why}. They keep the backend's declaration-order slots, so " +
+                     "GraphicsDevice.Textures[N] and SpriteBatch's texture (slot 0) can reach a different texture than in " +
+                     "mgfxc's build; setting each texture through its effect parameter is unaffected.",
+            Severity: ShaderErrorSeverity.Warning);
+
+        IReadOnlyList<DxbcTRegisterBindings.Binding>? bindings = DxbcTRegisterBindings.Read(dxbc.Span);
+        if (bindings is null)
+            return (null, Unplaced("the compiled shader's resource table could not be read"));
+
+        // The evaluation order comes from the source (HlslReadOrder): no compiled instruction stream
+        // carries it (d3dcompiler_47 schedules its reads; vkd3d swaps the operands of '>' and '<=').
+        Result<string, ShaderError> view = inputs.Preprocessed(request.HlslSource, request.SourceFileName);
+        if (view.IsFailure)
+            return (null, Unplaced($"the compiled source could not be preprocessed ({view.Error.Code}: {view.Error.Message})"));
+
+        // A legacy texture's RDEF name is the rewritten texture's, or, for a legacy sampler the
+        // rewrite did not reach (declared in an #include, compiled natively by the backend), the
+        // sampler's own: such a sampler is still read with a legacy intrinsic in the compiled text.
+        IReadOnlySet<string> nativeSamplers = inputs.NativeLegacySamplers(view.Value);
+        string? LegacyKey(string rdefName) =>
+            inputs.LegacyTextures.Contains(rdefName) ? rdefName
+            : inputs.LegacySamplerTextures.TryGetValue(rdefName, out string? texture) ? texture
+            : nativeSamplers.Contains(rdefName) ? rdefName
+            : null;
+        var legacyNames = new HashSet<string>(
+            bindings.Where(b => LegacyKey(b.Name) is not null).Select(b => b.Name), StringComparer.Ordinal);
+        if (legacyNames.Count == 0)
+            return null;
+        if (bindings.Any(b => b.Count != 1 || b.Name.Contains('[', StringComparison.Ordinal)))
+            return (null, Unplaced("the shader also declares an array of resources, whose slots this check does not model"));
+
+        var present = new HashSet<string>(
+            bindings.Select(b => LegacyKey(b.Name)).OfType<string>(), StringComparer.Ordinal);
+
+        // A legacy sampler's texture the source also uses through a method of its own
+        // (`Tb.GetDimensions`, `Tb.Load`, even `Tb.Sample`): fxc gives that use a texture record of
+        // its own, numbered apart (mgfxc A@t0 Tb@t1 Tb@t2, measured), and in the compiled text the
+        // rewrite's `Tb.Sample(SB, uv)` reads look the same as the author's.
+        string? modern = present.Where(inputs.ModernMethodTextures.Contains).Order(StringComparer.Ordinal).FirstOrDefault();
+        if (modern is not null)
+        {
+            return (null, Unplaced($"the legacy sampler's texture '{modern}' is also used through a method call of its own " +
+                                   "(GetDimensions, Load, Sample, ...), which fxc gives a texture record of its own"));
+        }
+
+        IReadOnlyList<string>? reads = HlslReadOrder.FirstReads(
+            view.Value, request.EntryPoint, inputs.LegacyTextures, inputs.LegacySamplerTextures, present, out string? refusal);
+        if (reads is null)
+            return (null, Unplaced($"the evaluation order of the reads is not certain ({refusal})"));
+        var readOrder = new List<string>();
+        foreach (string texture in reads)
+        {
+            foreach (var b in bindings)
+            {
+                if (string.Equals(LegacyKey(b.Name), texture, StringComparison.Ordinal) && !readOrder.Contains(b.Name))
+                    readOrder.Add(b.Name);
+            }
+        }
+
+        string stage = request.Stage == ShaderStage.Vertex ? "vs" : "ps";
+        var registers = inputs.ExplicitRegisters
+            .Where(r => r.Stage is null || string.Equals(r.Stage, stage, StringComparison.Ordinal))
+            .Select(r => (r.Name, r.Slot))
+            .ToList();
+        var resources = bindings.Select(b => (b.Name, b.Slot)).ToList();
+        IReadOnlyDictionary<string, int>? plan = DxTextureSlotOrder.Plan(resources, readOrder, legacyNames, registers, out string? planRefusal);
+        if (planRefusal is not null)
+            return (null, Unplaced(planRefusal));
+        if (plan is null)
+            return null;
+
+        described = " (" + string.Join(", ", plan.OrderBy(p => p.Value).Select(p => $"{p.Key} t{p.Value}")) + ")";
+        string? pinnedText = DxTextureSlotOrder.Pin(request.HlslSource, plan);
+        if (pinnedText is null)
+            return (null, Unplaced("a declaration could not be given an explicit register (declared through a macro or in an #include, in a declarator list, as an array, or with an annotation)"));
+
+        var pinnedRequest = new D3DCompileRequest
+        {
+            HlslSource      = pinnedText,
+            SourceFileName  = request.SourceFileName,
+            EntryPoint      = request.EntryPoint,
+            Stage           = request.Stage,
+            EmbedDebugInfo  = request.EmbedDebugInfo,
+            AllowWarnings   = request.AllowWarnings,
+            ProfileOverride = request.ProfileOverride,
+        };
+        var pinned = dxbcCompiler.Compile(pinnedRequest, ct);
+        if (pinned.IsFailure)
+            return (null, Unplaced($"the pinned compile failed ({pinned.Error.Code}: {pinned.Error.Message})"));
+        var pinnedBindings = DxbcTRegisterBindings.Read(pinned.Value.Bytes.Span);
+        if (pinnedBindings is null || !DxTextureSlotOrder.Matches(pinnedBindings.Select(b => (b.Name, b.Slot)).ToList(), plan))
+            return (null, Unplaced("the pinned compile did not land on those slots"));
+        return (pinned.Value.Bytes, null);
     }
 
     /// <summary>
@@ -3414,20 +4091,85 @@ internal sealed class CompilationPipeline
 
         if (kept.Count > 0)
         {
-            var keptSites = new HashSet<(string File, int Line)>();
-            foreach (GlobalInitializerDefault d in kept.Values)
-                keptSites.Add((SourceBaseName(d.File), d.Line));
-
             // DXC's wording differs by path: the SPIR-V compiles say "variable 'X' will be placed in
             // $Globals so initializer ignored", the DXIL (DirectX 12) compile "Initializer of external
             // global will be ignored". Both are untrue once the default is stored.
-            warnings.RemoveAll(w => w.Code == "X0000" &&
-                (w.Message.Contains("so initializer ignored", StringComparison.Ordinal) ||
-                 w.Message.Contains("Initializer of external global will be ignored", StringComparison.Ordinal)) &&
-                keptSites.Contains((SourceBaseName(w.File), w.Line)));
+            //
+            // The warning is matched to a kept default by POSITION, inside the span from the declared
+            // name to the end of its initializer: the SPIR-V path reports the initializer's first
+            // token, the DXIL path the name (measured, DXC 1.7.2212.40), so a brace or '=' on the next
+            // line (`float4 C =` / `{ 1, 0, 0, 1 };`) used to leave a stale warning behind when only
+            // the name's line was compared. The variable name in the message is no key either: that
+            // DXC names the FIRST global with an initializer in every one of these warnings.
+            // A clang note that follows a removed warning ("expanded from macro 'RED'", when the
+            // initializer is a macro) belongs to it and goes with it.
+            //
+            // The span starts at column 1 of the name's line, not at the name: a declaration written
+            // through a macro (`#define DECL(n, v) float n = v;` + `DECL(Good, 0.5)`) is reported by
+            // the DXIL path at the macro call's argument, left of where the reader places the name.
+            // It starts at the name only when another declaration precedes it on that line, so
+            // `float Unmodelled = Twice(0.25); float Good = 0.5;` keeps Unmodelled's true warning.
+            var spanStarts = new Dictionary<GlobalInitializerDefault, int>(ReferenceEqualityComparer.Instance);
+            foreach (GlobalInitializerDefault d in kept.Values)
+            {
+                string file = SourceBaseName(d.File);
+                bool preceded =
+                    read.Value.Defaults.Values.Any(o => !ReferenceEquals(o, d) && o.Line == d.Line && o.Column < d.Column
+                        && string.Equals(SourceBaseName(o.File), file, StringComparison.Ordinal)) ||
+                    read.Value.Failures.Any(o => o.Line == d.Line && o.Column < d.Column
+                        && string.Equals(SourceBaseName(o.File), file, StringComparison.Ordinal));
+                spanStarts[d] = preceded ? d.Column : 1;
+            }
+
+            for (int i = 0; i < warnings.Count; i++)
+            {
+                ShaderError w = warnings[i];
+                if (w.Code != "X0000" || w.Severity == ShaderErrorSeverity.Note ||
+                    !(w.Message.Contains("so initializer ignored", StringComparison.Ordinal) ||
+                      w.Message.Contains("Initializer of external global will be ignored", StringComparison.Ordinal)) ||
+                    !kept.Values.Any(d => InitializerSpanContains(d, w, spanStarts[d])))
+                {
+                    continue;
+                }
+
+                int notes = 0;
+                while (i + 1 + notes < warnings.Count &&
+                       warnings[i + 1 + notes].Code == "X0000" &&
+                       warnings[i + 1 + notes].Severity == ShaderErrorSeverity.Note)
+                {
+                    notes++;
+                }
+                warnings.RemoveRange(i, 1 + notes);
+                i--;
+            }
         }
 
         return kept;
+    }
+
+    /// <summary>
+    /// Whether <paramref name="warning"/>'s location lies in <paramref name="def"/>'s declaration,
+    /// from <paramref name="startColumn"/> of the declared name's line (1 unless another declaration
+    /// precedes it there) to the end of its initializer, in the same file (by base name, the form
+    /// both the compilers and the reader report).
+    /// </summary>
+    internal static bool InitializerSpanContains(GlobalInitializerDefault def, ShaderError warning, int startColumn = 1)
+    {
+        if (!string.Equals(SourceBaseName(def.File), SourceBaseName(warning.File), StringComparison.Ordinal))
+            return false;
+
+        (int Line, int Column) start = (def.Line, Math.Max(1, startColumn));
+        (int Line, int Column) end = def.EndLine > 0 ? (def.EndLine, def.EndColumn) : (def.Line, def.Column);
+        (int Line, int Column) at = (warning.Line, warning.Column);
+
+        // A diagnostic without a column (0) is placed by its line alone.
+        if (at.Column <= 0)
+            return at.Line >= start.Line && at.Line <= end.Line;
+
+        return Compare(at, start) >= 0 && Compare(at, end) <= 0;
+
+        static int Compare((int Line, int Column) a, (int Line, int Column) b) =>
+            a.Line != b.Line ? a.Line.CompareTo(b.Line) : a.Column.CompareTo(b.Column);
     }
 
     private static string SourceBaseName(string path)

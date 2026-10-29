@@ -1,62 +1,62 @@
 {
   "DirectX12.Debug/AlphaTestEffect.fx": {
-    "mgfx": "fcbe25cd51c6599a919f78a88b8c328a8bcd6bac4ac428df1ceae92dafc8c530",
-    "mgfxNormalized": "d86f65422699be1d8c2c69b038f364a79fa96d277886e7e2540ae4254325c79b",
-    "dxil": "91e851a4c8e1d5a3778eeef1a5b5be2913c76731e4ccf37dd905aa91b778e7ed",
+    "mgfx": "f996e04d40c623147a3fd8a97d9289d90a97121a289d84319d1fa8cdd275301d",
+    "mgfxNormalized": "64cd890434e921515b8613b285e0765410dad03caa359065deea4deab348c493",
+    "dxil": "7f6841bad4ffff429534ce3146f496237f29ec2233aff89b72ad8bd39bf199e0",
     "warnings": []
   },
   "DirectX12.Debug/AnnotatedTechnique.fx": {
-    "mgfx": "e0d34dc4ef08090bca853c67ae6d997dcac168e10ee47dd18eb640bc2997e6ff",
-    "mgfxNormalized": "42010bbbf0ce9529c115666ed1f7cc5239e409ac18e1ee975d8b31da614e2d42",
-    "dxil": "63723b215440e78bbdc05fb05ff02ac42915f13d6081e95d5e88081ee6388d8d",
+    "mgfx": "0d30e3776c1caac4c78d436578199b9739a2e1a806df94dc25497006a0501261",
+    "mgfxNormalized": "aac2b98803157609681bdf1e265b48326a7f733892b3d41859760027bbb03068",
+    "dxil": "4a252c4d4ea6ab209986c0585d7678363f375c54a4c4abc5f09a99f205b57c9c",
     "warnings": []
   },
   "DirectX12.Debug/ArrayUniform.fx": {
-    "mgfx": "ab46ad10647028dde616a6e75460cc780e00732bac96dba18d3412157d868b09",
-    "mgfxNormalized": "39e14da4c06a8642e98995e2037d9f8000b96fa8b1273a8ba713f59f493ed94b",
-    "dxil": "8e0d2b4bf9226f3b79d02eea1ddb9e68fa3d8574601abb62677395a53f28acdd",
+    "mgfx": "3db3754eae39e09cc4e2d7ab0121367b86b3ce492f4db7a1a313c426a7445ec0",
+    "mgfxNormalized": "99b8ca677ba25ddb79011307eea3e11e7622a83ed2bd8a88b0e900b79cada3cb",
+    "dxil": "d4cbd9eab0f0c5b57c64a7999c60482cd845df917d8e4d2aa95fbce46b3b4462",
     "warnings": []
   },
   "DirectX12.Debug/ArrayUniformVs.fx": {
-    "mgfx": "f1e1850c386b85f1ea00378eefcc8f4dfe9db67fcef667bb036881b8b1c42393",
-    "mgfxNormalized": "aaecbe3ac9d9f3d9feb3c57ec425dad9d66402474f5dce20652eef017619559f",
-    "dxil": "fedcac0a28f2e8709fae05858575c3620886e9c1d463db251a97e40ea6c01b87",
+    "mgfx": "e489ebf1a35d8cd2a9882533521bab652814079380adfb000d0cfd7d31d8c341",
+    "mgfxNormalized": "8414072111c92ef846e2778a59ca653d06060e027ce05fe3b2cfc29c4f13eaed",
+    "dxil": "85b119c8198111dad4615b2fb82e7c09982e3cd7f9316e165a01ba82e661dd06",
     "warnings": []
   },
   "DirectX12.Debug/BasicEffect.fx": {
-    "mgfx": "b50388958bba480c8579ecd066c3e74af6d6371221e3296325d0b07521293e3a",
-    "mgfxNormalized": "557f274ff7c679b240ddd2886172f26378afea49c95adbf7f72660e75f68c3d4",
-    "dxil": "c0541b7e8009829cbff6e6b1bf6acb16c53f1d35f465269ce3c5c071107df7a8",
+    "mgfx": "52f02edd675dda72fb9d7b80b6f573caba417b33c65d6fad6e99e15b32da7397",
+    "mgfxNormalized": "541eccc27cf94d733b02865385ba48e8f29f82e3c7e67e93469cf69f312049ed",
+    "dxil": "b5855bcb281c0a6a27c98e6d508b7cd54e8941bec34d282ea2a53d6522467e6f",
     "warnings": []
   },
   "DirectX12.Debug/BasicShader.fx": {
-    "mgfx": "a67154770cfb35d7ecc946a97a884a6faac4012c8d1148f451045055398c1cc0",
-    "mgfxNormalized": "0cb965698f658d318f0a11235f9ea3a37e35625f796b00e32e83383253bc1988",
-    "dxil": "7df45031962c0ccb0b176c5ead0176861844ddb2465133b413e2696f038fd175",
+    "mgfx": "5f21605704a4328db1f9243c88e112e9e500c093bb0b324df9e711c70b747254",
+    "mgfxNormalized": "84b369d0a472f49034bd9f910bf595d558ab4abb9607c424f7b875929bfc6ff0",
+    "dxil": "e90b2d4b1b4bd26385ab6c933432103297d4496c35e31ae4616083a039b3aec0",
     "warnings": []
   },
   "DirectX12.Debug/BlendShader.fx": {
-    "mgfx": "dde460b6858e0d836956359f107184148849ae1358fadd9c50930501014ecf5e",
-    "mgfxNormalized": "0f5e11e1f978cc3140701397d02231c1539672ade49ac66f415d3ff60b73a279",
-    "dxil": "6f7522b892ab73a2ab98bf543bcd1344b1e2be7078c01b1d90e5900d4027b5f7",
+    "mgfx": "a68fb56e8671351a444bcc12921518527d7b9c7ac34fe8122e0f19cc9395dc2a",
+    "mgfxNormalized": "c0b1730c9c80819e136f32e43c7c83953ca535023b4ebe37e0de9c20dc918c59",
+    "dxil": "db4a217cc9fca3622943f0a53eb2490ea4723d98b61cc89c4ffd940cd9ff45b5",
     "warnings": []
   },
   "DirectX12.Debug/ClipShader.fx": {
-    "mgfx": "71a1cf81bf44be036ce6f6051fc106174ccd3b655e854d95182f5dda1ad59308",
-    "mgfxNormalized": "4a892713ba822e7fdd4147e620fd2bdbd8dc61bc4f80f66edbfbd87aa7c2c5af",
-    "dxil": "118dbbeeb7a8c9b1099fc1cf7524a58b1b08a6680791a16ed75b0fd08f7b8575",
+    "mgfx": "fac1186008f66d3108b6b691cc94e173235c07d6a3278be48589e095989f67ea",
+    "mgfxNormalized": "c2675f01fe12b5c2c115986c520ff114ab993377d87c6d849dfd8b72ebf71cc3",
+    "dxil": "bd8c1327a133182cf16d3404f6ee36872379e498d7cd286e8cbcc4de72fa8de6",
     "warnings": []
   },
   "DirectX12.Debug/ClipShaderNew.fx": {
-    "mgfx": "e600fba6e0e4114f94f14ed021c0ca819ccdcf308c0c3dd53807af6eb3615b3a",
-    "mgfxNormalized": "122b677d529489ce061fcff03bfb5e817fc3253a9f9218100c360c0f2e9b1b78",
-    "dxil": "3ebdd695b42d519c7d8e5327ebc0291fa06dbd544c7938d8ef63fb9aa77114bc",
+    "mgfx": "2b1bb76f940641d5546e6e2cda9d3910bb3adbed1d9d825bfffd577df6f7b9bd",
+    "mgfxNormalized": "4f36c1401a04597172ead2fe0380fd5e0addcaea798a148bfd9499e5eda21860",
+    "dxil": "c4db169153744a2131e6557fb158835c2bfcc3d649862509642d4ac8394bfad7",
     "warnings": []
   },
   "DirectX12.Debug/ClipShaderSpriteTarget.fx": {
-    "mgfx": "9751547721f31c9604c72fb292c2560f2fdd124bf5ea016ce07a90618d6d740a",
-    "mgfxNormalized": "389fafa0d6f5caff5a746c69ce2d2f8e3b7e20489c6ba7c4e55cb35202bd858a",
-    "dxil": "f7ec44b28f9895e3d75afd97853e0aed744de4bce4b31901c62a133a8b5ad1f7",
+    "mgfx": "e6f2c7c8749aba06649a954d165ef50c400dbd53c404ffd257cee01be4a98f2d",
+    "mgfxNormalized": "9253c053ecfdf989db16f50f196ad331653defd9b5d288dffea5759758e42bdf",
+    "dxil": "2cfed3b7e660025553ce35338cce3e3b31c7cfba55ed227b098d88a8c6a30373",
     "warnings": []
   },
   "DirectX12.Debug/DeferredSprite.fx": {
@@ -65,245 +65,251 @@
     ]
   },
   "DirectX12.Debug/Dissolve.fx": {
-    "mgfx": "e10c46d31b8c87eab5607274df5974192400972a28cc5b210171a956c2e22d95",
-    "mgfxNormalized": "67cb90b0f0f11b0c0147f3eba39b2c9b776a485ab315135e7145983314b04766",
-    "dxil": "1349be26d0f5c4c8a618a5552150360c590660f29a67b385cf3c3088faf9e4aa",
+    "mgfx": "d0836b3b0800d66f59c4a55dd04dcefd27818a88d46096edc3436f69b317aed1",
+    "mgfxNormalized": "c6a31d1242b15009cdfdc94b2cc6b6220166ff44d70497da9b42e011023a7f45",
+    "dxil": "62c12ede1e36d4321a962a1c378e3426502509a2067fbf336191070e31af5140",
     "warnings": []
   },
   "DirectX12.Debug/Dots.fx": {
-    "mgfx": "84d39057bf8b73b0dbdaf31541bd206aa693d9deff7ff38086e6f599c4fa300f",
-    "mgfxNormalized": "c718c666c8ffacd1a06cdcc879f49484f1fa6e6ebe730a6e8479b218af123e73",
-    "dxil": "f2fec2add4fb51fed85d82dd9536bd102a563b37779032aeebd8f626dd61585f",
+    "mgfx": "e031e97ef6d4b538e5133333d966917d05cd2f262849a18eac97ad51a20496af",
+    "mgfxNormalized": "a24a6b95498af80e42a39e2a1b01ddc2ef5631ec61181e7d71a1c7e86527db8a",
+    "dxil": "2ca7000c548802424895e8887949caf4f43d16df523007bdc8bbea78a9b2a724",
     "warnings": []
   },
   "DirectX12.Debug/DualTextureEffect.fx": {
-    "mgfx": "41811a6595c4c39c109b5fc50eed023d45788a475368b11cbca24274582da5a9",
-    "mgfxNormalized": "b70c7cd583e1765d90725270f5ac577bc7796afc76696f6185129b2bad272d26",
-    "dxil": "061310cf32dbe63c8ef524067481685cc2c530b0faea3b6f292ae596011413ef",
+    "mgfx": "87e9e213fe3e2e143761861925b6359b66191585ea3b7167215b175deacf3e61",
+    "mgfxNormalized": "1bfa1b0b1fac517caf87974ab6e04a6a68dbc8f4fee1942399cbab0881020fb9",
+    "dxil": "c967746481e88c1ec58f985b444bbf4a41f8ed2902a785fb9aa7e9cf64355862",
     "warnings": []
   },
   "DirectX12.Debug/EnvironmentMapEffect.fx": {
-    "mgfx": "ddef308ff33e98f76c1fe2adf29aadc24f10b0a37bbd994a33fae7e6f3679bd3",
-    "mgfxNormalized": "2492c67bd887674adbc404195f580d9f1519dc9735f7c5bb757dbfbd36b9df80",
-    "dxil": "b5e7dc2257823c624d9e5b9870d14a1f6be39a8b18e382ee9a6fcf11697262d7",
+    "mgfx": "54b5c78c32745fb092024273a9c3ad3c967fb97d3b6a0c1ea7d5d0bc0a5b8656",
+    "mgfxNormalized": "6d612753421500b4793977196bb3450847299de954a1678a50184e927cebdc01",
+    "dxil": "02adef00ceb33df541e7cbefec68ee82ee14e9978225d503fb85daf2a2cd06e7",
     "warnings": []
   },
   "DirectX12.Debug/Fading.fx": {
-    "mgfx": "10eac9146cc468512935051e1983d201cb75024afa0d31e5a71737c7c09ba0b9",
-    "mgfxNormalized": "d12a1e151332b752064a130ef95296e4d2c84eee4c17e8e0116e20a42f303347",
-    "dxil": "9adeaa1325689c2cfc5a3277d6332e80c9c4012f1f4c2104398e0658f1e04fe4",
+    "mgfx": "25e76fd00debb85de373f694a92de6db5d5d5b187d5c671f1785c3db57a301d6",
+    "mgfxNormalized": "71c4dd095f3a0edaf2fb41ade98dc0d37669500f16d58aa97896a2ac2cc732e3",
+    "dxil": "bcb5151c6c2bf8a371f11a19534edf206f1e660b8ca6828fa721e36cf72f84c9",
     "warnings": []
   },
   "DirectX12.Debug/FnaMultiPassStates.fx": {
-    "mgfx": "a445c4c71123a8c03d0ff7573862be0d1a1b361ecf0a0f78c17890b9859c6b62",
-    "mgfxNormalized": "d4fdcfc598e281181cd304c43aeefc350742a3555fb60ee8fde1d900f3830176",
-    "dxil": "e510e3eaf950c5e452e926c1d85e21ec845f7fa9f1093ca17dc535e2b1dba7d3",
+    "mgfx": "3769b5499ff5c1ad455f7adc9f4133dbab171398ad6822e8d0171d81faa740fd",
+    "mgfxNormalized": "ea061afaee7f02a63a42b97d971aaa97c9a40d8c394548286e669cd94293e27a",
+    "dxil": "73b1dcbd66adc2ee9add5a93362f2f534cd6f746088672a84c51cfb1243156d4",
     "warnings": []
   },
   "DirectX12.Debug/ForwardLighting.fx": {
-    "mgfx": "945fe98226b3fca7ce709366535d90f46aa1c1edc87cae18bb082e2cb3d89d19",
-    "mgfxNormalized": "73b15747346d9d8596164e8078ba67b2c0372b36fafa3c44f3436dec220a780c",
-    "dxil": "f3807011d305204289a68c2fb58418c014d5015d64124c015e0797fdc1eedf29",
+    "mgfx": "861ff2907bf97bcea2ea04addb52830311d4e68585c47176917b018bd6a7b637",
+    "mgfxNormalized": "72d3b43c1bd9d8f42b0e5c813c3143816505a1e8ef6d984a3e62f9f0a9f7056d",
+    "dxil": "03eee578e893b15175af3adaa33fdded34e75cb06207fa6d69ba69ab331e9f4e",
     "warnings": []
   },
   "DirectX12.Debug/Grayscale.fx": {
-    "mgfx": "8de72ad1651443f1a6fe902e224f8b2b61ce7342df67d6b7810005fae33cd2ff",
-    "mgfxNormalized": "d0eb063352cf252b79f66becc020c9abf5a6243fb493a75eae90cf86e9f814ab",
-    "dxil": "71687d4ff7be773706fe84a79173730b1317b3ce9511e2be26d6726da4fbb453",
+    "mgfx": "9cfa2d6e5a1fad86cb3fdb315ae5fe21b834776f566fc6feee677840563b8436",
+    "mgfxNormalized": "1dac3c21f020ac44d3a2c051f40bd3c0dd8e1a05e14baa3b3a39866ecca77df5",
+    "dxil": "ee7bf637e40797089d594d553de71753d7534e10788786fa0f6e724309f50a19",
+    "warnings": []
+  },
+  "DirectX12.Debug/HalfGlobals.fx": {
+    "mgfx": "7000d5e44d93bb7ec364a60b26f9e338796f4db6dd5fbd74f5df0c001b3ebeb5",
+    "mgfxNormalized": "fc9bed01de0b33a3ad833f5736987e432e8cf89bb9e126d461733005215269c5",
+    "dxil": "b0071531c80d334fb2bcf99489ea467efda68cb6f777adc76fd096fe11cea360",
     "warnings": []
   },
   "DirectX12.Debug/ImplicitTruncationWarning.fx": {
-    "mgfx": "38249db73dfd7c58bbd9930fd8033afa5201ba7cd3bef26433cf123a3f5f06f8",
-    "mgfxNormalized": "fafb5887e5ab46090b8fc8cdea7a72d3b4e423d4bd9a489a44194388311587c4",
-    "dxil": "ddca853d2d6f49bbfc25ce81285194889dfc0c012b87d03744304bb22495748c",
+    "mgfx": "575ce4ada55b713cae539f62a173ea07c604e2d26df7c465c8127c276138a9f6",
+    "mgfxNormalized": "93d7eaab30b78d63c4ad81a5aae4ab147dd9d6fecfbf3779e35445f6c7fab62d",
+    "dxil": "826c10132ddd43acc317560fd81a1c528827a2f6e0cc60d5f7b96878f1655243",
     "warnings": [
       "ImplicitTruncationWarning.fx(47,12-12): warning X0000: implicit truncation of vector type [-Wconversion]"
     ]
   },
   "DirectX12.Debug/Invert.fx": {
-    "mgfx": "74914dc2c21a422022906254d59f13628e0b5d6f0287989098367929dcf591ac",
-    "mgfxNormalized": "0e26a0312b7be281ea840e4526a2cdee56918532ce5976c7e2e55039bc147a8a",
-    "dxil": "07d5d5a4a2f480c3f8f4e202763ab7698556c555aeeb3bf206f13f588cda1d85",
+    "mgfx": "f2e7cf55d1ced43da764220acb17f599d5002f6a8ca9047a9c6e4ac18d15239a",
+    "mgfxNormalized": "2d19f87b708fdd1befdca90c9665a4f3447d311a959df3efc329dd007fcdf42f",
+    "dxil": "a6be8751677fcf23aab056edb7b1f7f95252f77b01d9c9e4debcfc12da6f97df",
     "warnings": []
   },
   "DirectX12.Debug/Minimal.fx": {
-    "mgfx": "e36d1df294fe15b6389a2b010b24181acd114f26431d24dc52139ee92efd7ce2",
-    "mgfxNormalized": "e9b114cee571f8e647baae8b1e663bb3e190aad1cbc8e7f9c1c01aa9af8441ff",
-    "dxil": "2d776909feba076165c53f33b978d86c921ecdef955ee75e94c74a1f631f2187",
+    "mgfx": "f3539ed4c6877ffc35db6e0b428b7cbf216600f636cef724e259e8fea53be107",
+    "mgfxNormalized": "17bf91741e7f4de176c47bd0defe6b570e964d1f9e8f463977526a062597a6ab",
+    "dxil": "b13d91faa2297e3cfd36a3a98b685eb0607ad837a008c65235cb9aa6779da19a",
     "warnings": []
   },
   "DirectX12.Debug/MinimalWithInclude.fx": {
-    "mgfx": "9d89dab747a38ef08ea2b8820a526bd3e5c00a947c29c61aed6ebeeec363979a",
-    "mgfxNormalized": "cefbcb7fcc737625e853ba828cccd06960a0aa0aec414df52915c88df598735d",
-    "dxil": "fcadf61183029608b47b39c9a6b030d57613e8c860495ce9f8a3700660764efc",
+    "mgfx": "b80484b42c8e9f2fa794aecfc8b4a6205f2f63a794498d158fda0f48478ee395",
+    "mgfxNormalized": "418770629889c89ee90c62348cb2cb05b75141e8573115aeb5b53a5836fd1eb4",
+    "dxil": "bd472d487896f866c53184caebdefaa4e5fcc4891413ff021bcf92880d4002a3",
     "warnings": []
   },
   "DirectX12.Debug/MultiCbuffer.fx": {
-    "mgfx": "2e1ace095713094953135cd2c976fe56b68c8f63233312b38493bba77b5157d3",
-    "mgfxNormalized": "9984530171f16a51b6e3093ee0c46cb99009c7700e9a168bf700c9fb33dc434e",
-    "dxil": "1f8d9b07d201ad7caa5fc8be2283e697cde3dd52150d95a1b5e65316a17e846a",
+    "mgfx": "d21c716ad5819a91c6894c54ea789d87f2e5057547fbf8abb7c2aae7178ab966",
+    "mgfxNormalized": "90adf73bade8dee3860a73cedebcff547467f026cd723c02f2b0d1408b48e934",
+    "dxil": "efa1074eb5e6ed01fcc55ad21ec8c0a850f1e033741a6d3f65a0975f0fe6adcd",
     "warnings": []
   },
   "DirectX12.Debug/MultiCbufferVs.fx": {
-    "mgfx": "8596041dcc4f9bc2f60c1190b315008670d63a1762764ae1043ee7cd285cd4e2",
-    "mgfxNormalized": "678dadd1e4e3fe29fb3e45ab3944e7e17abcddb04c122d0626fd3c08187af24c",
-    "dxil": "af2cda96e88e97e6d4a6d3f35325c71088899548556bbfb745db2aebe83f3e6d",
+    "mgfx": "3a180d797935142e99162268aed6e18322afa260f4c5b625a2fe0785e42685aa",
+    "mgfxNormalized": "70bf6db913da45bdcbe428416f0b5c9de3da9c49c48257185bca257322c5fdba",
+    "dxil": "cbc7f54555f9faa3caaba2e90f6ca4961bc404009338aba0cafdb2db0a16fdf8",
     "warnings": []
   },
   "DirectX12.Debug/MultiTexture.fx": {
-    "mgfx": "4f0a8dd1ba51ad1fd7834a8d8d56b16cf3d509c1038bcd5da52b680ea926f7c0",
-    "mgfxNormalized": "fdfb18c64ea67c0f7b4644b863522f13a5999b1cbf3ba211aed76c9315271319",
-    "dxil": "18ca513f271a6536198fae9642fde8afc9ee4ecdec612a8c6472a0025364c0a6",
+    "mgfx": "c3d2e3fce6e32f23099d9d1c48dc66bf61ed56b0603fe545ae88ac1433ed1aee",
+    "mgfxNormalized": "46d0113832a6389798ef411df030ba5c35a08e49b2c3b0cf398ffd5d4e2a3b39",
+    "dxil": "404d23f3da706b050c2b175fdd38819ab6529547736a71d2ad5b5fbd032c8714",
     "warnings": []
   },
   "DirectX12.Debug/MultiTextureOverlay.fx": {
-    "mgfx": "6c69ef7776b0ef9e3143030975f137ccf221fcfa4209bdd61085e47beb67c16f",
-    "mgfxNormalized": "5f97619ce5587854e80702d4d625993f06bf85393d14ef348e4173e4ca4307d8",
-    "dxil": "efe16216cf6cd0009d7a3e4608e018a7a1bce314ccfb436bef0bd0a2aea3b096",
+    "mgfx": "99caf4a718f01062c8f92324c84b0b89e7e0077457102e615d9a7bc4e62896e5",
+    "mgfxNormalized": "7724edc6c2fd70385e9009f7b17131088e1b73bcba8d311c2345ee4e65402f47",
+    "dxil": "429a9406c42426429187addd5ca14c2e18744b18f1bd75c0498aee5dbe9f2c5c",
     "warnings": []
   },
   "DirectX12.Debug/PenumbraHull.fx": {
-    "mgfx": "c876390804c3c9ce2d13618d092edf809c235817feeac9d4cd9bc6fb854bb226",
-    "mgfxNormalized": "d4075c16aa5485ce59f5cda70778c5e05915a5bac044aa5275785214916a2d89",
-    "dxil": "a48e6b8759d8ee896290549c4dd7046415220b50bb82e34eb0fbdf9940474d3c",
+    "mgfx": "72774064aa10d43a1e6d0ec78ba40f4da62f8243e5ccc0a958f5ff4821d48397",
+    "mgfxNormalized": "6402d1df72219984fbf6d74a14dfdd8579ccf5070877aaada734fcfb2223a6ca",
+    "dxil": "db5816eaa242a4b6168d8b6cf591222b2336adc991feed912e80b7dba8af16c5",
     "warnings": []
   },
   "DirectX12.Debug/PenumbraLight.fx": {
-    "mgfx": "d12f608f62686dc34a2135e5a7dec81c7229d87af511a57a6dce658aeec50f60",
-    "mgfxNormalized": "95fde78f1f8f9f37489f797900e3967cbc7a2c6fba4ac21ec00756276e99d404",
-    "dxil": "79a01e04af087e26ce95d4c1ec10402226c9d50c5cf5b5d9b2fa3f4a6d804bc8",
+    "mgfx": "be7a5fd2605b26683f4e233018ba7f99e6f5e61b9ed1c06ab7e27184e4c6b53a",
+    "mgfxNormalized": "5652ba5a5b388edf9fa4193d128751f6e609c0240e201718f6ce12ff68324c64",
+    "dxil": "5b31cb413a8e70165a3e9cfa961ba9393eaf7c3e49b769a0ad1eaf9ba235cd14",
     "warnings": []
   },
   "DirectX12.Debug/PenumbraShadow.fx": {
-    "mgfx": "8308a492564b6ff444bd3f7582ba9c06a064d9b085391c5833a416f66f641354",
-    "mgfxNormalized": "5381c8e4b0d326e93e1f625ca846fc8f5ab20221e5a04ce0291eab10c8191c02",
-    "dxil": "d23e69ff42f28e2c22e9b480549c097683af5b83f68974b432bbf3dc806d5ea7",
+    "mgfx": "b065714a870660a3fb0e3992a0a010f133c46de8a8e86c96a5439a95a248a7df",
+    "mgfxNormalized": "01027079895c3d982a0a44b50ce1207542855c3c9ac36dcf9388079cf15c88b3",
+    "dxil": "88e4b8e86b4e0e87c7345a508dbdf8a4c4ea7467a4bcd9abed01e0c71c7407d4",
     "warnings": []
   },
   "DirectX12.Debug/PenumbraTexture.fx": {
-    "mgfx": "8231672500e72b0b14777ca1729d6b5ef359dc147f0d39116ccaaafc10607349",
-    "mgfxNormalized": "c65af79e73cde01736a46882eb6b227ee4e0d78f11981ca93e97c402cc026296",
-    "dxil": "650958a6d5b59e89924c75963c94c63a6ae0a1e0636920a57ea51352a23cd19a",
+    "mgfx": "6f2845b22c6a748f54e07cb0c86a8536b7d912a0165728462086853969df6c32",
+    "mgfxNormalized": "2d28408d910cf07e603628ed624126a3b3051c7333428186d3afec64872bba41",
+    "dxil": "53755b2c048b74f51c5682f21dc96f03269e57ab995a9cbeb68d000bf793da2b",
     "warnings": []
   },
   "DirectX12.Debug/Pixelated.fx": {
-    "mgfx": "aaee5db13072116b877e82bd7065f8d2e4de3008bbc810f75766a227c7c5a2bd",
-    "mgfxNormalized": "a948ceb5306512ca9b597e8882d8c96ac68c52c0d8e92abbe8825a5212005f5f",
-    "dxil": "4100b5dbac7d5f4a3fcad5a4f6025f24522417d07767169a5d89e4e8273375f1",
+    "mgfx": "402110190ccad0807b096511645c4f53e8d91ecd4c4ce1525e10e7dde0de1fe2",
+    "mgfxNormalized": "ebaada6e67a8405d74a719c7d74667c20d5a77c9ff745fcb639cd3d37fa485f8",
+    "dxil": "9fce102a697ba37251fd1d6269374cfb9582cefa6869e92c915fe9f3c439baa1",
     "warnings": []
   },
   "DirectX12.Debug/PolygonLight.fx": {
-    "mgfx": "b19f4b79bb4646ad576cf917ce2c81aaaac25995e439b29ed818b488572dced1",
-    "mgfxNormalized": "b58949f1264ad9dc35b683edf356c4debcdfdf5dd758ec3f36de97fec2d56cae",
-    "dxil": "b7364e01c2b58b56cbc5764fa22921889466e799204d5bdb8b6a7b7a5f6fa8df",
+    "mgfx": "37c3c30d736ad9026d4be3340b4fa408c008845044b05efc50280c2b3b6451db",
+    "mgfxNormalized": "f367dccd3b37fa4631f0e37c1e522d7c684c9b047e076785a6d52dd2727bc866",
+    "dxil": "f9a45e4e53eb26ec4ff80b906d85a7b541b388a68cb84264a91b283ff0319b66",
     "warnings": []
   },
   "DirectX12.Debug/SamplerLegacyInclude.fx": {
-    "mgfx": "15e74fd0732cc24e42fb3a0b3a642231182dc6bd3eb3b480898f5e96fe497bcc",
-    "mgfxNormalized": "2106c5e4b4fc5856711ad92b3e22c32c388c72016dd717957bfb3245ddfbf4bf",
-    "dxil": "f5f96f6ad87e1a65896bd3624e2a031b98427b80fe37b12ea3ea13434dd83443",
+    "mgfx": "d299fde80bd85d1b066282cf797d142cf853a86f7c19500536d4d5fe0c91eaa9",
+    "mgfxNormalized": "192a864af7c1c68d6477f37f2bb650564df093b0066787f2fda84378f2f97c0f",
+    "dxil": "841748bd2ebe5387f8fe6d65566489efb5a20d99b332d138f265f664d87145f2",
     "warnings": []
   },
   "DirectX12.Debug/SamplerLegacyMacroDecl.fx": {
-    "mgfx": "6a98bf6a3cfa0f786cd0e5edc363179ae1b6c854f02d77d28faef1d573d8ac2a",
-    "mgfxNormalized": "1198b226f79478240d09ac723b2095f61c5e933d3eb1126b82235133001f3fae",
-    "dxil": "d8b5ed99ea6b507ac08228adc62d0633852a4e2bbf032a1cdcc5397aed1eb18d",
+    "mgfx": "cd11eabac0cd8f942fb0e0c6fb408ad6f21aa2f782e121c7da52e5800d296822",
+    "mgfxNormalized": "480e6d84f2dd123b323af53b8d30534eaf69e0e56f87466c385e2ee8f24f3df0",
+    "dxil": "d9afefef443b6d0f61d83268d14394805a94ffc903f335e9432e99e0a6907f21",
     "warnings": []
   },
   "DirectX12.Debug/SamplerLegacyRegisterIfBranch.fx": {
-    "mgfx": "756df7f444b0f7c71722081ea3d05d5cc11dc0cc1508985dfbe9236d259b3dc1",
-    "mgfxNormalized": "d1f71778ac462356e46c0b86d9aea66d4eafdc06062e7fa7989c0c53a7e39ca3",
-    "dxil": "d7879bd4ba767368a2d502bcbd220156d64738f967261c82d9ed527b1abc5f1d",
+    "mgfx": "c74a2acda43d0b765e7022d49c5b5059b19c1d045aa11d8dcb0514350fbaa6f1",
+    "mgfxNormalized": "0e015ed1d315659668ae573f44803aeb15867412ec5d91e322c5d438a0b43fdf",
+    "dxil": "1ad35a1c8d75feb37841261ceb26a481b7d968517950755b53c8e32699c7abaa",
     "warnings": []
   },
   "DirectX12.Debug/SamplerLegacyRegisterMacro.fx": {
-    "mgfx": "7865b7e0e68167623a22d1838550fb85622670c520769396cf15eb761f40b18e",
-    "mgfxNormalized": "9e22789bb63de42321f4480c5e8477563b42822164322774b0a032042331601c",
-    "dxil": "0b7b09eb6239f66512a28ac33229fa56f2946fdaf5b21a95f7a4a3d0c949b0e0",
+    "mgfx": "358235e86d56aa53aa37d988570762e01dd769bd881722d8aabd9b4a6cad3fc5",
+    "mgfxNormalized": "2e84f832499ee3205d7b50859055092828923c56a3625dcf1c4441b1aee36375",
+    "dxil": "d4f8c36782b3413e77960b26b536988c48c13e1c6b17eff1a5c925ada9d762db",
     "warnings": []
   },
   "DirectX12.Debug/SamplerPairMirror.fx": {
-    "mgfx": "e55559599bce19d112f86f2bde0b0b3695d24f87f3f13ae60566cba50057104a",
-    "mgfxNormalized": "a4d89692b194cb482d9b014c0ddca881c68345b7f2f03382f4ac0dab9a94d741",
-    "dxil": "3bac3026d9b24685cd35dc1af927c0bec32a5471e9698dadf117f7208faadc6a",
+    "mgfx": "35b51c17d353abfef8d60d3751997a8baf60f34184547fe8bcb5e4eb025e0a36",
+    "mgfxNormalized": "31107c6c453f012a81d712709883697d986c715197580d10927621603d0058d0",
+    "dxil": "ab69f0f6683a5b49b6d62f7d8ac934a06e336359ce784f6c2e334309b79cd0cc",
     "warnings": []
   },
   "DirectX12.Debug/SamplerRegisterOrder.fx": {
-    "mgfx": "a28cee7bf80beba196761160a2397fcded4f854db13c7aa8b14b59a994060d8d",
-    "mgfxNormalized": "1ace5036c713bf687af42f98610e34fe12fb983e3c5b726cc2d8bab026d3c53d",
-    "dxil": "6c320af0221d48f41e0dbbad17bbc8c762118f981bcba32f7dc0ca62ae583f86",
+    "mgfx": "e3ef4bd45f59854764ccf378683b06c4019738c3713b2328f90df69ee3d7135f",
+    "mgfxNormalized": "12fb99f1ea91f72c6f5fee5ec57916d3b084d7afa6583e44828438ef59e70545",
+    "dxil": "54d607f5b73bfb90565b866ce69f38e170dd349d34df047c168a02b8f9a1358f",
     "warnings": []
   },
   "DirectX12.Debug/SamplerRegisterSparse.fx": {
-    "mgfx": "b532f92e442c7508b573b2ef2b31da67ad09ce05c85a2ed461b2976f983348f9",
-    "mgfxNormalized": "25666015a9fdf30f9d243a78e3dba54d22f825e3623e5532caf7038345f45d2f",
-    "dxil": "babdb14b9ebb8e724c1b5fca2ddc8028ae9f19a342276a7b6f3ce682a6b06b0c",
+    "mgfx": "651baf510738ff0d6fb5c4268f82f8d56ae1a6b26ddc49fe21b6cd9dbdb67dc1",
+    "mgfxNormalized": "e04fe461f012d679c62deb63e00dc7aefe973b2fe2ec7cb5c666b7fd7e2c4a4c",
+    "dxil": "f11b87b52808be7a35b2851179f4257a68544eb16308cb64d0dd4c37745e340d",
     "warnings": []
   },
   "DirectX12.Debug/SamplerReservationIfBranch.fx": {
-    "mgfx": "daf832b75367144f47d42e653fe98585a3561b2462cfbfefe7658fe327b27ca4",
-    "mgfxNormalized": "4379b80b1639835687f582d8efb5f01a2ca637ebc7f9d90f818476213f8376b8",
-    "dxil": "955dfacff5b1d91e7f23ce977228e131e4af783e0e33fde9c30a6fc7ded0d183",
+    "mgfx": "7aeb04e4764927808ce1b27994761895562ed503002c5f152664f40ac591e280",
+    "mgfxNormalized": "2f6e62c4662b1fd80e1b1f3147805d52e18be46ed8720eb7425d6a03cd47cdb4",
+    "dxil": "89c23440de2f6ca84bc1f7625033ac4173e25f6f3138ad63d5546c7eb838fe25",
     "warnings": []
   },
   "DirectX12.Debug/SamplerReservationKeywords.fx": {
-    "mgfx": "1eb93954fe3ba0f29d5c68e14f75ba36f98ea658af22a67c9ee7fb6a7163e562",
-    "mgfxNormalized": "8af37798f5edbc9bc992002e6c278ee0453b386b025f8e8a4dca861b6407d2e6",
-    "dxil": "9defe53ae00cf775eaac4a57a7591d6c768981c855f8a181eba5054dc2a16116",
+    "mgfx": "1a561fa77b04e51e16468e497a4b0ff235752f960b9956ed8e75029c461e80d2",
+    "mgfxNormalized": "64941cafd202ee8e102e6b1913457260c2b759e304fa94c111704b1881dfcdac",
+    "dxil": "2a75bb9352deaa16e1a57f60127dc67687a82171e1fbd95d2d10f1deba820b17",
     "warnings": []
   },
   "DirectX12.Debug/SamplerReservationMacro.fx": {
-    "mgfx": "f0b175fa67972f34830901ed01159c51c8b911aae4a9e1e11e7c4ce722efeee6",
-    "mgfxNormalized": "ea781806905eee457f213a79e42f1ed51291d7ce60c283355d99a69e4ede3132",
-    "dxil": "a2c495ab1ca65134c652cc1a71ef3a8562105ec49b568a851ef5a336989346db",
+    "mgfx": "487431d7da557494f15ef16d50da43a1706f94d44b28fd04d7dade59a6cee00b",
+    "mgfxNormalized": "75751588d31f16cf199250ad5b80e3090cab84c82a8bf2ea0e990f786232758f",
+    "dxil": "8666eed42a7c342c4ff2c5f77cbb1572056621d5d9cb08f7087e304b701593bb",
     "warnings": []
   },
   "DirectX12.Debug/SamplerStatesFull.fx": {
-    "mgfx": "930edfc4b27f17ba89e80fcb6ed3a16df7c2b71e8690440cbc8dd15bd7d127e0",
-    "mgfxNormalized": "60984fc4471e6b32f9e7e56e6d1f774cc40baad649b7bf09220ebd7fa4a50f0c",
-    "dxil": "7fa8d4d7e632b8c5cd092364a72ce22f5c3606f9980a50be61373fbe5bbd8c18",
+    "mgfx": "17bcb7a7ee4eaf32d5d2f434b291ab92bc18915598ef918b500ae048abb30c43",
+    "mgfxNormalized": "3035d48156e14e1b96c500608551a9eda3680057cba893db67b074c364925996",
+    "dxil": "e776f55e73bcb5f8934dd131967c37b02a4203e02cb26dd7ebee04dadece9c2f",
     "warnings": []
   },
   "DirectX12.Debug/Saturate.fx": {
-    "mgfx": "a47c29180168dd0e4df22542c4dcc084453ff208a5b0c30eeb9b0ff742406d40",
-    "mgfxNormalized": "17f47c5a026f2408734312c84b049824026a289a300bc37c7dd42da4c1f648ec",
-    "dxil": "47d8733235b586537418e249e6272760b7ffef87bbcbeecc99bdd804883a2217",
+    "mgfx": "969d96c9a70b4806d3d1e70221d88186d18a3f0d329bbae865c926911fdcaa78",
+    "mgfxNormalized": "b1ff6dedce6222daaeaa8761ce4b91290a2237603ee870e4d005a5f57ffd02c2",
+    "dxil": "8de1bfd28929a1e6718c0c26ad4f5159bd4aebb3a31e31e9ec5dc298f48ed430",
     "warnings": []
   },
   "DirectX12.Debug/Scanlines.fx": {
-    "mgfx": "f95138293677c715e4317c567d3f0ccb719dfc593497bf6209001e62ef69d279",
-    "mgfxNormalized": "2c99623f3e88f681fd60f7c2aeaadf6299d7cbd8073e273d82e20a17d0bc67a6",
-    "dxil": "3f6e2f7bf9a2a8b26fe8fed431c875c115222f1f00b5ae72f9fe9e919bfcf680",
+    "mgfx": "0d69e2e002ae5787a24cf4ce7b07c420444f2283f99ae5bbe467d58656f11b8c",
+    "mgfxNormalized": "8b9b45efbc652513c16a0386ad1ad5c807e23630cf3b44d82fd29ae66256cb10",
+    "dxil": "c9df006fcd580ef15d2eef5b67e7c28066419884342decbd49d5ec1c13607ac5",
     "warnings": []
   },
   "DirectX12.Debug/Sepia.fx": {
-    "mgfx": "891b57cffec565c1f99371ef03c1c80049a2773700e9026405fdb9d9f6ab172e",
-    "mgfxNormalized": "89afcdd714314691403cc7b0a0e2bb14d11e648462b2d24afc7096c1c0d48cdf",
-    "dxil": "e42d72529f0bd43b38cff315c92804db6dde1536938b598ea8176e0d3b3d413e",
+    "mgfx": "d8873c5d3e08c4aed172c11af8e652276560c27deb98f1cc9d9d200b1959b7c1",
+    "mgfxNormalized": "23e100f3247487ce821594772767cbdc7e1a425cb8792255689257703d94c8c9",
+    "dxil": "2db1dd46d54b5def5ea47ce0b4e3456263af7fe8e2c88307caad6baad7c428c2",
     "warnings": []
   },
   "DirectX12.Debug/SharedCbuffer.fx": {
-    "mgfx": "2d585b248d6281cb78a5a2d095f8685254ceb69fcc06b3adf47812d8c47ad202",
-    "mgfxNormalized": "540b6da5de0449e5b63eb98f88a0cead37b844f65e2c5e941b5a4b24c4edea5f",
-    "dxil": "bd1259d9ba186bb864c6c6267122301887ffcbcd48b077fe4dbc31921e39e884",
+    "mgfx": "2ce48a9262122bf352abc9ed8e21f15ae3369c3da8fe2d44e60f6798923e1996",
+    "mgfxNormalized": "ec5c22fd8419ab9117a39134c1becc13f70c8c4919c23f541255d030987e6527",
+    "dxil": "5836de6d40e258714e0f48f98991a814a4ea25ff6a3158302eb33b10c671303c",
     "warnings": []
   },
   "DirectX12.Debug/SharedSamplerPair.fx": {
-    "mgfx": "049879a357b2112261b50494f87c244efdef8a2ec017f5f68289a8df9d942c52",
-    "mgfxNormalized": "00500d45b1bfee7ab970109bc8d9be20a54bcb4e263d2c622343b6174bc97330",
-    "dxil": "236c139971033257fc822dc5d4da82ca0343fb7a8a609241e47fa059e64d9c61",
+    "mgfx": "2d9432348e65d3c5469bd37c06ab7d22526d2c5dca625253f5b0061904cc0221",
+    "mgfxNormalized": "5c5a781f57e0fa64cde105802e7fc4db51f8da96076325d36453554e5fb7646e",
+    "dxil": "5f3e3c142e5fd9b22e84748d40cfe6c247dba110ce3b5d3c8eb72ac1e52cb79e",
     "warnings": []
   },
   "DirectX12.Debug/SimpleLightShader.fx": {
-    "mgfx": "5f39a1ffc3b936ca7c85075dd8317c414a11514a6a14357214487adfb98f8785",
-    "mgfxNormalized": "6e2a8f49be56b91185ef5aede713cec95784c1f25b5d233f8e65a74dfda5cb94",
-    "dxil": "845809c2a342eacbce8594190f40d566316ece6dbab77976d25756764fc4da0d",
+    "mgfx": "7135f955a4dad27381764f84e4a245ca64d9cd44c8691d78c5d44c8149a2127c",
+    "mgfxNormalized": "ab16219b26371cf42231d36d536cd0c98b2130777de205fc647e7599c7a4f896",
+    "dxil": "5afeea3cc647549f097951a88aa47f28ac9067228c5ae3d7b9a77e72bb6cdc56",
     "warnings": []
   },
   "DirectX12.Debug/SkinnedEffect.fx": {
-    "mgfx": "323f3183303f0328973f2949eac4cc1fe58b125625e4d533cdbd9ac3710b17c6",
-    "mgfxNormalized": "c10b51b48c44d6762241b72d8be360a2c3641b882277dbaef58d9bf672d936e8",
-    "dxil": "812fa7e9eef73cd9df8a4eee0937feb32f23f47517eb748de3e03308b65008ae",
+    "mgfx": "a6c5871d0438d975b5251b3316c72ab5ad032711b469558649dfaec7f95951e7",
+    "mgfxNormalized": "698b65aa1868b0c1ca9642c5acd5c247d3dc3f298066775e657ac1b1dd7e59b4",
+    "dxil": "fe9ea2a55adcdf599c255d01bb8441cca28e6421ab13d4a0ae0d804616f14a9d",
     "warnings": []
   },
   "DirectX12.Debug/Sm3SemanticStructs.fx": {
@@ -312,195 +318,195 @@
     ]
   },
   "DirectX12.Debug/SpriteAlphaTest.fx": {
-    "mgfx": "b56094eb165f2e7cf95614cd62e0cb1016f198743d9e477fefb44ab3b38f0340",
-    "mgfxNormalized": "7a6b2405c9e85f74be8f48bbb83a7811dbe43c4c5c3a08ebb77777b1dcde2f8e",
-    "dxil": "c61a5df9e7dff4f2938d5f13998d2b7c165cdb1d63d8d2ee0e518782b55665fe",
+    "mgfx": "3c6b828a07f5f1a637252638f572aa9ffeb47b5c5d7f94e9bda2ee6379e0db02",
+    "mgfxNormalized": "fd2d8aa6e64d87c652952367112123eecd65300b3704b6761008ad1f0c94aba2",
+    "dxil": "e993cd24a327274454c97c232cd600e1b63f5a72cc766d873504c144524260bf",
     "warnings": []
   },
   "DirectX12.Debug/SpriteEffect.fx": {
-    "mgfx": "915707f92a817fbdf810b3daf7f65ec70fc134a41eee897ef17fb414fd85e73a",
-    "mgfxNormalized": "0c0cd4a1b3924de9d78b4582b157cf56c888720e5b2275ec619002c608390f3b",
-    "dxil": "d637d6647c762b4bc76f4a16d17b4f44fc8e0227e1c5867f4f2bb4bdbefd0fb4",
+    "mgfx": "e89a2b13f7a55a0de07a64f19219cdc591773b4850d8bbae26fe50d1a0ad6c00",
+    "mgfxNormalized": "e7db51c7678c06f70493b668a6c03cec809a51a6f050fffcde468296b9fc9745",
+    "dxil": "3a7d25b36a2ddcc7fc86bdeede4b412b90cc40ca1e82f66d4189c5f85a1c0d32",
     "warnings": []
   },
   "DirectX12.Debug/StateBlendAdditive.fx": {
-    "mgfx": "196e382f3cdd872b29db49c7056055c30d809ff8185225fc620a940e818cd152",
-    "mgfxNormalized": "a25a05b4d0d637f2650a34f4790ab1f8c87f2df785e2d82a62529c653640a06a",
-    "dxil": "355035b67166f5ade7420f82c9dbf0b69dab0ba9d70375b9c3d5b1f7505554d8",
+    "mgfx": "ace73f2e7470c74ee77e568081fd6bee971f5b7e0e82947a27e933856698c786",
+    "mgfxNormalized": "081423bd88dcd5fc92c58823164c3aafaff8a7a0a755fc6f1ddf6627fc6caa3e",
+    "dxil": "47e5df170439b5493826eed0bcdf5a8d5adb935b5e5d542fa8df78f4a8a3558e",
     "warnings": []
   },
   "DirectX12.Debug/StateDepthStencil.fx": {
-    "mgfx": "253c9a683ef5d7824a191457b8709c1ecbb23ff2ee5fc2eba4db7ed8bc6d9990",
-    "mgfxNormalized": "5125c3fc5f68070faa7c36fb20bfe1808a4700254af83ea38c26662c325a180a",
-    "dxil": "d6d9db5a0705bd129306955d20706ee45102b87721992a095abf7a64edfe89d7",
+    "mgfx": "8dcf068ddcec217107795fe82ddca9b76c3db5d6f37da33db2d7ee63058bc0a1",
+    "mgfxNormalized": "094f5cb63dd1235317d5b5484bd2247003695a5d0b6d0b5766f526cc245aa05f",
+    "dxil": "5c3aa880695152dd7def05c24d3d4673fdab5d55cc3df3e81a5fcfa6dc8ac3c9",
     "warnings": []
   },
   "DirectX12.Debug/StateRasterizer.fx": {
-    "mgfx": "0d5002aaf08e119a39039b3bfca52d2578e2fd546872e01c5fdc90ce3ef1c3a2",
-    "mgfxNormalized": "0770474f0425890e3e219c560e28655e05866ff238d7748924c65dee78dd3e5c",
-    "dxil": "edf12eef2506b7dda24ee90396015fd5a653969b89253e396a7cf3a18522d836",
+    "mgfx": "acf927424705612c822cfe432e3b5703b262b989cc29253c308070dc69bb7080",
+    "mgfxNormalized": "8a9e29e9f1964541a058c9e942f04fdbad5c76a578c9aaa0da0bcd758451f5b2",
+    "dxil": "6e496ffdc8ec615cc1db5d3db3291d2ef9f56da769b644b7a8e74d011de7c83f",
     "warnings": []
   },
   "DirectX12.Debug/Teleport.fx": {
-    "mgfx": "5236881ba6d307aba76e294c95f8a16d6dbda71d8097388d72baaa0c522ff2e9",
-    "mgfxNormalized": "a5bc6594104d1686bd367723f2242ea5882ecb3fc7a2f45328e040dd74a0c796",
-    "dxil": "2738e1bd8feae6b3075a42f705060cff49f486b0ba465e131715ada0d889bb12",
+    "mgfx": "da01abe88f25b7da39f08d49405e5c0c3b19c70387363319fa26be4b18b4814b",
+    "mgfxNormalized": "2d62fc4e4b70cd12dff8aacfe6032be7a44c46c8cad899c7b5d963a4f1e36744",
+    "dxil": "280f7ffd7e59fd75cd3a24da3e57156a19487516bf3388abc1486f5ca64f48ca",
     "warnings": []
   },
   "DirectX12.Debug/TintShader.fx": {
-    "mgfx": "a6f53308393663208a92b6f3fb060e36a9bbe7f649ecc8f9379273636dc5269f",
-    "mgfxNormalized": "d8a3e58db7d4b00fe5fa53eeec807a1fdf38f538b78b966f36b4ab38a6aaf13a",
-    "dxil": "2921e471dec1f8bfd625136c1d57c80a552c1a018d47b4065fd66bd1fe3d4959",
+    "mgfx": "e99a489f42f7f5b4bdf3609b8299783cdda90e2d4cee6d4f3ce3a6194e0b0757",
+    "mgfxNormalized": "e02144650bfca651e7a111cec96f3d12a700aa4e76f1c8feb04ac428000779a2",
+    "dxil": "38c13b4e30f910c91fc711663913e9f14b3caeef1760bf7356c0adeb79e372b5",
     "warnings": []
   },
   "DirectX12.Debug/VertexAndPixel.fx": {
-    "mgfx": "b8cac062bd00ada3c1dcc784754ae476a0e1b197deef84d2262ec177a141d0e1",
-    "mgfxNormalized": "2030a82d38b9618ffe0f1b945457f8a43c0af6cf7d1cbebe4cfee7303ef000ba",
-    "dxil": "6d9490b43832349ed89775c4fe4b807a10d5c88428d87be4664285fc9420ac18",
+    "mgfx": "02d32c1e7a2f47d4a17f82587752d470131a8718f6e9c53f801dee680f1840b0",
+    "mgfxNormalized": "4976c440f059f8bfb930987ed009f8136cf29cb0f964b0c831e80092622006b9",
+    "dxil": "06e4208106f64e2ae66fc7ca5d4bc6ede95ea6b837d50799c53373c2ae7cb166",
     "warnings": []
   },
   "DirectX12.Debug/VsTransformColorTexture.fx": {
-    "mgfx": "3e8757dc71410101f7fcc34539725b0997b584e1e4b32cd42e3911882df504da",
-    "mgfxNormalized": "d69311fcf765bef681fca87f3e51ec85b2fb3ff88c8fb0a9963f565997e1a919",
-    "dxil": "7b52bbc78fc0974927bffd5b62a7ff524575ee5834017849479001d712684753",
+    "mgfx": "7d505124a1f91c90859fda36b14735faa6ee85b977e670c089c5353afa729a36",
+    "mgfxNormalized": "b8ee5b12b4c4e1755f64f83f2bdb3c240e92a34717a64ea4def5eff4b1e9df88",
+    "dxil": "a1884619b345bce4fea1bdfe1a9df9df59d623d4d0eef4ab3bf3e8174eb31286",
     "warnings": []
   },
   "DirectX12.Debug/VsTransformColorTextureLegacyPos.fx": {
-    "mgfx": "6d133c164a31e999419f14286d3d73dd871fdfaa111bc5d0d2f3464807babee4",
-    "mgfxNormalized": "65fc71cecfcd3005abf37ff6c5373c1a5166c656f6112c0fd0b3fc927e3784f3",
-    "dxil": "aaa19cb56534e4bc14b1361d08d8626bf7ded695d5e6c284a76079003bf4042e",
+    "mgfx": "f03ab4e19e4aec23d1bc2dd13b3a7e17a949ecce7e53a2ed3d41d87e2642f2de",
+    "mgfxNormalized": "2666377ec5bb9d34543cff8152f477ea368a930b9dda3598336fd002f91789ca",
+    "dxil": "e7f8f20381cafb9fdf5e5e2014d2934bcf1c4e171a1332fed38f55e2de1d33a1",
     "warnings": []
   },
   "DirectX12.Debug/VsWaveQuadIntrinsics.fx": {
-    "mgfx": "4354b600e45bb030cc44effd95f308be729922158366d58c1959d96344ebe3e8",
-    "mgfxNormalized": "bb4cc11295a28985a5e10b57349e1e5d838e4635e08fa6f6796d5ed12721ed48",
-    "dxil": "550ab944438d04342d9c559f4f3a53a43b1359acdb2146f16aee88f6b38b9ec9",
+    "mgfx": "5585b468d3ca3b117ccf36a8344da4e9082984fec49e3968b33e322dee08e68c",
+    "mgfxNormalized": "d6234d4d6fd2af2ea82bd203868722810318d58eea6cf20b88a9c36b5e446e43",
+    "dxil": "3941c0247aaaeaf17ad899c01ab04e86077ffb0321206c0c959f23b42d53c02f",
     "warnings": []
   },
   "DirectX12.Debug/annotations.fx": {
-    "mgfx": "0b05c4f3d221ee40c44196e32938bcedbe5f3da47a98f78e8c04bfaf0582a7e9",
-    "mgfxNormalized": "45de1c4cb6f6a88219f50c3cadc4273bcee702e710fe609e8a881a55f33507d0",
-    "dxil": "70ff6492fc16b81be3345ee953fec9c12fdabfb7bf352575dd24fe031eb7190d",
+    "mgfx": "0eae433646874b9314e3ca2e4f81c44f600e738296f077ede76b8a6ef128a435",
+    "mgfxNormalized": "681ce02a45923b090c2eab9edd4dd4a38eaa86cd70098606903618f0b63703bd",
+    "dxil": "68e61092ddc86687a82dfda61012f604aa54818b2eb0a70820e35367d7b50ca8",
     "warnings": []
   },
   "DirectX12.Debug/basiceffect-mini.fx": {
-    "mgfx": "3005179dd56cbd3932eeb3ee72af810eb1da791789de2bd170235c601f567cdf",
-    "mgfxNormalized": "441a85437ebf6e8587bd2d851baecff56acc3e0663efe635a95e8d296593774b",
-    "dxil": "d165ad115a0946ca30cade3dd74d40ed6f245c6f11fedf6919025e4e64d79c9a",
+    "mgfx": "caa491b438a7bd2fd7b4657c9893623b46b82ead9a22754e5cf877ef182edb34",
+    "mgfxNormalized": "18ee3adadfec6164819249c6fdadb9b4f63e1f4b926fcf62f3ac51daa1d596d3",
+    "dxil": "8e60dbfc2e619b1649de51e9d1580713077fbabd3e8233bbd3cef3062cb47487",
     "warnings": []
   },
   "DirectX12.Debug/cbuffer.fx": {
-    "mgfx": "67e9f483ca0391b6fa8985fbc941b8c4ce989daa7eac1285df28347e76f6f1cc",
-    "mgfxNormalized": "e6f266f153bef4d441f8899bb060231f29ca1fa2102af4b8401830cbeb116d31",
-    "dxil": "e77a821dc74b3ea50ff01b408cbdfa00ef2c8057d47123441d8719e0e0dfaad1",
+    "mgfx": "7bfc388e0ac104acb2717d4ad4cd2edec7d605a88dc97ed4b0a04beff512a4b2",
+    "mgfxNormalized": "1154215332252d3b664942766b9d7f65cb8d7dd9634a112f13c4bd94c997f25f",
+    "dxil": "e2fd4e59935ec7816e744c935c3b5558af3bb601f12c9ea2f233a7df540aa95c",
     "warnings": []
   },
   "DirectX12.Debug/examples/ExArrayTernaryAssign.fx": {
-    "mgfx": "6f3852122ec5143c3394cdbb4745c4735cf742bb38fb4a9513d52345366d7035",
-    "mgfxNormalized": "6a186c1d897a8d82c85a156ce3f34b3b0b61b3d24aa955ccad1b7f20c3485a66",
-    "dxil": "4d591ccfb9cfcef7c64704de535993165a8e67bd506b40e965eb5979e882d1ef",
+    "mgfx": "003d02f0e6925d1ebfd001cec68c1841c5883ce8080df09a9f264f270524c430",
+    "mgfxNormalized": "dc8f9983cd0df9d055d0f42d95183247e34f2d639140f3e96ebe6f235990d7d3",
+    "dxil": "15213c079a3924cb9fbe048aa67a19a74185668d7c41dafeffc61e8630e6e353",
     "warnings": []
   },
   "DirectX12.Debug/examples/ExBareSamplerTex2D.fx": {
-    "mgfx": "864ebda7053738719f83d084bd48b63e068a182cb962ed821124e088d4674175",
-    "mgfxNormalized": "7b5587dd8c77a29b15599c33f27e103782aa401bef924eb9897cb5d8b17d9dec",
-    "dxil": "abf740e83e4676856cb5bcb1dfeb39e4f4e897d603aea349aeb4e7430dc6dc36",
+    "mgfx": "22d691696832516cf191c95044f8db4b38e982644da1eea56d8891af0f9d934d",
+    "mgfxNormalized": "4280b7796c41acd7860ee166337b7a7f68f0ce1ac6c42177f24fdfccc4e312d5",
+    "dxil": "618a30a32682411f1ae743bc00273339dea81c93fe4236a3584a4e5e80ebd832",
     "warnings": []
   },
   "DirectX12.Debug/examples/ExColorWriteMask.fx": {
-    "mgfx": "e146fe03315cfb1d0f26b8930aca22a92d3c1e37032b12b6d2cedbdc042735ce",
-    "mgfxNormalized": "cbe7422ea08f1260cd14b149e0d183cc1c5b0b7a70dd4dae6f4cfd86278549db",
-    "dxil": "8a801db00c4bd80048824326f1a24cfa56f088819d6c163e904f713b15ad5fed",
+    "mgfx": "c659029ecf7ca3a45040da1c99f4ce2159f21c5f090802510f531a28d48480d0",
+    "mgfxNormalized": "35bce33d9dc9c2ec41013405fdf1f7454c4ca754c811f3505b9845757cf2f896",
+    "dxil": "d95a89d2a92dcf3cd377e84747130c3f19045799df4ae11a81f74f27a6f3d919",
     "warnings": []
   },
   "DirectX12.Debug/examples/ExCubeSamplerHidef.fx": {
-    "mgfx": "e0a37ebab1f7f33d1bb3584d5339966438e2a5e1179af72a4878866d8fb8ce9d",
-    "mgfxNormalized": "9668947abf5d7d5e7c0b48971e3bfec6f00f0fca2d6f7402934ee896d77f0a2d",
-    "dxil": "676513385fa7f57b1ce2652ec14524b794383e6fdf8282f013667216d6fde8b9",
+    "mgfx": "045eda953328297778fab61f80850f2e62597f8c6a359b16f86e3a7cf83d3d10",
+    "mgfxNormalized": "6838811dd6ec79e50d697f97cdea5c724835f67eef0002baa80f3bb60fc11334",
+    "dxil": "d9501dff13f0b4b22f4dae3e3750291a84cdfd750ce143aa08b881b905d831c3",
     "warnings": []
   },
   "DirectX12.Debug/examples/ExDualTexture.fx": {
-    "mgfx": "313c801bca2f204ff321cd8a6bc73bdd312922b3661919742f93cecf58ac88bb",
-    "mgfxNormalized": "106ee3691f1291c846924c3b0e8195b9c8284330fbf9a3f1821304e08c532592",
-    "dxil": "90c7d5f57e98b017b73bd65681787bff86bee7a710ca37d1779da0e7ca787f1e",
+    "mgfx": "f01b079b71d0cf60cdff537b02a1730170c2c01ae7cfb9876d2bb9d84fe99cfc",
+    "mgfxNormalized": "15e8e68a93249fe77982637a913851bfcb37841ce62c4e155c8266eceb6120c4",
+    "dxil": "9480d49880181242ec724c5bd7cc61b96dbc3f24ada399d7e2e0961e4f451134",
     "warnings": []
   },
   "DirectX12.Debug/examples/ExIntUniformMember.fx": {
-    "mgfx": "8ecf8d6e5a1c2453ec714f7631018bab59e59ff3a2215c8d3f114b145b53753e",
-    "mgfxNormalized": "4f1c417542bbe703f889ccbe12d09560abc8b5b3826c25fac18d320963e14a19",
-    "dxil": "5c30a7ac73c59955752d6c6bd892695b0824d871ef10718e489b7ff920b9f9d6",
+    "mgfx": "73e7b0601cdf50500d7d4ce3dc4b1868f7857892f4885092c8c8a05428a7c912",
+    "mgfxNormalized": "d12485f25d66836936c565d85782232c99e3594d177e3b314fc432d94e5dd32f",
+    "dxil": "d1face224b36df5bcb3825701258ea4d0e8e3cd7524345fa0add4d1920976275",
     "warnings": []
   },
   "DirectX12.Debug/examples/ExKnifxMacro.fx": {
-    "mgfx": "0fe7909aa588ceb8cd9fb6ddd59fd01943c1201307a9770db26a0b00c409db59",
-    "mgfxNormalized": "8659b9daaf66bee876005abb4111c536994ead3ee9bcf32297d242fdf22773d6",
-    "dxil": "99fc8d5f9f1772f3d841cd41a4b742498db1fa53d96d49c58fb3adcb7cc7bad3",
+    "mgfx": "70ec51e66807124397ac931f9f1cc3802cda94a3b3ed05fabbb9c5de0e0bf1a7",
+    "mgfxNormalized": "04748bfa9988582a8b187ea34960b9d21735033fd9e0cb80e3a9ce1ddf92f192",
+    "dxil": "c6b43eb551482bbae704a40c4d55929e6a963b33253d4790a72e700157f74a9f",
     "warnings": []
   },
   "DirectX12.Debug/examples/ExLegacyTextureAnnotation.fx": {
-    "mgfx": "3fd3a625c3e85ac16814b91cf16e3d7a7c80bafaf09b886f5e24141be1d2cdaf",
-    "mgfxNormalized": "34bbb5c558653db1fb4dfc30f47b52c0d640266f695e1976c6ceb56ebdb683ab",
-    "dxil": "26a96f76a9363034738b9e85a6f748714a4888d0ee852068e85d504f0e474736",
+    "mgfx": "e353624468414baba167abd0bc1ebfebc0bb9e65ac80f291ea25355ebea5aca6",
+    "mgfxNormalized": "f39513c9c43d19f3e4cf0de8752703d0b14022e263fa2b41e15915b3b981b30e",
+    "dxil": "348f5fcb3750889286569406cc13df2f0152d64df927a58d5b9380264e53ec1f",
     "warnings": []
   },
   "DirectX12.Debug/examples/ExLegacyTextureDiscard.fx": {
-    "mgfx": "442f6b7a100689baad4e9ca4d0f23731138725ff928a6db071565cffdc6c43ba",
-    "mgfxNormalized": "b10e4dc2518ccd1b1b9508eaaa3cd37a1a4a5773cc4dea832ce1992e0549a0fd",
-    "dxil": "98dcfb273521364b349108b07b979a55c0add37ca177a3c458e850ab710c7ebc",
+    "mgfx": "52e1b2a77a621dfa40249bdc243b0b34218dd6932c38946d786defdd65d7bc4f",
+    "mgfxNormalized": "cf4ce1fa49bea6f03a8f4c47e7700bc44674dcba7931ecd2d7c3e3317d3ba830",
+    "dxil": "8a866fe85d2b85c37557d7d16e1733992c3c9f38954754ccb3a4f14647e1394a",
     "warnings": []
   },
   "DirectX12.Debug/examples/ExLoopRelational.fx": {
-    "mgfx": "1105cb6b609a93949e962af10b1e2aff5cdcdc03fc2097afe18a29f620eb3253",
-    "mgfxNormalized": "a03a5a3f17fb97d1c2f0a053495179dc9c314baf9b75f4aea488c25b5a170e0e",
-    "dxil": "f15a9fbc78b2da38735644cb95c669b2b2ab46761fbc63e657b693cb99362365",
+    "mgfx": "a6fb1c63355afeb127eb8ea3da6ffcd25c0b18a7099f8d57d211f34af1afc060",
+    "mgfxNormalized": "3dc53209fe363bcdef6617aa4094b8b63eef2df92ab3817b8e4b38e0281a64f0",
+    "dxil": "ebb8ce399e06a42f33e42b4c3e7fd7bd1f1902717b28806c234307ee155f6c01",
     "warnings": []
   },
   "DirectX12.Debug/examples/ExMat3UniformMember.fx": {
-    "mgfx": "3b9559c7ac2627a17a30347c0c4114acf13827790ff026fc6a4fe4e25eb95c2c",
-    "mgfxNormalized": "02d60ad8ce0a1759ff0a48457ef7eeeb5a250d8bab644d5f3cc93be3af80bff9",
-    "dxil": "b49dd2387928f39364d74d0f476d49f352edec97ecbd5dcdf0f93ca2b6daa408",
+    "mgfx": "bda9b7935fb8d2e210c3bf96505f58dd97de22abb670e3cdcc021df6bc64e6ce",
+    "mgfxNormalized": "c1dc02ad3b2379d6ebef99b3e594398ba2ca75344ce065aad3ffb1637130386b",
+    "dxil": "b52f62d9c7d0a9a0e66921d0be2b5b128f70264f9f7a9dab184ff39aa08ce674",
     "warnings": []
   },
   "DirectX12.Debug/examples/ExModernSample.fx": {
-    "mgfx": "742dede7e9be8ebca6b3850f6b1c9044e8c03b910cff8b8210455a28a72a254a",
-    "mgfxNormalized": "38d1374c1f8721fe23f911119ed533486a61e6dd59ca8ddc912b920da577b5af",
-    "dxil": "55c54f4bf37262639a6f1e47bc6ce2e365bca6777ae564ac46649e593c19a7b5",
+    "mgfx": "552f4431122bdcefcb708af38960189d6f2f1541787766a674afa2ac8496adc6",
+    "mgfxNormalized": "f8470b263cedc6f055d73e11064889cf668a11f471694cf0f107c1c84735a772",
+    "dxil": "4eb21c43143bc119a59e3888b1999aecfe7350797b8e705dd5946d99c3972652",
     "warnings": []
   },
   "DirectX12.Debug/examples/ExModernSamplerState.fx": {
-    "mgfx": "2f582cbaea302cadd09892258b866ecabd1c49660b83f757b3bb4acf636ac23b",
-    "mgfxNormalized": "8046a75ed77bb2f841012d8f59f0c368ce6798d08b6468c36c6ca6d92b2edcdc",
-    "dxil": "fbcdbb55138621679d7948fa2311c825f4e8e73883ca2c74e263c70dda0d44ab",
+    "mgfx": "c2bc99e92789249eb9894d8eb2bcd2192a774a4ea949e25d1f2d7d2fd68f4149",
+    "mgfxNormalized": "71a44ece5857a42ef4e81f062db13d35ccca43ba1187634b6b64c914187014eb",
+    "dxil": "838f711fd632e7614bdfe40de00f4444f9f9e2954875d26b047357dc94911ce0",
     "warnings": []
   },
   "DirectX12.Debug/examples/ExMultiSamplerHidef.fx": {
-    "mgfx": "f1cebc852e7c4d516e4d1b0a09c3ee49caf0d22c7e08c6a8ed7e2b8155315049",
-    "mgfxNormalized": "1597af109def9ae0941dc8169183f1e6f05ba263df8c89b6a49005d855a6a6b3",
-    "dxil": "61e6b033abaccde83de09ac4d116c5edcf78c2db49efd779486a51448f398388",
+    "mgfx": "1a6e8bff7d1705f70a5dd2b934cdacd4dcebe9cf56d43c9a973884b2489be485",
+    "mgfxNormalized": "9cd9d54386a42f60f15ba89e17ab079240bcdb23fe1f457929ca01d571acfedd",
+    "dxil": "38cf91d1451426e06c98f167eb38f1b353e28021bd6e3f306e8c56e1ee0499e5",
     "warnings": []
   },
   "DirectX12.Debug/examples/ExPhantomDerivativeUniform.fx": {
-    "mgfx": "5b37311f01fea0c717a5c973827a554d4e180096b782337c044d4e53bf384f48",
-    "mgfxNormalized": "9bf9a0859fd0b303014831c0649ff40ab8b8a3b7a94f2b334cc5077114d1d19b",
-    "dxil": "1e6ac5bb067b9af756fa848aab034f430f493a8b8486dd46805791f0251f4e6e",
+    "mgfx": "00a53709502200471520abebd8b13e3cbb54a7af7834646d308808d15e0fa640",
+    "mgfxNormalized": "943d951ec29d9c664cacb9d0fd72aa7dd5b1e60c2839317c96bd508e8d25c140",
+    "dxil": "c2c4765c63c09007c986ee2502b538eddd1dc5c1e43d7d223fc91c217fa31e99",
     "warnings": []
   },
   "DirectX12.Debug/examples/ExPhantomNonSquareMatrix.fx": {
-    "mgfx": "48a004f836b4e629e699a826794e964f57c4c055d4f89a948ba0518f034f5fb8",
-    "mgfxNormalized": "658d07beec8ac696e816d7216ba95e7135528abd8d6d9f0e35a8b5e15df92f27",
-    "dxil": "1327c2e67be274c483d851dde04cfacaf5aa59d4300641f25f3b9b6992851ad7",
+    "mgfx": "5c78a87b5f093f857472d5f86601c1d3ea385f6d136663774e50170f1b515b76",
+    "mgfxNormalized": "d4c246b4502b172784acab0f6f205a4302cad4b778d0535416a6197b7513a8b5",
+    "dxil": "35401f6d7862c409a24925e2f19b8d4b90c49ef5aa61eb920d6c481f73172c84",
     "warnings": []
   },
   "DirectX12.Debug/examples/ExPhantomSecondCbufferFold.fx": {
-    "mgfx": "e8fe1db6dc6a4fe833c443868f679d93c949657ab0195096f3e7eb288783e58c",
-    "mgfxNormalized": "9b1e9653bf25939ff58fba273c3793db9c692430a90a0a905dfe3ba75331abe8",
-    "dxil": "31d3eeaccc2b1dbaebdd4810f2a63317cd78c95cedd5ba06dd3a9c288fc6dc51",
+    "mgfx": "1e79380f270d3fddf3fe3a02195b0634666a8eebeed2d153673f54da9627cd31",
+    "mgfxNormalized": "ddf7705ac9abb11ac5ead72d552b872f9c793e76843081292113226ec9a7569d",
+    "dxil": "4c3416d18a821e37dcefaeb59221e6ebac68451be4dd15a4b33cb3d41c71f120",
     "warnings": []
   },
   "DirectX12.Debug/examples/ExPhantomTexLodUniform.fx": {
-    "mgfx": "9cbea12e907c6418b0c6afb393e20fe52c4fec89aa51f7d5bd47323102dd7cd7",
-    "mgfxNormalized": "b17524b7e2413e900dbda89dfb20ecd8c7fd89e8a58ffcf4851304af426d6d23",
-    "dxil": "d57538080addc80bb8c7072caa3a1c4c9de1c11822b225689c55cd34ad3a2dbe",
+    "mgfx": "7c7dacaa9c6c7def3df58a498932e37f8c67dd92b5e663a33cbdebe87fc2b026",
+    "mgfxNormalized": "77970cfd224b3a24aba39e904b64b947f1076662fa5cd34c956511fef2674a67",
+    "dxil": "16dff6864c1ccaa717552d2ffc8edb6efeef7b41544a6601ca6192aa4b8e061b",
     "warnings": []
   },
   "DirectX12.Debug/examples/ExProfileBogusLiteral.fx": {
@@ -509,27 +515,27 @@
     ]
   },
   "DirectX12.Debug/examples/ExProfileLevel9Header.fx": {
-    "mgfx": "2825a614c93dd7b5b45b2e55e9b9f85f6696f55f388f71e931ce8edd24363f80",
-    "mgfxNormalized": "3f6ac9b4360fa34ff250d3ec37c0c7d305bba3bca9dbf12bf9a0b0a241aa0f8a",
-    "dxil": "cb7bbd0b00336d72b186d2e16a83636d12f134592f5c7c9be19ac356c4590599",
+    "mgfx": "79c5d6625268206959171050371f72d5bcb7bf1c87142cf055ca6b291063c1b0",
+    "mgfxNormalized": "cc8409ea8b8b637d45f230fcfec7dac4cbdde7732dc02e3b9b44551e4b3f74b7",
+    "dxil": "55c9733c25d4d3de29dc148f5480be2833e5348a73aeee64263477f045c9e8e6",
     "warnings": []
   },
   "DirectX12.Debug/examples/ExProfileSm3BothArms.fx": {
-    "mgfx": "a1a7851f8bcb5328a8b8d0b151adae4244223b4c3cf4b75031660da5b2baf9e6",
-    "mgfxNormalized": "753d88417f1efa30bd5914fbb539f841d85010b6f6ceb67180f2a08f3d9b63c9",
-    "dxil": "ef7c6a01a76a6e4170602b81870d69113b2034084ffd90854cfd10ae3caa4a99",
+    "mgfx": "2db299d8235d24cf83030cb2d67b49e68355e9230b3419e6dcebe8a9c9b9b608",
+    "mgfxNormalized": "720978f837062700ffae25de6200522ef22c2a018435a7e4f4c72337bbd0ec65",
+    "dxil": "63fd4db9a0421395194540d020d9085085c93dcb2132d129fe9a05abf82ab7f1",
     "warnings": []
   },
   "DirectX12.Debug/examples/ExProfileSm3OnDirectX.fx": {
-    "mgfx": "16283ef16968c6aaa6c57fde27675afc8da0c4b108a579b39055c9188f10f66c",
-    "mgfxNormalized": "ab0972f74846f428cc9db9555cb40bf092ad5e113a09e631027ebd0a506de6dc",
-    "dxil": "99e7ca7170e8a8095020c5e082b943d4a42b18914380fddcf797429117141bbd",
+    "mgfx": "7cb369d87967d3e5020b3ed1d0c1946dd8c8aa3f08acda011698e8f331097bc8",
+    "mgfxNormalized": "96fcbf75171a4646cdd7607bf878be69049e639c19357b5eada43961237b8f58",
+    "dxil": "ff0b7da1c199883761346233423eb252b9c1a3a56027f779c4c6b421ff6be09a",
     "warnings": []
   },
   "DirectX12.Debug/examples/ExProfileSm6OnDirectX.fx": {
-    "mgfx": "f03969d75138e8491b009910fc06c6e92f76f92256c4decffd85028c48fdc280",
-    "mgfxNormalized": "65058026c8e5ffa7d18505e2174241296acf61cd6742db177375ba9577e1efd3",
-    "dxil": "3584cba516fb8dad0d380ae99304eafa732f8c7aa039e591d642ddb3023c7aa5",
+    "mgfx": "ec07821a7b724ae37ff87c319c1b2b5424876064fd4efe82ca9e319890dc5cfb",
+    "mgfxNormalized": "76443b577de36ee009a03d20f9a1cd615905fe809340bbb97ccac9b036717124",
+    "dxil": "07cc5c03f8c4c0b3c57980024889f4bc795c1bace39df558ef9e5147e38cc056",
     "warnings": []
   },
   "DirectX12.Debug/examples/ExProfileStageMismatch.fx": {
@@ -548,147 +554,147 @@
     ]
   },
   "DirectX12.Debug/examples/ExRelationalBranch.fx": {
-    "mgfx": "449a5f37159f70dd980748247e2da3a2ffcdf148542f3161a747e55af806d57c",
-    "mgfxNormalized": "561cd2a29249cfe02f56c4a2d3dde3d1683fc6bb18d163c59d5945b0c3fb7c4f",
-    "dxil": "17cde1b42a9a88bb16ac00c8b3e2767c1a82a8f12666ce61375dc58ed360c602",
+    "mgfx": "562677fcbec86558eecc4cfed8effc6dcec8f0613064bc27e9a6d05cd5614481",
+    "mgfxNormalized": "e2f90d75041e7ff4627313669ebddd18b96e5b4ce853943f0cb9ad6df8d424d1",
+    "dxil": "34a7e8234cdc8aceb521f675596d67301abf1cd5496edefe4151167d87217f58",
     "warnings": []
   },
   "DirectX12.Debug/examples/ExRelationalThreshold.fx": {
-    "mgfx": "c5c9524dac8f224d04e7ff3af6ffeb0a0514ed8015f8ba01c94e3ce58cd701f5",
-    "mgfxNormalized": "cf846c69b2b0698d601da7c6dde75adfe141c5702b45da9ef5262bfabcf277e3",
-    "dxil": "6ff14ce4e0910907b10d13a2586268ec79d6a1f73f3739395aae074fcb950881",
+    "mgfx": "bf61012d9e2ec6f183a50ac41c69c4fcf15bb14a8f7b9bf677f9443b4a06b599",
+    "mgfxNormalized": "cda0f6d52e4bdbdfb30845706b1ec05b97e5aa406a375a9e5913def64462f84d",
+    "dxil": "c9d3536c9d0243bd45dba9f40d75ad96771c79ffcf36e537026acd328809f543",
     "warnings": []
   },
   "DirectX12.Debug/examples/ExReservedWordUniform.fx": {
-    "mgfx": "26c03885c56ac8ee90eae34d31df447dc42a1d07f8ef6bfeb20d769abc46b915",
-    "mgfxNormalized": "c8aa45cb9d6021f74fa26ade70a9de1207fb459f9796fb09e0633c23e5b15f49",
-    "dxil": "4b926d85dbaceb7e09bbe2a17f251135509a2cc7bc79b13116d89f90c7d0d38f",
+    "mgfx": "575307ebe10241b7d871eadd17eaecc8efbc86613a28434ca3d1569a547ec984",
+    "mgfxNormalized": "ef9f87b93751e06eb5d64aa2c7b8cb7a9e3385206fd26206cb8541d88b61c4cd",
+    "dxil": "1cdd395f26a66ae2ab4f048383ea18a3ceb9438a56197c55286191808b5fa196",
     "warnings": []
   },
   "DirectX12.Debug/examples/ExReservedWordUniformRender.fx": {
-    "mgfx": "9df95b312ae5b8b813cce432a21a2d1ef405288ae1d30c5e16fec57f0b9e48b4",
-    "mgfxNormalized": "f25bffae7221f9917e4e0fb17cfe21c50cfddb193d6e13e2fcded0ddd141b89c",
-    "dxil": "595b762130de06d979c783b1aa7a413b6c8c6e5f5930d33ef0ac62ca00f92cee",
+    "mgfx": "9e0553822d69a14a7587eaa0007c38a85eec236444b1b30645d9821f74ddd96c",
+    "mgfxNormalized": "7742e91bff51894b620e02da114b53aee2a3f17dfcf880c5536bf7df09db2280",
+    "dxil": "9690d834a8c759d4e376f88bbbf177ad393a85bd08b8d2f4fd19d022fcc471cd",
     "warnings": []
   },
   "DirectX12.Debug/examples/ExSampleGradHidef.fx": {
-    "mgfx": "c413332fb5b410a0837cda10056b78f2f7becbbaebb294c7d3e5f22e797cd474",
-    "mgfxNormalized": "0f15948a6c8f98cd299041bcdb00ff247c642b6a5716f654eabb3dee2e9d9911",
-    "dxil": "d08584013ac986eebb66794fd3f689bb5b3f99b3662781f53b601e02d19a27bb",
+    "mgfx": "3749089d719ed06af83ad1dee9ccfc7639cd72bfdc05b56ba50ab7c246c0d6c6",
+    "mgfxNormalized": "6b213017dd4ef913e8be5d4c0bfe755cb9fb2a2f8f34fa185c0c95b63f708056",
+    "dxil": "5f81f7d0ea8887913f3630b5ebc19ddf4873fe2d580992f28348594d9470a5f3",
     "warnings": []
   },
   "DirectX12.Debug/examples/ExSampleLevelHidef.fx": {
-    "mgfx": "e780c3c761c17773a8dbf2948dea23fa65d55d71939ea27b590540a14ae0d188",
-    "mgfxNormalized": "d3dbb3812cb7e89804ee869d88907024a042738763817749b8bd0ccbb8f7ade4",
-    "dxil": "b46ba6c4cb8e6e5ab3bcd00fde84901cde14a29e7552b211139bedfbcdf29fed",
+    "mgfx": "a435bade53d441dbcc1ebdb77f4caec814b64ad534e9e739ca043a2fdd266d1a",
+    "mgfxNormalized": "494939b93ff6099625a0e664b53807dfc9701611e7b4e7fad26cdf2f148c4c19",
+    "dxil": "966e554e490c4335462d111ed693267959ce0f141db670a15adbeadd2e34ca69",
     "warnings": []
   },
   "DirectX12.Debug/examples/ExSamplerAnnotation.fx": {
-    "mgfx": "4a15993fa6269d51e3397a42d813565b96dd0606061e5e4cfee26d4b1257cadc",
-    "mgfxNormalized": "482664ae910b94fc21e296c52cc58c8edbf726265c4096086586e05e59378348",
-    "dxil": "979821388d5ca72e7ca4914ebacfc7bf3aae214c4ffa33043cbdfc4c65b00643",
+    "mgfx": "2d5c378d4daab3f5580102429271b034d70b2d15a09fcb7b73d759a6049a9923",
+    "mgfxNormalized": "1edeebedf0ab65d35f1245057168244ae5fcc585f8d8cc8d0ab83f3e1a175f8b",
+    "dxil": "ef889ccd31894bdb0a92bcd19c4d0f05c253f4f278a6197c5f296947ec68e541",
     "warnings": []
   },
   "DirectX12.Debug/examples/ExSamplerRegisterState.fx": {
-    "mgfx": "c6f756ef6c347ee1ff89cec89780cb7072924182ad6dd6344a6d217359f494ed",
-    "mgfxNormalized": "ca2ccaa2e80a3eb44673f2692369e931a622ce96db6a60e7d4144ee523201ba3",
-    "dxil": "c830ed9877394d8d53d8decd9e351535c9a4137dca9a09b3ebcfd835e72bdf63",
+    "mgfx": "0d0a6c9f1790db9708bfba272ecb495fe2abc85f17de8ba0c7edfad280bfc092",
+    "mgfxNormalized": "18366d8e79ee50ef27270eb0055745a99b4b4c9b216ef2d02a2037834cf5c70b",
+    "dxil": "798df1ab6c305442f6f27a60382c0bcd267d85c0e43e234c09c89eceff0052da",
     "warnings": []
   },
   "DirectX12.Debug/examples/ExSamplerStateUniform.fx": {
-    "mgfx": "e0c6b9675c063ec83c85c35ea8dbc936c18857393eea2d162e53cf8e94e89009",
-    "mgfxNormalized": "c56f5d7a7b66320556e5e6879724024e42fb29833c15b9ebbbf097025f8d0d62",
-    "dxil": "4ceede43ce0df65ea562951c708766d9702954709a30318d5dc5d01bf398b395",
+    "mgfx": "86e340bd68f7369aee45d7a978ed9d2a585cdcfb341f7c41638eddc522d65234",
+    "mgfxNormalized": "fc42623c63deb5432e56ec260007094cf0395dcb0cc124e67f03a6a606630731",
+    "dxil": "805ebc534ce0093da1116c35f9cf2c6c86cd951d6d3fefadaeb2d98edd6df511",
     "warnings": []
   },
   "DirectX12.Debug/examples/ExTernaryHelper.fx": {
-    "mgfx": "77fa14f8badacf43c488c696b0e38d93cefa6cee7779aca2fdcde95084764082",
-    "mgfxNormalized": "291d3627c25235ba03fc5e054d8282801a265b3684e84f1773d9323827b867d4",
-    "dxil": "0e8f984991c6cfa39d2faa48757243840e1181f05c470b9219fdc48a4cc896a0",
+    "mgfx": "4c642858a9794f07e1895bcb04b54dd5cb92e0ec3f022ce2010a90aa2650bcdb",
+    "mgfxNormalized": "558257409a5d6e207d2e653f8dca96a3ed2d06716692624443209a50cb5685f5",
+    "dxil": "ddbf95d643e889ecceea8fefa1826168a1cf98da23f39bae4664dee3e0712629",
     "warnings": []
   },
   "DirectX12.Debug/examples/ExTextureNamedTexture.fx": {
-    "mgfx": "60ce6c4c149cda7ac8cc25296c89e04290dc9c91bf055726f88a060cf7dea83b",
-    "mgfxNormalized": "69ebc2fc86a2525f1d56ff2ac31648d4cb417818579e6ff56834610183d2295b",
-    "dxil": "18dcacc85c12d8f62316d659a6a9c1e8c85e03f1a57a26b8b66cd50d6aa250b6",
+    "mgfx": "2bfec79a49e43830e7cb5a58353c3aae0ec95b939bd86bb1356df22852ad427b",
+    "mgfxNormalized": "19738c8c5b91ddfe9fdcfc528c82b3c17cb4510df6497e0eafe53d5cd84b2126",
+    "dxil": "fb39902cf11645287f18f51aa32bfbf0abafcff92061c55563822f6ab2e22288",
     "warnings": []
   },
   "DirectX12.Debug/examples/ExVolumeTextureHidef.fx": {
-    "mgfx": "50f4085d41284563fb10d293a6db5a55fe0ae33261e3a0281fb0695831c8599a",
-    "mgfxNormalized": "2b50e568bf4ede1fcfcc3c505f3436ba7ad07b08b5f4dcfab3204cd892d1d44f",
-    "dxil": "0b5dae111271169b1d68969430e3ee4bf7e9be687108c3efa56f668d93b759dc",
+    "mgfx": "95f21e6d7d7b797c0eb7309570ce668c8f4dbc6ad8cce2c3438f27856fd581cd",
+    "mgfxNormalized": "d0e5282033f63979054eb65d8a2d46d43af099c86cfaeb7394d79d97b62cf213",
+    "dxil": "8c0bcd50b60ca348a7af8df62d5274b2ee239015ddf8157265743053038ab95e",
     "warnings": []
   },
   "DirectX12.Debug/examples/ExVsColorReturn.fx": {
-    "mgfx": "b099ad0891479ab2980d72ea358a256a76bda7ac8008ddc9f656d7bac4450dc6",
-    "mgfxNormalized": "cc4ae0ca3be5ec2ea793ee5c2cb17d983b0e08f44d3991a8562ea5e5c45a54c0",
-    "dxil": "ee60c00fdf759e4c0137b7464da1e3232de56bb5ffd6da11ffe72581cbcdf257",
+    "mgfx": "9cc642bbdbdebc2fe565cb9af4e7f7a4919426ba1b70f73453fc63d460df6e3c",
+    "mgfxNormalized": "d68d00feaf1c42511748c81f629478a407e0c2967519c4a2db86401a10954837",
+    "dxil": "dd08f09a1e365a2b215d2b3c92c58093138dd689f19f47b5660e162688685383",
     "warnings": []
   },
   "DirectX12.Debug/examples/ExVsTextureFetch.fx": {
-    "mgfx": "f933973991d15ea6f80d7d6108aa5bb54c627ce6e0094c62775438db7da0b96f",
-    "mgfxNormalized": "b06eacc18398a581282f251d5058aeb15c3d77e3be227636eadcc346c08ee03a",
-    "dxil": "ef9b109aad1399ee21f568a8b85d627740374c2fa0df3c68c3ede6fcc2a3fd3c",
+    "mgfx": "120a04d663a91d6c63d35352ac9d158594488bfa1eba9fe13e53a1ea236b2578",
+    "mgfxNormalized": "3cde7e62d161b7d32ce429eafaf5d959b699b11214e27a3fb7c3151f55a90bb1",
+    "dxil": "a39d4952372d933be20460b7559b4be8901289be1c40cffd9e11fddf35aa65aa",
     "warnings": []
   },
   "DirectX12.Debug/examples/Issue106Repro.fx": {
-    "mgfx": "b5ecd636837e4a5f284849834cd118df2afd2e890789c1bb5d38aab81d1e7b15",
-    "mgfxNormalized": "85a81bdc7fefabe60a3b6cbcf6c29d3e2cdb59d8cf3578d980ffadfb58ac31ee",
-    "dxil": "358becab731584da9286e89ac55592222406c7bdc488e5471c7312a560968c6d",
+    "mgfx": "4414ea6ebf4e96ac333855faeabbebc48d4e9d28ac57ed1737690cf58349e44a",
+    "mgfxNormalized": "2cbad36ee2f4b6a40f74c7769f7efdb9c7f8dc02c47a1125bce10bdc15b534bc",
+    "dxil": "b7b6e3bcc99a564755d35e9d595abc71f236ce1dcafa658c02ada561cbebf8d7",
     "warnings": []
   },
   "DirectX12.Debug/examples/Issue107DoWhile.fx": {
-    "mgfx": "47767c6201812f37a28808375728f3dd60bd5588e4bfd35a0d711bf5d5d96530",
-    "mgfxNormalized": "c5f302d1ab5f520d29dd73d03374ef7a2a68ec3191f1baa107c7b81d1a54d15e",
-    "dxil": "56c6b610b2a9b60cf198995b13338f6eac296ec8113aafd45ea766230cb425d0",
+    "mgfx": "be5b01f726a124aeeacb06e5c47720569cde6ee17f4f9aadfa73f181fb6f8ad0",
+    "mgfxNormalized": "bf09e023be64fb5acf5e74fd013b0a4d70b843ea96ffbbb52c4fc89323d0e158",
+    "dxil": "e1ea9b2d5c1796a78885343ad366adb4352976321d691fa1c64c3e680cb30ec6",
     "warnings": []
   },
   "DirectX12.Debug/examples/Issue136HelperGradient.fx": {
-    "mgfx": "dc792862f339166ad6e180f2f06538028c632f9edd375db1e345a8d5fdd61a01",
-    "mgfxNormalized": "75d2e6517f89af0dd45f6ef40d36b48ac4c6beabdb9290b61f29d3c2039692bd",
-    "dxil": "b323ebea54082da93e1a4a4ad8ef7ce70515266325358d308093248ebc548af4",
+    "mgfx": "2d433a40efdc45c0d68e4b95f4a36a5cf78dfb16942052359577ebc314a1a08b",
+    "mgfxNormalized": "503382ea947422b0c47b4972a2a0a983e3186875363388fa99ed9ac6ed82665b",
+    "dxil": "24fed80f251d1fad6d438c45ee3a82a2dd10a20d52840d0929d284e41e997478",
     "warnings": []
   },
   "DirectX12.Debug/examples/Issue137VsEarlyReturn.fx": {
-    "mgfx": "655073a69cd76257d6be0b13539e0432344bb220e38c82d2a3e44c34e6e89a08",
-    "mgfxNormalized": "fc82fd35696d23306fbd72b3ee0178b38bacf35168679cbe2b81bfafb57112fb",
-    "dxil": "99a62fae549f251c04ea496b28de2525ceca6d9af77e12360b6df76c1574c2b8",
+    "mgfx": "6502085b2fe3377d37f2fc9c78c50f3fc53426ee6b03218ce2b13c371bcb28fb",
+    "mgfxNormalized": "89af22751d813697b17f87ec164ce91aa11d6f125b80096ef26a4b5722f6139c",
+    "dxil": "95e34a2f7ace6fdb6ea67b1dfd493ee046d4a0d67eb822007cabfff8298b7210",
     "warnings": []
   },
   "DirectX12.Debug/examples/Issue137VsRound.fx": {
-    "mgfx": "67ee547b40133a6bcc79aa3c8b4e074fdb57fe032b5869eed68a69ec16ab2d9b",
-    "mgfxNormalized": "893388381973786e0da3d47f2a92be7f63afa8d00b9c8f503461ba0d1cbe9cfc",
-    "dxil": "8f94e17f401b364e32cd9c1dae2ceb8d0e3960a33ac41a07cc8dc916856a172d",
+    "mgfx": "a60de293615793811a95dd7ca462c087fe492f447ba564101f808567e5970645",
+    "mgfxNormalized": "a7cccb8efa4bf172dc06c3a64507a82c4e4febcbd4c6a184a3be2a2662de9991",
+    "dxil": "b1cf49052557109daa120f2059953ab7a267f0c1118ec73c0aeda5941eef91fa",
     "warnings": []
   },
   "DirectX12.Debug/examples/Issue139DerivativeExtension.fx": {
-    "mgfx": "27a50061be319eb83fdb32debf097115888574d45d63565b70d9ffbd4ed841e6",
-    "mgfxNormalized": "96584de0e982132287ebad532e0ea7e9c8a57e53d94a07cd1915a081acb355f1",
-    "dxil": "878f46fbe0b62c252e13581be60d125389580ae865f196c08805e2763879092d",
+    "mgfx": "d15011ece2b9d07acb496206bf49f94984cc7f5b7cff07784eb1bbbf2ebdf2b2",
+    "mgfxNormalized": "52d9dc3154fc419c79460223a586b37f652bb36e62701a24f444863fdd30e26d",
+    "dxil": "081e2d631c6f93724b2e59cc610d713825b422a6315e6edcaa92fadb530f657e",
     "warnings": []
   },
   "DirectX12.Debug/examples/Issue140NestedRound.fx": {
-    "mgfx": "ceaef1a68df7e21a8fa88805930278bb5928dac630a06bf2a6bf8c504b998ff0",
-    "mgfxNormalized": "583d8059f906abe341dc69134c9912422213fa408c77f87e72ae9806cb91c98d",
-    "dxil": "a5dfac034402a4bedae76fc2eeaf44ed045196851296fb43e6869618c9941c95",
+    "mgfx": "21ee9a09f6ce05a17d9fa9eecacd4ea378cb3023166702f56227fc4b7a640d15",
+    "mgfxNormalized": "a18dbc97778de26e2295dacc3c65c0a36a27b18f1a7c65ea0d99d9392d2068b9",
+    "dxil": "f8a1190794cfc06632e1e55bdbc8f548f93ed1fbb90be8a4979a5fee4fed04e4",
     "warnings": []
   },
   "DirectX12.Debug/examples/Sd0400GradientInDivergentLoop.fx": {
-    "mgfx": "a62a7e3e5105c9fc2af1854e240c07927d45c28ab676b4f9d30e5ab4ad3d7377",
-    "mgfxNormalized": "cf67e4ea79d401c2bb4e5bb34c770733c767527632cc04ae98ea086c7e48334b",
-    "dxil": "a73aa4de1147895e10123137eaeb9779d9c868f8cd8ab69fe6c5c5c80e54a3c2",
+    "mgfx": "e16e78d31ca254ff30195ea93a17d87d9b45cc07846327bb1e0dd5f2d59bbdef",
+    "mgfxNormalized": "ad54354de11e00694794a211554410a1ad3db89f4c10a8e96c79d1db1aff039a",
+    "dxil": "b3b4ca208c51cd5f534eb39938c17082df0f025d95dd415b82353723a26c5a11",
     "warnings": []
   },
   "DirectX12.Debug/examples/Sd0401SpriteBatchInterpolant.fx": {
-    "mgfx": "0c49c7746eda3b0a0aad60d53fd761b9cc1b4b622b68fb6c750d9a2f8359b9a6",
-    "mgfxNormalized": "f52ad56dcb2824d0dcd1c700a503cb707c4a5722aa87ed75c89be8b7f211e48a",
-    "dxil": "7142c3f0b73d75cf66caa602072691c74bc51665918e468e9aaad834e6732b5e",
+    "mgfx": "e42b3eedf38b19999037370773222d852c21d6d98a7ef826eaf5174eb1ed4c7c",
+    "mgfxNormalized": "3f218592cd0c89108cb94f9cf1ebff8434b135981f9d9b5605881533a56dfdc9",
+    "dxil": "77f5f233cc17e976de879d0835843d9e47791c0f761accf9b3e6b12cf3e60d92",
     "warnings": []
   },
   "DirectX12.Debug/examples/Sd0402UniformBoundedLoop.fx": {
-    "mgfx": "616f5b42992609e06a9dfdcfc976a499905f20b2729fd419e2454ce3c9302944",
-    "mgfxNormalized": "c316467cb183b98845179ec2baf53ec91990eee0cb7626332e0672f78bba7024",
-    "dxil": "1f3c69be8a41a1433ffb3aca9dd3a653ceee4476c00a99accbdb43aae2f41b48",
+    "mgfx": "843b65554878a13d5213bb20db777fe1614c435b8b15ce369767fab8ae035a39",
+    "mgfxNormalized": "367d76d2a398850fbe3ed2c81c308db7ab39e2615c1d43dd749c2c22b00dddf5",
+    "dxil": "358c5d5deb041ba9d0f311bfaeb6cb7d0393117035f187ffc33ffce2dae7b8b8",
     "warnings": []
   },
   "DirectX12.Debug/minimal_vs_ps.fx": {
@@ -697,15 +703,15 @@
     ]
   },
   "DirectX12.Debug/multipass.fx": {
-    "mgfx": "80b160c84097cc220788867433b4d1db1b37617bfda3e48a744ead72bbec1e4e",
-    "mgfxNormalized": "b0feef725c7590320d6950f04eb71351e2824918b7a81c5efb2217ada8d13a83",
-    "dxil": "3e8d114383b8fbf9cdc58323e38c65a2de1e32444e12655a23a49c4fbc938bb4",
+    "mgfx": "ba0b033462a839bc423457527c5f3b5a5d9084c79dded6e359481c59b3112a64",
+    "mgfxNormalized": "090c431ffe177ba0748c4777981e5a939eeda07d3e372528ac5d32d039af9ac9",
+    "dxil": "2daca478b42276c094eb0185f37390aea4af42230174b3394ef454d7287dddca",
     "warnings": []
   },
   "DirectX12.Debug/multitechnique.fx": {
-    "mgfx": "8c728f45da442d236184f3901d4553377d902812aea47972e3d716cc91f3d2fd",
-    "mgfxNormalized": "bc8783bb94e1018f9544b9632d814002a77638a319af894d5a8fc8af8a995ec0",
-    "dxil": "2a27266024e8996a540d51f95706cd54a94a264c88e10dd810b68fec7aab0403",
+    "mgfx": "607391fe932cafc8e22747daaf3ae5e1861f5de933c47f16c04d756de18bd90e",
+    "mgfxNormalized": "2f212f62a58187e7047bc9dcffbdbf4dafe020da543240817642e2ede7322b4f",
+    "dxil": "c7405b36e8c4599516d58bd906ecf38c9ba2b91b4e3f5f7e443093e5e1bb2591",
     "warnings": []
   },
   "DirectX12.Debug/passthrough_vs.fx": {
@@ -714,33 +720,105 @@
     ]
   },
   "DirectX12.Debug/platform-macros.fx": {
-    "mgfx": "f6928154ebdff61b59928f3f96c652234dd176408bd087b0b86cd0038f8449b7",
-    "mgfxNormalized": "8a0594d54887cc995c03127296d452f7da7efabec2374a2adca8195ddc084e2f",
-    "dxil": "9176f59e3c244a5d94eeca8b9e35d530275299d05d72edf294558821a58a8efc",
+    "mgfx": "d88cd976c910423b33c150fed1e5580a062ada1469b317e58605e6444c1d4a0b",
+    "mgfxNormalized": "dbadcd6b7f0dd77301725dec71f576be6b802addf36eb9c41ee09e644448ab00",
+    "dxil": "bdf050fa270822e0d368e84ee82171e5870804c0b5a83e0e6690dc743da9513e",
     "warnings": []
   },
   "DirectX12.Debug/raylib/CrtFilter.fx": {
-    "mgfx": "e79e531af59f81d60327b8c9f3255c924010f0b601573a47d917e9220e7621d6",
-    "mgfxNormalized": "17ec46233a5417b17a88b0650946b97bd73dd1c982c70b243267d873b94e587d",
-    "dxil": "84785d11fdd5d0a8bc5b5950b9b6231add5d47cbacee2622d45473cb58a8fddc",
+    "mgfx": "6f8bd92c4e14bd9f3ce75cf911792272bd80151e88306112b042c1cd588dc286",
+    "mgfxNormalized": "d9dff5e6d2b01762f35de0d9895fcfb90973d19d09a2b3bc3330b3ad90c30c3e",
+    "dxil": "753b7d6c1e8ce2d6f7fb080a25456cdce6954b563a1809165d258319d9e20e9c",
     "warnings": []
   },
   "DirectX12.Debug/raylib/RetroHandheld.fx": {
-    "mgfx": "1b8f0e148467fd03c4d548baa97670dd7626a6122818ec03e3b4f415616c9e5b",
-    "mgfxNormalized": "1f97cc5eb1e7ae3e68b7b760284ffaecbd490699cdd1857a9898d02e136a5d40",
-    "dxil": "cbfc289a7bbab16ec89b3a71e784c66a1c985ba629da4dbf3b7aa5612c3153c5",
+    "mgfx": "68d24a74963e553a8c75a90b26f81a053f9b3afbcb7535df088307dc41b03df5",
+    "mgfxNormalized": "06b61607c2454e41325d08e3213ae36cd9f96f1fb1e7aabc7b8e10909e5d9fbc",
+    "dxil": "72067c2371f4370e16a5e2ba92705492ef252096d75a9b98efa6fcd22c1a6599",
+    "warnings": []
+  },
+  "DirectX12.Debug/register-slots/RegisterDeadSampler.fx": {
+    "mgfx": "0d9613063228e5965f73672227b483ed01f0e1d4ac131c026987b617246afcd9",
+    "mgfxNormalized": "46f56eda8811b1ce5795af5de34f431800065d1638ccd744ad899251dc4fc5b4",
+    "dxil": "808aa993f5cf8419dcc204fa81fc9fcf5ac186b6b2af245018c55862ff202105",
+    "warnings": []
+  },
+  "DirectX12.Debug/register-slots/RegisterGapT0T2.fx": {
+    "mgfx": "10c6d7605305a35c7c90f9ecbf31fdf65b7368a4a4327f51bd1c3d5b948dbce9",
+    "mgfxNormalized": "37eb067fde1f5e0e80786011da5f700c707d7243b8f5e91253b0fec31b363f3c",
+    "dxil": "0da10e7ac4a3a4639656bbd73d326bb76ae90973eda8adb6e2c3a4b6d311aa98",
+    "warnings": []
+  },
+  "DirectX12.Debug/register-slots/RegisterHelperPair.fx": {
+    "mgfx": "32653463aea4da620d35d0a1babf0a63dc955841e97909b975f1f4422a44896f",
+    "mgfxNormalized": "605014ab6b492803a14cd67dea003cd7051911f1ddd717b02a4d0214d4f84d1c",
+    "dxil": "98f5016606774e13ef37a2fc1231143dd9608c4d27664fa31c58cae01bbde9e7",
+    "warnings": []
+  },
+  "DirectX12.Debug/register-slots/RegisterLoadOnly.fx": {
+    "mgfx": "6f5ada68fcdc5f6e7256e7d213008c4ea8a78ad516f430c17a8b9ef92391f23b",
+    "mgfxNormalized": "ee0604cf71f1c1724675e92a24a48e2478e79caf21cb34690f670ddaebcf70b4",
+    "dxil": "8b9fd943c61327cd369190cf45d3650aa64d4d869facecd60aea078f9b3bc0d8",
+    "warnings": []
+  },
+  "DirectX12.Debug/register-slots/RegisterLoneT1.fx": {
+    "mgfx": "12dfdc10aedba3a51fedd410f513389071204d4b48c3ef1ba01e1a12c9a959e6",
+    "mgfxNormalized": "a64996ee7c2c62a31cbfe95edcaf79bf1e0ff88b2ea2e2b737a0bc960cbd7a2e",
+    "dxil": "78caff0f7e84911606e0196026d3bcb7abfacf4bdf0a0513959d16c3f6972e4c",
+    "warnings": []
+  },
+  "DirectX12.Debug/register-slots/RegisterMismatchedTS.fx": {
+    "mgfx": "c274420479a48676d4abc8752027c41909fd50f9b59429e29375c458ef0b4071",
+    "mgfxNormalized": "87cee5884f4fc716b24b3eba25d5f6c85c09bf0002663d44784ec95a00ce13d3",
+    "dxil": "d125bf3733f38237781ecfe6606df742497588035713f7120d9407b4ab5445e6",
+    "warnings": []
+  },
+  "DirectX12.Debug/register-slots/RegisterPreprocessedPairs.fx": {
+    "mgfx": "10d753b99191bbc61ad770eacbc190bfec004f71c9df50bdfcf414a0a9f4f64f",
+    "mgfxNormalized": "35bcf1346f709e46f380f2fe5faf930a2c22e4d1d14a8378f6997c8866275401",
+    "dxil": "d2d2b79d4568309208d2ac7a9b1a6417d6e5df1c8990222af978d821a7f68427",
+    "warnings": []
+  },
+  "DirectX12.Debug/register-slots/RegisterSamplerPerPass.fx": {
+    "mgfx": "ad9a4cd01eef6baa19966ab7998b3790b7373691253f43505fc2e81793a67909",
+    "mgfxNormalized": "00102439c5537434c6eb25783b813b57e1a441f0fdde7e6f42d6185204e869fc",
+    "dxil": "837bdbf6ef122242882b3f37fb3591e5c0d2d7d348c1f246b4234528fd74b55f",
+    "warnings": []
+  },
+  "DirectX12.Debug/register-slots/RegisterSamplerPerStage.fx": {
+    "mgfx": "73ddebd7e423deb822f992d0374e1b7f065edb69836da513acb6e09c8e9ca140",
+    "mgfxNormalized": "75817ddd845be507b0f30b1e2ffd6dea102971d726884f33b149dac366a715f8",
+    "dxil": "0b38990792b72e4e59284391fc31283870d4f3de318db354a415495500d2a0ce",
+    "warnings": []
+  },
+  "DirectX12.Debug/register-slots/RegisterSpace0.fx": {
+    "mgfx": "77d33f5e6f3ecee7461fe3e5593ac1e568ec111edad650b1b1e9c0aa2cc27e29",
+    "mgfxNormalized": "b63907b887f98376ce3c8fe8c1ead229ed7ca5288fff09cb8b85acd1340a9d2a",
+    "dxil": "cd4c795b7df78f25fed5e0fa2b0070dba3bad2faec6d619fb407e88642a651ba",
+    "warnings": []
+  },
+  "DirectX12.Debug/register-slots/RegisterTexture2DArrayT1.fx": {
+    "mgfx": "89338896fd9781b194130813b047af3cd5f66d2c9e7cd82cb9c0f3a26fca38d7",
+    "mgfxNormalized": "bbed373e9d26282451b7b3ff19403898dd13b4c97620ee0b26f88f2ef782ecd9",
+    "dxil": "9081821ecb30709deff41567c5232a12dd04ece6a51abe123650e8fa8dbc8a95",
+    "warnings": []
+  },
+  "DirectX12.Debug/register-slots/RegisterTwoSamplers.fx": {
+    "mgfx": "3b31fc5639ef568debb049226613cfc247d7981bd8369847415ae9fa9334aa1d",
+    "mgfxNormalized": "0b1d128c5c906056f01235f23c33fe612f774ed3846fc200caaeb5192e3dd4cc",
+    "dxil": "dc82512e379914f6eb5fbd2493251fcff5eb23a27734b8f66ed964cee3a1fea7",
     "warnings": []
   },
   "DirectX12.Debug/render-states.fx": {
-    "mgfx": "2835f086c824b8b7213dc7c81afd39a74a67c970859febeb8c1b71195b31750a",
-    "mgfxNormalized": "96adc006cb5e3b33921e44d86198ce5d1bab47a4621e0466d377554f840e8a50",
-    "dxil": "76820ec3b82b84c3b0c9a93fd7c39d729d241fe91ea297799d09c0c358fd2a93",
+    "mgfx": "2ab0a0258fa36000f2fdcb06b9885325cee5166f9d6aa015ec154bc613e15823",
+    "mgfxNormalized": "ba26ad095cd9ee98498e9fe69d7c3ffae0fa5e8860c3c42d357d1cd66e2d06d2",
+    "dxil": "e4a795996da1b64e99392f05f7ed33388bd6a07d55337e70890b4a6530465f21",
     "warnings": []
   },
   "DirectX12.Debug/shadertoy/GradientToy.fx": {
-    "mgfx": "25f8a727ef380f1581e6116d1e7b14cb246a51dea2cca68f1aecfe1a3cedd447",
-    "mgfxNormalized": "58f5b612ad2bf0a657b9876da5978ad8a9145d7fb319e7ce51d458e2ca55899a",
-    "dxil": "0c95ab4356e680e504505f9f5adbd350943716e0816d42452390f003e2a49c79",
+    "mgfx": "aa0886537da119c6a04a1292fdec2b72a7b045a24239ebe12ab898bc0114dea3",
+    "mgfxNormalized": "53159f7637d8324255597def494bba6e83100413b05efe53527d39fdfe985633",
+    "dxil": "d070a2971bf882c99ad6a7f8c478c827c159defb2e87034af29a6b014454c3e7",
     "warnings": []
   },
   "DirectX12.Debug/texture-arrays/SamplerArray2.fx": {
@@ -749,25 +827,25 @@
     ]
   },
   "DirectX12.Debug/texture-arrays/TextureArray2.fx": {
-    "mgfx": "6d9ace8452d636c572768b1c1a261a46e440ba70794f17d40c181f6b577add6b",
-    "mgfxNormalized": "34b8972929cb2d1254a60551a8ef06f55c5542cdbec7f74e6c22e2cd9401f857",
-    "dxil": "87c24afbe5f4a8035228275d875a94614af1cda2b214d59730478f22315a9413",
+    "mgfx": "226422e1f08765ed502c3f62ae820415629d6bc812e240793b6cc2afd907c677",
+    "mgfxNormalized": "bb40aba1c338466a1d37f24132233cce711579c69ef770a80a7ef1b39342ba54",
+    "dxil": "11bd3cbbee23f33547854f5df221e567b3ecd0dcbb6707d00fad246e41d9fdcc",
     "warnings": [
       "texture-arrays/TextureArray2.fx(45,11-11): warning SD0222: DirectX 12 target: \u0027Tex\u0027 is an array of 2 textures (\u0027Texture2D Tex[2]\u0027). The effect reflects it as ONE parameter bound to the first slot, exactly as mgfxc 3.8.5 does, and that is what ships; but elements beyond [0] cannot be set through Effect.Parameters, and the shader header sizes the descriptor range for one texture, so in real MonoGame 3.8.5 WindowsDX12 they read as zero even with GraphicsDevice.Textures[i] set (measured; mgfxc\u0027s own build behaves the same). Declare each element separately (e.g. \u0027Texture2D Tex0; Texture2D Tex1;\u0027) and sample each by name if every element must be read."
     ]
   },
   "DirectX12.Debug/texture-arrays/TextureArray4NoRegister.fx": {
-    "mgfx": "1a027bf960c4c607196bf16bcd038d0e7975361639b3f80a2ae6d0e37f699980",
-    "mgfxNormalized": "ba51114ef803f1d040c05cb9c3a4a01e320833d7114a31c8060aac087c98049d",
-    "dxil": "bc36f7233ac18934d69a837a661c20ff9688a258262d818a4a5305e27004de28",
+    "mgfx": "55577f21d96dddb65d84f483c2d1def671f92bb5240c889364558899348d22da",
+    "mgfxNormalized": "16be5f39b7c58297c5e48e9abdabd78316fea4748ee73e5d9779d502e2494fa1",
+    "dxil": "7bc9b4147be23132163d73d003fae38fb49ef8243b5e8f01b55b4488ccc8f253",
     "warnings": [
       "texture-arrays/TextureArray4NoRegister.fx(22,11-11): warning SD0222: DirectX 12 target: \u0027Tex\u0027 is an array of 4 textures (\u0027Texture2D Tex[4]\u0027). The effect reflects it as ONE parameter bound to the first slot, exactly as mgfxc 3.8.5 does, and that is what ships; but elements beyond [0] cannot be set through Effect.Parameters, and the shader header sizes the descriptor range for one texture, so in real MonoGame 3.8.5 WindowsDX12 they read as zero even with GraphicsDevice.Textures[i] set (measured; mgfxc\u0027s own build behaves the same). Declare each element separately (e.g. \u0027Texture2D Tex0; Texture2D Tex1;\u0027) and sample each by name if every element must be read."
     ]
   },
   "DirectX12.Debug/textured.fx": {
-    "mgfx": "5efe9ab59a4966b0e119780c0b261c8d4ac606c5c8f3186b26bb564c8aa3be86",
-    "mgfxNormalized": "27427c095296b7cf2d8246f36cf38107164cf6eb0849d7609158b8b95fe36604",
-    "dxil": "3e512deb4f9260e9c196da05ffc3bd34d475ba4bb2deedc5cb5db3fb38dfb0f4",
+    "mgfx": "44f5f5f9a38be8d30b0c5fdd435fa0890167525bdb75cfdaf92d098aa8f03a64",
+    "mgfxNormalized": "4c7236bd9224d3e90e93ccf8995c895ac8bd9d52a78002c694466f846c50408a",
+    "dxil": "e85f6dec21cac717b4a457820624aec4039bb949b88dcbc89c67434ebc88b533",
     "warnings": []
   },
   "DirectX12.Debug/textured_vs_ps.fx": {
@@ -776,21 +854,21 @@
     ]
   },
   "DirectX12.Debug/third-party/Apos.Shapes/apos-shapes-aa.fx": {
-    "mgfx": "b2e0ca202ad37c0b588571403b1ba943c86cf45b7bd02de6ebf195dee2b9a6b4",
-    "mgfxNormalized": "533818582878024570c04ff74163126e1c8957c13a733ce2f66f7323952229f9",
-    "dxil": "14b913ef336ee38527a21037e4449620fdf5ba96b6a072a8a6b43b2a991403df",
+    "mgfx": "5d3955de7718266fc2a097243e158d8501ba35fc084cc673c595373fd015c52b",
+    "mgfxNormalized": "32c41f0904a50aca531b2953613f2fa6e6dcb6ae1346772c7562c91eaa4b2903",
+    "dxil": "39dc3e9af3578771b4aecb4ae56761c9a707b5fe1467cf307959851bde009187",
     "warnings": []
   },
   "DirectX12.Debug/third-party/Apos.Shapes/apos-shapes-sm6.fx": {
-    "mgfx": "e825d8f9cb24d1975dab0a878696af7320396be94aa04d380605fec0d301c42d",
-    "mgfxNormalized": "3f48f2a14bcde4e7764737c4732d3bafa712fd683200dff031979cac0448d151",
-    "dxil": "a91721254580188fb36a0aa4b2db75c0baad30a70b44c5302367d9327514cc15",
+    "mgfx": "c2fcb0648af845a9f2eddb7818d0c136c977d988c4722ae613af0af3775fabe0",
+    "mgfxNormalized": "fb43e870d9f2a3a34e1c0f9a6d72e080d11e61217e850ce1ca845f5460ef8a84",
+    "dxil": "20f279489c4a36db91562c22a24c33b4ff4fb734c75bee0206e7a44616a42da4",
     "warnings": []
   },
   "DirectX12.Debug/third-party/Apos.Shapes/apos-shapes.fx": {
-    "mgfx": "e63453f5c99572f669b8a9f0bfb199f23a5f4c2053fbb0cc2b13b8729c003b6a",
-    "mgfxNormalized": "e7b8cf5d6b1d6b31a31f73e3369c1d3d9a2f9498705033a526e99542ccdf07ee",
-    "dxil": "f4301de7d1ac0305bd32fa81aed041e523321e272bfd18c182353e67ae0b828b",
+    "mgfx": "65b575706d3c75906eb70a1e2e08dddf6c6d1e25404b5f7aa6facc652923d569",
+    "mgfxNormalized": "02f573e3188c0bd953e26f02ab275831fdc3033254999d05828adc59977631f9",
+    "dxil": "150a51b07bb7534c7774e52bc5ed7bc3c0a3f035d4265f325d98137bc86e5a0f",
     "warnings": []
   },
   "DirectX12.Debug/third-party/Gum/FnaSample-Shader.fx": {
@@ -804,39 +882,112 @@
     ]
   },
   "DirectX12.Debug/third-party/Gum/MonoGameInCode-Grayscale.fx": {
-    "mgfx": "5fc0702266c53905918e058ece368675e4fc8670dde95fb4ad64cb4f00a5b9b3",
-    "mgfxNormalized": "1eb7902ab07a83d453d2241319c0c3f86c145f305caa55e6261849edbcb73ac2",
-    "dxil": "deeb9f4a58efae95052e336b1a6266ec0dc215bb455490bd9d257fc3714abc44",
+    "mgfx": "733573d210248ef671cc3a64d7fd5bac6ecd089f6b14708877c127a0ec7daccd",
+    "mgfxNormalized": "e22692ea8330db451935d52299c6a2e2881f8c253b6401ea4f9ffc7eb1967d88",
+    "dxil": "37cda7a30e7f4d30850770d9e25ba38d3a1d63e7b0f0ba8879314b9bfbd113ed",
+    "warnings": []
+  },
+  "DirectX12.Debug/third-party/KNI/ComputeShader.fx": {
+    "errors": [
+      "third-party/KNI/ComputeShader.fx(57,9-9): error FX0014: \u0027ComputeShader\u0027 assigns a compute shader, which the consumer runtime cannot load: MonoGame\u0027s and KNI\u0027s Effect has exactly two shader stages, vertex and pixel, so no compiler can produce an effect containing one. This is a runtime limit, not a ShadowDusk gap; mgfxc rejects this effect too. Remove the \u0027ComputeShader\u0027 assignment, or express the work in the vertex or pixel stage. (MonoGame issues #4567 and #7533 request these stages upstream and remain open and undesigned; the cpt-max/MonoGame fork does run them, but writes a different effect container stock MonoGame cannot read.)"
+    ]
+  },
+  "DirectX12.Debug/third-party/KNI/DeferredBasicEffect.fx": {
+    "errors": [
+      "third-party/KNI/DeferredBasicEffect.fx(97,1-1): error X0000: Semantic COLOR is invalid for shader model: ps",
+      "third-party/KNI/DeferredBasicEffect.fx(17,7-7): warning X0000: Initializer of external global will be ignored",
+      "third-party/KNI/DeferredBasicEffect.fx(18,7-7): warning X0000: Initializer of external global will be ignored",
+      "third-party/KNI/DeferredBasicEffect.fx(84,51-51): warning X0000: implicit truncation of vector type [-Wconversion]",
+      "third-party/KNI/DeferredBasicEffect.fx(84,30-30): warning X0000: implicit truncation of vector type [-Wconversion]",
+      "third-party/KNI/DeferredBasicEffect.fx(85,52-52): warning X0000: implicit truncation of vector type [-Wconversion]",
+      "third-party/KNI/DeferredBasicEffect.fx(85,30-30): warning X0000: implicit truncation of vector type [-Wconversion]",
+      "third-party/KNI/DeferredBasicEffect.fx(86,50-50): warning X0000: implicit truncation of vector type [-Wconversion]",
+      "third-party/KNI/DeferredBasicEffect.fx(86,30-30): warning X0000: implicit truncation of vector type [-Wconversion]",
+      "third-party/KNI/DeferredBasicEffect.fx(107,12-12): warning X0000: implicit truncation of vector type [-Wconversion]"
+    ]
+  },
+  "DirectX12.Debug/third-party/KNI/NewSyntax_s0s1t0t1.fx": {
+    "mgfx": "ed33b9175fa2dc713e2b2be799a68b78a1d59799b7b0f8ba9bb3c77a909245c9",
+    "mgfxNormalized": "4ce6a979a9d85b4b88194aa03644e0f44588811fea76e1402b2f87c5e111ba27",
+    "dxil": "f8548b1bb697e4dc7209312c4b190b92208b6899e6336e27a0d7e1529e8fb80b",
+    "warnings": []
+  },
+  "DirectX12.Debug/third-party/KNI/NewSyntax_t0t1.fx": {
+    "mgfx": "d83219bb0dd3252a3eaa61d6042f6c06de38a575c12d75cc3ca50a1a256f48b4",
+    "mgfxNormalized": "46419d47edfc8e057a6967da61ae2b964c19f763bfd909c4a34d4a4a5f26270c",
+    "dxil": "0d1114bbbcb5c643a8d0ad90719b1c149c02c8edb6c4198302c239714aa325c2",
+    "warnings": []
+  },
+  "DirectX12.Debug/third-party/KNI/OldSyntax_s0s1.fx": {
+    "mgfx": "b590eab11f83c1fb156848d3cf068f98d6a67b0ab7e34dc8ac695ee3a1c72ab4",
+    "mgfxNormalized": "ffc91d0a18740fca6fa9f3454c617f75c2cb11f1f8a050a5059a462e1ca7dd65",
+    "dxil": "5c78eaa17ee6ed1125b616be9d60670e3b05597ec705ef26125845aa67912793",
+    "warnings": []
+  },
+  "DirectX12.Debug/third-party/KNI/OldSyntax_s0s1t0t1.fx": {
+    "mgfx": "21379ce543027ccd1c6f50c4abbff462dc384eb7519bac09c03b6be93bb807fd",
+    "mgfxNormalized": "1fc6d0a2617c81ba7a170783950e270c4d6241c0d66e268639ea505111d69b0d",
+    "dxil": "226fe768323ad247bb4c5b4bb04e72c104e3ca59a67a4e8932456b83a7f0ec9d",
+    "warnings": []
+  },
+  "DirectX12.Debug/third-party/KNI/OldSyntax_t0t1.fx": {
+    "mgfx": "c480d5c5efa2015baf450217055ada422b4d229fbbf43751ff3f00b9558b773c",
+    "mgfxNormalized": "b59f1cdfb6073950ea52c2b1ed575b710275d377a4959370f63b2fb8b69c51b9",
+    "dxil": "b8fbf7bb9709d9241eb351ebccd82fc6d5131835d9747c3b21488e08f0ba9859",
+    "warnings": []
+  },
+  "DirectX12.Debug/third-party/KNI/OldSyntax_t1t0.fx": {
+    "mgfx": "c5071141848f36384863f2ac378198c9cddc12571a68370ad918c5019a86d22c",
+    "mgfxNormalized": "2551b68ee29202820b878f008816a4d38ca9ac94171218af60c627a13e3d2975",
+    "dxil": "920e626fd1a639325db03213e269adbeea921cd8ca0aefe1d03548ca084809ce",
+    "warnings": []
+  },
+  "DirectX12.Debug/third-party/KNI/OldSyntax_x.fx": {
+    "mgfx": "9845625980090f5371a704585a259a7fb5e7dafd52ee93c4beced0d8edbfab60",
+    "mgfxNormalized": "dcbb10844714506039557e36a886d08c2fa3f4df1d66e82ae065d1477b5a8c42",
+    "dxil": "e2c181283393655a3001512daee6ee5e9a4bedf53a3bdd767615f17b05521e8e",
+    "warnings": []
+  },
+  "DirectX12.Debug/third-party/KNI/OptimizedMatrix.fx": {
+    "mgfx": "80f09902e031f19f7eeaad3e0e0ecf4dbab53c684335da43a88d5954ac128b76",
+    "mgfxNormalized": "4b6918b74fb3010392d6641242550305d3e2b7a95eb1b66fd2472c6edd329d99",
+    "dxil": "2182f988c7c738f08650daae05476446e978fa3a634d62bffb39b18fe6d0e4e0",
+    "warnings": []
+  },
+  "DirectX12.Debug/third-party/KNI/OptimizedMatrixArray.fx": {
+    "mgfx": "06faf95342213d2233a854a03b48ec1c68c2151945485349f0052bff38a9c7d8",
+    "mgfxNormalized": "9e4874796414a134de2a772da1c05c5567da69e5e9d7a44803e6fd7f18b359ad",
+    "dxil": "8f64be53e3641abee0aa9708f90c1f4c4dc5201c3199146e8ddb78e8993ff7f3",
     "warnings": []
   },
   "DirectX12.Debug/third-party/MonoGame/Bevels.fx": {
-    "mgfx": "3ce85dddccb34a95fe1536a562d758addfa98ef55a6b1bc20421459e5a739e89",
-    "mgfxNormalized": "e0bfde68705f9fa350c403d57dc9ca9866e1072fa91342366de9726a1551bf86",
-    "dxil": "bcafcabd533dd4a7098f8e783a2998a0b8be5804992270d85813eb3d4ddfb8ab",
+    "mgfx": "59f6ac8027c813e966da1cfe5412f567888c5090b94cc2d1be9191c75af2dc6b",
+    "mgfxNormalized": "9d04edab14e8a70ef13f0134f40f994d2dee2f1afaac43fefaa4f061ffa859a8",
+    "dxil": "3d3555f53190eb865a759db6c4b77f7b52f7ab7c16cc34d16b4a4a215035a468",
     "warnings": []
   },
   "DirectX12.Debug/third-party/MonoGame/BlackOut.fx": {
-    "mgfx": "2e314c3470bfd7cce50f5c59f5e7aa68b3c28c4595533e5d672e545c863c0a51",
-    "mgfxNormalized": "1376584dc760e74f95d76ddcb93cbdf5d9c80a426107e2d13991e7df3a98c01e",
-    "dxil": "c4f8b33b206acfe395fcf8624665c672a5a519160514ac44ffa77b03ec36e159",
+    "mgfx": "4ab3be44ae1f65e4672ae6ee2cdfdde15ccf93d549388b8923161b0d28a806e8",
+    "mgfxNormalized": "e19f70b13585615cb642d5d2581ecc08d9eec92dafcef561c811b831f681660f",
+    "dxil": "e37d433f5e956f2f52888e396b1cd86fd3ca78b87eca177a25cf6f7abb2d33a2",
     "warnings": []
   },
   "DirectX12.Debug/third-party/MonoGame/ColorFlip.fx": {
-    "mgfx": "349204748bf5952d351d1b4cdd26033545f5d36ca5e840ab74071eaba74d7521",
-    "mgfxNormalized": "1ae3112b00e07205d8a364e87e452f131e426224f3508c60a539d0b3723ac7b3",
-    "dxil": "9cb2b208a7effdd1f96f5cd83e74759ed87245f5170dbdf85ebe4c16af87f0de",
+    "mgfx": "78163a3c47e86e2131a8fa24cb75b4a686c5135cb0e28ee7b401c4a49d670ebf",
+    "mgfxNormalized": "644df0c7fe5f02af96cd92948b1ba04413a084008963d04e84783daa6861065e",
+    "dxil": "05ac47a426a2958d485c69908689990610e8ef081c8f03ff83662d9ee3542e72",
     "warnings": []
   },
   "DirectX12.Debug/third-party/MonoGame/CustomSpriteBatchEffect.fx": {
-    "mgfx": "06286af3e70f2ff9f23550c51cdc8ff4bcbf7499e556230767e91237c8619c8d",
-    "mgfxNormalized": "0ec7071e88c291eba98237c329d070a99d86c120fc9580dae59a3640f4ba61ad",
-    "dxil": "65faf98ed922f63b07e951123bcf26d21a85a70a8b47455ef178ed6d936c5ce3",
+    "mgfx": "779ec79848f396e62919e3c8b89b38de1a84acdc94d833ccd5ef80e844fdd611",
+    "mgfxNormalized": "88b2597dd52e4b0581aabd0f59c606a06c10a4b63534a407485e260868f8857c",
+    "dxil": "0f2dc1c78b443b4653ce7d4ba27bf871d3dbff157ad87093931184e7aa36491a",
     "warnings": []
   },
   "DirectX12.Debug/third-party/MonoGame/CustomSpriteBatchEffectComparisonSampler.fx": {
-    "mgfx": "cbee37b28001148540eb11755de3a5a4fd7bffd9be4bd7df984fd8d4ebc85ea5",
-    "mgfxNormalized": "2262f313ac353cd4bc46e355ccab06b1fe242223a72c6dded157274049e6ba4f",
-    "dxil": "84991471c46b01ac9e5afd3d3d1de1bfdd51d522f3fdac9d3543bedf663759b1",
+    "mgfx": "1625be570f7a8b72bd4554629ce5a48ed0255c3afaa86ceb742879ac0551db52",
+    "mgfxNormalized": "78a42eba2f67a6794c2eae7bf8672c67913ee154425b3a6614db2e117864deed",
+    "dxil": "a01a3acd97ee004a22ec03af911a9aefa6f8ff020ab704df4d4f665ec4e78837",
     "warnings": []
   },
   "DirectX12.Debug/third-party/MonoGame/DefinesTest.fx": {
@@ -845,45 +996,45 @@
     ]
   },
   "DirectX12.Debug/third-party/MonoGame/Grayscale.fx": {
-    "mgfx": "8a68900208985d48b046f60c5965fe317daa0653c97d80a5d07fc26f0b10e6e4",
-    "mgfxNormalized": "45ea79d56043bcf49fad4d2e81dcf1d8d38d94e9b75f6d5bb8aa0acdaa1fdc02",
-    "dxil": "d3c7b419e9cc568a8bef386d6edea16b954763e1c56d6b8f8213aa6033140d68",
+    "mgfx": "3250977b95f1d764b7dd804d956ab526096282a581edccf67a3627edd6938d04",
+    "mgfxNormalized": "963f5c60b900e9b13b60c78f01a62219eaa6733206aa79258b58982a0b24853a",
+    "dxil": "05a17a3eb18640f633cb6edc223c6b6fbe05a973c91d359f1f4a33a5120b9092",
     "warnings": []
   },
   "DirectX12.Debug/third-party/MonoGame/HighContrast.fx": {
-    "mgfx": "a96616c73f1677297db8892c1e559818351f6704faf95d69c77fa3bffe6a59d9",
-    "mgfxNormalized": "f88abb53481646b6363644f84e90fe40b5e301e9b18ac84917c82fe64c2afb1c",
-    "dxil": "6d29e6675cf50e6a7f74d3471f271fe17a9bb690813e1bff315c5a3fe6cf9000",
+    "mgfx": "3d7ce234b85dfa292cb364c66b6e93503f2edfd89eb4cc8bf346ee2fcd70e824",
+    "mgfxNormalized": "a063348f4be5a90a2436f8a3db801be0368cc4ab3795b1a01fcb0cfdb1d4388a",
+    "dxil": "ff787421cbd669947436d897ee18e4c3b9d97d1324e908109556f627e351bf0c",
     "warnings": []
   },
   "DirectX12.Debug/third-party/MonoGame/Instancing.fx": {
-    "mgfx": "2a1ae6120dbbb26d018da49735ab24c3875957f11afb5a3ea3ca64b9f5cfb9e8",
-    "mgfxNormalized": "498540924a31c0da8d9262adce8088a3d5dc47b2e0c9b9723105a376e2cf4170",
-    "dxil": "6944478137fb416af2d43ce5481174b3cceee5ff5c00c511781ccc7f20f8ff2f",
+    "mgfx": "521a5562c2818c3d32b31d752dcc0ae677eeb20811c7b3cab46b62321315ef53",
+    "mgfxNormalized": "516dbfac2d052ca64f159568f8fc981026209caf1d67a990c6dce3623bbb63ed",
+    "dxil": "fa513b6aadbdda0e2765298fb2212e4e584146ae8b767fd7c8091ebc6c76b745",
     "warnings": []
   },
   "DirectX12.Debug/third-party/MonoGame/Invert.fx": {
-    "mgfx": "15a27c12bfd7189f633eca100197f63ee1810abec608b5f9cff534bc56d9a251",
-    "mgfxNormalized": "332ac8e9135a0d36bbd954abd8c3934d0da0011422dd76ffbccfa9d54920b345",
-    "dxil": "120211fe32ae2f45f02beaa939ca81d561823d3ce0beddd6083576c8a8ef48de",
+    "mgfx": "23f5d07cdade90578d9c197fe4e8642bffe097f8bfcc31b838b0748f7b9f0e87",
+    "mgfxNormalized": "53014755f8e65d2d481b3ee7e758b3b9fedb4181c3dd329e8ddd064d04375d38",
+    "dxil": "fb8d96c74b98535bd55e0ea086082d288fd81bc19bad6c76c96f521db5b3bf7c",
     "warnings": []
   },
   "DirectX12.Debug/third-party/MonoGame/NoEffect.fx": {
-    "mgfx": "5e66ac59747d3c9c24136bacf1e533509ca4c115218d8a600e51090953fb644c",
-    "mgfxNormalized": "59867689238c1507a247f9af2667e4c58f98af907960db694930326ffa9b31fe",
-    "dxil": "a9264c1abe4aa35a22f34359a032ac1bc38e4dedd04bcb6f6e348474fd442c81",
+    "mgfx": "091c80657e3a7e090d263647ab5447ad87fb98817e263f0b6f7631080dff3d73",
+    "mgfxNormalized": "5ec87a06204e95ecff2e344b93596b472f40b10c1dce6b62190c25bad84bc725",
+    "dxil": "b3c5e0645ec1597adc3aeabe72248b22da39ccfaefc2d7894cf5b09da2020f06",
     "warnings": []
   },
   "DirectX12.Debug/third-party/MonoGame/ParameterTypes.fx": {
-    "mgfx": "a6a8e97c12e5b862976263e75c16feae9f6693990323b31643ad1a9020afd51f",
-    "mgfxNormalized": "036942b34a3c95ccec3eac2ebc669476c4819558587e969d74daaeb0e18cf6a9",
-    "dxil": "29ea267ffe58d06850af8a62ca8d463e2a5d148e021deb986cce1c6375c17bc6",
+    "mgfx": "1b38bfc35c1579d1ffd96e3a5a6494ab7ccba731fbda5461d815e305287de947",
+    "mgfxNormalized": "22b791d132716e7360fcc6d210556247064a3f8a60393c2a69ac4bfeaae4609f",
+    "dxil": "0d75cf29f1650594674cb9cf34c22e7e1a1c46b45b58db8d8820699fd84ff75d",
     "warnings": []
   },
   "DirectX12.Debug/third-party/MonoGame/ParserTest.fx": {
-    "mgfx": "de91e50baacf1fce5552e1dfcaa508c72188e6c3ebafbb5659063806313dcff7",
-    "mgfxNormalized": "6554c808046382005f5af989975b047fd578068aa97da6c510ec9a180e15fc31",
-    "dxil": "f9c8e1a8da118649fa2d539d59662da0bfc8f18b05f2f697b6446ca34d9f5772",
+    "mgfx": "f0a53bb657c476420645a995c2012f97dc43b4da9ab645c4fe9000fe796fefa9",
+    "mgfxNormalized": "569f345ac1f7b8683b9b657cce9ea93529c18724f7bfc5b41b111dbb84a1cfc7",
+    "dxil": "d75a0d038276c0d0eb510cb3bd4909c00f757ee3a7ddfbfa6d33b392216a64d0",
     "warnings": []
   },
   "DirectX12.Debug/third-party/MonoGame/PreprocessorTest.fx": {
@@ -892,150 +1043,151 @@
     ]
   },
   "DirectX12.Debug/third-party/MonoGame/RainbowH.fx": {
-    "mgfx": "95de7e05f30a660d949ec3dd290314538291821e9ca28fc0176fd0f81604f112",
-    "mgfxNormalized": "93b03fd28dbf5058349673b05422b2c9facc35432d0bec80a01f49d7ef09b8dc",
-    "dxil": "984e4b929ba7b32579b5f82f09ea1aff78c76a64180592eef4a77851b54cb247",
+    "mgfx": "a92235a4b4d28f42a2696cdef6f7168651c23949a334ab315f84cb0e5e005c02",
+    "mgfxNormalized": "5c559f3e86cd6870e7c7b8dcb7c4962db996f655894d8445b389627a7ace6197",
+    "dxil": "95900a056550036c9b953fd180bd2128e056a0e5e1eae4e0c60a699172deb4c4",
     "warnings": []
   },
   "DirectX12.Debug/third-party/MonoGame/TextureArrayEffect.fx": {
-    "mgfx": "9eb1a4b387c689d779aa7f27ca555c042c45588561fa79a0ef187e7586afb09b",
-    "mgfxNormalized": "f091db65b335fc7ebc8605098b5037cd2c0461c07ffe383ca34251c7a51fb01d",
-    "dxil": "8343b551c84055dd296c34cccf5c6a49f325e78a5ba02981a6b6b4e24a92b2e5",
+    "mgfx": "190932b2041f6f9485483f6d0e0363a62b8ab8ffb264c7088dab2f50c3a74483",
+    "mgfxNormalized": "237c90afd317dbf018fc5b255dee4d9a6a4a307cc49a609e3a5d36a9676de178",
+    "dxil": "f403597a19378cbdeaec748a03856887ac323f901529d9d3890cf3b4e73cdd1b",
     "warnings": []
   },
   "DirectX12.Debug/third-party/MonoGame/VertexTextureEffect.fx": {
-    "errors": [
-      "third-party/MonoGame/VertexTextureEffect.fx(75,20-20): error FX0012: The legacy D3D9 sampling intrinsic \u0027tex2Dlod\u0027 is not supported on this target: its arguments do not map 1:1 onto a modern Texture method, so ShadowDusk cannot rewrite it automatically. Rewrite the call to the modern form (e.g. tex2Dlod(s, t) becomes T.SampleLevel(s, t.xy, t.w); tex2Dproj(s, t) becomes T.Sample(s, t.xy / t.w)). The FNA (fx_2_0) target compiles this intrinsic natively."
-    ]
+    "mgfx": "3993b4de75971cce1310c6b296dbc610740a6066bd40cce3a3478d6c161e3b05",
+    "mgfxNormalized": "9f049f62940e54df9f98135fe47edde265c3857e8e196751fdd128d3737b21bd",
+    "dxil": "403e5035783a88f517a3d95d94754e522584d26ebb5ec70c1aa73e789eb07421",
+    "warnings": []
   },
   "DirectX12.Debug/third-party/Nez/Bevels.fx": {
-    "mgfx": "8c76c55f3e1d707cd6e8e9ec38c1c0fcff4eac253e6b64f7c5af9d816e1d3648",
-    "mgfxNormalized": "6cadfc9cf01e81c4572ef10d27abe12593e3884cd1c2c4c3832e77223110248f",
-    "dxil": "2c6bd113fe7189c0ea7a4fa09c5d9c921f893b408fd6b8d5f1a1508c4a1f547b",
+    "mgfx": "e694431224b7c9020104ee68c5bad330273b1c6861a19037bbf518b76b6892f8",
+    "mgfxNormalized": "bdec1a6ac666e2b7bec9b85dbba80616eb25ec0592382dfd22088cff1b91a451",
+    "dxil": "ff6bab371acace24f2b59b94a81b54ad8079b7310faef0cee1ab80d141a2ecf5",
     "warnings": []
   },
   "DirectX12.Debug/third-party/Nez/BloomCombine.fx": {
-    "mgfx": "53383d760a262673ac70c0bbaee9f71203d004ef77f244d7d0b00375921fe267",
-    "mgfxNormalized": "85fb041cb53369f2793104a4793707b1604ff32574a96da9dbb6b189281c5789",
-    "dxil": "fe783fad7b0a989cb668299f65220bf3f460f67b0a14629c7e9586c5f883ab63",
+    "mgfx": "8aee4d280e8e9f26623a526362df4f30356936f4a9f1cc29a6e681e0fe5c0b85",
+    "mgfxNormalized": "d3209bf66616c0239aa2172c027993979b3b923001731d01d2211be40e590574",
+    "dxil": "4a866d25b16c82dff972683c53a0ccc2089fe7935347198d2523693c1aa5496e",
     "warnings": []
   },
   "DirectX12.Debug/third-party/Nez/BloomExtract.fx": {
-    "mgfx": "5920025c18f8328ee5fe4d014bd0ef8f4b337e1d3d7793b07a4ab64576b93533",
-    "mgfxNormalized": "abfa086695b98f5a355f0c622a40f751fe878b5a1b54aa5564519c24eca51463",
-    "dxil": "51fa1f31851c4c01e4e35236d440448659d816630e1c4241b6705dd7ffe8b3c6",
+    "mgfx": "4b09690e53192e795eed7afd7408b4dc06013de7e3e810329c7ea43d6662e8b9",
+    "mgfxNormalized": "9d507bbd51bbd563ef3527d54c70afabd2a5437ba93baf01d2b64bebe447ce8f",
+    "dxil": "dee5dce31780372ec6b599afff3314a4e1e5413b8202125182d546686431f973",
     "warnings": []
   },
   "DirectX12.Debug/third-party/Nez/Crosshatch.fx": {
-    "mgfx": "4d10de7a608aaef6a2ded48de281206e980ae61057cc1e228168edc7e42d8f28",
-    "mgfxNormalized": "efca9b1b4eeee3addc9b8e61609d642efb1296d7f4540602f93f5456d221083f",
-    "dxil": "ce232a4cba4bbba9de01723cd91825b476dd46215d20aa578c1e5c97f58505d5",
+    "mgfx": "14c983e3b2479f099c0d73e8a1d52b558886d535a72c5614ad11fe89b5e09d83",
+    "mgfxNormalized": "f9fa32f83f1c32ed340bfe04c954071a2399dc963f2aa195e9c0307ca8d5f873",
+    "dxil": "4c864a77654b714f41e4e7059777dfcea83e97094ce255db5e6000dcfbd6f211",
     "warnings": []
   },
   "DirectX12.Debug/third-party/Nez/GaussianBlur.fx": {
-    "mgfx": "4f2178e350d3bfb1242083df3d5395cda10bd67f07544ab6ce18e89eb105d016",
-    "mgfxNormalized": "67b38ae96bff02176ab16af1f19c81fd7957b959ff3a48ee6b31db879f882b7b",
-    "dxil": "76f4cf84d56a98c2f2bda4ef0b34c370029a97439ec15bd855cf345bec979445",
+    "mgfx": "1ad1ffefde7561676ccc05c95e1dccddaa01e74fa442da44a3a82a54dabd6b67",
+    "mgfxNormalized": "db1ee3fb34e39b6907a204bd4aaff868c746fa22e40422c3e80e9a55e11f7e10",
+    "dxil": "190ca1febfce2f4f6ff9530c2f3d3a0c4e45fc5290e06adca63c875e612d5e26",
     "warnings": []
   },
   "DirectX12.Debug/third-party/Nez/HeatDistortion.fx": {
-    "mgfx": "e45d295da8b56b4f44a36d922cb6a097e2279038317dc2fa604eab0eb240990a",
-    "mgfxNormalized": "e5c597811b6911605f35e651f859079f9088d4841cb9b3d8ae8c79f86ff224ab",
-    "dxil": "26ec192a1c62bc9d8ff2f3f648361da70ce3effbf6a95d4183b68d4c347237cf",
+    "mgfx": "567ed88add47fd085861bdf67e2bcc86673cdb00fe842fe9aa59556ca3e3b221",
+    "mgfxNormalized": "c93ed5abfa2809cc8329d738781ecb9e34cc66ea30ef7a68a1cfd5651514a07e",
+    "dxil": "e307815317b2c509b7ba37d6d04566beb6034e7553361a0a60ba0a7aecd9e95d",
     "warnings": []
   },
   "DirectX12.Debug/third-party/Nez/Letterbox.fx": {
-    "mgfx": "71c159d3832b900836fabadc5ac13bb20816d696898e944b377df362284bff1a",
-    "mgfxNormalized": "7ae30b093fd7e970d9d9d33d52be2b20bfe4a7172b4598cef130db2406f4a9da",
-    "dxil": "6e75c1cc8eb7992463c1274d43a85de6fe2fa86e22bc204f7a1e61f17c60974e",
+    "mgfx": "42feb327ff6c1e32dc9108489e8589e88f026964ed1d20bea77324a001489b16",
+    "mgfxNormalized": "e1851284ec4ba598d82e1dc2376019b4810e44a86d7ec1a10208c128d3c4f396",
+    "dxil": "e146e2c507e72aa3d1dc11693f0f2cd48fe09538e00635288bbe3586cfddcd23",
     "warnings": []
   },
   "DirectX12.Debug/third-party/Nez/Noise.fx": {
-    "mgfx": "3f35cdaf2c31164a214c019f62f7b5182829cc6f7cf40b85d0e1e32c1161ff84",
-    "mgfxNormalized": "00fc53cd172a18cbd416e687b060fc4b86b092f5b25077efb2be1dd46b190a70",
-    "dxil": "e8c98be6ffcf1fee9f0f170861e5879891a97ee3c04aac1475623d631afbd7bc",
+    "mgfx": "d547fe3cef327daa00d6c9e84ae5b46dd338e3e4ac50d44c136fbbe77d14491c",
+    "mgfxNormalized": "5345f6c5d2339afb7dafedd27b4757fff1581cdbaf619742cfb754d5ec6cde3c",
+    "dxil": "4c14cbcf3a632adc39a872913e66bc64336aa695cffd48578246f83fee69bef6",
     "warnings": []
   },
   "DirectX12.Debug/third-party/Nez/PaletteCycler.fx": {
     "errors": [
-      "third-party/Nez/PaletteCycler.fx(36,9-9): error FX0012: The legacy D3D9 sampling intrinsic \u0027tex1D\u0027 is not supported on this target: its arguments do not map 1:1 onto a modern Texture method, so ShadowDusk cannot rewrite it automatically. Rewrite the call to the modern form (e.g. tex2Dlod(s, t) becomes T.SampleLevel(s, t.xy, t.w); tex2Dproj(s, t) becomes T.Sample(s, t.xy / t.w)). The FNA (fx_2_0) target compiles this intrinsic natively."
+      "third-party/Nez/PaletteCycler.fx(36,9-9): error FX0012: The legacy D3D9 sampling intrinsic \u0027tex1D\u0027 is not supported on this target: ShadowDusk rewrites the 2D sampler family (tex2D, tex2Dgrad, tex2Dlod, tex2Dbias, tex2Dproj) to modern Texture2D methods, but not the 1D, 3D and cube families. Declare the texture as Texture1D / Texture3D / TextureCube with a SamplerState and call its method instead (e.g. texCUBE(s, d) becomes T.Sample(s, d); tex3Dlod(s, t) becomes T.SampleLevel(s, t.xyz, t.w)). The FNA (fx_2_0) target compiles this intrinsic natively."
     ]
   },
   "DirectX12.Debug/third-party/Nez/PixelGlitch.fx": {
-    "mgfx": "3fc65d46d13e2d84e5e224b57f9e5af86c9867054abbf8ff997a7f29f5c517af",
-    "mgfxNormalized": "c9650952d0b5330d48108458c9d3bf7abb95fc11f609b860543c9333cccfee64",
-    "dxil": "7216bd480a58689a640382c787ec7f3b6f6aa112c086102d85ce54235dc133ba",
+    "mgfx": "1a666e7054c45df3c00acb0cfc7a7be79aab4fb89af0e3fcd6f112b456f0b036",
+    "mgfxNormalized": "6ca2904055439c02f413b4110129e051e6deaa7d574894c184f0e2684d3ff88b",
+    "dxil": "e2e614d6fc203a4bad6cb98676fdc14015cfb58b2dafe647110c812bcad8699a",
     "warnings": []
   },
   "DirectX12.Debug/third-party/Nez/Reflection.fx": {
-    "mgfx": "3d4178d0f52eb56e065388088234247b1cd416a6476a05e33ff06abdea05c817",
-    "mgfxNormalized": "765d4d36dd30332022c88d20c25ddb68cf42d37bbba413cec050f5d8fb3d106a",
-    "dxil": "7d02c0623a0842bb95a3e0a5fc0e0be686dfb901358b578985d9f5a893ade7e2",
+    "mgfx": "957a44d20650182e3530f982aefb682ec1782f0341f8b08fcedd6a1e403068a8",
+    "mgfxNormalized": "e5e9d48e279b30c395835f4d48bbb88e2424b46c38ca2ebcc0935897992a9885",
+    "dxil": "abbca22e443ad8986c1f691d98817c17b7f543a16121bc58503a61ded21806f3",
     "warnings": []
   },
   "DirectX12.Debug/third-party/Nez/SpriteBlinkEffect.fx": {
-    "mgfx": "9f020024148c33b5534df05992d21a2e83ea8eda3f8d67bb844fecd0ca8b3424",
-    "mgfxNormalized": "dfc40c3d0b8e91183f79462e0ff9cc4504ea11c35c213f410d07c4a29f1085da",
-    "dxil": "491cc82d9699d9d9b2b8771f6c20b129a5de8403ee9a4baae556b3ff6295c3f2",
+    "mgfx": "4b9fae0cf4aacbd42d297d6b55c09192c2534ffa1d2fc3d513c4a6c35093d641",
+    "mgfxNormalized": "aa74e99ff842d2472988c820bbf678f1c8631e45ba89897d54b8bd146581100b",
+    "dxil": "467b83f89cacec71d35531a3999d4dff5cbda70e1a45d7524b80f201cc57afeb",
     "warnings": []
   },
   "DirectX12.Debug/third-party/Nez/SpriteLines.fx": {
-    "mgfx": "2b469d315d1f9004e501dc48a4b1392bf78436dd04eba781e0354a9b9dfa4c9e",
-    "mgfxNormalized": "7d1f20e6727c339a5f289c3d4dc4d39dd31433b258d515e94a94287455e56bdd",
-    "dxil": "92b6c6e6bf38bd8e754389ecd11978680f4431cc899037b0f4d74dcec9e63cdf",
+    "mgfx": "cd7dd835a26ec0e2a2b78b50ecb738c9db8df51cc08aeb0d309b5a2eeff17631",
+    "mgfxNormalized": "c16e7b0ad383972046dccdc642ad9dc96852a2e72638b54639bdd82d5751a503",
+    "dxil": "867abf386a8c2e674efb76f6bea66dd7630ce46a53428a5b73c0ed85afcd890e",
     "warnings": []
   },
   "DirectX12.Debug/third-party/Nez/Twist.fx": {
-    "mgfx": "56805c3c5f8c0b19b54ae52d2f3eb07a2e14c55f2cd757c8f8614d3b9ca6c2c0",
-    "mgfxNormalized": "591950e5a731f62cc9b41f1526d3998d38525ea28898738d9989c5460b201b1d",
-    "dxil": "b270fddba23be79322ed7a53b3dfa7f244a49d63cbdd1045885e5163bcfceb08",
+    "mgfx": "840c56e72301a7a2434bd6a577bd9a04871eeba4cb8b8fbcec9635fa8ccea6c7",
+    "mgfxNormalized": "59979c7237c1bca77d069621e5c9b75fc7fca3b40d16e8d40640b00c11696630",
+    "dxil": "401de66afd7881616a43b47834ba65c30c88e8c3f5089ccba1552e1865f0e836",
     "warnings": []
   },
   "DirectX12.Debug/third-party/Nez/Vignette.fx": {
-    "mgfx": "04ad83e052677b3225c6c4137b1d496461c84abfaf44178bb034088a4ad9f0b9",
-    "mgfxNormalized": "4ac57d2f14190c81e442dd4bbda088deab532226a3177d2ad9917711ccb0610e",
-    "dxil": "bb43b9bcd7b4ee88388039c909cfe3dd225e6c90d929d7989ba8fa88e4e6e4ff",
+    "mgfx": "c24c160a387c85345700ee138b22d656eed1a85640501438c3e49874721733c1",
+    "mgfxNormalized": "f6accd2baee07a197f0a125e4697d0027745979965c6a44828e2f3243358c193",
+    "dxil": "d89eea29967e30137c58ae6136a353e772c09e0ad6f36807d0b0163e026c9620",
     "warnings": []
   },
   "DirectX12.Debug/third-party/XnaFiddle/XnaFiddle-Fading.fx": {
-    "mgfx": "80ad0d1e4328859f60729f9e67133ea46051d6211a666885e69f2cc3e65aaba0",
-    "mgfxNormalized": "c1b733ba748df9935356a79759a4fc42c82affd65420f927909bd9222b44e4dd",
-    "dxil": "c2eabe53d0211f6933ae87903f52782e424963b1ff0d45eb3aeec60d54598613",
+    "mgfx": "cef0a26ebd43d21baabb2b44cd303d02b140a2655d8929940048ee597573b04a",
+    "mgfxNormalized": "22ccacf9206c9890e3a1e9bdbf94ddcd28d75def292279797588fb31f95df197",
+    "dxil": "e819cb73f35d55df08c9390d2d1168dd293a4797cc7ce62a0709fa8f50d78418",
     "warnings": []
   },
   "DirectX12.Debug/third-party/XnaFiddle/XnaFiddle-Grayscale.fx": {
-    "mgfx": "3ddbf317b240f90578294219236a01282d30ba0f9577bc2c2fe83d19a9aaa1e2",
-    "mgfxNormalized": "1ba2f0bad02a4c9f5810949cae35312f17e3d87be93308e03d5e210013e556a8",
-    "dxil": "3c5a67b753ff06aafb5987f5599c34dd5d0cf03b788165a63f80da1d77974e45",
+    "mgfx": "4c70672ab82ba9ebed355c5ad61069f637ddd9883c45e3e20ed6b1c3c77c5dc4",
+    "mgfxNormalized": "35c33ea29450667882a43ab838d8b9da5b3f9f1900e45a2c48d7d457f4fe2041",
+    "dxil": "ecfc5c6eb5c589cc69bf56f16dd598041c5f9c3b56527aaceaa12a2fd303a94a",
     "warnings": []
   },
   "DirectX12.Debug/third-party/XnaFiddle/XnaFiddle-Invert.fx": {
-    "mgfx": "974084283976655b0f4d65052aa6e50f070b503c0d09db2f875dc5d7ad875450",
-    "mgfxNormalized": "ffe064f5bd4d8f105be406150fa848695ac88e1c9edd333692bb8f2491ef45d9",
-    "dxil": "e04d9bd0518cc68e168ac529da5e58d486fc4c449864658ce593f150d69d5086",
+    "mgfx": "dbf4f95bb26622653facea42d5449fec0ff4cbce048d89b5356770543d336565",
+    "mgfxNormalized": "dc6a78d2f07a9328ba7ed6caa6135bf8529e1b6731a7c8316e71a08d365e0593",
+    "dxil": "08904d4940953e23aa0f7ae689456dfd51967b4bba3bf6862c7c9f1cdb4895d2",
     "warnings": []
   },
   "DirectX12.Debug/third-party/XnaFiddle/XnaFiddle-Mask.fx": {
-    "mgfx": "a0baf43850dabdb0dfa6afa90d2b94134886d3e9271db4851d775242667d2eb6",
-    "mgfxNormalized": "965e6fc23120fcedae14c420b95690c74ecf431a2af1f7b2595dea03ee755d60",
-    "dxil": "b69c60ee52122beac6fae81bc9ced0d4167c576e95e93cefdb829d50a020fbe5",
+    "mgfx": "ea91e68516c0aa36210dec93515bdea7f07519fed5890dd448f76e4a03106142",
+    "mgfxNormalized": "bde4c12db51b1f634b28e41e104baf7b786383e54f16e94fc1036e4c03624934",
+    "dxil": "5c811e0f41413bb4338735d5482f531f05ffb1f110dd705240ccfe28f97aaa83",
     "warnings": []
   },
   "DirectX12.Debug/third-party/XnaFiddle/XnaFiddle-Pixelated.fx": {
-    "mgfx": "05d0950329eab0fd5da6ab5ec3710462c5b0662a54a6bbe59f21cb7aacd41ba3",
-    "mgfxNormalized": "30e8df02339718659e6935cbb081307ef581455fe854cf4ed374068e0b0d15cb",
-    "dxil": "fade0933b2ebcbfffee6a2a69765251e953566c8282d66b2479f9810b277ce01",
+    "mgfx": "d94a892c4f947a742107bd4240de9ce1eb857f157050bb30c98bbb908daa1f71",
+    "mgfxNormalized": "7e75f7e11402ba4009b5902758a9143ee766004406acd47d317c8247ed5b0c27",
+    "dxil": "07089cb661bb7b67dcda9c19f20a0792f3588b3c94e4b9f5b443423c11895ce1",
     "warnings": []
   },
   "DirectX12.Debug/third-party/XnaFiddle/XnaFiddle-Tint.fx": {
-    "mgfx": "1d88a1d136657fb3875f42a40a8e34727c70bdfa804485df1accf74bcc295135",
-    "mgfxNormalized": "66849974cfd0fef721e399deb6c7ec751d15b95ff9a47dbdd2183e3b4cf5c338",
-    "dxil": "aab826d6702a6ad317bc786309dda2b39d9e043aec60f6e048506ce3e03a5df3",
+    "mgfx": "b024a11a789d00a79b4534e71f5217003ad67d6d291fcedf59b1bd4d7e4aef55",
+    "mgfxNormalized": "9404647f5dd83abda2cbe2d597bc07212161b9c7fe6350cbca7644c393db42f0",
+    "dxil": "263023df9b9bfe2e0f0847f881cb6c1eabf08b63796b84b8dad685a2a57d20c0",
     "warnings": []
   },
   "DirectX12/AlphaTestEffect.fx": {
-    "mgfx": "6a6cde68a15873b3f166f72f4d1ffd0713d0d4770bf8cbf8ca0cdd98550212e6",
-    "mgfxNormalized": "fde7fcf54714f32cf2727eec8e26690257c32029b0a0a0ff6d4acb7c40a12b4f",
+    "mgfx": "00839f539fb1ad339750b3be7915e25f3657cbaf4e2cbf1d12d334ef735ea9ee",
+    "mgfxNormalized": "52094afb2ae4647b4ae646346c80ca7051657abd2b72a2c3d6039205dd842f3e",
     "dxil": "2509d0a689f1c92e58f176f2173a4d3f48d9ea7cac44621041f11f30093e3dca",
     "warnings": []
   },
@@ -1058,8 +1210,8 @@
     "warnings": []
   },
   "DirectX12/BasicEffect.fx": {
-    "mgfx": "af6749f28a170ee02e042567f2b1f42ee58d115d7f1350445a6ec69d6239de68",
-    "mgfxNormalized": "7138efa3409d9043feab2f44ad0a7476c668498bd2f9ae5f592be4e0a253a91f",
+    "mgfx": "4107457d7f51124f8e58a962b4d702a44d04dcadfe4c238580089eb707358bbc",
+    "mgfxNormalized": "09be376d048f2a6865ce9a1203126a1ff43b279fba3bdd69aaf57c4603aa574f",
     "dxil": "9f938e88254c150e12a3f642d5bc60bcd76bdc7ffee1db6cf4ad78e6dc2c3f42",
     "warnings": []
   },
@@ -1082,8 +1234,8 @@
     "warnings": []
   },
   "DirectX12/ClipShaderNew.fx": {
-    "mgfx": "6780bdb33adb785246b8192b656483a4054432dba990376b29f3dd6bf0c05456",
-    "mgfxNormalized": "e2d4ecb7c63a3bcee62dfedabf7cf9c6323e8c2a88ea0d5b87daf89ba2a4b5a5",
+    "mgfx": "25920ee6d38ae959c981a6fdd56c87530de399b41e388377d19e851cd3d680f3",
+    "mgfxNormalized": "daa2038ae10c57d31019282330f6fa5e52b4fe2eb7522dd5d13d5de7d27d1fa8",
     "dxil": "aa7e74467cff37bb4fa1f6a3d97d078eab1dc99ec9760d41cc469cb51c65f174",
     "warnings": []
   },
@@ -1111,14 +1263,14 @@
     "warnings": []
   },
   "DirectX12/DualTextureEffect.fx": {
-    "mgfx": "58bbff1cdc34606703b07dd1cbadee9cdd4dfde31238131705baf819d1843af1",
-    "mgfxNormalized": "768cd12dfc609eec44b0726769ad3cd9629b49e7b6a10a9114eca9f93e20a953",
+    "mgfx": "5bb663922b61f458a68caeeed5b04c57a5e251b1af7adbcb1e88d773138bace2",
+    "mgfxNormalized": "1bba6f4197b806022d9efa620d9e6fc992e090833dc587ec5e601734b39de9dd",
     "dxil": "907d68a19b4c3ee589f06e8668b2cc56715cdac90b3b517f5a3a62609bf4e29b",
     "warnings": []
   },
   "DirectX12/EnvironmentMapEffect.fx": {
-    "mgfx": "7adf2b3a0d3d604a7810a0aa11e4445ceb8b0dac346494326a3e682891bdb711",
-    "mgfxNormalized": "5c4bc5b5858cd28c5e4545964745dcfef72b52a7e22a029cff04456f42db70fa",
+    "mgfx": "f4977894ae9a0a8589c85cb800d0d08bc103d50d022df03238b52b4f6d41281a",
+    "mgfxNormalized": "3e57563ab63fc3974ca3adafca584a16ecd1d8b148b37f3e3a37dc6362c2046f",
     "dxil": "dfb8bfd47771482616cb8f09ccf30eac4663fc349e8413ef78714f2ea10e9475",
     "warnings": []
   },
@@ -1144,6 +1296,12 @@
     "mgfx": "9cfad4d07e7faeaccf5fe4715b6cf78678a7b077397d39186ed3ef133ba99802",
     "mgfxNormalized": "854b1770c15a9dae785a39a0577873e36700a6943d5ca4df88d53d0bf93f9651",
     "dxil": "f3460335c50eeab395318f5949a5167ac44adf9aa3a17fb13d38a2e592d5add3",
+    "warnings": []
+  },
+  "DirectX12/HalfGlobals.fx": {
+    "mgfx": "74d7e2a72138480716613708d697e024ffb91ff9160a2ff957ee9abf301020a1",
+    "mgfxNormalized": "c553ae049d322571fe40460a0b64095726f1c5032666057ade30513918efda55",
+    "dxil": "9357df7a5163a19faf83e1f515551aee3f8cf9a8a89428684fe378c12651137f",
     "warnings": []
   },
   "DirectX12/ImplicitTruncationWarning.fx": {
@@ -1197,26 +1355,26 @@
     "warnings": []
   },
   "DirectX12/PenumbraHull.fx": {
-    "mgfx": "97979857d22fb95ce6c3b4dd0932039bb3ba924cf027983e0b20ec4d6ba42ba9",
-    "mgfxNormalized": "b68c8dfb43e97f9a72112e5eaf44534800313c5d0286a9859b9dce6de1790ab2",
+    "mgfx": "dcc288a6d1cf46ed853fe2e70e7a9cdf93cc24555c6c475269b77a0b134ea6eb",
+    "mgfxNormalized": "14a5a2c25039da77e86be3b51ea687098162d5127a8b8bba9f45ec02840149ca",
     "dxil": "4838d49d2a162986d4c7f2e2b03bbfba49b93298aa7ce069863363345e3c2a3a",
     "warnings": []
   },
   "DirectX12/PenumbraLight.fx": {
-    "mgfx": "8fe19995f922516a7d1ce67342438dfadb021f6868692bb6061fdd94ff2e2e45",
-    "mgfxNormalized": "7eae9a84c544a1bde0dc7cfce0f5fed8ac628077bc85310c8a42010d84c14c84",
+    "mgfx": "ad8f8565e4e47fdd0e361a602f15851c697ae7a6f5167871afe33f0c09438979",
+    "mgfxNormalized": "01485bee83ac8ecc5a85e133642030fa48136edbe7c6d88951debe70877f5cdb",
     "dxil": "c1d0d5c3f94bb97727a211c5bdaf0310a33372f1b84399a990319e07907e3a90",
     "warnings": []
   },
   "DirectX12/PenumbraShadow.fx": {
-    "mgfx": "15e226727e75b3ad75a4dfa790f599b885ebfffa83368a630190e642c1722f6e",
-    "mgfxNormalized": "76a1fd1ec826ab6358fc1f3257d2dd36022e27faa8fb815cddac934bf32c7e37",
+    "mgfx": "4cd304b7a89cc3f1c6b8c578bcb9825c56b3e14532eca8f5c74903fa1818f6b9",
+    "mgfxNormalized": "fd3391e5b531cbf91b43225de67e41a99120d828a1574c3f702b83e977f96a2b",
     "dxil": "83def6108cba06e12e97c3687f26b4638bc63d2dd308fb0739f3b49e0bb99787",
     "warnings": []
   },
   "DirectX12/PenumbraTexture.fx": {
-    "mgfx": "c3c7889fceb3fcd0bdf4c9f129451c66ec366b96ec9cf695cdd2597f1e035a19",
-    "mgfxNormalized": "72dd45729ca476fc6cb6cf8ac96b30ec8fd45a0a1a13762ff273535fd25de8cf",
+    "mgfx": "cb1da89828096975c4cccacdfadce68f0d628f4c7d26fb6ca7c9daed397bd637",
+    "mgfxNormalized": "f5aa0f78c1b06cca8c346d1137154b5d2e2f9334bd5fdb5efa23df0e45dc5c76",
     "dxil": "453d922618eca53bbadfe90bb94857b9842ce2a5c8729fe279b45adc400566f4",
     "warnings": []
   },
@@ -1335,8 +1493,8 @@
     "warnings": []
   },
   "DirectX12/SkinnedEffect.fx": {
-    "mgfx": "610612ef9271b0eb8dad76037a168dceaaa6711e3f59a11d4446674769999c1b",
-    "mgfxNormalized": "ebac2077857321ca8ef468d25fd441788704f4b4e0c2067b00088b37cb28d4ec",
+    "mgfx": "88d1e532b0864d9b0ac270a9f655bd4bfb46e0bd7d36a733a1e368b0f2d6adfa",
+    "mgfxNormalized": "1ac4db427beb61409320de0269c398adef452084e3fc11fca43f608be0b647eb",
     "dxil": "03dd7ff4ba3614fd64e2ba96364cbc8c784318957e3b4a3e6cf44f5eb65fa24d",
     "warnings": []
   },
@@ -1352,8 +1510,8 @@
     "warnings": []
   },
   "DirectX12/SpriteEffect.fx": {
-    "mgfx": "b56c03347893d6a19bd525ba71953772a2e9a37e982de0b07f084299529b32c4",
-    "mgfxNormalized": "018c157e3f53fd64a2d8d72ca13cafc8e52ac0826cb8d808e213f2ba9027ae54",
+    "mgfx": "b9f5e3bd405d3cce05a7064c4d1b2109877e8fc338d8cc3cc1eccac780d57b2e",
+    "mgfxNormalized": "82fb30428a51df9e89a7e5840b016aaec20992559f0d6399090554e9f4c59e8e",
     "dxil": "1ca53757d0aa913bafc5ab0b3dc569a1db095f4c8fbd10c9a5de763913ed6a76",
     "warnings": []
   },
@@ -1765,6 +1923,78 @@
     "dxil": "acac2b4e610c5c7307e93a4871590ee40aa5bd9c0d9443df3196ffc3a3906b7a",
     "warnings": []
   },
+  "DirectX12/register-slots/RegisterDeadSampler.fx": {
+    "mgfx": "5b3486768c1ce1d49f9c28626289427f9503386ffb5e9c3a81f490269d8df0c0",
+    "mgfxNormalized": "99a5aaaa407e44ad6f7b141c06fd252f0e1a230e271a3960444021a573bd2e76",
+    "dxil": "9a8246781860700b0a84ddf40a29ea26ad4c783fa204dd33ff5925832586c7b5",
+    "warnings": []
+  },
+  "DirectX12/register-slots/RegisterGapT0T2.fx": {
+    "mgfx": "45f7cc2f7e134730e91bad09fd9717baf7903dc5e33633eb44197a7ad6c267bb",
+    "mgfxNormalized": "8e9750147b2a5d097192f79585e44248c2f26171c88ce7d384963e2577e866ad",
+    "dxil": "fb89c65c0ae436b4212c5041caa2bcfd48efe906fe3a6f02647bf205692da13e",
+    "warnings": []
+  },
+  "DirectX12/register-slots/RegisterHelperPair.fx": {
+    "mgfx": "32826a53b5cda376e76f9a51a61158d294e682ce6b2f1919732327bc7c108421",
+    "mgfxNormalized": "732e4f5d8edca82ee7c535765505bda0547629125ce49a7a8209a55ae64d3697",
+    "dxil": "38b39af087327abb27e0a83661d3880759a39631776f04b42297073315088068",
+    "warnings": []
+  },
+  "DirectX12/register-slots/RegisterLoadOnly.fx": {
+    "mgfx": "6f92b8c8499798976dd37e869f533cfd6b1aa096bddfc306de37a92d55f76c75",
+    "mgfxNormalized": "d40b569adfc89f461cbe9c04275da0ba3adfd612779be26b6ec87b174cd9ce27",
+    "dxil": "1fcc878b520a0124c868b444068057dad2b976ed67a399df6c3dcde4c9fbdb83",
+    "warnings": []
+  },
+  "DirectX12/register-slots/RegisterLoneT1.fx": {
+    "mgfx": "fbb72b1382103ac0fb6969b9d7004ff52fc5211ee2eb8db8ee15da45bafef5c7",
+    "mgfxNormalized": "a5859f9bb9f0a5b4316306cf3c611bfc5dac785b81543e0b288931f90e868e48",
+    "dxil": "817f21ef93f8486cd57dc2563de35c1d5279dfb04b1da9a230144ec08573521f",
+    "warnings": []
+  },
+  "DirectX12/register-slots/RegisterMismatchedTS.fx": {
+    "mgfx": "6e62fe3360d5554055282ff595325e457f5396a9c2d4063c488b5d369de86351",
+    "mgfxNormalized": "004a5aff827def8162ab18b21df660c01f8f80905f107f8e6141187266a6bf04",
+    "dxil": "5aa96a62868d8ed9524130d1aa98730635a1398f807d12a521b3e990476ae344",
+    "warnings": []
+  },
+  "DirectX12/register-slots/RegisterPreprocessedPairs.fx": {
+    "mgfx": "9d741d68de9c7147be343bb2eff300382440684c744fbe91319161a6c085655d",
+    "mgfxNormalized": "e6dd51342cf689c9ec53f93567d74798492fac118bedb92a790d31b23c0da1ce",
+    "dxil": "df4ceea277d65193f97eb4c38ffaf14613d6ef0b9a170c40eb06cd2c741cd6ad",
+    "warnings": []
+  },
+  "DirectX12/register-slots/RegisterSamplerPerPass.fx": {
+    "mgfx": "70ccdc8d59961fc5e589f3e95ef6a62263d217be7df9f0f49f9aaf6309aa3b4a",
+    "mgfxNormalized": "8af4eab2be85450a039edd86ae20e62a83924cc26fef0575896b349f2b761357",
+    "dxil": "63153dd431f88ff81c748095018debfe7cb82b3a52b30f78c479f0d8fad592ef",
+    "warnings": []
+  },
+  "DirectX12/register-slots/RegisterSamplerPerStage.fx": {
+    "mgfx": "eed132ea12d10d8987b416ed575d8c5445a865fb4327380082e8ae7d848d5446",
+    "mgfxNormalized": "1ed80b7501fdd0f25a95231faaf35d37591bf30d8e34de73c934544aabad848d",
+    "dxil": "4a57c0229f2ad4772bc4d620afbb8688edc8b4a760340a754d97acc79b2510e4",
+    "warnings": []
+  },
+  "DirectX12/register-slots/RegisterSpace0.fx": {
+    "mgfx": "830e8261cc23a52085bcc9452ac243de4e0c482a1cfb12bec494975882b8abc1",
+    "mgfxNormalized": "f2c86fa836a59b8edb88908672704d3d6c77b5228ae649962eb1220da20ab66f",
+    "dxil": "bd1bc01f87cdc208e922be9298675baa99b9ea34d72f90f174e354a0f0d3642e",
+    "warnings": []
+  },
+  "DirectX12/register-slots/RegisterTexture2DArrayT1.fx": {
+    "mgfx": "e70de33f2111446fdaaea5ea48d6e50bf75c93633059058fd15e7203d2b229d3",
+    "mgfxNormalized": "bbafde5aa20e6f840478eb93c106bdbb779bbb848dcdeca9403d8e1c00348675",
+    "dxil": "0c84be933b6d1bca00d44672ac60ac8c827a1086f3ac7123922e3118cd63933e",
+    "warnings": []
+  },
+  "DirectX12/register-slots/RegisterTwoSamplers.fx": {
+    "mgfx": "7184b9ae49a6c2b3d9d6b4df0c846ff6fc2590f12d06a884900bfd60f5876d21",
+    "mgfxNormalized": "2256c3bebeeca887b0680429ecd53bf4e67c69a3bd10923fee9f70e154de9bb0",
+    "dxil": "fbb8fb0b12d6856a35115d1c3ebc2270f29b6fbc9fcc76bca425158e90cf9abb",
+    "warnings": []
+  },
   "DirectX12/render-states.fx": {
     "mgfx": "e0e5fa592ee487d3bc0c89f07f30667b6847f60696c5fcc998f1e112cb9f4b2a",
     "mgfxNormalized": "3c5f874ef901657d845e0f75f47e35b5065ae6b6022a60db20a58073272102de",
@@ -1810,20 +2040,20 @@
     ]
   },
   "DirectX12/third-party/Apos.Shapes/apos-shapes-aa.fx": {
-    "mgfx": "9a9723992af3ea1ba9c32bb264b6516aa24400f52e59dea3bb88c23280cbfe2b",
-    "mgfxNormalized": "3682d126bdabe2efb708c63f83f38a306b78abec26ff65ad7a66880c0d5b0b9d",
+    "mgfx": "9090ae97c6b78de06a494aa2fc6eed644e7142b0d207e706ec5e38bc22189a7e",
+    "mgfxNormalized": "a5c27213abe80b4ba3b0ce8eb6ce92ed6f8909c2c30ffc4c055b06add5c73a63",
     "dxil": "7a35c9b2a905f423baefd7ccf36fde91d852524280b1503ee016068e1cee389a",
     "warnings": []
   },
   "DirectX12/third-party/Apos.Shapes/apos-shapes-sm6.fx": {
-    "mgfx": "d2717f14c359f4cd037ee1b5e31d133a3df1da781ec1e07d77f857af25ae19e8",
-    "mgfxNormalized": "31365f2fbf1a4838a8e0c624afdc26bdcbdabf665205043af314aa037d089495",
+    "mgfx": "d836f4ed1a2d51fc711f1ad26dbe19ddd0f720b78fd1f3342895477777166863",
+    "mgfxNormalized": "cd9366c05714dab9845ae5ae00a937a147886bf918aed9852165c139c6938d05",
     "dxil": "014e7e2693fbca7c07f6555bf5487a5adbf96ff81c830f5d2edf5707cdbef27c",
     "warnings": []
   },
   "DirectX12/third-party/Apos.Shapes/apos-shapes.fx": {
-    "mgfx": "fbe87fd6744c35747b2bf55479483b5cc58c309ab6b097102d0d9fab73efffdf",
-    "mgfxNormalized": "9d6ed3374eebea6c0393e57abbfb4a8d7174a64c9dd57861dfb37954951f5a97",
+    "mgfx": "537ab3c7dc2a5d46b616901ce099258f0d596e414b0014f3ea200a930e05dca0",
+    "mgfxNormalized": "30f83831bd1ba97add1d7217ae448ef50738267b6a94b24fdee0fd0fe725b5bb",
     "dxil": "3e027a8b8c8d4cce3be1054d5f56e72ffb7f62cf45d6f60973df93e9e6441463",
     "warnings": []
   },
@@ -1841,6 +2071,79 @@
     "mgfx": "7edd269d639beab253aeb388ccd631a8b68b75a5a832c9606182b536e9eb2fb9",
     "mgfxNormalized": "3644f56055313d46818d6a6fc6de29c7b5c9bce8dd29d316c02590e798f9ed26",
     "dxil": "f9a96cd0a8df40003bde0edb019766312e9a39f1150b37b4d09be814e3e0e65d",
+    "warnings": []
+  },
+  "DirectX12/third-party/KNI/ComputeShader.fx": {
+    "errors": [
+      "third-party/KNI/ComputeShader.fx(57,9-9): error FX0014: \u0027ComputeShader\u0027 assigns a compute shader, which the consumer runtime cannot load: MonoGame\u0027s and KNI\u0027s Effect has exactly two shader stages, vertex and pixel, so no compiler can produce an effect containing one. This is a runtime limit, not a ShadowDusk gap; mgfxc rejects this effect too. Remove the \u0027ComputeShader\u0027 assignment, or express the work in the vertex or pixel stage. (MonoGame issues #4567 and #7533 request these stages upstream and remain open and undesigned; the cpt-max/MonoGame fork does run them, but writes a different effect container stock MonoGame cannot read.)"
+    ]
+  },
+  "DirectX12/third-party/KNI/DeferredBasicEffect.fx": {
+    "errors": [
+      "third-party/KNI/DeferredBasicEffect.fx(97,1-1): error X0000: Semantic COLOR is invalid for shader model: ps",
+      "third-party/KNI/DeferredBasicEffect.fx(17,7-7): warning X0000: Initializer of external global will be ignored",
+      "third-party/KNI/DeferredBasicEffect.fx(18,7-7): warning X0000: Initializer of external global will be ignored",
+      "third-party/KNI/DeferredBasicEffect.fx(84,51-51): warning X0000: implicit truncation of vector type [-Wconversion]",
+      "third-party/KNI/DeferredBasicEffect.fx(84,30-30): warning X0000: implicit truncation of vector type [-Wconversion]",
+      "third-party/KNI/DeferredBasicEffect.fx(85,52-52): warning X0000: implicit truncation of vector type [-Wconversion]",
+      "third-party/KNI/DeferredBasicEffect.fx(85,30-30): warning X0000: implicit truncation of vector type [-Wconversion]",
+      "third-party/KNI/DeferredBasicEffect.fx(86,50-50): warning X0000: implicit truncation of vector type [-Wconversion]",
+      "third-party/KNI/DeferredBasicEffect.fx(86,30-30): warning X0000: implicit truncation of vector type [-Wconversion]",
+      "third-party/KNI/DeferredBasicEffect.fx(107,12-12): warning X0000: implicit truncation of vector type [-Wconversion]"
+    ]
+  },
+  "DirectX12/third-party/KNI/NewSyntax_s0s1t0t1.fx": {
+    "mgfx": "1495b8339b693e0c7312c4936a10e8be0c65c4a73459fdb92c5fd9b8cd23c467",
+    "mgfxNormalized": "8b767e15b6136bad544f0d1152ce1e6c349f84bf101074e1ab780d30c9d032db",
+    "dxil": "cd2a644dc6f771ca0ea25307b9c87f8883fadd0e4eab4e778b5ed08cf44817cc",
+    "warnings": []
+  },
+  "DirectX12/third-party/KNI/NewSyntax_t0t1.fx": {
+    "mgfx": "ea16d23f88a79d728be491086ca242d89453d4c67ab24455f3859bdca4aa9235",
+    "mgfxNormalized": "9dfee3ba717c344950ea3de629ae8fd3f6b3725533ae4ee3f1a047465a29056a",
+    "dxil": "cd2a644dc6f771ca0ea25307b9c87f8883fadd0e4eab4e778b5ed08cf44817cc",
+    "warnings": []
+  },
+  "DirectX12/third-party/KNI/OldSyntax_s0s1.fx": {
+    "mgfx": "8d16afe64a745a6015935a58607bc4c8ee612649bd8b92cc2c81b801050f03ca",
+    "mgfxNormalized": "13d89fe34518678f15ca07ce76ff728465f6fefbfc7c1d66cede33b05a4e4fc4",
+    "dxil": "1d57198bf07157fd69033ad5132fe227c394f25d0d7acb54ed0dbe528466abc6",
+    "warnings": []
+  },
+  "DirectX12/third-party/KNI/OldSyntax_s0s1t0t1.fx": {
+    "mgfx": "ecee511a9012412c84a2a1182ca907959aef753ecf21f220b87e463252200c17",
+    "mgfxNormalized": "7dc4b8e5694b96c113dc7cdea60dc44b3a185c1e56be1ac556dd2e9f7eabbbd0",
+    "dxil": "cd2a644dc6f771ca0ea25307b9c87f8883fadd0e4eab4e778b5ed08cf44817cc",
+    "warnings": []
+  },
+  "DirectX12/third-party/KNI/OldSyntax_t0t1.fx": {
+    "mgfx": "b2ae3cc6cfccf09bb8cc8b78d6b1f8d22b57844f910faac590bba20967fe5ddb",
+    "mgfxNormalized": "e5fbb8e8e484a87990892a236e609c411a24d5aac223dd80cb584d5a35606790",
+    "dxil": "ca48111b303e1552d1a2985ca500d82ad5627b7611bd22dd35fa1d2d40adc7ac",
+    "warnings": []
+  },
+  "DirectX12/third-party/KNI/OldSyntax_t1t0.fx": {
+    "mgfx": "95a5c9ab97777eff4873b91df8b039a673494c8874304996dc4417b941516d25",
+    "mgfxNormalized": "5b0c39fd079e45200c4c11e31c7f64640268a39365b584011b93e13a990ce675",
+    "dxil": "6bef526092279bed918c2277f2368937406bd8070e60caf2b9e0478be0d81a59",
+    "warnings": []
+  },
+  "DirectX12/third-party/KNI/OldSyntax_x.fx": {
+    "mgfx": "1c0992fec8f70cb2c55aa97dd25575776460ca6a5b966192a0520ec31090b65f",
+    "mgfxNormalized": "d73c8c3eb35e1e0d73d37bff5edfc32ac1e7de780145d96c9d619657eb0003d5",
+    "dxil": "1d57198bf07157fd69033ad5132fe227c394f25d0d7acb54ed0dbe528466abc6",
+    "warnings": []
+  },
+  "DirectX12/third-party/KNI/OptimizedMatrix.fx": {
+    "mgfx": "88439379da47b11004407d2f548f0ca15b990a894bd3e3af56fdea56090918c5",
+    "mgfxNormalized": "cac6fc35dede3f3aee40b28f004f665c270a396c884a6cc48e5463d45cf21e48",
+    "dxil": "6fc48ebd547f3c782eae5f22ab280c6a70e5b41b279af315834f74c65b9d3e2b",
+    "warnings": []
+  },
+  "DirectX12/third-party/KNI/OptimizedMatrixArray.fx": {
+    "mgfx": "61a784872c49b489e590790ada0146f47b671aa2a0c95626e6c3fc9422793def",
+    "mgfxNormalized": "c15e1b9410b291f33d0d2ff588eaca3cad2ec3e710192755d42328a03c4ecaba",
+    "dxil": "b9a2697ada5f96542742c8091548b0cf2585190aa6b4395a26862c1e63a68206",
     "warnings": []
   },
   "DirectX12/third-party/MonoGame/Bevels.fx": {
@@ -1862,14 +2165,14 @@
     "warnings": []
   },
   "DirectX12/third-party/MonoGame/CustomSpriteBatchEffect.fx": {
-    "mgfx": "fe578199784d88d6388c312130264deb65a5ae3b1601b4f8d1f765596138e64c",
-    "mgfxNormalized": "c562ba9b674c0d4f3a5da647973a5fb2c6ef56c1becf0d7cb3be2589a3e2e0a0",
+    "mgfx": "35e9ae21f4431ba96bc6ddd280f2f19e6bb448a122440e778806ff42476eb45d",
+    "mgfxNormalized": "c10cd6f3608db1daeebbfc38a0a438ce6d5b45a1730a4547f3e9cec6b260fdb7",
     "dxil": "56fb2b5b5aa0315f734f93164ec37af6373c5b610bde79683bb1a7cf4021fc02",
     "warnings": []
   },
   "DirectX12/third-party/MonoGame/CustomSpriteBatchEffectComparisonSampler.fx": {
-    "mgfx": "4750fb08e143ab784ef80c3c749f775dd65b6b2fc4f6872a322a390733aedd7f",
-    "mgfxNormalized": "bd3fac325096e7a7b0ca13446d6e9be2a095dd95f55da95747850098fe40f569",
+    "mgfx": "1f89e4bf871f3a1ab5b042ca71e930debb563a82fab398d09c0981b52ce324e1",
+    "mgfxNormalized": "fb82f46d10a6e0fd24141ad4dfbfc0ac9fb4bb6ef5521d02afd172b702714ee9",
     "dxil": "13132999860586b85620e523239cef001bec1920dddac9dab486161bff8da443",
     "warnings": []
   },
@@ -1891,8 +2194,8 @@
     "warnings": []
   },
   "DirectX12/third-party/MonoGame/Instancing.fx": {
-    "mgfx": "363e7a686189f946981e097c4fed365030a215bf96dd7ee193ed37fd86c73918",
-    "mgfxNormalized": "2e0b6ece952b48e2cd469fb0966de15ba41da9e9ade7090c08e5099cd4d0f3db",
+    "mgfx": "cb7f88082765b9670249adc94706cc513dd763122fddf3579201a8028a809cd1",
+    "mgfxNormalized": "12a9ba741265af757068779713be9d6165055ce3f655b279a547defc28f567cf",
     "dxil": "30812c8738d083bc3d61930de8aa5dfc950579d8513b9a459f0816a1296c1c7f",
     "warnings": []
   },
@@ -1909,14 +2212,14 @@
     "warnings": []
   },
   "DirectX12/third-party/MonoGame/ParameterTypes.fx": {
-    "mgfx": "68de715fcb5dfc8d7b1e5ff4b0826bbe1f13f4e9326d702bd98f080fd7417090",
-    "mgfxNormalized": "7fbdbab224bf3b3e83d50f69f1fe859f711c6ad8a6f102ba5436e88349627c4c",
+    "mgfx": "73f81ff9faf4445aedd398942ceda3108a91eb2f17d060f8888055e4813fbecd",
+    "mgfxNormalized": "464dbd2584236bbc77b73e3103e65721ceb9e536253cd3266347ecd929d66164",
     "dxil": "4d93326fb9f95768c564dea27c7fb4e72399e7d2fa02b50c3a97c1096d47b204",
     "warnings": []
   },
   "DirectX12/third-party/MonoGame/ParserTest.fx": {
-    "mgfx": "d3f3720c37f58ceda91779cc137f9f7bfc13eeb5ff04253273039055addcf51d",
-    "mgfxNormalized": "bd73c7254cdae28e6259e4d3c83feba124be601a6b12290827fa5924e685c328",
+    "mgfx": "d44e844d2b8cd142438b237ae0f4cb4ce9ff58fa490948ffdddd89e07873a65f",
+    "mgfxNormalized": "3ee42b4db2abaed85a0a5f185c7173771ffbedd0e9559cc6d7d995af8fcf79d8",
     "dxil": "15befa81c259ec94c0e1fc42de89160041b70860f00a3e2c8379bfff933ca96f",
     "warnings": []
   },
@@ -1932,15 +2235,16 @@
     "warnings": []
   },
   "DirectX12/third-party/MonoGame/TextureArrayEffect.fx": {
-    "mgfx": "fc90be2353e28fd41cf08b40652a8a71744e0a2f95ac0f9266f3dc6ee95ac1bc",
-    "mgfxNormalized": "f7456914c8ebb014da5f31c14d3a2b75171a43fbda9c18704b028f4ba539aadd",
+    "mgfx": "2de305cf16c30d1223396c533a26b9ad1515c1dfdc266e783d8dbbb5ae3af55c",
+    "mgfxNormalized": "32bee404aeb9ed8ed649a7edcd63899a560e3b0419e49591d15cc4c458cc14d8",
     "dxil": "c47b4e73f1b2981f40f3d8930cba3a2f24ef84ad81b717812e2b88c44f65658a",
     "warnings": []
   },
   "DirectX12/third-party/MonoGame/VertexTextureEffect.fx": {
-    "errors": [
-      "third-party/MonoGame/VertexTextureEffect.fx(75,20-20): error FX0012: The legacy D3D9 sampling intrinsic \u0027tex2Dlod\u0027 is not supported on this target: its arguments do not map 1:1 onto a modern Texture method, so ShadowDusk cannot rewrite it automatically. Rewrite the call to the modern form (e.g. tex2Dlod(s, t) becomes T.SampleLevel(s, t.xy, t.w); tex2Dproj(s, t) becomes T.Sample(s, t.xy / t.w)). The FNA (fx_2_0) target compiles this intrinsic natively."
-    ]
+    "mgfx": "79289aa186a3bbb52a5a77456602b9ddaba3a871118e2c5bb0ccc3c89afbed2f",
+    "mgfxNormalized": "c9f57291eedc6b59a3ca82f4adead96e293e02ecfd372f61ae68fd86f52f957b",
+    "dxil": "5d88ac938a9f5811daa88a15cb112ff80f95f63b03f05127d38a7d797605f107",
+    "warnings": []
   },
   "DirectX12/third-party/Nez/Bevels.fx": {
     "mgfx": "bf1a8c9c84e21f3feee8251818ebb589325ebc410c703bb6b8baa65fd7b00a07",
@@ -1992,7 +2296,7 @@
   },
   "DirectX12/third-party/Nez/PaletteCycler.fx": {
     "errors": [
-      "third-party/Nez/PaletteCycler.fx(36,9-9): error FX0012: The legacy D3D9 sampling intrinsic \u0027tex1D\u0027 is not supported on this target: its arguments do not map 1:1 onto a modern Texture method, so ShadowDusk cannot rewrite it automatically. Rewrite the call to the modern form (e.g. tex2Dlod(s, t) becomes T.SampleLevel(s, t.xy, t.w); tex2Dproj(s, t) becomes T.Sample(s, t.xy / t.w)). The FNA (fx_2_0) target compiles this intrinsic natively."
+      "third-party/Nez/PaletteCycler.fx(36,9-9): error FX0012: The legacy D3D9 sampling intrinsic \u0027tex1D\u0027 is not supported on this target: ShadowDusk rewrites the 2D sampler family (tex2D, tex2Dgrad, tex2Dlod, tex2Dbias, tex2Dproj) to modern Texture2D methods, but not the 1D, 3D and cube families. Declare the texture as Texture1D / Texture3D / TextureCube with a SamplerState and call its method instead (e.g. texCUBE(s, d) becomes T.Sample(s, d); tex3Dlod(s, t) becomes T.SampleLevel(s, t.xyz, t.w)). The FNA (fx_2_0) target compiles this intrinsic natively."
     ]
   },
   "DirectX12/third-party/Nez/PixelGlitch.fx": {
@@ -2068,8 +2372,8 @@
     "warnings": []
   },
   "Vulkan.Debug/AlphaTestEffect.fx": {
-    "mgfx": "dc6ef4afafc21494c040d2d9796c035090282a17cabadf6a5fbf16b2dc186330",
-    "spirv": "bea6b295183e30ae1f279f98cdd218c808043ac1015e45b5823156376c14c6ae",
+    "mgfx": "cc8e90f357fcc3038e5d5d6d4340813be82739552aebda136c415280b34ecd2c",
+    "spirv": "b2d72c7e02cb6b44ea51bd9007d817176d0e4fe504b63189a757cb2d0c95b4cd",
     "warnings": []
   },
   "Vulkan.Debug/AnnotatedTechnique.fx": {
@@ -2083,13 +2387,13 @@
     "warnings": []
   },
   "Vulkan.Debug/ArrayUniformVs.fx": {
-    "mgfx": "44908d89224a23544b4f4063177480d9cc9f8d4f6725e09acb00c3d25a10b786",
-    "spirv": "3cde14cb78c8714c731ebc9269f63b43eac0a1c2c5c0922b1f35c604a480002f",
+    "mgfx": "c90861622ab53fcac324635401d5ac75bdb5a6090081486f043ff4580efebfda",
+    "spirv": "800e7cfc12274aa8d07cfeb52c329d541f9c7aef4292590ee724034b2c0ced70",
     "warnings": []
   },
   "Vulkan.Debug/BasicEffect.fx": {
-    "mgfx": "3335bef4195272a7544e24ae5c78356e42dce3019c410b0b73ccf23772bf05e1",
-    "spirv": "2e6bb996538e3cc23d8b8a9bc4981761a09e2cd706c745af5343496855715503",
+    "mgfx": "d7a4e66bfc9813867956ae7822e29e98938d1244f3371c34527989e8f38342d9",
+    "spirv": "b1ba5c18400e1f6892fcc020b8e3a89ad9be0ab45a321af97f38dc6ed64ab103",
     "warnings": []
   },
   "Vulkan.Debug/BasicShader.fx": {
@@ -2108,7 +2412,7 @@
     "warnings": []
   },
   "Vulkan.Debug/ClipShaderNew.fx": {
-    "mgfx": "b8ee03d3b874b98d0f29d5529085e0d3734e9ced29f3d8b27ebcca65082b7d78",
+    "mgfx": "d8c039e5292879c8438ed29ad241077a8a9e4278c162921235feb8af372ebb5b",
     "spirv": "4a918b7d5c75500b64b989f354dc22355d0ac108b3c460b6878bee4a734761b0",
     "warnings": []
   },
@@ -2123,23 +2427,23 @@
     ]
   },
   "Vulkan.Debug/Dissolve.fx": {
-    "mgfx": "c6ac7c6192f29d72bbbe0fc95efaa05eb7ba4faf9d642553dfd0282712757321",
-    "spirv": "a37476f8bef01de1c0213a1b430dba2987e54c21f22963c455a7cc27ce5280e1",
+    "mgfx": "b9bafbae8d593c6a776d0e1d7700c7b06fd135c1920dc1231c5dedc276ee78b3",
+    "spirv": "1dd6b43578b20ba63b34d98aeff438f92a1cf9dbcd3dd38f5890aae5308e8e3b",
     "warnings": []
   },
   "Vulkan.Debug/Dots.fx": {
-    "mgfx": "02555dc345d255d94672116399787e77723fd022e88d44771a7011a51d88da59",
-    "spirv": "146d325a4997d140eed3e2d8feb18b1967e9ea68c7db7d949cc0abf7b029b03b",
+    "mgfx": "147c0e5928163d7ddbf4bf9f28a8bf7cfb84044a002cc459cf82fa1dd022e42c",
+    "spirv": "aba9369694adc07589c43f8e27d406131d46e4a74bf623f5b01a572847633fcd",
     "warnings": []
   },
   "Vulkan.Debug/DualTextureEffect.fx": {
-    "mgfx": "9c7617f7afc7626f2dbb0013ee82336d479dfa8a62bb5c29279fa7d9048d531a",
-    "spirv": "138a399d02963d316b2ddb0088c0af68edc8316e892dc39856771d09c66fe7bc",
+    "mgfx": "b50b5c9381708e4f36ad7518d6fe5efbe74260feee7876abbc51ded18f49573f",
+    "spirv": "32863b86e36a3defe5bd45ee7fc9244dd879f76573418aec4f89c7230e174ee3",
     "warnings": []
   },
   "Vulkan.Debug/EnvironmentMapEffect.fx": {
-    "mgfx": "b8f3f5e7c82cb8d313033b8004858d7ea7a8ad8c560172a25e74bf0bfa2bf3e0",
-    "spirv": "c7d42fd83b00cd0beecc804bf3932acbd479f73058e1ba67d0c4a8ae3abc8edd",
+    "mgfx": "4452de9b36304eaa7e2a2c2f69933ac0cab040d70315b041db9344aca63abe40",
+    "spirv": "40cbe9a5891ce9c8e907b9817fbe094bd20b8faa1efdccf840e0e5829809b2a6",
     "warnings": []
   },
   "Vulkan.Debug/Fading.fx": {
@@ -2148,18 +2452,23 @@
     "warnings": []
   },
   "Vulkan.Debug/FnaMultiPassStates.fx": {
-    "mgfx": "139cc0152d6d748a87367eff28bb69ba3ea7c8db94c8d83e7fb7a5aab96facc0",
-    "spirv": "28db653acc82352cecaa3b86995ad600e816929d8fa055ff2694f7d90da99a88",
+    "mgfx": "0a013433179829f005d65f4bda38a3ed72166574fc29f943c717c02cd8b4b8ef",
+    "spirv": "9a83371d6b766a7741e221e1ad9f915e11cabd17fb85c4e72da56fada01153f8",
     "warnings": []
   },
   "Vulkan.Debug/ForwardLighting.fx": {
-    "mgfx": "e1fd39e131ddeb1a9aad2a662216a97135e078836e0810b8cecddf94af607d86",
-    "spirv": "e66bb4465b6af0ff4e30b9b81915e7b6a290b034d60e18422ec9491ce63442b0",
+    "mgfx": "95cad490f65d62bd29e53b25c3a9660441b92c8a762682e7789abff955d74a76",
+    "spirv": "bc8fb4f8719f81a6cb5a2d69ad9bb23a17316dbec036fdce8000203dd1912ca3",
     "warnings": []
   },
   "Vulkan.Debug/Grayscale.fx": {
     "mgfx": "abca3f2fa249c3ebb08ac4000af530f58f335ac033959cbf78abd6339ddb140a",
     "spirv": "3139118a8fa404424d781d97cc62a8a411d01451fb191c3e9b432fe9975c1769",
+    "warnings": []
+  },
+  "Vulkan.Debug/HalfGlobals.fx": {
+    "mgfx": "09e6cbe9c3b182d17089a5409abe3058c4a186e53a2dc9172ef61817ecc11cea",
+    "spirv": "0eec9126bf146a39fae7757de85fa78f4e2090cec299dce9efcaaee3d5a7dd15",
     "warnings": []
   },
   "Vulkan.Debug/ImplicitTruncationWarning.fx": {
@@ -2205,7 +2514,7 @@
     "warnings": []
   },
   "Vulkan.Debug/PenumbraHull.fx": {
-    "mgfx": "a800c0cb07ce710cedb48d78b75212896fc348c6df06e2435ed417b034b9087a",
+    "mgfx": "72d4b093f3e844c5428df8564e6a43cfff7e2cd11d656a1e37d878b172d76257",
     "spirv": "be49e41a0c07175aadbef5849461943f1bdee22de7ceeb5516a5a652d7a111d2",
     "warnings": []
   },
@@ -2290,23 +2599,23 @@
     "warnings": []
   },
   "Vulkan.Debug/Saturate.fx": {
-    "mgfx": "18b63a6a1cfdd0bb49f7fca8b60b7acbc5f3dd3aed41291683a349239c472875",
-    "spirv": "2415a2a7eb7870044bf2d35b8b66e8fa6afcf2b53d5b187987def8574a4ce101",
+    "mgfx": "9b90227ae8633e64b1962b8a790547638b23b1b9fb0f615ee10eae9ae93ee772",
+    "spirv": "328491a70c7477ecad7f45470ed46b9cf228cf2e693d7510ca76f3692ca525d0",
     "warnings": []
   },
   "Vulkan.Debug/Scanlines.fx": {
-    "mgfx": "5787ef10dec8e046a570fec37837f59dbf3724de5ec95ca915a4710adb85e431",
-    "spirv": "6f5c230051ce728aaeb128f578afc12cc5c1d123bb5ae71b7b168dd699743c79",
+    "mgfx": "4774ef2a2ee1cadc0a59b4f4548952481956a5a8602299b11bfbeff395b69586",
+    "spirv": "4da05c7bc47a46f2ecd73388aa431f3d17e2678b5abf7a0528c1400d67809683",
     "warnings": []
   },
   "Vulkan.Debug/Sepia.fx": {
-    "mgfx": "29a3d19ad8a4bf56ad6f017cfffa8df2475a5b76a8ae3ab4377298dce4ec2fd4",
-    "spirv": "a03f39fbc74186394f0adaa09922d126f423b9072fd76edc89289ed0cf1db49d",
+    "mgfx": "ec38bc87b208eb374382390a6d8f3a10484dacdf9aba9227da916fbb7514abd0",
+    "spirv": "d451d0f4e82227f7d3fe2f19f55a9d18d33395af07c32fc9b19a62cd9c4b09a2",
     "warnings": []
   },
   "Vulkan.Debug/SharedCbuffer.fx": {
-    "mgfx": "13cf3b388c54141ea3716c91ae3ad53654162d134f56fdd20742fa44d5a5eabf",
-    "spirv": "f38c7272816b1c0459f1e192850efa7a8f859d269c60105646501015d8de990a",
+    "mgfx": "03db2181e324ca442accf4b7e10e88a1b5dddec8789e5de22420163e373170c5",
+    "spirv": "91ee784addea3633411b5c28c862724a83dc9aa99a5ec607f91f2c8bc72f63a5",
     "warnings": []
   },
   "Vulkan.Debug/SharedSamplerPair.fx": {
@@ -2320,8 +2629,8 @@
     "warnings": []
   },
   "Vulkan.Debug/SkinnedEffect.fx": {
-    "mgfx": "473d60b8fde791cd1015e5e6839405e96521ea09ac2bd20b925ab72c109de8a2",
-    "spirv": "b78e6e1dcc3dc784123c0359abc67e90346733bc7bc3a8ceb1be629c4716f85e",
+    "mgfx": "0514db5ef2c785665cd67923b8f2c70dbffe12524ded57f57ff315ab6bc87445",
+    "spirv": "4e928a7e095b9a5b5b4579da8903dc365d25be7bde3c6e34c8fb8e2f112f0200",
     "warnings": []
   },
   "Vulkan.Debug/Sm3SemanticStructs.fx": {
@@ -2335,8 +2644,8 @@
     "warnings": []
   },
   "Vulkan.Debug/SpriteEffect.fx": {
-    "mgfx": "e1ec997f6ae000bb425cc498ebd43a5c46307ea48b0355da3b6e31997c46e688",
-    "spirv": "d0680b11b517cf83c13e33fb395165a2fca5024630ebb2e67f121c7e74f5c5f7",
+    "mgfx": "9d2fd7911e8e454e2ec7f03f8cb6992940e97dbf791e1e5a0cb2f8476a403721",
+    "spirv": "67092e46d34cd34855637c878d307ddbbd02823490753db2667b87d27fc84712",
     "warnings": []
   },
   "Vulkan.Debug/StateBlendAdditive.fx": {
@@ -2370,13 +2679,13 @@
     "warnings": []
   },
   "Vulkan.Debug/VsTransformColorTexture.fx": {
-    "mgfx": "815dac031dcbb22eff7bca7c01384f2813361cbb06d98ebeeca7a82303773aa0",
-    "spirv": "b9d74dad42bc6a000293a74eb98851bbdfab3c3f1962177c931c5e5b8937932c",
+    "mgfx": "4c3358a56d99123efb6e6d741c33eb7d53a5573aef398358649a57f3b6a8d64a",
+    "spirv": "c907b535732955823264e55642d3962580fbfdcb477f95936fd4778665567a18",
     "warnings": []
   },
   "Vulkan.Debug/VsTransformColorTextureLegacyPos.fx": {
-    "mgfx": "0160e9e07dc1841c4274b31167ec5280b13d1cb8e2c48424e7e55ab649e9cae1",
-    "spirv": "e3b50ab97a91a44fa8673a1921794531b4e9ed1600ba8510e13672419b3c6b59",
+    "mgfx": "6af3dcc066e74ee90ad7e96cde62f3127442aa9ed19c3aec146804291b31ed29",
+    "spirv": "985344434916d95e79f46959f56b0f3248fe28cca0331265a5e74b7c3766c4ca",
     "warnings": []
   },
   "Vulkan.Debug/VsWaveQuadIntrinsics.fx": {
@@ -2400,8 +2709,8 @@
     "warnings": []
   },
   "Vulkan.Debug/examples/ExArrayTernaryAssign.fx": {
-    "mgfx": "d83edb07c870a6e7a3416c6b864ee4ce4e91dee7884774b4508de647cdce3de5",
-    "spirv": "2e9218fbfc341d589b40a38fe576760dcf7e77c8fc436e60ea3ce4a8a4516d22",
+    "mgfx": "b8dc041878f31df99b80557056030cf385584fb9f2cc4aa72a92c9f0f535eb6d",
+    "spirv": "5cd0fde9b17b6590f49090f51b35a91f77ec9147e0bfdf8c82afe3a842edcee8",
     "warnings": []
   },
   "Vulkan.Debug/examples/ExBareSamplerTex2D.fx": {
@@ -2440,8 +2749,8 @@
     "warnings": []
   },
   "Vulkan.Debug/examples/ExLegacyTextureDiscard.fx": {
-    "mgfx": "942cbdfb6d60ff502b82f96e4975211f3ed154796e9f9b525fb71838946a83e6",
-    "spirv": "aa0e5cd8b689073e0856d018732627911e90e75768f8103a621c8ac1c42863cd",
+    "mgfx": "2383b93d3a01344275e11722b619032504e2c72238dddfd7b38d7a411cd37b1e",
+    "spirv": "e7ca4cb579959ac2c1488b57cbddfa82e06dd2d437d0a0506d5c8f9f7d7ed46d",
     "warnings": []
   },
   "Vulkan.Debug/examples/ExLoopRelational.fx": {
@@ -2575,8 +2884,8 @@
     "warnings": []
   },
   "Vulkan.Debug/examples/ExTernaryHelper.fx": {
-    "mgfx": "369fdb75327d40974baaacc89b51661e8943d70ebc51a1f48e7d2ace612b729e",
-    "spirv": "cb774efb2d1229401dac2d01febb2b02d6949a3913b3a28ad94debd1d1556c46",
+    "mgfx": "c604281e700527497b8903553186168a45f59077c77b6c496072cc5b1083959e",
+    "spirv": "b71f93ced507317e2869cd5ebda51b7e738a24364bb2d552aa428d24edb3f564",
     "warnings": []
   },
   "Vulkan.Debug/examples/ExTextureNamedTexture.fx": {
@@ -2595,8 +2904,8 @@
     "warnings": []
   },
   "Vulkan.Debug/examples/ExVsTextureFetch.fx": {
-    "mgfx": "6592aedd167374b3e838e80434e4ba3154f8cbd7140cf9ebb65973f9768956ec",
-    "spirv": "adab5b259ba2353cb4683297db5164d03954bd85693fd6d47d5f844ceee21fc2",
+    "mgfx": "f79690bc8532821f60ddcdaee82d32710edc4658570f8a252d2a130284748453",
+    "spirv": "397da4da363cf729cc4db73d5d438cb9d198bb1b251f5977f7b1a543b95fd900",
     "warnings": []
   },
   "Vulkan.Debug/examples/Issue106Repro.fx": {
@@ -2615,13 +2924,13 @@
     "warnings": []
   },
   "Vulkan.Debug/examples/Issue137VsEarlyReturn.fx": {
-    "mgfx": "48cb470eb107afd5c85c1edbd87a1ebbd910cc279e9f5af47acb8ee9f3c8c79d",
-    "spirv": "336ed7ef8b089b7465e8cf596ed82cf139331d3352199b2c2b6340f32b4aa5ad",
+    "mgfx": "fdaaca45f2004e0ae21b6a2b487de770e412b4b646ab8dcefc0b73f571779156",
+    "spirv": "5e344f5543e700704f0c08e8838e74973d0c3e2672654f725782e748271dea36",
     "warnings": []
   },
   "Vulkan.Debug/examples/Issue137VsRound.fx": {
-    "mgfx": "11066be92e7969e6bc83bae67dd0420e36ccc97fdd125d14c6991c2238e277db",
-    "spirv": "204ad5c29eb1db538fa9d4456434296981c3ec523a026db8088c0e9baa4e0e25",
+    "mgfx": "c4bcc40465118f274f2161317db1c3eb23365bc2a0bfccde5e77136b2a86ed6f",
+    "spirv": "160af6c1607990716f1e1a13063692b0df2a214b6d2989d2cad693a1f85c2c6f",
     "warnings": []
   },
   "Vulkan.Debug/examples/Issue139DerivativeExtension.fx": {
@@ -2684,6 +2993,68 @@
     "spirv": "ff1a475fd60d7807739876ba059c03e89a80c7d30e6410d442cd630173db62e9",
     "warnings": []
   },
+  "Vulkan.Debug/register-slots/RegisterDeadSampler.fx": {
+    "mgfx": "312819e59f90b93568ba019c383f40c8e31dd0caec946a7000f6cce57ebe7217",
+    "spirv": "d80bca3d3beacca01af61f28d96394b5228faf62b6478df5e78c7f54891cc157",
+    "warnings": []
+  },
+  "Vulkan.Debug/register-slots/RegisterGapT0T2.fx": {
+    "mgfx": "a12bccb2eb3ea81fc280360f4243932b927666df6a83675bbd728c278790777d",
+    "spirv": "ca349ef7f138421fb5cfe08f7bf8b571561e09ee1775a9512c7b0c9f69af01b5",
+    "warnings": []
+  },
+  "Vulkan.Debug/register-slots/RegisterHelperPair.fx": {
+    "mgfx": "55c0e33b0b4cf09d125b30a610cb64dc08ac8df5e35a291bc90a1931977f43ad",
+    "spirv": "b95d45c02e1db63997a23e7dc90d0d90645f0fd07defa504542ab0472a6fb699",
+    "warnings": []
+  },
+  "Vulkan.Debug/register-slots/RegisterLoadOnly.fx": {
+    "mgfx": "e59de6d27b625755a9ef43bc806f918b2f2930ed4ffdc188049234db46329f08",
+    "spirv": "40768d43bf1188cef09719eec5e5808a005b0d1683e08fa392a4ba338e45f042",
+    "warnings": []
+  },
+  "Vulkan.Debug/register-slots/RegisterLoneT1.fx": {
+    "mgfx": "9483d58b22c07fe3d0d0755f84e79b992eb990de589b60b59ad963395fc7b956",
+    "spirv": "537a6d491087d1e42de343cd37ec6cb4b986c12bb1f1cd77ab5aa918e1aeca9b",
+    "warnings": []
+  },
+  "Vulkan.Debug/register-slots/RegisterMismatchedTS.fx": {
+    "mgfx": "624b21d1332d0e3b7916612c34d83aa81bbc3a7c9c0853890def8231a7e428ac",
+    "spirv": "1d7bba3ae3c9cac014f95a3ad88ab2089d40f86f36b52e5829900e0aa9d2f132",
+    "warnings": []
+  },
+  "Vulkan.Debug/register-slots/RegisterPreprocessedPairs.fx": {
+    "mgfx": "88cd2a62a11d9090ea10afeac2e239eb52ab22d5c220452a1e8bef4610714cd3",
+    "spirv": "c898d3ab26039261966864196e1a4120ddbb480eb83df87ede097882354ce7c5",
+    "warnings": []
+  },
+  "Vulkan.Debug/register-slots/RegisterSamplerPerPass.fx": {
+    "mgfx": "7f42fe3464fee75246e4f9ab2c6b0608765fdd9cfccbc05051718aec6b5e6de8",
+    "spirv": "f548037044af8a7aac8f01c850bd9ab519ecbcc1e84e55cc00a936ab93233e1d",
+    "warnings": []
+  },
+  "Vulkan.Debug/register-slots/RegisterSamplerPerStage.fx": {
+    "mgfx": "9a9ebfb8bd0b9f58e15d1d9d7975fb0ec00855338f8ec2ce778e36c8c72b603d",
+    "spirv": "599072dc094ee86e5a70b07fd343826e33f9b744ce8517cb81f07b2623458391",
+    "warnings": []
+  },
+  "Vulkan.Debug/register-slots/RegisterSpace0.fx": {
+    "mgfx": "ff65b5379eb1b2f002b28397d58f94428e6cad535d093de7cf6afdaee10d2a6d",
+    "spirv": "12fe2a534d3cfc1ef87ce905cb5db87d2aa8fcd1b2c9e9ecd3b8715287e22b88",
+    "warnings": []
+  },
+  "Vulkan.Debug/register-slots/RegisterTexture2DArrayT1.fx": {
+    "mgfx": "17b47b068928535e254da761a30179f2bd570233b70dd46341f38043362f081d",
+    "spirv": "b34b54a2394b4049870877ddbc280d1ef35b849dfffb6802c9e7c78b84987f0b",
+    "warnings": []
+  },
+  "Vulkan.Debug/register-slots/RegisterTwoSamplers.fx": {
+    "mgfx": "0dd7737c5ed2de2244dcf7138cb009ad91d178442b7fecfba600c9a0103a9585",
+    "spirv": "5fe8466d0ff8aa07bc8f36500f315eaf181ef0f4b4666375658918a32946446e",
+    "warnings": [
+      "register-slots/RegisterTwoSamplers.fx(38,87-87): warning SD0235: Vulkan target: texture \u0027Tex1\u0027 is sampled through a second sampler, \u0027PointSampler\u0027, in shader \u0027MainPS\u0027. MonoGame\u0027s DesktopVK binds a texture and a sampler as one combined descriptor, so ShadowDusk gives this pairing a second descriptor holding the same texture, bound to the \u0027Tex1\u0027 effect parameter. Set \u0027Tex1\u0027 through Effect.Parameters: SpriteBatch fills only the first texture slot, so a sprite texture read this way reaches only the first sampler."
+    ]
+  },
   "Vulkan.Debug/render-states.fx": {
     "mgfx": "c8e1195c441c1c6cc2d51327bd0c87b6bbc50346950471873c4ac6d9f11469cd",
     "spirv": "19fc2f13184c84153fa3d97c9d6de14a70f3168ad2bd19f9c8b5d9aef34deda0",
@@ -2710,8 +3081,8 @@
     ]
   },
   "Vulkan.Debug/textured.fx": {
-    "mgfx": "7cdf6471c97247eb00c740f367616f9ade59ae313bd629e5f493fe2d545e9484",
-    "spirv": "bf1f7b7f877f47010a28cfcfaefe1ce21fc7d3abc7a0c6b2c32dd688ef8914de",
+    "mgfx": "8ac7dfcf73e643a4586088e92939340141f90345e57d45b007bc1b1b97d66c8a",
+    "spirv": "2e720311e26d749d816a8f9398a5d1b69a124c07b26f738a36fe653d14e9323f",
     "warnings": []
   },
   "Vulkan.Debug/textured_vs_ps.fx": {
@@ -2720,18 +3091,18 @@
     ]
   },
   "Vulkan.Debug/third-party/Apos.Shapes/apos-shapes-aa.fx": {
-    "mgfx": "b82277e19afefb19678faecd0a31c2fe30ec58ffc1d254ebcb4b350b9923bd50",
-    "spirv": "e927682b26407694333e9ae141d3f3aa42cbd1e18f3cd2f893049b077ad19be8",
+    "mgfx": "5da8ac815772bf101255c549b0718c8b2fca42dcf90d21a36f5c8d21ae1bb12a",
+    "spirv": "71f3f347a48427869838afdd93817bb4d53fc33c93b1f56277d52ec136a65dee",
     "warnings": []
   },
   "Vulkan.Debug/third-party/Apos.Shapes/apos-shapes-sm6.fx": {
-    "mgfx": "8d2c5c7f1ea6cfaf28e1c04d73507af980417327684841470ff9c6758f1d68d2",
-    "spirv": "9eadeedb6d78be5b4a9c9c605d7d62db8d7d2308631c5661bae9800b4e936567",
+    "mgfx": "0ab7eb9fae299f6e012550f01b95b31fe39ee6a64a8349ab7fc6620cea7b39b8",
+    "spirv": "4fce63f0015d3d1d7183544af01c89e27614cde83b6dbe4162db722f6f7b7768",
     "warnings": []
   },
   "Vulkan.Debug/third-party/Apos.Shapes/apos-shapes.fx": {
-    "mgfx": "4a52d33d478206ec6b8d806545df19d0844c492ddf7c430fda96468c411da97c",
-    "spirv": "c122bea1fe04dc3efc8e9ef94ff70676214ed16254543d8cdd07d0d34bcafae2",
+    "mgfx": "e79d07e1f8b58d50513b5bb3508ae77d61eaff5789da082d7c0690178d281a2a",
+    "spirv": "42c2fbd53a02064de45e0f1e9fa44f6341d2c7cf111bb41ab1c0ad4bd1c8c895",
     "warnings": []
   },
   "Vulkan.Debug/third-party/Gum/FnaSample-Shader.fx": {
@@ -2747,6 +3118,70 @@
   "Vulkan.Debug/third-party/Gum/MonoGameInCode-Grayscale.fx": {
     "mgfx": "1227e95b7046d1745d99821883c209e133b0f0fa6ce8f03bd22b19cb9ab2e3d9",
     "spirv": "2a112fb5dc707b9325bbd78f1d01a7d8d7bf6ce20b53a2e971b8dfcf13df7e8d",
+    "warnings": []
+  },
+  "Vulkan.Debug/third-party/KNI/ComputeShader.fx": {
+    "errors": [
+      "third-party/KNI/ComputeShader.fx(57,9-9): error FX0014: \u0027ComputeShader\u0027 assigns a compute shader, which the consumer runtime cannot load: MonoGame\u0027s and KNI\u0027s Effect has exactly two shader stages, vertex and pixel, so no compiler can produce an effect containing one. This is a runtime limit, not a ShadowDusk gap; mgfxc rejects this effect too. Remove the \u0027ComputeShader\u0027 assignment, or express the work in the vertex or pixel stage. (MonoGame issues #4567 and #7533 request these stages upstream and remain open and undesigned; the cpt-max/MonoGame fork does run them, but writes a different effect container stock MonoGame cannot read.)"
+    ]
+  },
+  "Vulkan.Debug/third-party/KNI/DeferredBasicEffect.fx": {
+    "errors": [
+      "third-party/KNI/DeferredBasicEffect.fx(92,11-11): error X0000: invalid usage of semantic \u0027COLOR0\u0027 in shader profile ps",
+      "third-party/KNI/DeferredBasicEffect.fx(84,51-51): warning X0000: implicit truncation of vector type [-Wconversion]",
+      "third-party/KNI/DeferredBasicEffect.fx(84,30-30): warning X0000: implicit truncation of vector type [-Wconversion]",
+      "third-party/KNI/DeferredBasicEffect.fx(85,52-52): warning X0000: implicit truncation of vector type [-Wconversion]",
+      "third-party/KNI/DeferredBasicEffect.fx(85,30-30): warning X0000: implicit truncation of vector type [-Wconversion]",
+      "third-party/KNI/DeferredBasicEffect.fx(86,50-50): warning X0000: implicit truncation of vector type [-Wconversion]",
+      "third-party/KNI/DeferredBasicEffect.fx(86,30-30): warning X0000: implicit truncation of vector type [-Wconversion]",
+      "third-party/KNI/DeferredBasicEffect.fx(107,12-12): warning X0000: implicit truncation of vector type [-Wconversion]",
+      "third-party/KNI/DeferredBasicEffect.fx(17,27-27): warning X0000: variable \u0027World\u0027 will be placed in $Globals so initializer ignored",
+      "third-party/KNI/DeferredBasicEffect.fx(18,23-23): warning X0000: variable \u0027World\u0027 will be placed in $Globals so initializer ignored"
+    ]
+  },
+  "Vulkan.Debug/third-party/KNI/NewSyntax_s0s1t0t1.fx": {
+    "mgfx": "8fa9dcf4ff9c4e9ed1835befde3db5e01b2f5b07e8d5fedb23b7bd806536779e",
+    "spirv": "d71a6d54a27246e674a9b23ee112b2fe9659e194498bf9bd45d062d33dc0228f",
+    "warnings": []
+  },
+  "Vulkan.Debug/third-party/KNI/NewSyntax_t0t1.fx": {
+    "mgfx": "3b6a273e09082404b1bf7dd052fd6f59b5411ecb2a36ab906bed9fce582655d4",
+    "spirv": "fe702094c354cdab8b3b9062e6e778e3c6097807987f5216ccfe1c82c5039072",
+    "warnings": []
+  },
+  "Vulkan.Debug/third-party/KNI/OldSyntax_s0s1.fx": {
+    "mgfx": "c7165f1e92c05534448a38294bd9c3f3a91b7d05cce7ca845e6a34c6f09e7dc7",
+    "spirv": "7e91cde5b6dd6fa4e36d81dcac5285e3ea8ea205b3e96cd798110bb7dceb8d83",
+    "warnings": []
+  },
+  "Vulkan.Debug/third-party/KNI/OldSyntax_s0s1t0t1.fx": {
+    "mgfx": "4ea0887be0dbb40c28fbe1df3d871b9c8722eb944b40a6c25ed6cad81d72d580",
+    "spirv": "7de47e08b536a3ec6634f5352048c5cea896d91d7c28208843d62e6be988baa7",
+    "warnings": []
+  },
+  "Vulkan.Debug/third-party/KNI/OldSyntax_t0t1.fx": {
+    "mgfx": "96bf0bd4e190cb6aeb6b8436f6d75580f48ff7e2cf05500b324b7d093f28d58f",
+    "spirv": "d4f95ce9cda2ca9dd53cb446a537e2645595297c0429abfafb2e06ef5059708a",
+    "warnings": []
+  },
+  "Vulkan.Debug/third-party/KNI/OldSyntax_t1t0.fx": {
+    "mgfx": "1cd0cee57be9172be8d51cec6dd3b17788858ccec15a5d76dc01c802c290a53c",
+    "spirv": "0f81e8f490476545e82eefb453dd400daf06cd7cd6e9c75c8ac38b39ad4b190b",
+    "warnings": []
+  },
+  "Vulkan.Debug/third-party/KNI/OldSyntax_x.fx": {
+    "mgfx": "891f9061ac590600539d9dc1a1ea1c040f1506ca69510bd1653b7b46bd2a9327",
+    "spirv": "87b9106b58a482f307f82ff29bea11e68efbc802323345edbc6e7c51afe12365",
+    "warnings": []
+  },
+  "Vulkan.Debug/third-party/KNI/OptimizedMatrix.fx": {
+    "mgfx": "d05d4bb1d61f57bccbd7564cf033f6749dceeb5db5f3ece9f16643f56fd3f762",
+    "spirv": "20f81ea080012d85cbcc98a454c237fe3643026540a4c30d1ba558cff5813226",
+    "warnings": []
+  },
+  "Vulkan.Debug/third-party/KNI/OptimizedMatrixArray.fx": {
+    "mgfx": "49b1506106cb65ca3e73601093b7ee0124b1a3ac912171685d4fad0b18e12085",
+    "spirv": "d3ad2200007de666ff0c496ae270536ad3ab2469664b870ecb6af7388c2ce315",
     "warnings": []
   },
   "Vulkan.Debug/third-party/MonoGame/Bevels.fx": {
@@ -2765,12 +3200,12 @@
     "warnings": []
   },
   "Vulkan.Debug/third-party/MonoGame/CustomSpriteBatchEffect.fx": {
-    "mgfx": "17cbe02dc99fbcef8cad44b0a1fa5c0db6340f5d06bb0bc44db17f2a0e765786",
+    "mgfx": "b127a2313a341e356f5c8d45df295009c46dd6c75a2e7325ea0fb5eb815554d0",
     "spirv": "35a5c67479982f86ea35653a438e3d8b7232ee6d759edeebcfaaf35f0ce83e0c",
     "warnings": []
   },
   "Vulkan.Debug/third-party/MonoGame/CustomSpriteBatchEffectComparisonSampler.fx": {
-    "mgfx": "18ebf56b516778437d61d87d7bf63316514f254e1bf958574bd759d05c6bd926",
+    "mgfx": "e584088a5c16eb69f042902053b67a1ee4d8dd893da49bb8498e90198f727f4c",
     "spirv": "198d9364dc6d23fa56b920c5cbbaaff9e982b3d5f02dd2d59266815d8112f126",
     "warnings": []
   },
@@ -2790,7 +3225,7 @@
     "warnings": []
   },
   "Vulkan.Debug/third-party/MonoGame/Instancing.fx": {
-    "mgfx": "2d8ec62d281d121e4b633a70801c92e4fdfe2c8549bcc80b3660b7bad73272e0",
+    "mgfx": "48f1e6d60c91e0c99c8b7a5065921006d6f5057cb2130b49dfc6c9e9967db993",
     "spirv": "580db45b25dd89d911a493918cecc876dcca60a538f0a6e0d8e09743df7d6aa1",
     "warnings": []
   },
@@ -2805,12 +3240,12 @@
     "warnings": []
   },
   "Vulkan.Debug/third-party/MonoGame/ParameterTypes.fx": {
-    "mgfx": "b0a6cee7b4eae419c2496a0f280b56f06cd875e967645003c06f4f33e31ec9e2",
-    "spirv": "04fb23da0c3484f8a83bc55e91e82b7276292978814fe1e42402fd9eaf97f41c",
+    "mgfx": "2177e6dd36ed5bfb3f6d0217a10faa7a9e34b362f6696ee73b1e3a06c0cf438c",
+    "spirv": "ec805da969a70b986f06194f56d9f0d008ea1c6282e55f89747d417f49a523cd",
     "warnings": []
   },
   "Vulkan.Debug/third-party/MonoGame/ParserTest.fx": {
-    "mgfx": "d901929a95a5c0d2de3168a8ed3b0a71c0bf2d511247e738b6c7211e0cef1998",
+    "mgfx": "b8100026dca11ed20eba7a122cdf38b709090aa3926e332ac233a87409e36468",
     "spirv": "24c420c40dc20a1708f6df8347811410977ad57b3ed3addaccc3aff1d1d7b6d8",
     "warnings": []
   },
@@ -2825,14 +3260,14 @@
     "warnings": []
   },
   "Vulkan.Debug/third-party/MonoGame/TextureArrayEffect.fx": {
-    "mgfx": "452446051907545079f08853ccb9bfa14f9bf97edbe21261e139290e62703064",
-    "spirv": "d57271af3be22e91651887b3242df142e7c6379fae8be86e66841e9baf30b69c",
+    "mgfx": "c4bfaa045491462c3bf2a220873c1b41bf5f0d09f24330865f4f8361734304a4",
+    "spirv": "acd375facddf081a71210bce6d472dd37e622cce48dcb6a29abd049440bcab3b",
     "warnings": []
   },
   "Vulkan.Debug/third-party/MonoGame/VertexTextureEffect.fx": {
-    "errors": [
-      "third-party/MonoGame/VertexTextureEffect.fx(75,20-20): error FX0012: The legacy D3D9 sampling intrinsic \u0027tex2Dlod\u0027 is not supported on this target: its arguments do not map 1:1 onto a modern Texture method, so ShadowDusk cannot rewrite it automatically. Rewrite the call to the modern form (e.g. tex2Dlod(s, t) becomes T.SampleLevel(s, t.xy, t.w); tex2Dproj(s, t) becomes T.Sample(s, t.xy / t.w)). The FNA (fx_2_0) target compiles this intrinsic natively."
-    ]
+    "mgfx": "a13361cfee7c5d241b52414359691a4233fc6e989e7884ddd1ccd2acba48b440",
+    "spirv": "e0d5ccf61b12a82fed4e0f60b38fc68d5dc3e90c463d8ee4456407b588c11288",
+    "warnings": []
   },
   "Vulkan.Debug/third-party/Nez/Bevels.fx": {
     "mgfx": "e9c52e37e809fe5ad82d809212936735df49da6940ebc3fae96065b9757237da",
@@ -2876,7 +3311,7 @@
   },
   "Vulkan.Debug/third-party/Nez/PaletteCycler.fx": {
     "errors": [
-      "third-party/Nez/PaletteCycler.fx(36,9-9): error FX0012: The legacy D3D9 sampling intrinsic \u0027tex1D\u0027 is not supported on this target: its arguments do not map 1:1 onto a modern Texture method, so ShadowDusk cannot rewrite it automatically. Rewrite the call to the modern form (e.g. tex2Dlod(s, t) becomes T.SampleLevel(s, t.xy, t.w); tex2Dproj(s, t) becomes T.Sample(s, t.xy / t.w)). The FNA (fx_2_0) target compiles this intrinsic natively."
+      "third-party/Nez/PaletteCycler.fx(36,9-9): error FX0012: The legacy D3D9 sampling intrinsic \u0027tex1D\u0027 is not supported on this target: ShadowDusk rewrites the 2D sampler family (tex2D, tex2Dgrad, tex2Dlod, tex2Dbias, tex2Dproj) to modern Texture2D methods, but not the 1D, 3D and cube families. Declare the texture as Texture1D / Texture3D / TextureCube with a SamplerState and call its method instead (e.g. texCUBE(s, d) becomes T.Sample(s, d); tex3Dlod(s, t) becomes T.SampleLevel(s, t.xyz, t.w)). The FNA (fx_2_0) target compiles this intrinsic natively."
     ]
   },
   "Vulkan.Debug/third-party/Nez/PixelGlitch.fx": {
@@ -2885,8 +3320,8 @@
     "warnings": []
   },
   "Vulkan.Debug/third-party/Nez/Reflection.fx": {
-    "mgfx": "ec47eb95c2ff4ad108c58235b97b3e3dfb47d60572636f6f71c0a4d9e4b47ae5",
-    "spirv": "74009d383a04d06edeadff63abc536909164e97624c447d35b318f7885333bdc",
+    "mgfx": "6dbe5bfe6bffa5d8d7924bc113c75efeff310bc5d700a0fef1e6381548e17bb2",
+    "spirv": "5bf581b36dfa8dc2c3462daae99c04e11a4fb31092d9666546739da15116448f",
     "warnings": []
   },
   "Vulkan.Debug/third-party/Nez/SpriteBlinkEffect.fx": {
@@ -2940,7 +3375,7 @@
     "warnings": []
   },
   "Vulkan/AlphaTestEffect.fx": {
-    "mgfx": "390c812281b68eebf7efe846b3296ff1187cfe8209e143f8c07d885691ce27d4",
+    "mgfx": "9248c89ea75a1faea08daf05603845775f476f86976ecbe0747c6f1b350f1535",
     "spirv": "3b079975aacfde19234963b66dc8ec418ec69ac3884bc3888bacd4f41966abbb",
     "warnings": []
   },
@@ -2960,7 +3395,7 @@
     "warnings": []
   },
   "Vulkan/BasicEffect.fx": {
-    "mgfx": "1710b669535797620c5a60a5427c8525888abe9ea3e0f71b344db52299673c3d",
+    "mgfx": "93d82905cf9788c870d580be2d3f924fe2dbbd41cf441c6dbdc41e02cf2be1a1",
     "spirv": "3fdacddf7087a48fc11c8f086d58fbf1214db14d64d4ee1d677c4a35077a0d14",
     "warnings": []
   },
@@ -2980,7 +3415,7 @@
     "warnings": []
   },
   "Vulkan/ClipShaderNew.fx": {
-    "mgfx": "0759671c8326f051ff7a7436c4bc759b8df663fcba7e4e4aa44f87e34d77aa5d",
+    "mgfx": "aa068ab5af8035a44baed87d0d78cde771840e9b700ffa21c1b22a240e06456a",
     "spirv": "857c4f51f6407d7fabee46d64460cb5d1f986874e7cccc1cd863251294c1027e",
     "warnings": []
   },
@@ -3005,12 +3440,12 @@
     "warnings": []
   },
   "Vulkan/DualTextureEffect.fx": {
-    "mgfx": "0a05d28dc6cdc925fe0276bd8d59f9e1b3162b29855fbaa2387aa18eee08d135",
+    "mgfx": "96c835a05f3bdc2981fd45f8c6865fb62f99d56fa7716193ea053632e2eb10d7",
     "spirv": "ef63cf9ee3f0e50505bbca6db4ed465931178f0d5f9d8afeaa8df8cf02582f16",
     "warnings": []
   },
   "Vulkan/EnvironmentMapEffect.fx": {
-    "mgfx": "ca93ee8b33f239b1095976534a6df5e9af59996e183ddc739545246303030a76",
+    "mgfx": "3f9c24dc5de14e79ac4a6792124b03e7fc67f7c16483cb78281c5b6f21dd6c94",
     "spirv": "f5a162cfff542a02d0c8bfb877c70c7de55027618939891a0fe62e8778b2b632",
     "warnings": []
   },
@@ -3032,6 +3467,11 @@
   "Vulkan/Grayscale.fx": {
     "mgfx": "fbfaf3a0995a8cccf6cb22bf5baf74468455a6b8bdac0873ec8f39e4274ea78d",
     "spirv": "746e64cd1809d428b344f6eaaffde1e2910ffa0a0f396c8980b5c3fe86f1a63f",
+    "warnings": []
+  },
+  "Vulkan/HalfGlobals.fx": {
+    "mgfx": "532cd952ad7ec1509d86b46a5681c2f4133c35efbb4263a8dda77e2f7f37fd65",
+    "spirv": "114b21a08cb98ad362b3351f72897b6c584b318f2ce3f30285831131c35bfbd0",
     "warnings": []
   },
   "Vulkan/ImplicitTruncationWarning.fx": {
@@ -3077,7 +3517,7 @@
     "warnings": []
   },
   "Vulkan/PenumbraHull.fx": {
-    "mgfx": "88d32f0b68c496f7344250f7bea46ac117338c7d295672d07dfa791f765d708f",
+    "mgfx": "8bb5f19bebb295f2294dc9c5284c150f1e0bd4bc53753e823a2d29af59ef0678",
     "spirv": "3c8d460c0aedf133dba954e95b633b1b94d7c690889540c9cccfd007a87c4f58",
     "warnings": []
   },
@@ -3192,7 +3632,7 @@
     "warnings": []
   },
   "Vulkan/SkinnedEffect.fx": {
-    "mgfx": "a6d2b3f6af9b41a043a3790120d099d3d927ea08b92eec07245b6d41bb2b6d25",
+    "mgfx": "c1f38eb22c0b5053ee04bd1d97eefa627d021bdca97475dae82f586a99630a85",
     "spirv": "2297103754cb0602c5547184e4776053c7234f0902d4765839ae738230dda980",
     "warnings": []
   },
@@ -3207,7 +3647,7 @@
     "warnings": []
   },
   "Vulkan/SpriteEffect.fx": {
-    "mgfx": "126b83ba761a10306786a67a00c2d685f71a1968fdf03c7b9a38af98c5880adb",
+    "mgfx": "46d6837c9f254ca4a0eb1dac2dba1d4fb36339f99f188199657a0c2b9ca40526",
     "spirv": "b85a5c0b5a26dbb11e1a427fcc9950dfaf48bfaafc7d422aa196966b3f00a973",
     "warnings": []
   },
@@ -3312,8 +3752,8 @@
     "warnings": []
   },
   "Vulkan/examples/ExLegacyTextureDiscard.fx": {
-    "mgfx": "b561cb3f8be8650f3b82dcfef0662bdaf953d8781a43fd9b28601a0a8afa851b",
-    "spirv": "9e5bd4f85dcb009ce466ff7a2835f549b3daf639f5b7e6aa94e1a79945830d3b",
+    "mgfx": "56ec6229d1032a2450170b7217fb44b09b80de405bee2be65d61558519adee15",
+    "spirv": "9b57de9d7e61f09fa119542966ed1356af26f6f13cbafe9a20990bc6edd2de6e",
     "warnings": []
   },
   "Vulkan/examples/ExLoopRelational.fx": {
@@ -3556,6 +3996,68 @@
     "spirv": "8a65067a5585dace375f941a3a2aef985b98124aa8f6ea88b17f78f6cdabc53f",
     "warnings": []
   },
+  "Vulkan/register-slots/RegisterDeadSampler.fx": {
+    "mgfx": "4fe2fbcee142154b20809972fc8742cae60f201c76212a7e2e1a05a9a6231e73",
+    "spirv": "b0a06207b4cc6b3e476c5ce74fa769c9e28b6038690eefea45501a4f6adb86d7",
+    "warnings": []
+  },
+  "Vulkan/register-slots/RegisterGapT0T2.fx": {
+    "mgfx": "3e5e50371f7ee4d82692d4e5c941f7b83997b3a9be7b2b3a67674ebd363e7289",
+    "spirv": "17d8ba5a9bab6baa88ed565f896197da30e21288fcc793f7a5bd9d0aee8546f8",
+    "warnings": []
+  },
+  "Vulkan/register-slots/RegisterHelperPair.fx": {
+    "mgfx": "94e2af45ae040281a93918cb7f89f750e4a574deb9044406e87e61d5cb0b6c5a",
+    "spirv": "fc812316256e189730fc77b9c885df3c800a22f6a60e6e0e4e89604d1e1a0a81",
+    "warnings": []
+  },
+  "Vulkan/register-slots/RegisterLoadOnly.fx": {
+    "mgfx": "c13a6863e81d2341bfe1e37ef478f0230c63ea281e4c8244fd11386a1f978bb9",
+    "spirv": "134dce61881977933146c06f7471834d4100d31095a46a933931f308c48ca6c6",
+    "warnings": []
+  },
+  "Vulkan/register-slots/RegisterLoneT1.fx": {
+    "mgfx": "d6277072439aeb7760cbfd7b15e938d8ea603710238cd38add787feabef11144",
+    "spirv": "85d2283f1f1184585ff722f78e609f8e47aba7e2dd7f7829e46b2918979b7933",
+    "warnings": []
+  },
+  "Vulkan/register-slots/RegisterMismatchedTS.fx": {
+    "mgfx": "dd703203ed87b5024cd9e9e498b5fd4833b4320e864f29087ed7bea71ed321ad",
+    "spirv": "22c79bf809ad7409ba9a970828c7a255fdc47d94739ef2c7cdb5166e09b1298f",
+    "warnings": []
+  },
+  "Vulkan/register-slots/RegisterPreprocessedPairs.fx": {
+    "mgfx": "61414d5bedaa0912bb0fa95df5bbcb08e1a7ab4e9da0c80211fdc9501ab45099",
+    "spirv": "9765d7bd49ea4fd27c4933e563992e29bcc53f6937e8c26a13c5920a8821f98b",
+    "warnings": []
+  },
+  "Vulkan/register-slots/RegisterSamplerPerPass.fx": {
+    "mgfx": "991043bb98f868653f5a6ea90286aea117dc35f51b58af0278f10779f81e3b54",
+    "spirv": "f52d215f9c4f8b253515b7563c6d32d22b6c0bdd4c32e66a70d1a1749d92d6c9",
+    "warnings": []
+  },
+  "Vulkan/register-slots/RegisterSamplerPerStage.fx": {
+    "mgfx": "8644318eff32bbd9a5f5ba52c224a1f367379f0599999ac327562aa320631b7a",
+    "spirv": "4ac3ad225cc19b133a6237df4fa8884c48a2deae5710e3385e37c1a9ec6f2bdd",
+    "warnings": []
+  },
+  "Vulkan/register-slots/RegisterSpace0.fx": {
+    "mgfx": "e20d3b33f30c3cb13493e0a3380194464e890e69942ff241be3cc1700e29d2ca",
+    "spirv": "6a8fdf3cf2e2a302499f3f0d81fb5ca1629bf5f15d168378a2fcd41462e7ee86",
+    "warnings": []
+  },
+  "Vulkan/register-slots/RegisterTexture2DArrayT1.fx": {
+    "mgfx": "61ec0af94499b4ce2ddeb042117f2b995e3e8ec84dafdcea1a1c00c506d438b9",
+    "spirv": "2328f0c4941a07b961a8d9fc7362831ef08c9583ca4fe74ecb7120abe15c2d45",
+    "warnings": []
+  },
+  "Vulkan/register-slots/RegisterTwoSamplers.fx": {
+    "mgfx": "709691586e7449261e2bb03bc4c91002d6a1d8b36d36c8aaabddd4541d7894c3",
+    "spirv": "6172a554ef283b038dffe869cf6f0ac9d9562b32e9f651c585be56a99d35d3b4",
+    "warnings": [
+      "register-slots/RegisterTwoSamplers.fx(38,87-87): warning SD0235: Vulkan target: texture \u0027Tex1\u0027 is sampled through a second sampler, \u0027PointSampler\u0027, in shader \u0027MainPS\u0027. MonoGame\u0027s DesktopVK binds a texture and a sampler as one combined descriptor, so ShadowDusk gives this pairing a second descriptor holding the same texture, bound to the \u0027Tex1\u0027 effect parameter. Set \u0027Tex1\u0027 through Effect.Parameters: SpriteBatch fills only the first texture slot, so a sprite texture read this way reaches only the first sampler."
+    ]
+  },
   "Vulkan/render-states.fx": {
     "mgfx": "3ae7bc948a2b31bf99ef3cc046223ebe5cfb7fde05009fb12c51c3a343782c86",
     "spirv": "eca998b8acd85452e6fcc5b14cefb9cdf64991be9464564edcad8bcaa77175cd",
@@ -3592,17 +4094,17 @@
     ]
   },
   "Vulkan/third-party/Apos.Shapes/apos-shapes-aa.fx": {
-    "mgfx": "3ee2187e64207d58d4a0a65ab6378859fddf86ba44e450134905b96b39ca1f13",
+    "mgfx": "33346bd7b59f63cf5eaf29f443ba521b521c1b0a2b8e79e765d6851de1178fc8",
     "spirv": "401ee1206b325aeacde62782f41b2f37c9369b1be3a8754aa0d954b128869485",
     "warnings": []
   },
   "Vulkan/third-party/Apos.Shapes/apos-shapes-sm6.fx": {
-    "mgfx": "a62e1047d228bfe3995e778856365b883432cccf86bf41afbd8d2feb4a039a38",
+    "mgfx": "e05ab4c2475b68baa3f0157bd7afc4f8011d4e70abd1e6fba98256cce188f3ad",
     "spirv": "4d9488884d9299b1ab6dfa12d8753721c94f66d2f4c2d04f74c06ea4eb6c9289",
     "warnings": []
   },
   "Vulkan/third-party/Apos.Shapes/apos-shapes.fx": {
-    "mgfx": "48b2e0070bf8b7046631f241b84b2e7487d135d30ace85b67321a418905b7566",
+    "mgfx": "d1ad4e0ce80e4b90319f232af8fdf0aa1c9dd0c3880c9b18613396c557af2fd5",
     "spirv": "656613449547cf4e28d9f3b3891e75a832fb52edc99d98be9b43d3b314edd7a6",
     "warnings": []
   },
@@ -3621,6 +4123,70 @@
     "spirv": "eca7cedb95610a522965e1299a4d00b9fd1fc59e9044b145c6efdb9706dc9611",
     "warnings": []
   },
+  "Vulkan/third-party/KNI/ComputeShader.fx": {
+    "errors": [
+      "third-party/KNI/ComputeShader.fx(57,9-9): error FX0014: \u0027ComputeShader\u0027 assigns a compute shader, which the consumer runtime cannot load: MonoGame\u0027s and KNI\u0027s Effect has exactly two shader stages, vertex and pixel, so no compiler can produce an effect containing one. This is a runtime limit, not a ShadowDusk gap; mgfxc rejects this effect too. Remove the \u0027ComputeShader\u0027 assignment, or express the work in the vertex or pixel stage. (MonoGame issues #4567 and #7533 request these stages upstream and remain open and undesigned; the cpt-max/MonoGame fork does run them, but writes a different effect container stock MonoGame cannot read.)"
+    ]
+  },
+  "Vulkan/third-party/KNI/DeferredBasicEffect.fx": {
+    "errors": [
+      "third-party/KNI/DeferredBasicEffect.fx(92,11-11): error X0000: invalid usage of semantic \u0027COLOR0\u0027 in shader profile ps",
+      "third-party/KNI/DeferredBasicEffect.fx(84,51-51): warning X0000: implicit truncation of vector type [-Wconversion]",
+      "third-party/KNI/DeferredBasicEffect.fx(84,30-30): warning X0000: implicit truncation of vector type [-Wconversion]",
+      "third-party/KNI/DeferredBasicEffect.fx(85,52-52): warning X0000: implicit truncation of vector type [-Wconversion]",
+      "third-party/KNI/DeferredBasicEffect.fx(85,30-30): warning X0000: implicit truncation of vector type [-Wconversion]",
+      "third-party/KNI/DeferredBasicEffect.fx(86,50-50): warning X0000: implicit truncation of vector type [-Wconversion]",
+      "third-party/KNI/DeferredBasicEffect.fx(86,30-30): warning X0000: implicit truncation of vector type [-Wconversion]",
+      "third-party/KNI/DeferredBasicEffect.fx(107,12-12): warning X0000: implicit truncation of vector type [-Wconversion]",
+      "third-party/KNI/DeferredBasicEffect.fx(17,27-27): warning X0000: variable \u0027World\u0027 will be placed in $Globals so initializer ignored",
+      "third-party/KNI/DeferredBasicEffect.fx(18,23-23): warning X0000: variable \u0027World\u0027 will be placed in $Globals so initializer ignored"
+    ]
+  },
+  "Vulkan/third-party/KNI/NewSyntax_s0s1t0t1.fx": {
+    "mgfx": "569effa1580e037e5d5775020c010d49315b0692e4aec9997b9f8ac2e04f46ba",
+    "spirv": "0c9f54ca07909863fbd6e3470c0dd488e6342c49459a7b267643be29c8d115ef",
+    "warnings": []
+  },
+  "Vulkan/third-party/KNI/NewSyntax_t0t1.fx": {
+    "mgfx": "ed0ecf8e466ae97ff612e01bccfcfcfb2673df067f10430556c24a817097825b",
+    "spirv": "0c9f54ca07909863fbd6e3470c0dd488e6342c49459a7b267643be29c8d115ef",
+    "warnings": []
+  },
+  "Vulkan/third-party/KNI/OldSyntax_s0s1.fx": {
+    "mgfx": "8bc93aa59384d93c6fe91e15e27d5da7217184e4f99feb243b3faad251228f09",
+    "spirv": "d122cacb314811afe555510db48c1d9864aabe11ce23a65beabaa65b6cda8ada",
+    "warnings": []
+  },
+  "Vulkan/third-party/KNI/OldSyntax_s0s1t0t1.fx": {
+    "mgfx": "868c9836ab82d8e463db40e8df58925788ab23e5640801bb9cd5ac6e1257f77d",
+    "spirv": "0c9f54ca07909863fbd6e3470c0dd488e6342c49459a7b267643be29c8d115ef",
+    "warnings": []
+  },
+  "Vulkan/third-party/KNI/OldSyntax_t0t1.fx": {
+    "mgfx": "b91d92e2010b987440388645c4c1558e553408fc21f0674d3a928d6bd4da6390",
+    "spirv": "47997b3e94c2136a9d22ec2e23dfb2730cd63ad7be91585f42b683ece08c885e",
+    "warnings": []
+  },
+  "Vulkan/third-party/KNI/OldSyntax_t1t0.fx": {
+    "mgfx": "ff8b4feff659cd47b28f20ee76594aeebff1c258fcc48b79a1ea633158789f88",
+    "spirv": "a276e414450efcdd7616142c2029c768b0cc9d565522f1b309eee7b00145b987",
+    "warnings": []
+  },
+  "Vulkan/third-party/KNI/OldSyntax_x.fx": {
+    "mgfx": "9be8d5475c0e0df25eab543571168f210d2b4d29686686e0e3e69c17d8e6771b",
+    "spirv": "d122cacb314811afe555510db48c1d9864aabe11ce23a65beabaa65b6cda8ada",
+    "warnings": []
+  },
+  "Vulkan/third-party/KNI/OptimizedMatrix.fx": {
+    "mgfx": "2236bfb154fb4200e567ede78c5c4a5533735957bb357af2768d14a6c53d8b0f",
+    "spirv": "ccbd96268bef03e6daad91da258d15a1728d4f6e76f831a8eb7c2219b3d78f33",
+    "warnings": []
+  },
+  "Vulkan/third-party/KNI/OptimizedMatrixArray.fx": {
+    "mgfx": "9093fedc5303b14c52d81d433ac2948c97dc27bd0e00b3d6fb2a9e7dc08f1158",
+    "spirv": "dd12390f7223429027d19ccb2a663098ad788681d30474cdf60d4b5af1d5fb97",
+    "warnings": []
+  },
   "Vulkan/third-party/MonoGame/Bevels.fx": {
     "mgfx": "f9024d7eecfc1c4a50441e3caa6d8fa5f8de2a5fd7c0617bb8557c7736324559",
     "spirv": "69081970af7f65f5740ec8b7e3d7976abbee4075a2dcb19fd9796bfab3323725",
@@ -3637,12 +4203,12 @@
     "warnings": []
   },
   "Vulkan/third-party/MonoGame/CustomSpriteBatchEffect.fx": {
-    "mgfx": "9f5f007dd669686a0fd86f182cc11288cc5b61b2981b881201ca37a0bf3982a2",
+    "mgfx": "fb295eda6eef32a7ead21d4b4651651c7550c3e0f7854e90bd8d5872b9bffb2e",
     "spirv": "8e93f91019dddf2c42a80777bd1441c3912258d8a78131ebe1755c02169e4bf2",
     "warnings": []
   },
   "Vulkan/third-party/MonoGame/CustomSpriteBatchEffectComparisonSampler.fx": {
-    "mgfx": "1b18d7216a15dab721742d65ac7c8f407039e9994cc2e9b6fae15b5073cdd8b5",
+    "mgfx": "2d56578eb70e6301c0601803c33fd99f7384a6ff02947bb4ec64b9a383b0a93d",
     "spirv": "c15d66eb2be8ecc224ac0b96386d57d5f807e4f7b200a8534679b6a9a6b392d0",
     "warnings": []
   },
@@ -3662,7 +4228,7 @@
     "warnings": []
   },
   "Vulkan/third-party/MonoGame/Instancing.fx": {
-    "mgfx": "a65f3b69bfc63ea3cf877a63fb78e56004d34a1cffd971edddc037530a9c2cce",
+    "mgfx": "d9ba4231f840dbb583352a4fdd515f24e1bfde287bbce44afab639cbe8c259bf",
     "spirv": "2a134d992e4caea434376ba5878b72cb1ca47702feafa381dbb1a47808793bd4",
     "warnings": []
   },
@@ -3677,12 +4243,12 @@
     "warnings": []
   },
   "Vulkan/third-party/MonoGame/ParameterTypes.fx": {
-    "mgfx": "f71d7379779ed12c2f0f1da01bb32fc227bc0650a753659e3338ec5528ed854a",
+    "mgfx": "0ca8ab830e7a20ce180d5734091f664be13839531240e9a4bec024b49740adae",
     "spirv": "69e44ed3cba93f1dfede95a2919d98fd7a161cfaee68bcb51205457448a16691",
     "warnings": []
   },
   "Vulkan/third-party/MonoGame/ParserTest.fx": {
-    "mgfx": "c27ff29812e69f8403d4cde0fccb9a247bf256c6decffcccef146c7700827aaa",
+    "mgfx": "ad1ca3b0879a464a2bb2f782b8453c7ea5bb779b6f4f916b00a130611a40c7a0",
     "spirv": "9136502374353badaab0c966eb0bb0dbb11ea5cfae49579fc77befb08985731a",
     "warnings": []
   },
@@ -3697,14 +4263,14 @@
     "warnings": []
   },
   "Vulkan/third-party/MonoGame/TextureArrayEffect.fx": {
-    "mgfx": "5208fd995b94c0eaaf4c9df54f05f05fc4620b1a7406fc5eed1926e96409580e",
+    "mgfx": "85b52618bea5fd6cde0b3905e1870970da365cfa1bdbb03848cc175187063996",
     "spirv": "035d3d2caf8a843a98d88767aedd200e700bb8183f0dc9958bef045eb10f4fb5",
     "warnings": []
   },
   "Vulkan/third-party/MonoGame/VertexTextureEffect.fx": {
-    "errors": [
-      "third-party/MonoGame/VertexTextureEffect.fx(75,20-20): error FX0012: The legacy D3D9 sampling intrinsic \u0027tex2Dlod\u0027 is not supported on this target: its arguments do not map 1:1 onto a modern Texture method, so ShadowDusk cannot rewrite it automatically. Rewrite the call to the modern form (e.g. tex2Dlod(s, t) becomes T.SampleLevel(s, t.xy, t.w); tex2Dproj(s, t) becomes T.Sample(s, t.xy / t.w)). The FNA (fx_2_0) target compiles this intrinsic natively."
-    ]
+    "mgfx": "8de31e24ed42398231b28988691c2ede42d1f6ad3c34667116004a5becad948c",
+    "spirv": "d568f1cd7707c7c8512ee169afda2099a374f5353a7e724bca5350acf89ab56a",
+    "warnings": []
   },
   "Vulkan/third-party/Nez/Bevels.fx": {
     "mgfx": "90ead298c17a052d9add659fabb0cac89c52ea8dc58537c4813446d80d7899a6",
@@ -3748,7 +4314,7 @@
   },
   "Vulkan/third-party/Nez/PaletteCycler.fx": {
     "errors": [
-      "third-party/Nez/PaletteCycler.fx(36,9-9): error FX0012: The legacy D3D9 sampling intrinsic \u0027tex1D\u0027 is not supported on this target: its arguments do not map 1:1 onto a modern Texture method, so ShadowDusk cannot rewrite it automatically. Rewrite the call to the modern form (e.g. tex2Dlod(s, t) becomes T.SampleLevel(s, t.xy, t.w); tex2Dproj(s, t) becomes T.Sample(s, t.xy / t.w)). The FNA (fx_2_0) target compiles this intrinsic natively."
+      "third-party/Nez/PaletteCycler.fx(36,9-9): error FX0012: The legacy D3D9 sampling intrinsic \u0027tex1D\u0027 is not supported on this target: ShadowDusk rewrites the 2D sampler family (tex2D, tex2Dgrad, tex2Dlod, tex2Dbias, tex2Dproj) to modern Texture2D methods, but not the 1D, 3D and cube families. Declare the texture as Texture1D / Texture3D / TextureCube with a SamplerState and call its method instead (e.g. texCUBE(s, d) becomes T.Sample(s, d); tex3Dlod(s, t) becomes T.SampleLevel(s, t.xyz, t.w)). The FNA (fx_2_0) target compiles this intrinsic natively."
     ]
   },
   "Vulkan/third-party/Nez/PixelGlitch.fx": {

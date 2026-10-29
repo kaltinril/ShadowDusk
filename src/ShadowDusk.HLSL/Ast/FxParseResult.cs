@@ -105,4 +105,33 @@ public sealed record FxParseResult
     /// landing the pair exactly on <c>N</c>. Same allocator, different starting facts.</para>
     /// </summary>
     public IReadOnlySet<int> ReservedGlSamplerSlots { get; init; } = new HashSet<int>();
+
+    /// <summary>
+    /// The <c>tex2Dlod</c> / <c>tex2Dbias</c> / <c>tex2Dproj</c> calls this RAW-text parse left
+    /// verbatim because the right rewrite depends on which <c>#if</c> branch compiles (one body
+    /// under two conditional headers, or the bound texture declared with a different type per
+    /// branch), each as the <c>FX0012</c> it would be if no preprocessed re-parse could resolve
+    /// it. A compile with any of these must be redone from the preprocessed source (the
+    /// legacy-sampler recovery), where every conditional is resolved; DirectX 11, whose compiler
+    /// would otherwise take the unrewritten call silently, does so up front. Always empty on a
+    /// preprocessed parse.
+    /// </summary>
+    public IReadOnlyList<FxParseError> DeferredLegacyIntrinsicCalls { get; init; } = [];
+
+    /// <summary>
+    /// The helpers <see cref="StrippedHlsl"/> defines for <c>tex2Dlod</c> / <c>tex2Dbias</c> /
+    /// <c>tex2Dproj</c> calls: each name, the intrinsic it stands for, and where its definition
+    /// sits in <see cref="StrippedHlsl"/> (1-based line and columns, end exclusive). Lets a
+    /// diagnostic about a call name the intrinsic the author wrote, while one located inside a
+    /// definition (the helper's own placement) is left as the compiler wrote it.
+    /// </summary>
+    public IReadOnlyList<RestructuredHelperDefinition> RestructuredHelpers { get; init; } = [];
 }
+
+/// <summary>One helper a <c>tex2Dlod</c>-family call was rewritten to; see <see cref="FxParseResult.RestructuredHelpers"/>.</summary>
+/// <param name="Name">The helper's name (<c>tex2Dlod_SD0</c>).</param>
+/// <param name="Intrinsic">The intrinsic the author wrote (<c>tex2Dlod</c>).</param>
+/// <param name="Line">1-based line of the definition in the stripped text.</param>
+/// <param name="StartColumn">1-based column where the definition starts.</param>
+/// <param name="EndColumn">1-based column just past the definition.</param>
+public sealed record RestructuredHelperDefinition(string Name, string Intrinsic, int Line, int StartColumn, int EndColumn);

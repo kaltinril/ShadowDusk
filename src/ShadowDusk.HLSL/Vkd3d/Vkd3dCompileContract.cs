@@ -112,12 +112,27 @@ internal static class Vkd3dCompileContract
     // mode, but it deliberately cannot touch the same semantic on a struct FIELD (the
     // struct may be a VS output, where COLOR is legal), so the option is what covers a
     // `struct { float4 c : COLOR0; }` pixel-shader return.
+    //
+    // `half` globals on an SM4+ target (the XNA-era `half4 Tint = ...;`): `mgfxc`'s
+    // DirectX_11 compile always passes fxc D3DCOMPILE_ENABLE_BACKWARDS_COMPATIBILITY, under
+    // which a `half`/`halfN`/`halfNxM` global or cbuffer member is a `float` (fxc without it
+    // says X3650 "global variables cannot use the 'half' type ... use the backwards
+    // compatibility flag"). vkd3d mirrors fxc: without ALLOW_HALF_GLOBALS it rejects the
+    // declaration with E5002, and vkd3d-utils' own D3DCompile sets the bit exactly when the
+    // fxc backcompat flag is set. With it, the shader code, signatures and the reflected
+    // type (D3D_SVT_FLOAT, class, rows, columns, offsets, initializer defaults) are those
+    // of the `float` twin; only the RDEF type-name string keeps the author's spelling
+    // (`half4`), exactly as fxc's unstripped blob does. `half` locals, parameters and
+    // struct fields never needed it. NOT passed on the SM1-3 target: the FNA reference,
+    // `fxc /T fx_2_0` with default flags (d3dcompiler_43 and _47 alike), rejects a `half`
+    // global too, so E5002 there is reference parity.
     private static readonly Vkd3dCompileOption[] DxbcTpfOptions =
     [
         new()
         {
             Name  = Vkd3dCompileOptionName.BackwardCompatibility,
-            Value = (uint)Vkd3dBackwardCompatibility.MapSemanticNames,
+            Value = (uint)(Vkd3dBackwardCompatibility.MapSemanticNames
+                           | Vkd3dBackwardCompatibility.AllowHalfGlobals),
         },
     ];
 
@@ -132,8 +147,12 @@ internal static class Vkd3dCompileContract
     /// and nowhere else.
     ///
     /// <para><see cref="TargetTypeDxbcTpf"/>: <c>BACKWARD_COMPATIBILITY</c> =
-    /// <c>MAP_SEMANTIC_NAMES</c>. <see cref="TargetTypeD3dBytecode"/> (and anything else):
-    /// no options; on the SM1-3 target those ARE the native semantics.</para>
+    /// <c>MAP_SEMANTIC_NAMES | ALLOW_HALF_GLOBALS</c>, the two halves of the fxc
+    /// <c>D3DCOMPILE_ENABLE_BACKWARDS_COMPATIBILITY</c> flag <c>mgfxc</c>'s DirectX_11
+    /// compile always sets. <see cref="TargetTypeD3dBytecode"/> (and anything else):
+    /// no options; on the SM1-3 target those ARE the native semantics, and the FNA
+    /// reference (<c>fxc /T fx_2_0</c>, default flags) rejects a <c>half</c> global as
+    /// vkd3d does.</para>
     /// </summary>
     public static IReadOnlyList<Vkd3dCompileOption> ResolveCompileOptions(int targetType) =>
         targetType == TargetTypeDxbcTpf ? DxbcTpfOptions : [];

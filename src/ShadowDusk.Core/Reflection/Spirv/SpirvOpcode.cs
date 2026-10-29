@@ -71,4 +71,5 @@ internal enum SpirvDim
     Dim2D   = 1,
     Dim3D   = 2,
     Cube    = 3,
+    Buffer  = 5,
 }

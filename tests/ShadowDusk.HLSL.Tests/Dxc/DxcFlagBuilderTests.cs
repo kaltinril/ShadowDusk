@@ -267,4 +267,37 @@ public sealed class DxcFlagBuilderTests
         flags.ShouldContain("-DBAR");
         flags.ShouldNotContain("-DBAR=");
     }
+
+    // Issue #444: DXC's built-in __TIMESTAMP__ crashes the process whenever it expands, so every
+    // DXC call (compile or -P, every target) defines it to clang's own text for an unknown time,
+    // silencing the redefinition warning -WX would otherwise make an error. A user's own -D comes
+    // after it, so the user's value wins as it would on its own.
+    [Theory]
+    [InlineData(PlatformTarget.OpenGL, ShaderStage.Vertex)]
+    [InlineData(PlatformTarget.OpenGL, ShaderStage.Pixel)]
+    [InlineData(PlatformTarget.Vulkan, ShaderStage.Vertex)]
+    [InlineData(PlatformTarget.Vulkan, ShaderStage.Pixel)]
+    [InlineData(PlatformTarget.DirectX, ShaderStage.Pixel)]
+    [InlineData(PlatformTarget.DirectX12, ShaderStage.Vertex)]
+    [InlineData(PlatformTarget.DirectX12, ShaderStage.Pixel)]
+    [InlineData(PlatformTarget.Metal, ShaderStage.Pixel)]
+    public void EveryCompile_DefinesTimestamp_ToClangsPlaceholder(PlatformTarget platform, ShaderStage stage)
+    {
+        IReadOnlyList<string> flags = Build(platform, stage, macros: [("USER", "1")]);
+
+        flags.ShouldContain("-D__TIMESTAMP__=\"??? ??? ?? ??:??:?? ????\"");
+        flags.ShouldContain("-Wno-builtin-macro-redefined");
+        flags.ToList().IndexOf(DxcFlagBuilder.TimestampDefine).ShouldBeLessThan(flags.ToList().IndexOf("-DUSER=1"));
+    }
+
+    [Fact]
+    public void EveryPreprocessRun_DefinesTimestamp_ToClangsPlaceholder()
+    {
+        IReadOnlyList<string> flags = DxcFlagBuilder.BuildPreprocess([("USER", "1")]);
+
+        flags[0].ShouldBe("-P");
+        flags.ShouldContain(DxcFlagBuilder.TimestampDefine);
+        flags.ShouldContain(DxcFlagBuilder.NoBuiltinMacroRedefinedWarning);
+        flags.ToList().IndexOf(DxcFlagBuilder.TimestampDefine).ShouldBeLessThan(flags.ToList().IndexOf("-DUSER=1"));
+    }
 }

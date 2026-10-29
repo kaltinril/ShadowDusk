@@ -698,8 +698,8 @@ public sealed class Phase41StructuralDivergenceMatrixTests
             sb.AppendLine("forms. The pipeline now applies a GATED zero-technique fallback: when the raw pre-parse yields zero");
             sb.AppendLine("techniques AND the target's macros select the modern (SM4/SM6) branch, it DXC-preprocesses (`-P`)");
             sb.AppendLine("the source and re-parses the expanded text, recovering the literal `technique` blocks. On");
-            sb.AppendLine("**DirectX_11 these effects now compile** (structurally clean apart from the known anonymous-pass");
-            sb.AppendLine("`P0` naming class). On **OpenGL they still report SD0010**: the GL macro set is deliberately");
+            sb.AppendLine("**DirectX_11 these effects now compile** and are structurally clean (an anonymous pass carries");
+            sb.AppendLine("mgfxc's empty name). On **OpenGL they still report SD0010**: the GL macro set is deliberately");
             sb.AppendLine("`{MGFX, GLSL, OPENGL}` with NO SM4/SM6, so the stock effects expand to their legacy DX9/SM2 branch");
             sb.AppendLine("(`sampler2D`/`tex2D`/`vs_2_0`) which the modern DXC -> SPIR-V GL backend cannot compile (it crashes");
             sb.AppendLine("DXC's native codegen), so that target is gated OUT of the recovery and keeps the loud SD0010. This");
@@ -847,12 +847,6 @@ public sealed class Phase41StructuralDivergenceMatrixTests
                 else if (d.Contains("sampler slot"))
                     Add("sampler", "Sampler slot / baked-state delta",
                         "A sampler slot is missing/extra or its baked sampler_state differs.", cell);
-                else if (d.Contains("pass[") && d.Contains("name `") && d.Contains("vs ``"))
-                    Add("passname", "Anonymous-pass naming (`P0` vs empty) — KNOWN, render-irrelevant",
-                        "For an anonymous `pass { ... }` (no name), mgfxc stores an empty pass name while ShadowDusk "
-                        + "synthesizes `P0`. MonoGame addresses passes by INDEX (and by name only when the user named them), "
-                        + "so a synthesized name for an unnamed pass does not change which pass runs. Render-irrelevant; "
-                        + "not a defect.", cell);
                 else if (d.Contains("technique") || d.Contains("pass"))
                     Add("tech", "Technique/pass shape delta — TRIAGE",
                         "Technique count, name, pass count, named-pass name, or VS/PS presence differs.", cell);
