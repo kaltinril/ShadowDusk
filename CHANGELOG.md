@@ -25,6 +25,13 @@ that loads and renders identically to `mgfxc`'s in the real MonoGame/KNI runtime
   passes in one technique compile (`mgfxc` accepts them). On FNA the anonymous technique's name is now
   the one-byte empty string `fxc` writes, so FNA reports `EffectTechnique.Name == ""` instead of
   `null`. Passes are still applied by index; only those names change in the output bytes.
+- **DXC's "initializer ignored" warning no longer survives a kept default whose initializer starts
+  on a later line.** For `float4 C =` / `{ 1, 0, 0, 1 };` (or `float4 C` / `= ...`, a multi-line
+  array or matrix) the default was stored but the warning was still shown on OpenGL and Vulkan,
+  because it was matched on the name's line and DXC reports the initializer's first token. It is
+  now matched anywhere in the declaration, from the name to the end of the initializer, which also
+  keeps the warning of an unkept declaration that shares a kept one's line, and drops the
+  `expanded from macro` note of a removed warning. Output bytes are unchanged.
 - **Techniques are read from the preprocessed source, like `mgfxc` (issue #407).** A technique
   inside a false `#if` (or behind an unset `/Defines` value) was still compiled, a technique in an
   `#include`d file was not found (`SD0010`, or dropped beside the main file's own), and a macro

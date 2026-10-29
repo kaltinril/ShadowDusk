@@ -304,6 +304,107 @@ public sealed class InitializerDefaultsTests
         }
     }
 
+    // An initializer that does not start on its name's line: DXC's SPIR-V path reports the warning
+    // at the initializer's first token, so matching the name's line left the untrue warning behind
+    // (KNI EffectTest port, 2026-10-28: `float4 Tint =` / `{ 1, 0, 0, 1 };`).
+    private const string MultiLineInitializers = """
+        #define RED float4(1, 0, 0, 1)
+        #define GREEN_BRACE { 0, 1, 0, 1 }
+        float4 BraceNext =
+        { 1, 0, 0, 1 };
+        float4 EqNext
+        = float4(0, 1, 0, 1);
+        float4 Spread = float4(
+            0.25,
+            0.5,
+            0.75,
+            1);
+        float Arr[3] =
+        {
+            1, 2, 3
+        };
+        float4x4 Mat =
+        {
+            1, 0, 0, 0,
+            0, 1, 0, 0,
+            0, 0, 1, 0,
+            0, 0, 0, 1
+        };
+        float
+            NameNext = 2;
+        float4 FromMacro =
+            RED;
+        float4 BraceMacro
+            = GREEN_BRACE;
+        #include "inc.fxh"
+        float4 MainPS(float2 tc : TEXCOORD0) : COLOR0
+        {
+            return BraceNext + EqNext + Spread + Arr[0] + Arr[1] + Arr[2] + mul(float4(1, 1, 1, 1), Mat)
+                + NameNext + FromMacro + BraceMacro + IncTint;
+        }
+        technique T { pass P { PixelShader = compile ps_3_0 MainPS(); } }
+        """;
+
+    private const string MultiLineInclude = """
+        // an included declaration whose initializer starts on the next lines
+        float4 IncTint =
+        {
+            0.5, 0.5, 0.5, 1
+        };
+        """;
+
+    [Theory]
+    [InlineData(PlatformTarget.OpenGL)]
+    [InlineData(PlatformTarget.Vulkan)]
+    [InlineData(PlatformTarget.DirectX12)]
+    public async Task DxcsInitializerIgnoredWarning_IsGone_WhenTheInitializerStartsOnALaterLine(PlatformTarget target)
+    {
+        var result = await new EffectCompiler().CompileAsync(MultiLineInitializers, new CompilerOptions
+        {
+            Target = target,
+            SourceFileName = "MultiLine.fx",
+            IncludeResolver = new ShadowDusk.Core.Preprocessor.InMemoryIncludeResolver(
+                new Dictionary<string, string> { ["inc.fxh"] = MultiLineInclude }),
+        });
+        result.IsSuccess.ShouldBeTrue(result.IsFailure ? string.Join(" | ", result.Error.Select(e => e.FxcFormattedMessage)) : "");
+        CompiledShader compiled = result.Value;
+
+        compiled.Warnings.ShouldNotContain(
+            w => w.Message.Contains("ignored", StringComparison.Ordinal) && w.Message.Contains("nitializer", StringComparison.Ordinal),
+            string.Join(" | ", compiled.Warnings.Select(w => w.FxcFormattedMessage)));
+        // The clang notes of a removed warning ("expanded from macro 'RED'") go with it.
+        compiled.Warnings.ShouldNotContain(w => w.Message.Contains("expanded from macro", StringComparison.Ordinal));
+        compiled.Warnings.ShouldNotContain(w => w.Code == "SD0017");
+
+        Floats(Param(compiled, "BraceNext").DefaultValue!).ShouldBe(new[] { 1f, 0f, 0f, 1f });
+        Floats(Param(compiled, "EqNext").DefaultValue!).ShouldBe(new[] { 0f, 1f, 0f, 1f });
+        Floats(Param(compiled, "BraceMacro").DefaultValue!).ShouldBe(new[] { 0f, 1f, 0f, 1f });
+        Floats(Param(compiled, "IncTint").DefaultValue!).ShouldBe(new[] { 0.5f, 0.5f, 0.5f, 1f });
+        Floats(Param(compiled, "NameNext").DefaultValue!).ShouldBe(new[] { 2f });
+    }
+
+    [Fact]
+    public async Task DxcsInitializerIgnoredWarning_Stays_ForAnUnkeptDeclarationOnAKeptOnesLine()
+    {
+        // `Good` is kept, `Unmodelled` (a user function call) is not, and both are on line 3: only
+        // `Good`'s warning may go. The name's-line comparison dropped both.
+        const string src = """
+            #define PS_SHADERMODEL ps_3_0
+            float Twice(float x) { return x * 2; }
+            float Good = 0.5; float Unmodelled = Twice(0.25);
+            float4 MainPS() : COLOR0 { return float4(Good, Unmodelled, 0, 1); }
+            technique T { pass P { PixelShader = compile PS_SHADERMODEL MainPS(); } }
+            """;
+        var result = await new EffectCompiler().CompileAsync(
+            src, new CompilerOptions { Target = PlatformTarget.OpenGL, SourceFileName = "SameLine.fx" });
+        result.IsSuccess.ShouldBeTrue(result.IsFailure ? result.Error[0].Message : "");
+
+        ShaderError ignored = result.Value.Warnings.Single(w => w.Message.Contains("initializer ignored", StringComparison.Ordinal));
+        ignored.Line.ShouldBe(3);
+        ignored.Column.ShouldBeGreaterThan("float Good = 0.5;".Length, "the warning left is Unmodelled's, after Good's declaration");
+        result.Value.Warnings.Single(w => w.Code == "SD0017").Message.ShouldContain("'Unmodelled'", Case.Sensitive);
+    }
+
     [Fact]
     public async Task AShaderWithNoInitializers_AddsNothing()
     {
