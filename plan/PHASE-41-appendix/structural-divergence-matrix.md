@@ -25,7 +25,7 @@
   - Structurally **clean**: **87**
   - **Divergent** (>=1 level): **21**
   - Compile/parse **failures**: **10**
-- Non-golden census cells: **226** (**163** compile, **63** fail with a code)
+- Non-golden census cells: **228** (**165** compile, **63** fail with a code)
 
 ## Golden-backed fixtures — per-level structural verdict
 
@@ -249,6 +249,8 @@ is a CORRECT result, not a defect.
 | AnnotatedTechnique.fx | OpenGL | PASS |  |  |
 | FnaMultiPassStates.fx | DirectX_11 | FAIL | SD0015 | compile target 'vs_2_0' is below the DirectX target's floor — mgfxc rejects it with "Invalid profile 'vs_2_0'. Vertex shader 'MainVS' must be SM 4.0 level 9.1 o... |
 | FnaMultiPassStates.fx | OpenGL | PASS |  |  |
+| HalfGlobals.fx | DirectX_11 | PASS |  |  |
+| HalfGlobals.fx | OpenGL | PASS |  |  |
 | ImplicitTruncationWarning.fx | DirectX_11 | PASS |  |  |
 | ImplicitTruncationWarning.fx | OpenGL | PASS |  |  |
 | Minimal.fx | DirectX_11 | PASS |  |  |

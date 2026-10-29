@@ -78,9 +78,10 @@ const probeDir = path.join(__dirname, 'Vkd3dCorpusProbe');
 const outDir = path.join(__dirname, '.vkd3d-gate');
 
 // The corpus fixtures whose DXBC_TPF output depends on the vkd3d compile options (SM1-3
-// semantics on struct fields: MAP_SEMANTIC_NAMES). Their FNA (D3D_BYTECODE) compiles take
-// no options and are ordinary corpus entries.
-const OPTION_DEPENDENT = new Set(['Sm3SemanticStructs.fx']);
+// semantics on struct fields: MAP_SEMANTIC_NAMES; `half` globals: ALLOW_HALF_GLOBALS, which
+// vkd3d refuses with E5002 without it, and the control below counts a refusal as "depends").
+// Their FNA (D3D_BYTECODE) compiles take no options and are ordinary corpus entries.
+const OPTION_DEPENDENT = new Set(['Sm3SemanticStructs.fx', 'HalfGlobals.fx']);
 const optionDependent = (entry) => OPTION_DEPENDENT.has(entry.fixture) && entry.options.length > 0;
 // The corpus fixture that compiles WITH a non-fatal vkd3d diagnostic (issue #335): its
 // manifest 'messages' must be non-empty on both targets, which is what makes a host

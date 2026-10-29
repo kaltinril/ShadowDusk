@@ -112,6 +112,12 @@
     "dxil": "71687d4ff7be773706fe84a79173730b1317b3ce9511e2be26d6726da4fbb453",
     "warnings": []
   },
+  "DirectX12.Debug/HalfGlobals.fx": {
+    "mgfx": "f49fe245b37f09c6ad410c2635e0bb8a46a77900bc0a95722cda80e23794f179",
+    "mgfxNormalized": "5454ec272e270889ee1b7185ac0d4264dd069809a2d37f7a5de96785cacfbb97",
+    "dxil": "810122f27eb1b804df30755708c3f491ccea1e2184220ade4792df106e1cfced",
+    "warnings": []
+  },
   "DirectX12.Debug/ImplicitTruncationWarning.fx": {
     "mgfx": "38249db73dfd7c58bbd9930fd8033afa5201ba7cd3bef26433cf123a3f5f06f8",
     "mgfxNormalized": "fafb5887e5ab46090b8fc8cdea7a72d3b4e423d4bd9a489a44194388311587c4",
@@ -1146,6 +1152,12 @@
     "dxil": "f3460335c50eeab395318f5949a5167ac44adf9aa3a17fb13d38a2e592d5add3",
     "warnings": []
   },
+  "DirectX12/HalfGlobals.fx": {
+    "mgfx": "74d7e2a72138480716613708d697e024ffb91ff9160a2ff957ee9abf301020a1",
+    "mgfxNormalized": "c553ae049d322571fe40460a0b64095726f1c5032666057ade30513918efda55",
+    "dxil": "9357df7a5163a19faf83e1f515551aee3f8cf9a8a89428684fe378c12651137f",
+    "warnings": []
+  },
   "DirectX12/ImplicitTruncationWarning.fx": {
     "mgfx": "14e2d9d9690415bf4b11f19ae51f3e80d0670e840f873884c3058418ede40272",
     "mgfxNormalized": "5f1321f6f4ba5c8106c47a5d3459e2216e3b3afd3385928f3cbf95efb71b46c8",
@@ -2162,6 +2174,11 @@
     "spirv": "3139118a8fa404424d781d97cc62a8a411d01451fb191c3e9b432fe9975c1769",
     "warnings": []
   },
+  "Vulkan.Debug/HalfGlobals.fx": {
+    "mgfx": "09e6cbe9c3b182d17089a5409abe3058c4a186e53a2dc9172ef61817ecc11cea",
+    "spirv": "0eec9126bf146a39fae7757de85fa78f4e2090cec299dce9efcaaee3d5a7dd15",
+    "warnings": []
+  },
   "Vulkan.Debug/ImplicitTruncationWarning.fx": {
     "mgfx": "b2da4b10ccbe5bf26a6d0a942d87eeeba51f30c88c7bbb21980c45f190a604ea",
     "spirv": "5be835f71c2d03373ef256164c1622e32f5eeaf4b3d2cf9f7cbc6cf6c0dbcadc",
@@ -3032,6 +3049,11 @@
   "Vulkan/Grayscale.fx": {
     "mgfx": "fbfaf3a0995a8cccf6cb22bf5baf74468455a6b8bdac0873ec8f39e4274ea78d",
     "spirv": "746e64cd1809d428b344f6eaaffde1e2910ffa0a0f396c8980b5c3fe86f1a63f",
+    "warnings": []
+  },
+  "Vulkan/HalfGlobals.fx": {
+    "mgfx": "532cd952ad7ec1509d86b46a5681c2f4133c35efbb4263a8dda77e2f7f37fd65",
+    "spirv": "114b21a08cb98ad362b3351f72897b6c584b318f2ce3f30285831131c35bfbd0",
     "warnings": []
   },
   "Vulkan/ImplicitTruncationWarning.fx": {
