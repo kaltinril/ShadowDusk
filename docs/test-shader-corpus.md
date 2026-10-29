@@ -1,6 +1,6 @@
 # Test Shader Corpus — Provenance & Fresh Examples
 
-**Last updated:** 2026-10-05 — documented the two smaller `.slang` sets, `slang-sksl/` (7 twins, issue #253) and `slang-adversarial/` (4 generics fixtures), in §5. Previously 2026-10-04 — documented the six vendored `third-party/XnaFiddle/` shaders (added 2026-10-03 by issue #368, the SkSL converter's `COLOR0` fixtures; see §4) and the two cross-host byte-identity fixtures `Sm3SemanticStructs.fx` (issue #295) and `ImplicitTruncationWarning.fx` (issue #335), both added 2026-10-02 (see §3), and recounted the corpus. Previously 2026-10-02 — issues #339/#340 added `DirectX_11` goldens (`mgfxc` 3.8.4.1, the pinned oracle) for the two texture-array fixtures and the expect-diagnostic `SamplerArray2.fx` (no golden on any profile) to the `texture-arrays/` set; earlier the same day issue #324 added that set (`TextureArray2.fx`, `TextureArray4NoRegister.fx`, `DirectX_12` **and** `Vulkan` goldens from `mgfxc` 3.8.5; see §3). Earlier the same day issues #308 and #309 added `SamplerLegacyInclude.fx` (+ `SamplerLegacyInclude.fxh`), `SamplerLegacyMacroDecl.fx` and `SamplerReservationKeywords.fx` (the sampler-register set below, `OpenGL` **and** `DirectX_11` goldens), and the nine vendored MonoGame `Include.fxh` effects now compile for OpenGL. Earlier the same day issue #299 added `SamplerLegacyRegisterIfBranch.fx` and `SamplerLegacyRegisterMacro.fx`, and issue #283 added `SamplerReservationIfBranch.fx` and `SamplerReservationMacro.fx` (the sampler-register set below), all four with `OpenGL` **and** `DirectX_11` goldens. Previously 2026-09-10 — vkd3d 2.1 (Phase 56) reclassified `Reflection.fx` and the Apos.Shapes revisions as FNA-compiling; the `E5017` loop/ternary gaps they sat behind were compiler gaps, not shader-model limits. Previously 2026-09-09: added the Slang input corpus: 17 `.slang` fixtures under
+**Last updated:** 2026-10-28 — added the `register-slots/` set (4 fixtures, 4 `Vulkan` goldens from `mgfxc` 3.8.5; see §4), for the Vulkan explicit-register-slot fix. Previously 2026-10-05 — documented the two smaller `.slang` sets, `slang-sksl/` (7 twins, issue #253) and `slang-adversarial/` (4 generics fixtures), in §5. Previously 2026-10-04 — documented the six vendored `third-party/XnaFiddle/` shaders (added 2026-10-03 by issue #368, the SkSL converter's `COLOR0` fixtures; see §4) and the two cross-host byte-identity fixtures `Sm3SemanticStructs.fx` (issue #295) and `ImplicitTruncationWarning.fx` (issue #335), both added 2026-10-02 (see §3), and recounted the corpus. Previously 2026-10-02 — issues #339/#340 added `DirectX_11` goldens (`mgfxc` 3.8.4.1, the pinned oracle) for the two texture-array fixtures and the expect-diagnostic `SamplerArray2.fx` (no golden on any profile) to the `texture-arrays/` set; earlier the same day issue #324 added that set (`TextureArray2.fx`, `TextureArray4NoRegister.fx`, `DirectX_12` **and** `Vulkan` goldens from `mgfxc` 3.8.5; see §3). Earlier the same day issues #308 and #309 added `SamplerLegacyInclude.fx` (+ `SamplerLegacyInclude.fxh`), `SamplerLegacyMacroDecl.fx` and `SamplerReservationKeywords.fx` (the sampler-register set below, `OpenGL` **and** `DirectX_11` goldens), and the nine vendored MonoGame `Include.fxh` effects now compile for OpenGL. Earlier the same day issue #299 added `SamplerLegacyRegisterIfBranch.fx` and `SamplerLegacyRegisterMacro.fx`, and issue #283 added `SamplerReservationIfBranch.fx` and `SamplerReservationMacro.fx` (the sampler-register set below), all four with `OpenGL` **and** `DirectX_11` goldens. Previously 2026-09-10 — vkd3d 2.1 (Phase 56) reclassified `Reflection.fx` and the Apos.Shapes revisions as FNA-compiling; the `E5017` loop/ternary gaps they sat behind were compiler gaps, not shader-model limits. Previously 2026-09-09: added the Slang input corpus: 17 `.slang` fixtures under
 `slang/`, cross-validated against the real `slangc` compiler (see `docs/validation-matrix.md`
 §8.0 and `validation/SlangCorpus`). Previously 2026-08-02: the issue-#189 fix added
 `SamplerRegisterOrder.fx` and `SamplerRegisterSparse.fx` (the sampler-register set below), both
@@ -9,10 +9,10 @@ four `ExPhantom*` fixtures (the phantom-parameter set below). Previously 2026-07
 A10 added three DirectX-profile-floor fixtures and **reclassified the vendored Nez set**, whose
 DirectX column collapsed once ShadowDusk started enforcing mgfxc's own floor (see the note
 above that table).
-Corpus on disk (counted 2026-10-05): **174 `.fx` + 8 `.fxh`** — 74 in the fixture root, 50 in
+Corpus on disk (counted 2026-10-28): **178 `.fx` + 8 `.fxh`** — 74 in the fixture root, 50 in
 `examples/`, 1 in `shadertoy/`, 44 under `third-party/` (15 Nez, 3 Apos.Shapes, 3 Gum, 17 MonoGame,
 6 XnaFiddle), 2 under `raylib/`, 3 under
-`texture-arrays/` — plus **28 `.slang`**: 17 under `slang/`, 7 under `slang-sksl/` and 4 under `slang-adversarial/` (separate input corpora, not `.fx`; see §5).
+`texture-arrays/`, 4 under `register-slots/` — plus **28 `.slang`**: 17 under `slang/`, 7 under `slang-sksl/` and 4 under `slang-adversarial/` (separate input corpora, not `.fx`; see §5).
 
 This document records (1) what is known about where the existing `.fx` test
 fixtures came from, (2) an integrity caveat about those fixtures, and (3) a set
@@ -605,6 +605,23 @@ v10 oracle: `dotnet ~/.nuget/packages/dotnet-mgfxc/3.8.5/tools/net8.0/any/mgfxc.
 /Profile:DirectX_12` (and `/Profile:Vulkan`). The `DirectX_11` goldens are the pinned oracle's:
 `tools/compile-fixtures.ps1 -ShaderDir tests/fixtures/shaders/texture-arrays -Profiles DirectX_11`
 (the script's default run deliberately does not see this directory).
+
+### Explicit-register-slot set (`register-slots/`, Vulkan slot fix, 2026-10-28)
+
+Four project-owned PS-only effects whose textures sit on explicit registers that do NOT start at
+`t0` or leave a gap, the shapes where a Vulkan slot computed as the texture's ordinal differs from
+its register: `RegisterLoneT1.fx` (a lone `register(t1)`/`register(s1)`), `RegisterGapT0T2.fx` (`t0` +
+`t2`, each half the output), `RegisterMismatchedTS.fx` (`register(t1)` read through `register(s3)`) and
+`RegisterTexture2DArrayT1.fx` (a `Texture2DArray` on `t1`, sampling slice 1; OpenGL refuses it, `SD0210`).
+Each has a `Vulkan` golden from `mgfxc` 3.8.5 (`dotnet ~/.nuget/packages/dotnet-mgfxc/3.8.5/tools/net8.0/any/mgfxc.dll
+<fx> <out> /Profile:Vulkan`, run from the repo root so the embedded source name is the relative path).
+The mgfxc slot is the SPIR-V binding minus 32, which is the register: `RegisterLoneT1` texture slot 1,
+header texture-slot mask `0x2`; `RegisterGapT0T2` slots 0 and 2, mask `0x5`; DirectX 11 and 12 give the
+same slots. `RegisterMismatchedTS`'s golden keeps the registers apart (a `SAMPLED_IMAGE` at binding 33 and
+a `SAMPLER` at 35, a shape MonoGame's Vulkan descriptor writer does not handle); ShadowDusk moves the
+sampler onto the texture's register (one combined descriptor at 33, slot 1), so that golden is compared on
+the texture slot only. Compared record for record by `VulkanExplicitRegisterSlotTests`; rendered against
+the goldens in real MonoGame 3.8.5 DesktopVK by `validation/VsDrivenVulkan -- regslots` (maxd 0).
 
 ## 5. Slang input corpus (`slang/`)
 

@@ -33,6 +33,33 @@ that loads and renders identically to `mgfxc`'s in the real MonoGame/KNI runtime
   an `FX0005`; a real duplicate is still reported, on the preprocessed text. A view that cannot be built (`__has_include`, a conditional on `__HLSL_VERSION`) keeps the raw technique list and adds an `SD0009` warning; `#region`/`#endregion` are ignored by the view. MGFX v10 records no shader
   model; the committed byte-identity manifests (OpenGL, DirectX 11,
   DirectX 12, Vulkan, FNA) are unchanged.
+- **Vulkan: an explicit `register(tN)` is the texture's slot again, as on DirectX and in
+  `mgfxc`.** A texture whose register did not start at `t0`, or that followed a gap, was written
+  with its position among the shader's textures instead: a lone `Texture2D Tex1 : register(t1)`
+  got slot 0 (header texture-slot mask `0x1`, where `mgfxc` 3.8.5 `/Profile:Vulkan` writes slot 1
+  and `0x2`), so MonoGame DesktopVK bound the parameter's texture to a slot the shader never
+  reads and the effect drew (0,0,0,0) where `mgfxc`'s build draws the texture. A `Texture2DArray`
+  on `t1` failed the same way, and a `t0` + `t2` pair lost its second texture. The slot is now the
+  SPIR-V binding minus 32, `mgfxc`'s rule and the one the runtime reads back, on every host
+  (desktop, browser and Android all reflect Vulkan from SPIR-V). Proven in real MonoGame 3.8.5
+  DesktopVK against `mgfxc` 3.8.5 goldens (`validation/VsDrivenVulkan -- regslots`: lone `t1`,
+  `t0` + `t2`, `Texture2DArray` slice 1; maxd 0, no Khronos validation-layer message, with an
+  ordinal-slot positive control that turns it red). The Vulkan binding rewriter also stopped
+  reading declarations out of comments: a commented `Texture2D T;` took register 0 and pushed the
+  real textures up one slot. A texture or sampler that rewriter does not model (such as
+  `Texture2D A, B;`) lands below binding 32 with no slot the runtime can bind, and is now refused
+  with `SD0228` (`mgfxc` writes it as slot 224 with no descriptor). A declaration that comes out of
+  a macro (`#define DECL_TEX(x) Texture2D x##Tex;`) is no longer one of them: after that first failure
+  the effect is compiled once from its preprocessed source, where the declaration is literal, and gets
+  one combined descriptor at slot 0 (it used to compile to a separate image + sampler pair below
+  binding 32, the shape that access-violates in DesktopVK). An unregistered texture read through a
+  sampler with an explicit register (`Texture2D A; SamplerState S : register(s2);`) now takes the
+  texture register DirectX gives it (slot 0, where SpriteBatch binds) instead of inheriting the
+  sampler's `s2`; no committed fixture has that shape. **Vulkan output changes** for
+  `examples/ExLegacyTextureDiscard.fx` (its sprite sampler `s0` now reads slot 0, like DirectX)
+  and `third-party/MonoGame/ParameterTypes.fx` (`Tex3D`/`TexCube` now slots 1/2, their
+  registers); every other committed Vulkan entry and every DirectX 12, DirectX 11, OpenGL and FNA
+  entry is unchanged.
 
 ## [0.22.0] - 2026-10-28
 
