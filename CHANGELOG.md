@@ -25,46 +25,58 @@ that loads and renders identically to `mgfxc`'s in the real MonoGame/KNI runtime
   the game, the MGCB build or the test host. It is a fault in the pinned DXC itself (a null read
   in `dxcompiler`, reproduced through Vortice's own wrapper with no ShadowDusk code), hit by
   every `-spirv` compile whose entry function has a redeclaration, so OpenGL, Vulkan, raylib and
-  SkSL, on every host including the browser. The entry point's redundant prototypes are now
-  blanked from DXC's input (lines and columns kept), which is what DXC's DXIL path and fxc
-  already do with them: the effect compiles to exactly the bytes of the same effect without the
-  prototype, and `mgfxc` 3.8.4.1 compiles these shapes too. An unused overload prototype
-  (different parameters, no definition) is dropped the same way, as fxc compiles past it. The
-  blanked range is proven rather than guessed: the source with it blanked must preprocess to
-  exactly the original tokens minus the prototype's, so a macro call on the prototype's line
+  SkSL. The entry point's redundant prototypes are now blanked from DXC's input (lines and
+  columns kept), which is what DXC's DXIL path and fxc already do with them: the effect compiles
+  to exactly the bytes of the same effect without the prototype, and `mgfxc` 3.8.4.1 compiles
+  these shapes too. An unused overload prototype (different parameters, no definition) is dropped
+  the same way, as fxc compiles past it. Every decision is DXC's own: its preprocessor is run
+  first (`-P`, with the compile's own arguments, which never reaches the back end that faults),
+  and only when ITS text declares the entry more than once is anything done, so a prototype in a
+  branch DXC does not compile (`#ifdef _XBOX`, `#ifndef __HLSL_VERSION`), a conditional on a
+  macro only DXC defines, and C's unsigned preprocessor arithmetic (`#if -1 > 0u`, which crashed
+  0.22.1 too) all come out as DXC sees them. The blanked range is proven, not guessed: DXC's
+  preprocessor, run again on the source with the range blanked, must produce exactly the original
+  tokens minus the prototype's, so a macro call on the prototype's line
   (`DECL_PARAM(Unused) float4 PS(...);`) is never removed with it, while a prototype a macro
   completes (`: POS_OUT`), writes whole (`DECLARE(PS)`) or names (`#define PF PSX`) is removed
-  exactly. The proof holds for every text DXC could be compiling: a conditional on a macro only
-  DXC defines (`__SHADER_TARGET_MAJOR`, `__spirv__`, `__GNUC__`, ...) is evaluated both ways, so
-  neither the managed preprocessor's ignorance of DXC's own macros nor a macro DXC expands to
-  code on the prototype's line can make it remove anything else. Blanked characters become as
-  many spaces as their UTF-8 bytes, so DXC's columns later on the line do not move, and a
-  carriage-return-only file is read as the preprocessor reads it. What cannot be compiled safely
-  is refused with the new `SD0236` instead of a crash:
-  a call to the entry point between its prototype and its definition, an overload prototype of
-  an entry point the source calls (`mgfxc` compiles both), a prototype that says more than its
-  definition (an attribute, a leading `inline`, `static` or `precise`, a parameter's
-  interpolation modifier or default value, which DXC may merge into the definition), a macro
-  call writing the prototype together with other code, and a declaration shape the reading does
-  not model (a parenthesised declarator `float4 (PS)(...)`, which also crashed, or a second
-  declarator). DirectX 11, DirectX 12 and FNA never had the fault and are unchanged. A source
-  with no prototype of its entry point reaches DXC exactly as written, whatever its macros (a
-  `##` paste such as MonoGame's `Macros.fxh`, or a `#define` naming the entry, beside a
-  conditional on a compiler macro is no refusal); every `.fx` under `tests/fixtures`, `samples`
-  and `validation` (270 files) compiles to the same bytes with the same diagnostics as in 0.22.1
-  on OpenGL and Vulkan.
-- **The managed preprocessed view no longer reads macros DXC defines as undefined.** A
-  conditional on a macro only the compiler defines makes the view untrusted (the technique list
+  exactly. Blanked characters become as many spaces as their UTF-8 bytes, so DXC's columns later
+  on the line do not move. A source DXC's preprocessor rejects (`#error`, a warning under `-WX`)
+  reaches DXC as written and fails on that diagnostic in the front end. What cannot be compiled
+  safely is refused with the new `SD0236` instead of a crash: a call to the entry point between
+  its prototype and its definition, an overload prototype of an entry point the source calls
+  (`mgfxc` compiles both), a prototype that says more than its definition (an attribute, a
+  leading `inline`, `static` or `precise`, a parameter's interpolation modifier or default value,
+  which DXC may merge into the definition), a macro call writing the prototype together with
+  other code, and a declaration shape the reading does not model (a parenthesised declarator
+  `float4 (PS)(...)`, which also crashed, or a second declarator). OpenGL's DXIL reflection
+  companion, which DXC compiles without the fault, reads such a source as written, so DXC's own
+  error from it (`ambiguous entry point function`, `cannot find entry function`) can come first,
+  as in 0.22.1. In the browser, whose DXC module exports no preprocess-only entry point, the
+  source is compiled as written (that DXC build does not crash; it rejects a redeclared entry
+  with "Entry points cannot share the same name", now reported as `SD0236` with DXC's text kept).
+  DirectX 11, DirectX 12 and FNA never had the fault and are unchanged. Measured against 0.22.1
+  on OpenGL, Vulkan, DirectX 11, FNA and KNIFX over 546 `.fx` files (every fixture,
+  sample and validation effect, and the real-world effects under FlatRedBall, KNI, XnaFiddle,
+  Gum and the MonoGame HLSL examples): every one compiles to the same bytes with the same diagnostics on every target, and every reviewer crash reproducer that ended 0.22.1's process now compiles or fails with a registered diagnostic (three sources DXC's front end rejects anyway, a `%:define` digraph, a `??=` trigraph and an `extern` prototype, get `SD0236` on Vulkan instead of DXC's own error).
+- **DXC's `__TIMESTAMP__` crash is refused, not hit (issue #444).** The pinned DXC ends the
+  process (`0xC0000409`) when its preprocessor expands `__TIMESTAMP__`, even preprocessing only.
+  An effect that names it as a token (outside comments and strings) is now refused with the new
+  `SD0238` before DXC runs, on every target DXC compiles (OpenGL, Vulkan, DirectX 12, raylib,
+  SkSL, and the zero-technique fallback's preprocess run on any target); DirectX 11 and FNA
+  compile it as before. A token in a branch DXC would not compile is refused too, because only
+  running DXC's preprocessor (the run that crashes) could tell.
+- **The managed preprocessed view knows the rest of DXC's predefined macros where DXC compiles.**
+  A conditional on a macro only the compiler defines makes the view untrusted (the technique list
   is then read from the raw source with an `SD0009` warning, and legacy-sampler recovery
-  (`SD0016`) and initializer defaults (`SD0017`) say so). That list now
-  holds every macro the pinned DXC was measured to define (`__GNUC__`, `__GNUC_MINOR__`,
+  (`SD0016`) and initializer defaults (`SD0017`) say so). On the targets whose shaders DXC
+  compiles (OpenGL, Vulkan, DirectX 12, KNIFX GL, raylib, SkSL) that list now also holds the
+  macros the pinned DXC was measured to define beyond 0.22.1's (`__GNUC__`, `__GNUC_MINOR__`,
   `__GNUC_PATCHLEVEL__`, `__GXX_ABI_VERSION`, `__llvm__`, `__BYTE_ORDER__`, the `__ORDER_*`,
-  `__FLT_*` and `__DBL_*` families, `__LITTLE_ENDIAN__`, `__is_identifier`, beside the
-  `__HLSL_VERSION` / `__SHADER_TARGET_*` / `__spirv__` set it already had), and any other
-  reserved name (`__x`, `_X`) that the source and its `-D` macros never `#define`: before, a view
-  that read `#ifdef __GNUC__` as false could take the branch DXC did not. An include guard such
-  as `#ifndef __MY_FXH__` / `#define __MY_FXH__`, and KNI's `__KNIFX__`, are unaffected; no
-  fixture, sample or validation effect gains a warning.
+  `__FLT_*` and `__DBL_*` families, `__LITTLE_ENDIAN__`, `__DECIMAL_DIG__`, `__is_identifier`):
+  before, a view that read `#ifdef __GNUC__` as false took the branch DXC did not. DirectX 11
+  and FNA never run DXC and keep 0.22.1's list, so their output and diagnostics do not move. A
+  name neither compiler defines (`_XBOX`, `_DEBUG`, `__PSSL__`) stays undefined everywhere, as
+  in 0.22.1 and `mgfxc`.
 
 ## [0.22.1] - 2026-10-29
 
