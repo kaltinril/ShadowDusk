@@ -19,9 +19,16 @@
 // declare one interpolant differently (a matrix written whole and read as separate vectors, or the
 // reverse; column_major and row_major; 3x3, 4x3, 3x4, 2x2; a typedef; #pragma pack_matrix), so the
 // render shows the register layout fxc gives it, which a shader declaring it the same way in both
-// stages can never show. Each mode vs the mgfxc golden, maxd <= 1. A non-square interpolant
-// leaves a non-square GLSL type in one stage (SD0403); a driver that refuses to load that build
-// reports the case NOT RUN, counted in the summary line, never as a pass of the comparison.
+// stages can never show. Each mode vs the mgfxc golden, maxd <= 1.
+// Non-square interpolants: each leaves a non-square GLSL type in one stage (the registered SD0403
+// gap), which strict GL front ends refuse at load. Which cases those are is an explicit list
+// (ExpectedStrictRefusals), checked against the compile's own SD0403 warnings, and the driver is
+// classified from its GL_VENDOR / GL_RENDERER / GL_VERSION strings (printed in the log):
+//   * a strict driver (Mesa, llvmpipe, softpipe, Apple, ANGLE) must refuse EXACTLY the listed
+//     cases, each with the runtime's "Shader Compilation Failed" signature; those are reported
+//     EXPECTED-REFUSED. A listed case that loads there, or an unlisted case that fails, is a FAIL;
+//   * any other driver must render and pass every case; a refusal is a FAIL.
+// The summary counts the layout cases actually rendered, and the gate fails if no square one was.
 // Positive controls (each must turn red):
 //   * ShadowDusk's own SemanticsRender bytes with the BINORMAL0 attribute record re-labelled
 //     Tangent. The runtime then binds the Tangent element to it, so the Binormal render shows the
@@ -101,6 +108,7 @@ public static class VertexSemanticsProbe
         string dir = Path.Combine(FindRepoRoot(), "tests", "fixtures", "golden", "vertex-semantics");
         var compiler = new EffectCompiler();
         var jobs = new List<Job>();
+        var setupFailures = new List<string>();
 
         byte[] Golden(string stem) => File.ReadAllBytes(Path.Combine(dir, stem + ".OpenGL.mgfx"));
 
@@ -119,8 +127,17 @@ public static class VertexSemanticsProbe
             {
                 var packed = Compile(compiler, label, container, Path.Combine(dir, "packing", stem + ".fx"));
                 byte[] golden = File.ReadAllBytes(Path.Combine(dir, "packing", stem + ".OpenGL.mgfx"));
+                // The list must be exactly the shapes whose GLSL is non-square, or it is stale.
+                if (packed.Bytes is not null && packed.NonSquareGlsl != ExpectedStrictRefusals.Contains(stem))
+                {
+                    setupFailures.Add($"packing {stem} [{container}]: the compile {(packed.NonSquareGlsl ? "warned" : "did not warn")} SD0403 " +
+                                      $"but ExpectedStrictRefusals {(ExpectedStrictRefusals.Contains(stem) ? "lists" : "does not list")} it");
+                }
                 for (int m = 0; m < modes; m++)
-                    jobs.Add(new Job($"packing {stem} mode {m} [{container}]", packed, golden, modes > 1 ? "Mode" : null, m, null, ControlKind.None));
+                    jobs.Add(new Job($"packing {stem} mode {m} [{container}]", packed, golden, modes > 1 ? "Mode" : null, m, null, ControlKind.None)
+                    {
+                        PackingStem = stem,
+                    });
             }
 
             if (container == EffectContainer.Mgfx && semantics.Bytes is not null)
@@ -147,12 +164,21 @@ public static class VertexSemanticsProbe
         using var game = new ProbeGame(jobs);
         game.Run();
 
+        Console.WriteLine($"[{label}] GL_VENDOR={game.GlVendor} | GL_RENDERER={game.GlRenderer} | GL_VERSION={game.GlVersion}");
+        Console.WriteLine($"[{label}] driver class: {(game.StrictDriver ? "STRICT (must refuse exactly the listed non-square cases)" : "lenient (every case must render and pass)")}");
+
         int failures = 0;
         Console.WriteLine($"[{label}] results:");
         foreach (JobResult r in game.Results)
         {
-            Console.WriteLine($"  [{(r.Ok ? "PASS" : "FAIL")}] {r.Name,-58} {r.Detail}");
+            string tag = r.Refused ? "EXPECTED-REFUSED" : r.Ok ? "PASS" : "FAIL";
+            Console.WriteLine($"  [{tag}] {r.Name,-58} {r.Detail}");
             if (!r.Ok) failures++;
+        }
+        foreach (string f in setupFailures)
+        {
+            Console.WriteLine($"  [FAIL] {f}");
+            failures++;
         }
 
         if (game.Results.Count != jobs.Count)
@@ -161,10 +187,35 @@ public static class VertexSemanticsProbe
             return 1;
         }
 
-        Console.WriteLine($"[{label}] {game.Results.Count - failures}/{game.Results.Count} passed" +
-            (game.NotRun > 0 ? $", of which {game.NotRun} NOT RUN (this driver refuses non-square GLSL, SD0403; run on a desktop GPU driver for them)." : "."));
+        var layout = game.Results.Where(r => r.PackingStem is not null).ToList();
+        int squareRendered = layout.Count(r => r.Rendered && !ExpectedStrictRefusals.Contains(r.PackingStem!));
+        int nonSquareRendered = layout.Count(r => r.Rendered && ExpectedStrictRefusals.Contains(r.PackingStem!));
+        int refused = layout.Count(r => r.Refused);
+        Console.WriteLine($"[{label}] layout (packing) cases: {layout.Count}, rendered {squareRendered + nonSquareRendered} " +
+                          $"(square {squareRendered}, non-square {nonSquareRendered}), EXPECTED-REFUSED {refused}.");
+        if (squareRendered == 0)
+        {
+            Console.WriteLine($"[{label}] FAIL: no square layout case was rendered, so nothing pinned the row/column packing.");
+            failures++;
+        }
+
+        Console.WriteLine($"[{label}] {game.Results.Count - failures}/{game.Results.Count} passed.");
         return failures == 0 ? 0 : 1;
     }
+
+    /// <summary>
+    /// The packing fixtures whose GLSL holds a non-square matrix type (SD0403), which a strict GL
+    /// front end refuses at load. Exactly these, and only these, may be refused, and only on a
+    /// driver <see cref="ProbeGame.StrictDriver"/> classifies as strict; the run cross-checks the
+    /// list against each compile's SD0403 warning, so it cannot go stale silently.
+    /// </summary>
+    private static readonly HashSet<string> ExpectedStrictRefusals = new(StringComparer.Ordinal)
+    {
+        "MatToVec43", "RowMatToVec43", "MatToVec34", "RowMatToVec34", "VecToMat43", "VecToRowMat43", "VecToMat34",
+    };
+
+    /// <summary>What MonoGame's and KNI's GL shader compile throws when the driver refuses the GLSL.</summary>
+    private const string StrictRefusalSignature = "Shader Compilation Failed";
 
     // tests/fixtures/golden/vertex-semantics/packing: fixture -> how many `Mode` values it has.
     private static readonly (string Stem, int Modes)[] Packing =
@@ -189,19 +240,30 @@ public static class VertexSemanticsProbe
     {
         /// <summary>
         /// The compile warned SD0403: the GLSL holds a non-square matrix type (every non-square
-        /// matrix interpolant does, in at least one stage), which strict GL front ends (Mesa
-        /// llvmpipe in CI, macOS, WebGL1) refuse at Effect load. A pre-existing, registered gap,
-        /// not a packing fault: if the driver refuses the candidate, the case is reported NOT RUN
-        /// (counted, never a silent pass); if it loads, it must match mgfxc like any other case.
+        /// matrix interpolant does, in at least one stage). Must agree with
+        /// <see cref="ExpectedStrictRefusals"/> for every packing fixture.
         /// </summary>
         public bool NonSquareGlsl { get; init; }
     }
 
     private sealed record Job(
         string Name, Compiled Candidate, byte[]? Golden, string? Selector, float SelectorValue,
-        Vector4? Expected, ControlKind Control);
+        Vector4? Expected, ControlKind Control)
+    {
+        /// <summary>The packing fixture this case renders, or null for any other case.</summary>
+        public string? PackingStem { get; init; }
+    }
 
-    private sealed record JobResult(string Name, bool Ok, string Detail);
+    private sealed record JobResult(string Name, bool Ok, string Detail)
+    {
+        public string? PackingStem { get; init; }
+
+        /// <summary>The candidate loaded and drew.</summary>
+        public bool Rendered { get; init; }
+
+        /// <summary>An expected strict-driver refusal (a listed case, the right signature).</summary>
+        public bool Refused { get; init; }
+    }
 
     private static Compiled Compile(EffectCompiler compiler, string label, EffectContainer container, string path)
         => CompileSource(compiler, label, container, path, File.ReadAllText(path));
@@ -327,8 +389,16 @@ public static class VertexSemanticsProbe
 
         public List<JobResult> Results { get; } = [];
 
-        /// <summary>Cases whose candidate this driver refused for its non-square GLSL (SD0403).</summary>
-        public int NotRun { get; private set; }
+        public string GlVendor { get; private set; } = "(unknown)";
+        public string GlRenderer { get; private set; } = "(unknown)";
+        public string GlVersion { get; private set; } = "(unknown)";
+
+        /// <summary>
+        /// The driver's GLSL front end is one that refuses a non-square matrix type in the
+        /// versionless dialect: Mesa (llvmpipe/softpipe and its hardware drivers), Apple's, ANGLE.
+        /// Decided from the GL strings before anything is drawn, never from a refusal.
+        /// </summary>
+        public bool StrictDriver { get; private set; }
 
         public ProbeGame(IReadOnlyList<Job> jobs)
         {
@@ -351,8 +421,37 @@ public static class VertexSemanticsProbe
             Exit();
         }
 
+        [UnmanagedFunctionPointer(CallingConvention.Winapi)]
+        private delegate nint GlGetStringFn(uint name);
+
+        /// <summary>
+        /// The current context's GL strings, read straight from the platform GL library (the
+        /// runtime's context is current on this thread during Draw).
+        /// </summary>
+        private void ReadGlStrings()
+        {
+            const uint GL_VENDOR = 0x1F00, GL_RENDERER = 0x1F01, GL_VERSION = 0x1F02;
+            string[] libs = OperatingSystem.IsWindows() ? ["opengl32.dll"]
+                : OperatingSystem.IsMacOS() ? ["/System/Library/Frameworks/OpenGL.framework/OpenGL"]
+                : ["libGL.so.1", "libGL.so", "libOpenGL.so.0"];
+            foreach (string lib in libs)
+            {
+                if (!NativeLibrary.TryLoad(lib, out nint handle)) continue;
+                if (!NativeLibrary.TryGetExport(handle, "glGetString", out nint fn)) continue;
+                var glGetString = Marshal.GetDelegateForFunctionPointer<GlGetStringFn>(fn);
+                GlVendor = Marshal.PtrToStringAnsi(glGetString(GL_VENDOR)) ?? "(null)";
+                GlRenderer = Marshal.PtrToStringAnsi(glGetString(GL_RENDERER)) ?? "(null)";
+                GlVersion = Marshal.PtrToStringAnsi(glGetString(GL_VERSION)) ?? "(null)";
+                break;
+            }
+            string all = $"{GlVendor} {GlRenderer} {GlVersion}";
+            StrictDriver = new[] { "Mesa", "llvmpipe", "softpipe", "Apple", "ANGLE" }
+                .Any(k => all.Contains(k, StringComparison.OrdinalIgnoreCase));
+        }
+
         private void RunAll()
         {
+            ReadGlStrings();
             using var texture = new Texture2D(GraphicsDevice, 1, 1);
             texture.SetData([new Color(200, 150, 100, 50)]);
 
@@ -363,23 +462,45 @@ public static class VertexSemanticsProbe
                     Results.Add(new JobResult(job.Name, false, "compile failed: " + job.Candidate.Error));
                     continue;
                 }
+                bool expectRefusal = StrictDriver && job.PackingStem is not null
+                                     && ExpectedStrictRefusals.Contains(job.PackingStem);
                 Color[] candidate;
                 try
                 {
                     candidate = Render(job.Candidate.Bytes, job, texture);
                 }
-                catch (Exception ex) when (job.Candidate.NonSquareGlsl && job.Control == ControlKind.None)
-                {
-                    try { GraphicsDevice.SetRenderTarget(null); } catch { /* ignore */ }
-                    NotRun++;
-                    Results.Add(new JobResult(job.Name, true,
-                        $"NOT RUN on this driver: it refused the non-square GLSL (SD0403, a known gap): {ex.GetType().Name}: {ex.Message.Split('\n')[0]}"));
-                    continue;
-                }
                 catch (Exception ex)
                 {
                     try { GraphicsDevice.SetRenderTarget(null); } catch { /* ignore */ }
-                    Results.Add(new JobResult(job.Name, false, $"render threw: {ex.GetType().Name}: {ex.Message}"));
+                    string first = ex.Message.Split('\n')[0];
+                    if (expectRefusal && ex.Message.Contains(StrictRefusalSignature, StringComparison.Ordinal))
+                    {
+                        Results.Add(new JobResult(job.Name, true,
+                            $"EXPECTED-REFUSED (strict driver: {GlRenderer} / {GlVersion}, SD0403): {ex.GetType().Name}: {first}")
+                        {
+                            PackingStem = job.PackingStem, Refused = true,
+                        });
+                    }
+                    else
+                    {
+                        Results.Add(new JobResult(job.Name, false,
+                            (expectRefusal ? "refused, but not with the strict-driver signature: " : "render threw: ") +
+                            $"{ex.GetType().Name}: {ex.Message}")
+                        {
+                            PackingStem = job.PackingStem,
+                        });
+                    }
+                    continue;
+                }
+                if (expectRefusal)
+                {
+                    // Listed as refused on a strict driver, but it loaded: the expectation (or the
+                    // driver classification) is wrong, and a stale list must not pass.
+                    Results.Add(new JobResult(job.Name, false,
+                        $"LISTED as refused on a strict driver ({GlRenderer}), but it loaded; update ExpectedStrictRefusals or the driver classification")
+                    {
+                        PackingStem = job.PackingStem, Rendered = true,
+                    });
                     continue;
                 }
                 try
@@ -438,7 +559,10 @@ public static class VertexSemanticsProbe
                         }
                     }
 
-                    Results.Add(new JobResult(job.Name, ok, string.Join("; ", notes)));
+                    Results.Add(new JobResult(job.Name, ok, string.Join("; ", notes))
+                    {
+                        PackingStem = job.PackingStem, Rendered = true,
+                    });
                 }
                 catch (Exception ex)
                 {

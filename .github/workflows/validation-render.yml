@@ -62,9 +62,12 @@
 #                              interpolant packing fixtures whose stages declare it differently
 #                              (column_major / row_major, square and non-square) vs mgfxc; three
 #                              positive controls that must diverge (a relabelled BINORMAL0
-#                              record, two row_major fixtures packed by columns). Non-square
-#                              cases print NOT RUN on a driver that refuses non-square GLSL
-#                              (SD0403); the square ones still pin the row/column packing here.
+#                              record, two row_major fixtures packed by columns). The driver is
+#                              classified from GL_RENDERER: on a strict one (llvmpipe here) the
+#                              listed non-square cases must be refused with the runtime's
+#                              "Shader Compilation Failed" (EXPECTED-REFUSED, SD0403), any other
+#                              refusal or a listed case that loads is a FAIL, and the run fails if
+#                              no square layout case was rendered.
 #   * Baseline+Candidate+compare.py — the 10-shader GL corpus, ShadowDusk vs the
 #                              committed mgfxc OpenGL goldens, real MonoGame DesktopGL. The
 #                              GL twin of the DX job's BaselineDx pair. Its distinct value is a
