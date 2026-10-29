@@ -120,28 +120,16 @@ public static class KniEffectTestProbe
     internal sealed record Expectation(Kind Kind, string Reason, IReadOnlyList<string>? Signatures = null);
 
     // Known ShadowDusk bugs (fixed on other branches). A row tagged with one must still FAIL.
-    private const string KfKnifxDxSm2 =
-        "known bug: KNIFX DirectX refuses a ps_2_0/vs_2_0/ps_3_0 profile with SD0015, but KNI's own DX11 pipeline accepts it and builds it at SM 4.0 level 9.x (ShaderProfileDX11)";
-    private const string KfKnifxLevel9 =
-        "known bug (fixed in PR #430): KNIFX DirectX records a *_4_0_level_9_x profile as SM 4.0, which KNI refuses on the HiDef profile ('Shader model 4.0 is not supported')";
-    private const string KfGlVertexSemantics =
-        "known bug: OpenGL refuses BINORMAL/TANGENT/BLENDINDICES/BLENDWEIGHT vertex inputs with SD0210 (mgfxc and KNI map them to vertex attributes)";
-    private const string KfKnifxTexturelessSampler =
-        "known bug: KNIFX exposes a texture-less legacy sampler2D as a Texture2D parameter; KNI's own KNIFX (and XNA) expose none, so Apply must not overwrite Textures[n]";
+    // Flipped to GATE once fixed (2026-10-29): KNIFX DirectX ps_2_0/ps_3_0 (SD0015), KNIFX DirectX
+    // *_4_0_level_9_x recorded as SM 4.0 (PR #430), KNIFX texture-less legacy sampler exposed as a
+    // parameter, OpenGL BINORMAL/TANGENT vertex inputs (SD0210), tex2Dlod (FX0012).
     private const string KfVulkanRegisterSlots =
         "known bug: Vulkan ignores an explicit register(tN): the texture is bound to the wrong descriptor, mgfxc 3.8.5 honours it";
-    private const string KfTex2Dlod =
-        "known bug: tex2Dlod is refused with FX0012 (no 1:1 modern rewrite yet); mgfxc compiles it for DirectX_11 and DirectX_12";
 
     /// <summary>What each listed bug's failure looks like in a row's detail (any one must appear).</summary>
     private static readonly Dictionary<string, string[]> KnownSignatures = new(StringComparer.Ordinal)
     {
-        [KfKnifxDxSm2] = ["SD0015"],
-        [KfKnifxLevel9] = ["Shader model 4.0 is not supported by the current graphics profile 'HiDef'"],
-        [KfGlVertexSemantics] = ["SD0210: Unsupported vertex-input semantic 'BINORMAL0'"],
-        [KfKnifxTexturelessSampler] = ["Parameters.Count=2 [Sampler0,Sampler1]"],
         [KfVulkanRegisterSlots] = ["centre (0,0,0,0)"],
-        [KfTex2Dlod] = ["FX0012"],
     };
 
     // Informational reasons.
@@ -158,7 +146,9 @@ public static class KniEffectTestProbe
     private const string InfoGlVtf =
         "runtime limit: MonoGame and KNI GL both translate through MojoShader, which has no vertex texture fetch (SD0210); mgfxc's OpenGL build fails the same way";
     private const string InfoGlTex2Dlod =
-        "runtime limit, behind a listed bug: on OpenGL tex2Dlod is refused with FX0012 first (the known tex2Dlod bug), and once that is fixed the GL runtimes still have no vertex texture fetch (SD0210, as for SampleLevel); mgfxc's OpenGL build fails too";
+        "runtime limit: MonoGame and KNI GL both translate through MojoShader, which has no vertex texture fetch, so a vertex-stage tex2Dlod is SD0210 on OpenGL (as for SampleLevel); mgfxc's OpenGL build fails too";
+    private const string InfoDx11FxcTextureSlots =
+        "matches mgfxc and KNI's own pipeline: fxc gives a legacy sampler's texture the t slot of its first read, and an explicit register(tN) on the texture a sampler_state names only reserves tN, so this layout is not the XNA one KNI's test asserts; mgfxc 3.8.4.1's DirectX_11 build and KNI's own .xnb bind the same way (project_facts.md, DirectX 11 texture slots)";
     private const string InfoGlTextureArray =
         "runtime limit: MojoShader (MonoGame and KNI GL) has no texture-array sampler (SD0210); mgfxc OpenGL refuses it (X4545)";
     private const string InfoKniHiDefTextureArray =
@@ -197,8 +187,6 @@ public static class KniEffectTestProbe
         if (def.Source == Source.Kni && kase != "ComputeShader")
         {
             if (dx11 && !knifx && !level9) return new(Kind.Info, InfoMgfxSm2Dx);
-            if (dx11 && knifx && !level9) known.Add(KfKnifxDxSm2);
-            if (dx11 && knifx && level9) known.Add(KfKnifxLevel9);
         }
 
         switch (kase)
@@ -208,11 +196,15 @@ public static class KniEffectTestProbe
 
             case "OldSyntax_x" or "OldSyntax_s0s1" when check == "textures":
                 if (!knifx) return new(Kind.Info, InfoMgfxTexturelessSampler);
-                known.Add(KfKnifxTexturelessSampler);
                 break;
 
+            case "OldSyntax_t1t0" when check == "bind" && dx11:
+                // Sampler1 is read first, so fxc puts Texture1 on t0 (KNI's own .xnb binds them swapped too).
+                return new(Kind.Info, InfoDx11FxcTextureSlots);
+
             case "DeferredBasicEffect":
-                if (gl) known.Add(KfGlVertexSemantics);
+                // register(t0..t2) on the sampler_state textures only reserve; the textures take t3..t5.
+                if (dx11) return new(Kind.Info, InfoDx11FxcTextureSlots);
                 if (rt == "mg-dx12") return new(Kind.Info, InfoDx12LegacyColorStruct);
                 if (rt == "mg-vk") return new(Kind.Info, InfoVulkanLegacyColorStruct);
                 break;
@@ -226,10 +218,6 @@ public static class KniEffectTestProbe
             case "OptimizedMatrix" when check == "default":
                 // Informational on every arm: it stays a mismatch with XNA after any blocker is fixed.
                 return new(Kind.Info, InfoMatrixDefault);
-
-            case "MatrixBrace":
-                if (dx11 && knifx) known.Add(KfKnifxLevel9);
-                break;
 
             case "TextureAtRegisterT1":
                 if (gl) return new(Kind.Info, InfoGlModernSamplerRegister);
@@ -252,7 +240,6 @@ public static class KniEffectTestProbe
             case "VertexTextureTex2Dlod":
                 if (gl) return new(Kind.Info, InfoGlTex2Dlod);
                 if (rt == "kni-dx") return new(Kind.Info, knifx ? InfoKnifxSm4HiDef : InfoKniDxVtf);
-                known.Add(KfTex2Dlod);
                 break;
         }
 

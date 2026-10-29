@@ -37,6 +37,11 @@ that loads and renders identically to `mgfxc`'s in the real MonoGame/KNI runtime
   caught. A known-failing row must also fail for its listed reason, or the run is red. It is wired into CI
   (llvmpipe, WARP, lavapipe with the Vulkan validation layer, the lavapipe job raising `vm.max_map_count` first;
   first CI run pending) and into `run-windows-render-gates.ps1`; measured green locally. Test and validation only: no package changes.
+  The fixes in this release flip the known-failing rows of KNIFX DirectX `ps_2_0`/`ps_3_0`, KNIFX `_level_9_x`,
+  the KNIFX texture-less sampler, OpenGL `BINORMAL`/`TANGENT` and `tex2Dlod` to gated; only Vulkan's explicit
+  `register(tN)` rows stay known-failing. On DirectX 11, `OldSyntax_t1t0`'s texture binding and
+  `DeferredBasicEffect` are informational: with the texture-slot fix ShadowDusk binds them as `mgfxc` and KNI's
+  own `.xnb` do, not in the XNA layout KNI's test asserts.
 
 ### Changed
 
