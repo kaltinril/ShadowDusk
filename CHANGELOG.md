@@ -14,6 +14,25 @@ that loads and renders identically to `mgfxc`'s in the real MonoGame/KNI runtime
 
 ### Added
 
+- **The SkSL and raylib conversion results report each uniform's declared default (issue #435).**
+  `SkslConversion.Uniforms` (new, a list of the new `SkslUniform`: name, SkSL type, array length)
+  and `RaylibUniform` both gain `DefaultValue`: the default the HLSL declaration gives the uniform
+  (`float Thickness = 1.0;`), with the same values and layout as `ParameterReflection.DefaultValue`
+  on the MGFX route for the same source (row-major matrices, array element after element, `bool` 0
+  or 1, `uint` unsigned), or `null` when there is no initializer, it cannot be evaluated (with the
+  MGFX route's `SD0017` warning), or the uniform is synthesized (`ShadowDusk_Color`,
+  `ShadowDusk_Resolution`). Both converted shaders still declare every uniform without a value
+  (an unset uniform reads 0 in Skia and raylib), so a caller that wants the author's default sets
+  it from `DefaultValue`: on Skia the list goes straight to `SKRuntimeEffectUniforms` (DXC's
+  `matRxC` columns are the HLSL rows, so even a matrix needs no reordering). Reflection only: the
+  emitted SkSL and GLSL are byte-identical for every fixture (all 202 `.fx`/`.slang` fixtures
+  diffed against the previous build), and issue #424's "emit the initializer into the shader"
+  option is not taken. Proven in the real runtimes: `validation/SkiaVsKni` and
+  `validation/RaylibRoute` each gain an `UnsetDefaults` case drawn with the reported defaults set on
+  Skia / raylib and nothing set on KNI / MonoGame GL (the `.mgfx` defaults apply), plus a
+  `Defaults-zeros` match and a `control-unset-defaults` control that must diverge (and, on Skia, a
+  `control-transposed-matrix` control).
+
 ### Changed
 
 ### Fixed

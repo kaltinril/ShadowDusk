@@ -52,6 +52,10 @@
       href: backends/directx12.md
     - name: DirectX & FNA in the Browser
       href: backends/directx-in-wasm.md
+    - name: SkiaSharp (SkSL)
+      href: backends/sksl.md
+    - name: raylib (Raylib-cs)
+      href: backends/raylib.md
 - name: Samples
   items:
     - name: ShaderFiddle.Web
