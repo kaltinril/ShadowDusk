@@ -22,10 +22,10 @@ namespace ShadowDusk.Integration.Tests.Reflection;
 /// <para><b>DirectX 11</b>: a legacy <c>sampler A : register(sN)</c> binds its sampler at
 /// <c>sN</c> and <c>mgfxc</c>'s record carries <c>sN</c>; ShadowDusk dropped the register (s0).
 /// More generally the record of a legacy sampler's texture carries that sampler's own binding.
-/// The TEXTURE slots still differ from <c>mgfxc</c> where fxc puts legacy textures before
-/// modern ones (and legacy textures in first-use order): those shapes are compared on the
-/// legacy SAMPLER slots only and listed in <see cref="DirectX11TextureOrderDivergence"/>; see
-/// <c>project_facts.md</c>.</para>
+/// The TEXTURE slots are fxc's too: every legacy texture before every modern one, legacy
+/// textures in first-read order (they used to follow declaration order; the
+/// <see cref="DirectX11TextureOrderDivergence"/> list is empty since the fix), so the whole
+/// table is compared for every shape; see <c>project_facts.md</c>.</para>
 /// </summary>
 [Trait("Category", "Integration")]
 public sealed class LegacySamplerUnitTests
@@ -43,16 +43,15 @@ public sealed class LegacySamplerUnitTests
     };
 
     /// <summary>
-    /// DirectX 11 shapes whose TEXTURE slots still differ from mgfxc (fxc puts legacy textures
-    /// first, in first-use order). Measured, recorded, not fixed here.
+    /// DirectX 11 shapes whose TEXTURE slots still differ from mgfxc. Empty since the DirectX 11
+    /// texture slot fix (<c>DxTextureSlotOrder</c>, 2026-10-28): fxc puts legacy textures first,
+    /// in first-read order, and ShadowDusk now does too. These 11 shapes used to be listed here:
+    /// ModernBeforeLegacy, TextureLegacySampler, ModernBeforeLegacyRegister0, TwoModernTwoLegacy,
+    /// LegacyModernInterleaved, ModernLegacyInterleaved, TwoTexturesTwoLegacyOneSampler,
+    /// ModernBeforeLegacyStateTexture, ModernTextureLegacyModernSampler, TwoLegacySampledInReverse,
+    /// GlMixedTwoOfEachRender. A shape that diverges again fails both DirectX 11 theories.
     /// </summary>
-    private static readonly HashSet<string> DirectX11TextureOrderDivergence = new(StringComparer.Ordinal)
-    {
-        "ModernBeforeLegacy", "TextureLegacySampler", "ModernBeforeLegacyRegister0", "TwoModernTwoLegacy",
-        "LegacyModernInterleaved", "ModernLegacyInterleaved", "TwoTexturesTwoLegacyOneSampler",
-        "ModernBeforeLegacyStateTexture", "ModernTextureLegacyModernSampler", "TwoLegacySampledInReverse",
-        "GlMixedTwoOfEachRender",
-    };
+    private static readonly HashSet<string> DirectX11TextureOrderDivergence = new(StringComparer.Ordinal);
 
     public static TheoryData<string> AllShapes()
     {
@@ -90,6 +89,24 @@ public sealed class LegacySamplerUnitTests
             Records(subject).ShouldBe(Records(golden),
                 customMessage: "the whole DirectX 11 sampler table (texture slot, sampler slot, parameter) must be mgfxc's");
         }
+    }
+
+    [ShadowDusk.Integration.Tests.Dxc.WindowsTheory]
+    [MemberData(nameof(AllShapes))]
+    [Trait("Platform", "DirectX")]
+    public async Task DirectX11_D3DCompilerBackend_WholeTable_MatchesMgfxc(string shape)
+    {
+        // The public d3dcompiler_47 oracle backend schedules its reads, so the texture slot check
+        // takes the evaluation order from vkd3d; the shipped table must still be mgfxc's.
+        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(120));
+        var result = await new EffectCompiler().CompileAsync(
+            await File.ReadAllTextAsync(SourcePath(shape), cts.Token),
+            new CompilerOptions { Target = PlatformTarget.DirectX, DxbcBackend = DxbcBackend.D3DCompiler, SourceFileName = shape + ".fx" },
+            cts.Token);
+        result.IsSuccess.ShouldBeTrue(result.IsFailure ? string.Join(" | ", result.Error.Select(e => e.FxcFormattedMessage)) : "");
+        Records(MgfxBlobReader.Parse(result.Value.Data)).ShouldBe(Records(Golden(shape, "DirectX_11")),
+            customMessage: "the whole DirectX 11 sampler table must be mgfxc's under the d3dcompiler backend too");
+        result.Value.Warnings.ShouldNotContain(w => w.Code == "SD0230");
     }
 
     [Theory]

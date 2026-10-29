@@ -102,6 +102,8 @@ ShadowDusk/
 │                                       #   DirectX 11 sampler slots vs mgfxc; also the GL/DX render-arm fixtures)
 │                                       #   + legacy-lod-intrinsics/ (tex2Dlod/tex2Dbias/tex2Dproj render fixture, its
 │                                       #   modern twin, mgfxc 3.8.4.1/3.8.5 goldens, MonoGame VertexTextureEffect goldens)
+│                                       #   + dx11-texture-slots/ (legacy sampler TEXTURE slot shapes, sources beside their
+│                                       #   mgfxc DirectX_11 goldens; DirectX11TextureSlotOrderTests + the DX texture-slot arms)
 ├── samples/
 │   ├── ShaderFiddle.Web/               # KNI Blazor-WASM in-browser fiddle (sample of reach)
 │   ├── ShaderToyViewer/                # Interactive ShaderToy viewer: runtime convert -> in-memory

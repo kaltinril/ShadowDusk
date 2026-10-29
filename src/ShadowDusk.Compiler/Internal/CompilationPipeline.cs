@@ -683,6 +683,7 @@ internal sealed class CompilationPipeline
         ShaderError? reservationError = null;
         IReadOnlyDictionary<string, EntryPointMatrixInterpolants>? glEntryInterpolants = null;
         IReadOnlyDictionary<string, int> legacySamplerRegisters = new Dictionary<string, int>(StringComparer.Ordinal);
+        DxTextureSlotInputs? dxTextureSlots = null;
         if (options.Target == PlatformTarget.OpenGL)
         {
             // A recovery pass (issue #308) has the flattened raw source in hand already, and its
@@ -733,6 +734,34 @@ internal sealed class CompilationPipeline
             {
                 legacySamplerRegisters = view.Value.LegacySamplerRegisters;
                 legacySamplerTextureView = view.Value.LegacySamplerTextures;
+                // DirectX 11 texture slots (DxTextureSlotOrder): fxc puts a legacy sampler's
+                // texture on the slot of its first read, ahead of every unregistered modern
+                // texture, around every explicit texture register; the backend numbers the SM4
+                // rewrite in declaration order. Each DX11 shader whose slots differ is recompiled
+                // with them pinned. Left null on every other target and for an effect with no
+                // legacy sampler, so those bytes cannot move. The evaluation order is read from
+                // the source (HlslReadOrder), the same on every backend and host.
+                if (directX && view.Value.LegacySamplerTextures.Count > 0)
+                {
+                    dxTextureSlots = new DxTextureSlotInputs(
+                        new HashSet<string>(view.Value.LegacySamplerTextures.Values, StringComparer.Ordinal),
+                        view.Value.LegacySamplerTextures,
+                        view.Value.ExplicitTextureRegisters);
+                }
+            }
+            else if (directX && fxParsed.LegacySamplerTextures.Count > 0)
+            {
+                // Fail loudly: without the view the DirectX 11 texture slots cannot be checked.
+                runWarnings.Add(new ShaderError(
+                    File: sourceFileName,
+                    Line: 0,
+                    Column: 0,
+                    Code: "SD0230",
+                    Message: "DirectX 11: the legacy samplers' textures could not be checked against the slots fxc (and so " +
+                             $"mgfxc) gives them: the preprocessed view could not be built ({view.Error.Code}: {view.Error.Message}). " +
+                             "They keep the backend's declaration-order slots, so GraphicsDevice.Textures[N] and SpriteBatch's " +
+                             "texture (slot 0) can reach a different texture than in mgfxc's build.",
+                    Severity: ShaderErrorSeverity.Warning));
             }
         }
 
@@ -743,7 +772,8 @@ internal sealed class CompilationPipeline
         // rewritten `SamplerState A;` for this target only (registers read off the preprocessed
         // view, so a dead #if branch does not count; every rewritten declaration of the name
         // gets the live register, which is harmless in the branch that does not compile). The
-        // texture keeps the slot fxc's own order gives it. OpenGL decides units from the
+        // texture slots are fxc's too (DxTextureSlotOrder, per compiled shader, after the
+        // compile). OpenGL decides units from the
         // register itself (SpirvCombinedSamplerPairs.ResolveSlots); DirectX 12 and Vulkan are
         // left as they were: mgfxc 3.8.5 offers no reference for legacy samplers there.
         if (directX && legacySamplerRegisters.Count > 0)
@@ -830,6 +860,7 @@ internal sealed class CompilationPipeline
                         glTextureDeclarationOrder: options.GlTextureDeclarationOrder,
                         legacyGlTextures: legacyGlTextures,
                         glInterpolants: GlInterpolantPacking(glEntryInterpolants, pass.VertexEntryPoint, ShaderStage.Vertex),
+                        dxTextureSlots: dxTextureSlots,
                         cancellationToken);
 
                     if (compileOutput.Blob.IsFailure)
@@ -889,6 +920,7 @@ internal sealed class CompilationPipeline
                         glTextureDeclarationOrder: options.GlTextureDeclarationOrder,
                         legacyGlTextures: legacyGlTextures,
                         glInterpolants: GlInterpolantPacking(glEntryInterpolants, pass.PixelEntryPoint, ShaderStage.Pixel),
+                        dxTextureSlots: dxTextureSlots,
                         cancellationToken);
 
                     if (compileOutput.Blob.IsFailure)
@@ -2689,6 +2721,7 @@ internal sealed class CompilationPipeline
             IReadOnlyDictionary<string, int> glTextureDeclarationOrder,
             IReadOnlySet<string> legacyGlTextures,
             MonoGameGlslInterpolantPacking? glInterpolants,
+            DxTextureSlotInputs? dxTextureSlots,
             CancellationToken ct)
     {
         IReadOnlyList<MgfxVertexAttributeInfo> noAttributes = Array.Empty<MgfxVertexAttributeInfo>();
@@ -2719,7 +2752,16 @@ internal sealed class CompilationPipeline
                     WaveQuadIntrinsics.Relabel(dxbcResult.Error, platform, "DXBC compiler") ?? dxbcResult.Error), default, default, noAttributes, noUniforms, noWarnings);
 
             ReadOnlyMemory<byte> dxbc = dxbcResult.Value.Bytes;
-            return (Result<byte[], ShaderError>.Ok(dxbc.ToArray()), dxbc, default, noAttributes, noUniforms, dxbcResult.Value.Warnings);
+            IReadOnlyList<ShaderError> dxbcWarnings = dxbcResult.Value.Warnings;
+            if (dxTextureSlots is not null
+                && ReorderDirectX11TextureSlots(dxbcCompiler, dxbcRequest, dxbc, dxTextureSlots, ct) is { } reordered)
+            {
+                if (reordered.Bytes is { } pinned)
+                    dxbc = pinned;
+                else if (reordered.Warning is { } slotWarning)
+                    dxbcWarnings = [.. dxbcWarnings, slotWarning];
+            }
+            return (Result<byte[], ShaderError>.Ok(dxbc.ToArray()), dxbc, default, noAttributes, noUniforms, dxbcWarnings);
         }
 
         if (platform == PlatformTarget.OpenGL)
@@ -3234,6 +3276,158 @@ internal sealed class CompilationPipeline
             }
         }
         return (line, offset - lineStart + 1, offset);
+    }
+
+    /// <summary>
+    /// What the DirectX 11 texture slot re-assignment (<see cref="DxTextureSlotOrder"/>) needs from
+    /// the preprocessed view: the textures legacy samplers sample through, each legacy sampler's
+    /// texture (to join a natively compiled sampler's RDEF name), and every explicit <c>t</c>
+    /// register. The compiled source's own preprocessed text is cached per text, since every entry
+    /// point of an effect compiles the same text.
+    /// </summary>
+    private sealed record DxTextureSlotInputs(
+        IReadOnlySet<string> LegacyTextures,
+        IReadOnlyDictionary<string, string> LegacySamplerTextures,
+        IReadOnlyList<ExplicitTextureRegister> ExplicitRegisters)
+    {
+        private string? _cachedText;
+        private Result<string, ShaderError>? _cachedView;
+
+        public Result<string, ShaderError> Preprocessed(string text, string sourceFile)
+        {
+            if (_cachedView is null || !ReferenceEquals(_cachedText, text))
+            {
+                _cachedText = text;
+                _cachedView = ShadowDusk.HLSL.Preprocessing.FxMacroPreprocessor.Process(text, sourceFile);
+            }
+            return _cachedView.Value;
+        }
+
+        private string? _nativeText;
+        private IReadOnlySet<string>? _native;
+
+        /// <summary>
+        /// Samplers still read with a legacy intrinsic (<c>tex2D(S, …)</c>) in the preprocessed
+        /// compiled text: legacy samplers the rewrite did not reach, which the backend compiles
+        /// natively under the sampler's own name.
+        /// </summary>
+        public IReadOnlySet<string> NativeLegacySamplers(string preprocessed)
+        {
+            if (_native is null || !ReferenceEquals(_nativeText, preprocessed))
+            {
+                _nativeText = preprocessed;
+                _native = System.Text.RegularExpressions.Regex
+                    .Matches(preprocessed, @"(?<![A-Za-z0-9_.])tex(?:1D|2D|3D|CUBE)(?:bias|grad|lod|proj)?\s*\(\s*([A-Za-z_]\w*)")
+                    .Select(m => m.Groups[1].Value)
+                    .ToHashSet(StringComparer.Ordinal);
+            }
+            return _native;
+        }
+    }
+
+    /// <summary>
+    /// DirectX 11: when the shipped compile's <c>t</c> slots differ from fxc's
+    /// (<see cref="DxTextureSlotOrder"/>), recompiles with each resource pinned to its fxc slot.
+    /// <c>null</c> when nothing needs to move (the first compile's bytes stand, unchanged). Every
+    /// case where the slots cannot be checked or applied keeps the first compile and reports
+    /// <c>SD0230</c>, never silently.
+    /// </summary>
+    private static (ReadOnlyMemory<byte>? Bytes, ShaderError? Warning)? ReorderDirectX11TextureSlots(
+        IDxbcShaderCompiler dxbcCompiler,
+        D3DCompileRequest request,
+        ReadOnlyMemory<byte> dxbc,
+        DxTextureSlotInputs inputs,
+        CancellationToken ct)
+    {
+        if (inputs.LegacyTextures.Count == 0)
+            return null;
+
+        string described = "";
+        ShaderError Unplaced(string why) => new(
+            File: request.SourceFileName,
+            Line: 0,
+            Column: 0,
+            Code: "SD0230",
+            Message: $"DirectX 11: the textures of '{request.EntryPoint}' could not be put on the slots fxc (and so mgfxc) " +
+                     $"gives them{described}: {why}. They keep the backend's declaration-order slots, so " +
+                     "GraphicsDevice.Textures[N] and SpriteBatch's texture (slot 0) can reach a different texture than in " +
+                     "mgfxc's build; setting each texture through its effect parameter is unaffected.",
+            Severity: ShaderErrorSeverity.Warning);
+
+        IReadOnlyList<DxbcTRegisterBindings.Binding>? bindings = DxbcTRegisterBindings.Read(dxbc.Span);
+        if (bindings is null)
+            return (null, Unplaced("the compiled shader's resource table could not be read"));
+
+        // The evaluation order comes from the source (HlslReadOrder): no compiled instruction stream
+        // carries it (d3dcompiler_47 schedules its reads; vkd3d swaps the operands of '>' and '<=').
+        Result<string, ShaderError> view = inputs.Preprocessed(request.HlslSource, request.SourceFileName);
+        if (view.IsFailure)
+            return (null, Unplaced($"the compiled source could not be preprocessed ({view.Error.Code}: {view.Error.Message})"));
+
+        // A legacy texture's RDEF name is the rewritten texture's, or, for a legacy sampler the
+        // rewrite did not reach (declared in an #include, compiled natively by the backend), the
+        // sampler's own: such a sampler is still read with a legacy intrinsic in the compiled text.
+        IReadOnlySet<string> nativeSamplers = inputs.NativeLegacySamplers(view.Value);
+        string? LegacyKey(string rdefName) =>
+            inputs.LegacyTextures.Contains(rdefName) ? rdefName
+            : inputs.LegacySamplerTextures.TryGetValue(rdefName, out string? texture) ? texture
+            : nativeSamplers.Contains(rdefName) ? rdefName
+            : null;
+        var legacyNames = new HashSet<string>(
+            bindings.Where(b => LegacyKey(b.Name) is not null).Select(b => b.Name), StringComparer.Ordinal);
+        if (legacyNames.Count == 0)
+            return null;
+        if (bindings.Any(b => b.Count != 1 || b.Name.Contains('[', StringComparison.Ordinal)))
+            return (null, Unplaced("the shader also declares an array of resources, whose slots this check does not model"));
+
+        var present = new HashSet<string>(
+            bindings.Select(b => LegacyKey(b.Name)).OfType<string>(), StringComparer.Ordinal);
+        IReadOnlyList<string>? reads = HlslReadOrder.FirstReads(
+            view.Value, request.EntryPoint, inputs.LegacyTextures, inputs.LegacySamplerTextures, present, out string? refusal);
+        if (reads is null)
+            return (null, Unplaced($"the evaluation order of the reads is not certain ({refusal})"));
+        var readOrder = new List<string>();
+        foreach (string texture in reads)
+        {
+            foreach (var b in bindings)
+            {
+                if (string.Equals(LegacyKey(b.Name), texture, StringComparison.Ordinal) && !readOrder.Contains(b.Name))
+                    readOrder.Add(b.Name);
+            }
+        }
+
+        string stage = request.Stage == ShaderStage.Vertex ? "vs" : "ps";
+        var registers = inputs.ExplicitRegisters
+            .Where(r => r.Stage is null || string.Equals(r.Stage, stage, StringComparison.Ordinal))
+            .Select(r => (r.Name, r.Slot))
+            .ToList();
+        var resources = bindings.Select(b => (b.Name, b.Slot)).ToList();
+        IReadOnlyDictionary<string, int>? plan = DxTextureSlotOrder.Plan(resources, readOrder, legacyNames, registers);
+        if (plan is null)
+            return null;
+
+        described = " (" + string.Join(", ", plan.OrderBy(p => p.Value).Select(p => $"{p.Key} t{p.Value}")) + ")";
+        string? pinnedText = DxTextureSlotOrder.Pin(request.HlslSource, plan);
+        if (pinnedText is null)
+            return (null, Unplaced("a declaration could not be given an explicit register (declared through a macro or in an #include, in a declarator list, as an array, or with an annotation)"));
+
+        var pinnedRequest = new D3DCompileRequest
+        {
+            HlslSource      = pinnedText,
+            SourceFileName  = request.SourceFileName,
+            EntryPoint      = request.EntryPoint,
+            Stage           = request.Stage,
+            EmbedDebugInfo  = request.EmbedDebugInfo,
+            AllowWarnings   = request.AllowWarnings,
+            ProfileOverride = request.ProfileOverride,
+        };
+        var pinned = dxbcCompiler.Compile(pinnedRequest, ct);
+        if (pinned.IsFailure)
+            return (null, Unplaced($"the pinned compile failed ({pinned.Error.Code}: {pinned.Error.Message})"));
+        var pinnedBindings = DxbcTRegisterBindings.Read(pinned.Value.Bytes.Span);
+        if (pinnedBindings is null || !DxTextureSlotOrder.Matches(pinnedBindings.Select(b => (b.Name, b.Slot)).ToList(), plan))
+            return (null, Unplaced("the pinned compile did not land on those slots"));
+        return (pinned.Value.Bytes, null);
     }
 
     /// <summary>

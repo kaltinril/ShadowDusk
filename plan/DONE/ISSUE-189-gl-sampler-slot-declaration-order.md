@@ -4,6 +4,11 @@
 and the explicit register VALUE.
 **DirectX: NOT being fixed** — deliberate, see §6.3. It is not an oversight or a deferral for
 capacity; the obvious fix is measurably a regression.
+**Superseded for DirectX (both halves):** the legacy sampler register is honoured on DirectX 11
+since 2026-10-03 (`project_facts.md`), and the TEXTURE slot order was reported as a real
+SpriteBatch symptom and fixed on 2026-10-28, see
+[ISSUE-dx11-legacy-texture-slot-order](ISSUE-dx11-legacy-texture-slot-order.md). The "not
+closable" reasoning below was wrong: the order is read back off the first compile and re-pinned.
 **Reported by:** Apostolique (Apos.Shapes), GitHub issue
 [#189](https://github.com/kaltinril/ShadowDusk/issues/189), against ShadowDusk CLI 0.14.2.
 **Fixed in:** `fix/code-scanning-and-issue-189`.

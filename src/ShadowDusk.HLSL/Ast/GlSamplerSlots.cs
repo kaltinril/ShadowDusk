@@ -55,4 +55,19 @@ public sealed record GlSamplerSlots(
     /// </summary>
     public IReadOnlyDictionary<string, EntryPointMatrixInterpolants> EntryPointInterpolants { get; init; } =
         new Dictionary<string, EntryPointMatrixInterpolants>(StringComparer.Ordinal);
+
+    /// <summary>
+    /// Every declaration (as the preprocessed view spells it) of a resource that lives in a
+    /// <c>t</c> register and carries an explicit <c>register(tN)</c>, read or not: any
+    /// <c>texture*</c> type (legacy <c>texture</c>/<c>texture2D</c> and modern <c>Texture2D</c>
+    /// alike), <c>Buffer</c>, <c>StructuredBuffer</c>, <c>ByteAddressBuffer</c>, <c>tbuffer</c>; a
+    /// stage-qualified <c>register(ps, tN)</c> applies to that stage only. fxc takes every one of
+    /// these registers out of circulation, and keeps a directly read resource on its register; the
+    /// DirectX 11 texture slot assignment allocates legacy samplers' textures around them.
+    /// </summary>
+    internal IReadOnlyList<ExplicitTextureRegister> ExplicitTextureRegisters { get; init; } = [];
 }
+
+/// <summary>An explicit <c>t</c> register on a declaration: name, register, and the stage
+/// (<c>"vs"</c>/<c>"ps"</c>) when the clause is stage-qualified, else <c>null</c>.</summary>
+internal sealed record ExplicitTextureRegister(string Name, int Slot, string? Stage);
