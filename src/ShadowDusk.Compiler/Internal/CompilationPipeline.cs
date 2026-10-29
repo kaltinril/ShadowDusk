@@ -3287,46 +3287,85 @@ internal sealed class CompilationPipeline
 
         if (kept.Count > 0)
         {
-            var keptSites = new HashSet<(string File, int Line)>();
-            foreach (GlobalInitializerDefault d in kept.Values)
-                keptSites.Add((SourceBaseName(d.File), d.Line));
-
             // DXC's wording differs by path: the SPIR-V compiles say "variable 'X' will be placed in
             // $Globals so initializer ignored", the DXIL (DirectX 12) compile "Initializer of external
-            // global will be ignored". Both are untrue once the default is stored. The DXIL warning
-            // points at the declared name; the SPIR-V one points at the INITIALIZER, which is a later
-            // line when the brace list starts on its own line (`float4x4 M =` then `{ ... };`, KNI's
-            // OptimizedMatrix.fx). Its variable name cannot be trusted (DXC names the first initialized
-            // global in every such warning; measured with mgfxc 3.8.5's own DXC), so a warning off a
-            // declaration line belongs to the nearest declaration above it.
-            var declLines = new Dictionary<string, List<(int Line, bool Kept)>>(StringComparer.Ordinal);
-            void AddDecl(string file, int line, bool isKept)
+            // global will be ignored". Both are untrue once the default is stored.
+            //
+            // The warning is matched to a kept default by POSITION, inside the span from the declared
+            // name to the end of its initializer: the SPIR-V path reports the initializer's first
+            // token, the DXIL path the name (measured, DXC 1.7.2212.40), so a brace or '=' on the next
+            // line (`float4 C =` / `{ 1, 0, 0, 1 };`) used to leave a stale warning behind when only
+            // the name's line was compared. The variable name in the message is no key either: that
+            // DXC names the FIRST global with an initializer in every one of these warnings.
+            // A clang note that follows a removed warning ("expanded from macro 'RED'", when the
+            // initializer is a macro) belongs to it and goes with it.
+            //
+            // The span starts at column 1 of the name's line, not at the name: a declaration written
+            // through a macro (`#define DECL(n, v) float n = v;` + `DECL(Good, 0.5)`) is reported by
+            // the DXIL path at the macro call's argument, left of where the reader places the name.
+            // It starts at the name only when another declaration precedes it on that line, so
+            // `float Unmodelled = Twice(0.25); float Good = 0.5;` keeps Unmodelled's true warning.
+            var spanStarts = new Dictionary<GlobalInitializerDefault, int>(ReferenceEqualityComparer.Instance);
+            foreach (GlobalInitializerDefault d in kept.Values)
             {
-                string key = SourceBaseName(file);
-                if (!declLines.TryGetValue(key, out var list)) declLines[key] = list = [];
-                list.Add((line, isKept));
+                string file = SourceBaseName(d.File);
+                bool preceded =
+                    read.Value.Defaults.Values.Any(o => !ReferenceEquals(o, d) && o.Line == d.Line && o.Column < d.Column
+                        && string.Equals(SourceBaseName(o.File), file, StringComparison.Ordinal)) ||
+                    read.Value.Failures.Any(o => o.Line == d.Line && o.Column < d.Column
+                        && string.Equals(SourceBaseName(o.File), file, StringComparison.Ordinal));
+                spanStarts[d] = preceded ? d.Column : 1;
             }
-            foreach (GlobalInitializerDefault d in read.Value.Defaults.Values) AddDecl(d.File, d.Line, kept.ContainsKey(d.Name));
-            foreach (GlobalInitializerFailure f in read.Value.Failures) AddDecl(f.File, f.Line, false);
 
-            bool BelongsToKept(ShaderError w)
+            for (int i = 0; i < warnings.Count; i++)
             {
-                string key = SourceBaseName(w.File);
-                if (keptSites.Contains((key, w.Line))) return true;
-                if (!declLines.TryGetValue(key, out var list)) return false;
-                (int Line, bool Kept)? nearest = null;
-                foreach (var decl in list)
-                    if (decl.Line <= w.Line && (nearest is null || decl.Line > nearest.Value.Line)) nearest = decl;
-                return nearest is { Kept: true };
-            }
+                ShaderError w = warnings[i];
+                if (w.Code != "X0000" || w.Severity == ShaderErrorSeverity.Note ||
+                    !(w.Message.Contains("so initializer ignored", StringComparison.Ordinal) ||
+                      w.Message.Contains("Initializer of external global will be ignored", StringComparison.Ordinal)) ||
+                    !kept.Values.Any(d => InitializerSpanContains(d, w, spanStarts[d])))
+                {
+                    continue;
+                }
 
-            warnings.RemoveAll(w => w.Code == "X0000" &&
-                (w.Message.Contains("so initializer ignored", StringComparison.Ordinal) ||
-                 w.Message.Contains("Initializer of external global will be ignored", StringComparison.Ordinal)) &&
-                BelongsToKept(w));
+                int notes = 0;
+                while (i + 1 + notes < warnings.Count &&
+                       warnings[i + 1 + notes].Code == "X0000" &&
+                       warnings[i + 1 + notes].Severity == ShaderErrorSeverity.Note)
+                {
+                    notes++;
+                }
+                warnings.RemoveRange(i, 1 + notes);
+                i--;
+            }
         }
 
         return kept;
+    }
+
+    /// <summary>
+    /// Whether <paramref name="warning"/>'s location lies in <paramref name="def"/>'s declaration,
+    /// from <paramref name="startColumn"/> of the declared name's line (1 unless another declaration
+    /// precedes it there) to the end of its initializer, in the same file (by base name, the form
+    /// both the compilers and the reader report).
+    /// </summary>
+    internal static bool InitializerSpanContains(GlobalInitializerDefault def, ShaderError warning, int startColumn = 1)
+    {
+        if (!string.Equals(SourceBaseName(def.File), SourceBaseName(warning.File), StringComparison.Ordinal))
+            return false;
+
+        (int Line, int Column) start = (def.Line, Math.Max(1, startColumn));
+        (int Line, int Column) end = def.EndLine > 0 ? (def.EndLine, def.EndColumn) : (def.Line, def.Column);
+        (int Line, int Column) at = (warning.Line, warning.Column);
+
+        // A diagnostic without a column (0) is placed by its line alone.
+        if (at.Column <= 0)
+            return at.Line >= start.Line && at.Line <= end.Line;
+
+        return Compare(at, start) >= 0 && Compare(at, end) <= 0;
+
+        static int Compare((int Line, int Column) a, (int Line, int Column) b) =>
+            a.Line != b.Line ? a.Line.CompareTo(b.Line) : a.Column.CompareTo(b.Column);
     }
 
     private static string SourceBaseName(string path)

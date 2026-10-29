@@ -32,10 +32,16 @@ that loads and renders identically to `mgfxc`'s in the real MonoGame/KNI runtime
 
 ### Fixed
 
-- **DXC's "initializer ignored" warning no longer survives a preserved default whose brace list starts on the next
-  line** (`float4x4 M =` then `{ ... };`, as in KNI's `OptimizedMatrix.fx`). DXC's SPIR-V warning points at the
-  brace, not the declaration, and names the first initialized global in every such warning, so it is now matched to
-  the nearest declaration above it. Warnings only; no output byte changes.
+- **DXC's "initializer ignored" warning no longer survives a kept default whose initializer starts on a later
+  line** (`float4x4 M =` then `{ ... };`, as in KNI's `OptimizedMatrix.fx`; also `float4 C` / `= ...` and multi-line
+  arrays and matrices). The default was stored but the warning was still shown on OpenGL and Vulkan, because it was
+  matched on the name's line and DXC's SPIR-V path reports the initializer's first token. It is now matched by
+  position anywhere in the declaration, from column 1 of the name's line (the name itself when another declaration
+  precedes it there) to the end of the initializer (`GlobalInitializerDefault.EndLine`/`EndColumn`, new init-only
+  properties), so a macro-written declaration on DirectX 12 loses it too, while the true warning of an unkept
+  declaration (one on a kept one's line, or one the reader does not see, such as inside a `namespace`) stays. The
+  variable name in DXC's message is no key: DXC names the first initialized global in every such warning. A removed
+  warning's `expanded from macro` note goes with it. Warnings only; no output byte changes.
 
 - **Techniques are read from the preprocessed source, like `mgfxc` (issue #407).** A technique
   inside a false `#if` (or behind an unset `/Defines` value) was still compiled, a technique in an
