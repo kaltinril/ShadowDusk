@@ -120,17 +120,14 @@ public static class KniEffectTestProbe
     internal sealed record Expectation(Kind Kind, string Reason, IReadOnlyList<string>? Signatures = null);
 
     // Known ShadowDusk bugs (fixed on other branches). A row tagged with one must still FAIL.
-    // Flipped to GATE once fixed (2026-10-29): KNIFX DirectX ps_2_0/ps_3_0 (SD0015), KNIFX DirectX
-    // *_4_0_level_9_x recorded as SM 4.0 (PR #430), KNIFX texture-less legacy sampler exposed as a
-    // parameter, OpenGL BINORMAL/TANGENT vertex inputs (SD0210), tex2Dlod (FX0012).
-    private const string KfVulkanRegisterSlots =
-        "known bug: Vulkan ignores an explicit register(tN): the texture is bound to the wrong descriptor, mgfxc 3.8.5 honours it";
+    // None is listed now: every one the suite exposed is fixed and its rows are GATE (2026-10-29):
+    // KNIFX DirectX ps_2_0/ps_3_0 (SD0015), KNIFX DirectX *_4_0_level_9_x recorded as SM 4.0
+    // (PR #430), KNIFX texture-less legacy sampler exposed as a parameter, OpenGL BINORMAL/TANGENT
+    // vertex inputs (SD0210), tex2Dlod (FX0012), Vulkan ignoring an explicit register(tN) (whose
+    // rows read "centre (0,0,0,0)"). A new one is added as a constant here, with its signature below.
 
     /// <summary>What each listed bug's failure looks like in a row's detail (any one must appear).</summary>
-    private static readonly Dictionary<string, string[]> KnownSignatures = new(StringComparer.Ordinal)
-    {
-        [KfVulkanRegisterSlots] = ["centre (0,0,0,0)"],
-    };
+    private static readonly Dictionary<string, string[]> KnownSignatures = new(StringComparer.Ordinal);
 
     // Informational reasons.
     private const string InfoRuntimeOnly =
@@ -221,7 +218,6 @@ public static class KniEffectTestProbe
 
             case "TextureAtRegisterT1":
                 if (gl) return new(Kind.Info, InfoGlModernSamplerRegister);
-                if (rt == "mg-vk") known.Add(KfVulkanRegisterSlots);
                 if (dx11 && knifx) return new(Kind.Info, InfoKnifxSm4HiDef);
                 break;
 
@@ -229,7 +225,6 @@ public static class KniEffectTestProbe
                 if (gl) return new(Kind.Info, InfoGlTextureArray);
                 if (rt == "kni-dx") return new(Kind.Info, knifx ? InfoKnifxSm4HiDef : InfoKniHiDefTextureArray);
                 if (rt == "mg-dx12") return new(Kind.Info, InfoDx12TextureArraySlice);
-                if (rt == "mg-vk") known.Add(KfVulkanRegisterSlots); // it sits at register(t1) as well
                 break;
 
             case "VertexTextureSampleLevel":

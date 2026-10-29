@@ -973,7 +973,7 @@ public sealed class VulkanExplicitRegisterSlotTests
 
     // ---- A conditional on a macro DXC predefines ------------------------------------------------------
 
-    [Theory(Skip = "Needs the DXC predefined-macro list from fix/gl-prototype-crash; un-skip when the batch merges it")]
+    [Theory]
     [InlineData("__GNUC__")]
     [InlineData("__GNUC_MINOR__")]
     [InlineData("__GNUC_PATCHLEVEL__")]
@@ -986,10 +986,10 @@ public sealed class VulkanExplicitRegisterSlotTests
     [InlineData("__DBL_MAX__")]
     public async Task Vulkan_APairingUnderIfdefOfAMacroDxcPredefines_IsTheOneDxcCompiles(string macro)
     {
-        // DXC predefines each of these (measured with `dxc -P`), so it compiles the first branch. While
-        // the managed preprocessor does not know that, its view drops that branch as skipped and the
-        // pairing reads the #else branch's texture: TexA is bound at slot 0 while DXC samples TexB, a
-        // SILENT wrong render. Once FxMacroPreprocessor.IsCompilerPredefined lists the macro the whole
+        // DXC predefines each of these (measured with `dxc -P`), so it compiles the first branch. When
+        // the managed preprocessor did not know that, its view dropped that branch as skipped and the
+        // pairing read the #else branch's texture: TexA was bound at slot 0 while DXC sampled TexB, a
+        // SILENT wrong render. FxMacroPreprocessor.IsCompilerPredefined now lists the macro, so the whole
         // file is paired and the texture DXC samples is the one bound.
         string source = $$"""
             Texture2D TexA; Texture2D TexB; SamplerState S;

@@ -38,8 +38,8 @@ that loads and renders identically to `mgfxc`'s in the real MonoGame/KNI runtime
   (llvmpipe, WARP, lavapipe with the Vulkan validation layer, the lavapipe job raising `vm.max_map_count` first;
   first CI run pending) and into `run-windows-render-gates.ps1`; measured green locally. Test and validation only: no package changes.
   The fixes in this release flip the known-failing rows of KNIFX DirectX `ps_2_0`/`ps_3_0`, KNIFX `_level_9_x`,
-  the KNIFX texture-less sampler, OpenGL `BINORMAL`/`TANGENT` and `tex2Dlod` to gated; only Vulkan's explicit
-  `register(tN)` rows stay known-failing. On DirectX 11, `OldSyntax_t1t0`'s texture binding and
+  the KNIFX texture-less sampler, OpenGL `BINORMAL`/`TANGENT`, `tex2Dlod` and Vulkan's explicit `register(tN)`
+  to gated; no known-failing row is left. On DirectX 11, `OldSyntax_t1t0`'s texture binding and
   `DeferredBasicEffect` are informational: with the texture-slot fix ShadowDusk binds them as `mgfxc` and KNI's
   own `.xnb` do, not in the XNA layout KNI's test asserts.
 - **`ConstantBufferReflection.RawDescriptorSet`** (`ShadowDusk.Core.Reflection`): the raw SPIR-V
@@ -338,7 +338,10 @@ that loads and renders identically to `mgfxc`'s in the real MonoGame/KNI runtime
   reserved name (`__x`, `_X`) that the source and its `-D` macros never `#define`: before, a view
   that read `#ifdef __GNUC__` as false could take the branch DXC did not. An include guard such
   as `#ifndef __MY_FXH__` / `#define __MY_FXH__`, and KNI's `__KNIFX__`, are unaffected; no
-  fixture, sample or validation effect gains a warning.
+  fixture, sample or validation effect gains a warning. This also closes a silent Vulkan gap: the
+  texture/sampler pairing reads its live lines from the same view, so `#ifdef __GNUC__` around one
+  `Sample` call and `#else` around another paired the `#else` texture while DXC compiled the first
+  branch (a wrong texture with no diagnostic); such a file is now paired whole, as DXC compiles it.
 
 ## [0.22.1] - 2026-10-29
 
