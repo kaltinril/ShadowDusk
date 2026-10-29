@@ -152,7 +152,7 @@ internal static class Program
                 });
                 slotRows.Add(new SlotRow($"{shape} ({container}, {backend})", result.IsSuccess ? result.Value.Data : null,
                     result.IsSuccess ? null : string.Join(" | ", result.Error.Select(e => $"{e.Code}: {e.Message}")),
-                    golden, parameters, control));
+                    golden, parameters, control, container, src));
             }
         }
 
@@ -187,9 +187,47 @@ internal sealed record DxOutcome(string Name, bool Pass, string Detail);
 /// <summary>One texture-slot row: a shape compiled into one container, its golden, the parameter textures it sets.</summary>
 internal sealed record SlotRow(
     string Name, byte[]? CandidateBytes, string? CompileError, byte[] GoldenBytes,
-    Dictionary<string, string> Parameters, string? ControlParameter)
+    Dictionary<string, string> Parameters, string? ControlParameter, EffectContainer Container, string Source)
 {
     public const string Red = "red", Green = "green", Blue = "blue", White = "white";
+
+    /// <summary>
+    /// The texture slot of each texture-less legacy sampler (<c>sampler2D A;</c>), read off the
+    /// mgfxc golden: mgfxc gives such a sampler a texture parameter named after the SAMPLER (a
+    /// name the source declares as a sampler, not as a texture; mgfxc's DirectX_11 records carry
+    /// no name), KNIFX gives it none and a -1 record, as KNI's own pipeline does, so a KNIFX row
+    /// binds that texture through GraphicsDevice.Textures[slot] instead, exactly where mgfxc's
+    /// build reads it.
+    /// </summary>
+    public IReadOnlyDictionary<string, int> TexturelessSamplerSlots { get; } = TexturelessSlots(GoldenBytes, Source);
+
+    /// <summary>The golden's sampler records as `'record-name' -> parameter @tN`, for a failure message.</summary>
+    public string GoldenRecords
+    {
+        get
+        {
+            var reader = ShadowDusk.Integration.Tests.MgfxBlobReader.Parse(GoldenBytes);
+            return string.Join(", ", reader.Samplers.Select(r =>
+                $"'{r.Name}' -> {(r.Parameter < reader.Parameters.Count ? reader.Parameters[r.Parameter].Name : "?")} @t{r.TextureSlot}"));
+        }
+    }
+
+    private static Dictionary<string, int> TexturelessSlots(byte[] golden, string source)
+    {
+        var reader = ShadowDusk.Integration.Tests.MgfxBlobReader.Parse(golden);
+        var slots = new Dictionary<string, int>(StringComparer.Ordinal);
+        foreach (var record in reader.Samplers)
+        {
+            if (record.Parameter >= reader.Parameters.Count)
+                continue;
+            string parameter = reader.Parameters[record.Parameter].Name;
+            bool declaredAsSampler = System.Text.RegularExpressions.Regex.IsMatch(source,
+                $@"\bsampler(?:1D|2D|3D|CUBE)?\s+{System.Text.RegularExpressions.Regex.Escape(parameter)}\b");
+            if (declaredAsSampler)
+                slots[parameter] = record.TextureSlot;
+        }
+        return slots;
+    }
 
     /// <summary>The same shapes as validation/DxModernFeatures' "texture-slots" arm.</summary>
     public static readonly (string Shape, Dictionary<string, string> Parameters, string? Control)[] Cases =
@@ -302,22 +340,31 @@ internal sealed class KniDxCompareGame : Game
         Texture2D Named(string n) => n switch { SlotRow.Green => green, SlotRow.Blue => blue, SlotRow.White => white, _ => red };
         var parameters = row.Parameters.ToDictionary(p => p.Key, p => Named(p.Value));
 
-        Color[]? Render(byte[] bytes, Texture2D sprite, IReadOnlyDictionary<string, Texture2D> values, out string? error)
+        // The KNIFX candidate has no parameter for a texture-less legacy sampler (as in KNI's own
+        // build): such a texture goes straight to the device slot mgfxc's build reads it from.
+        Color[]? Render(byte[] bytes, bool knifx, Texture2D sprite, IReadOnlyDictionary<string, Texture2D> values, out string? error)
         {
             error = null;
             const int w = 32, h = 32;
             try
             {
                 using var effect = new Effect(GraphicsDevice, bytes);
+                var deviceSlots = new List<(int Slot, Texture2D Texture)>();
                 foreach ((string name, Texture2D tex) in values)
                 {
-                    EffectParameter p = effect.Parameters[name]
-                        ?? throw new InvalidOperationException($"no parameter '{name}'");
-                    p.SetValue(tex);
+                    EffectParameter? p = effect.Parameters[name];
+                    if (p is not null)
+                        p.SetValue(tex);
+                    else if (knifx && row.TexturelessSamplerSlots.TryGetValue(name, out int slot))
+                        deviceSlots.Add((slot, tex));
+                    else
+                        throw new InvalidOperationException($"no parameter '{name}' (golden records: {row.GoldenRecords})");
                 }
                 using var rt = new RenderTarget2D(GraphicsDevice, w, h, false, SurfaceFormat.Color, DepthFormat.None);
                 GraphicsDevice.SetRenderTarget(rt);
                 GraphicsDevice.Clear(Color.Black);
+                foreach ((int slot, Texture2D tex) in deviceSlots)
+                    GraphicsDevice.Textures[slot] = tex;
                 _sb.Begin(SpriteSortMode.Immediate, BlendState.Opaque, SamplerState.PointClamp, null, null, effect);
                 _sb.Draw(sprite, new Rectangle(0, 0, w, h), Color.White);
                 _sb.End();
@@ -344,10 +391,11 @@ internal sealed class KniDxCompareGame : Game
             return m;
         }
 
-        Color[]? candidate = Render(row.CandidateBytes, red, parameters, out string? candErr);
+        bool knifxCandidate = row.Container == EffectContainer.Knifx;
+        Color[]? candidate = Render(row.CandidateBytes, knifxCandidate, red, parameters, out string? candErr);
         if (candidate is null)
             return new DxOutcome(row.Name, false, $"candidate failed: {candErr}");
-        Color[]? golden = Render(row.GoldenBytes, red, parameters, out string? goldErr);
+        Color[]? golden = Render(row.GoldenBytes, knifx: false, red, parameters, out string? goldErr);
         if (golden is null)
             return new DxOutcome(row.Name, false, $"GOLDEN failed (control failure): {goldErr}");
         int maxDelta = MaxD(candidate, golden);
@@ -357,7 +405,7 @@ internal sealed class KniDxCompareGame : Game
         if (row.ControlParameter is { } swap)
         {
             var swapped = new Dictionary<string, Texture2D>(parameters) { [swap] = red };
-            Color[]? goldenSwapped = Render(row.GoldenBytes, parameters[swap], swapped, out string? swapErr);
+            Color[]? goldenSwapped = Render(row.GoldenBytes, knifx: false, parameters[swap], swapped, out string? swapErr);
             if (goldenSwapped is null)
                 return new DxOutcome(row.Name, false, $"positive control failed: {swapErr}");
             int controlDelta = MaxD(golden, goldenSwapped);
