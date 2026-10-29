@@ -35,4 +35,12 @@ public sealed record VariableReflection
     /// pipeline ignores it.
     /// </summary>
     internal bool IsRowMajor { get; init; }
+
+    /// <summary>
+    /// True when the reflected Rows x Columns of a <see cref="IsRowMajor"/> matrix is the C x R
+    /// transpose of its HLSL R x C declaration, which is what Vulkan (SPIR-V) reflection reports for
+    /// it so that MonoGame's upload fills the one-register-per-row buffer. DirectX reflection
+    /// reports the declaration's R x C. Internal, like <see cref="IsRowMajor"/>.
+    /// </summary>
+    internal bool IsHeaderTransposed { get; init; }
 }

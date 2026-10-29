@@ -279,6 +279,67 @@ public sealed class InitializerDefaultsTests
     [Theory]
     [InlineData(PlatformTarget.DirectX)]
     [InlineData(PlatformTarget.DirectX12)]
+    public async Task TallRowMajorDefault_OnDirectX_FillsTheRowsTheUploadReaches(PlatformTarget target)
+    {
+        // DirectX reflects a row_major float4x3 as 4x3: MonoGame uploads 3 registers of 4 floats,
+        // register j from Data[4j .. 4j+3], over a buffer of 4 one-per-row registers. So rows 0..2 go
+        // in register order with a zero pad, and the zero row 3 needs nothing (an affine matrix).
+        CompiledShader l = await CompileAsync("L_RowMajorTallAsymmetric.fx", target);
+        l.Warnings.ShouldNotContain(w => w.Code == "SD0017");
+        Floats(Param(l, "M").DefaultValue!).ShouldBe(new[] { 0f, 1f, 0f, 0f, 0.5f, 0f, 0f, 0f, 0f, 0f, 1f, 0f });
+        l.Parameters.Single(p => p.Name == "M").DefaultValue
+            .ShouldBe(new[] { 0f, 1f, 0f, 0.5f, 0f, 0f, 0f, 0f, 1f, 0f, 0f, 0f }, "reflection is the declaration");
+
+        CompiledShader k = await CompileAsync("K_RowMajorTallSymmetric.fx", target);
+        Floats(Param(k, "M").DefaultValue!).ShouldBe(new[] { 0.25f, 0f, 0f, 0f, 0f, 0.5f, 0f, 0f, 0f, 0f, 0.75f, 0f });
+
+        // A non-zero row 3 is never written there: SD0017, naming the row.
+        CompiledShader m = await CompileAsync("M_RowMajorTallFourthRow.fx", target);
+        ShaderError w = m.Warnings.Single(x => x.Code == "SD0017");
+        w.Message.ShouldContain("row 3", Case.Sensitive);
+        w.Message.ShouldContain("A Set cannot fill those registers either", Case.Sensitive);
+        w.Message.ShouldNotContain("Set the parameter by name", Case.Sensitive);
+        Param(m, "M").DefaultValue.ShouldBe(new byte[48]);
+    }
+
+    [Fact]
+    public async Task TallRowMajorDefault_OnVulkan_IsEveryRowInOrder()
+    {
+        // Vulkan's 3x4 header uploads 4 registers of 3 floats: every row, the non-zero fourth included.
+        CompiledShader m = await CompileAsync("M_RowMajorTallFourthRow.fx", PlatformTarget.Vulkan);
+        m.Warnings.ShouldNotContain(w => w.Code == "SD0017");
+        Floats(Param(m, "M").DefaultValue!).ShouldBe(new[] { 1f, 0f, 0f, 0f, 1f, 0f, 0f, 0f, 1f, 0.25f, 0.5f, 0.75f });
+    }
+
+    [Theory]
+    [InlineData(PlatformTarget.DirectX, "float2x3", "float2x3(1, 2, 3, 4, 5, 6)")]
+    [InlineData(PlatformTarget.DirectX12, "float3x4", "float3x4(1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12)")]
+    public async Task WideRowMajorDefault_OnDirectX_IsALoudSd0017(PlatformTarget target, string type, string value)
+    {
+        // A WIDE row_major matrix (more columns than rows) is uploaded as C registers over a matrix of R:
+        // no default lands right and the upload runs past it, so it is refused, even all of it in range.
+        string src = $$"""
+            #if SM6
+            #define PS ps_6_0
+            #else
+            #define PS ps_4_0
+            #endif
+            float4 Pad;
+            row_major {{type}} M = {{value}};
+            float4 MainPS(float4 pos : SV_Position) : SV_Target0 { return Pad + M[1].x; }
+            technique T { pass P { PixelShader = compile PS MainPS(); } }
+            """;
+        var result = await new EffectCompiler().CompileAsync(
+            src, new CompilerOptions { Target = target, SourceFileName = "Wide.fx" });
+        result.IsSuccess.ShouldBeTrue(result.IsFailure ? result.Error[0].Message : "");
+        ShaderError w = result.Value.Warnings.Single(x => x.Code == "SD0017");
+        w.Message.ShouldContain("past the matrix", Case.Sensitive);
+        w.Message.ShouldNotContain("Set the parameter by name", Case.Sensitive);
+    }
+
+    [Theory]
+    [InlineData(PlatformTarget.DirectX)]
+    [InlineData(PlatformTarget.DirectX12)]
     public async Task RowMajorNonSquareDefault_OnDirectX_IsALoudSd0017(PlatformTarget target)
     {
         // DirectX reflects a row_major float4x3 as 4x3, which MonoGame uploads as 3 registers of 4

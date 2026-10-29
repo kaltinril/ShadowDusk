@@ -70,13 +70,20 @@ that loads and renders identically to `mgfxc`'s in the real MonoGame/KNI runtime
   `row_major float4x4 M = ...;` (or any matrix under `#pragma pack_matrix(row_major)`) was given the same
   column-by-column default blob as a column-major matrix, but a `row_major` buffer holds one register per row and
   MonoGame copies the blob into the registers in order, so the default arrived transposed, with no warning
-  (measured in real DesktopVK). The blob is now the rows in order, on DirectX 11, DirectX 12, Vulkan and KNIFX on DX,
-  for every square `row_major` matrix and, on Vulkan, non-square ones too. A `row_major` non-square matrix on
-  DirectX has no layout MonoGame's upload can fill, so its initializer is now the `SD0017` warning (naming the shape)
-  and a zero default instead of a scrambled one. OpenGL is unchanged (render-proven). Real `mgfxc` has no reference:
-  its DirectX_11 build refuses every `row_major` matrix and its Vulkan build writes zeros. Only those default blob
-  bytes change. Proven in real MonoGame by the new `H_RowMajorMatrix`, `I_PackMatrixPragma` and `J_RowMajor2x2`
-  cases of the `InitializerDefaults*` drivers.
+  (measured in real DesktopVK). The blob is now in register order: every square `row_major` matrix on DirectX 11,
+  DirectX 12, Vulkan and KNIFX on DX, every non-square one on Vulkan, and on DirectX a TALL one (more rows than
+  columns, such as an affine `float4x3` world or bone matrix): MonoGame uploads it as C registers of R floats, which
+  reaches rows 0..C-1, so those rows are written and a zero tail is kept; a non-zero row at index C or beyond is
+  the `SD0017` warning naming the row. A WIDE `row_major` matrix on DirectX (more columns than rows) is uploaded
+  past the matrix, so its initializer is `SD0017` and a zero default instead of a scrambled one; for these the
+  warning says a Set cannot reach the registers either and suggests column-major packing. OpenGL is unchanged
+  (render-proven). Real `mgfxc` has no reference: its DirectX_11 build refuses every `row_major` matrix and its
+  Vulkan build writes zeros. Only those default blob bytes change (in the corpus, `DefaultsMatrices.fx`'s `M4r` on
+  DirectX 11, DirectX 12, Vulkan and KNIFX-DX). Proven in real MonoGame WindowsDX, WindowsDX12 and DesktopVK by the
+  new `H_RowMajorMatrix`, `I_PackMatrixPragma`, `J_RowMajor2x2`, `K_RowMajorTallSymmetric`,
+  `L_RowMajorTallAsymmetric` and `M_RowMajorTallFourthRow` cases of the `InitializerDefaults*` drivers; KNIFX on DX
+  is byte-tested only, its real-engine proof waits for the separate KNIFX `_level_9_x` shader-model fix (the KNIFX
+  arm of `InitializerDefaultsKniDx` is red on `main` for that reason).
 
 ## [0.22.0] - 2026-10-28
 

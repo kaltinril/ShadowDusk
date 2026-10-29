@@ -205,7 +205,7 @@ public sealed class DxilReflectionExtractor
                     Columns        = typeDesc.ColumnCount,
                     Elements       = typeDesc.ElementCount,
                     Members        = ExtractStructMembers(varType, typeDesc),
-                    IsRowMajor     = (int)typeDesc.Class == 2,   // D3D_SVC_MATRIX_ROWS
+                    IsRowMajor     = typeDesc.Class == D3DShaderVariableClass.MatrixRows,
                 });
             }
 
@@ -246,6 +246,7 @@ public sealed class DxilReflectionExtractor
                 Columns        = memberTypeDesc.ColumnCount,
                 Elements       = memberTypeDesc.ElementCount,
                 Members        = ExtractStructMembers(memberType, memberTypeDesc),
+                IsRowMajor     = memberTypeDesc.Class == D3DShaderVariableClass.MatrixRows,
             });
         }
 

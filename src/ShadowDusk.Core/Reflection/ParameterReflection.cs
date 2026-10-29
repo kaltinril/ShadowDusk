@@ -17,9 +17,14 @@ public sealed record ParameterReflection
     public required EffectParameterClass Class          { get; init; }
     /// <summary>The parameter's element type.</summary>
     public required EffectParameterType  Type           { get; init; }
-    /// <summary>The number of rows; 1 for scalars.</summary>
+    /// <summary>
+    /// The number of rows; 1 for scalars. This is the shape the effect file declares to the runtime
+    /// (MonoGame uploads a matrix as <see cref="Columns"/> registers of <see cref="Rows"/> floats),
+    /// which is the HLSL declaration's except for a <c>row_major</c> non-square matrix on Vulkan:
+    /// there it is the C x R transpose of a declared R x C (see <see cref="DefaultValue"/>).
+    /// </summary>
     public required int                  Rows           { get; init; }
-    /// <summary>The number of columns; 1 for scalars.</summary>
+    /// <summary>The number of columns; 1 for scalars. See <see cref="Rows"/> for the one case it is transposed.</summary>
     public required int                  Columns        { get; init; }
     /// <summary>The array element count; 1 when not an array.</summary>
     public required int                  Elements       { get; init; }
@@ -36,6 +41,14 @@ public sealed record ParameterReflection
     internal bool IsRowMajor { get; init; }
 
     /// <summary>
+    /// True when the reflected Rows x Columns of a <see cref="IsRowMajor"/> matrix is the C x R
+    /// transpose of its HLSL R x C declaration, which is what Vulkan (SPIR-V) reflection reports for
+    /// it so that MonoGame's upload fills the one-register-per-row buffer. DirectX reflection
+    /// reports the declaration's R x C. Internal, like <see cref="IsRowMajor"/>.
+    /// </summary>
+    internal bool IsHeaderTransposed { get; init; }
+
+    /// <summary>
     /// The default value the HLSL declaration gives the parameter (<c>float Scale = 2.0;</c>),
     /// or <see langword="null"/> when it is unknown.
     /// </summary>
@@ -45,14 +58,19 @@ public sealed record ParameterReflection
     /// column <c>c</c> is at index <c>r * Columns + c</c>; a <c>float2x3</c> is
     /// <c>m00 m01 m02 m10 m11 m12</c>, the order its constructor takes). No register padding,
     /// whatever the matrix packing, and not the order of the blob in a <c>.mgfx</c> (column by
-    /// column, or the rows in order for a <c>row_major</c> matrix). For a <c>row_major</c>
-    /// non-square matrix on Vulkan, whose reflected shape is the C x R its buffer is uploaded by,
-    /// the value is still the declaration's R x C, row after row. <c>int</c> values are converted to
-    /// floats, <c>uint</c> values by their unsigned
-    /// value (so <c>uint U = 3000000000;</c> is 3000000000, not negative), and an integer beyond 2^24
-    /// is not exactly representable. <c>bool</c> is 0 or 1 on every target. How a 32-bit word reads
-    /// follows the HLSL declaration, not <see cref="Type"/>: reflection reports both <c>int</c> and
-    /// <c>uint</c> as <c>Int32</c>, and on Vulkan a <c>bool</c> too.</para>
+    /// column, or in register order for a <c>row_major</c> matrix). For a <c>row_major</c>
+    /// non-square matrix on Vulkan, whose <see cref="Rows"/> x <see cref="Columns"/> is the C x R
+    /// its buffer is uploaded by, the value is still the declaration's R x C, row after row, so
+    /// there the cell at row r, column c is at <c>r * Rows + c</c>, not <c>r * Columns + c</c>. The
+    /// two orders have the same length and this result exposes no majorness, so a consumer can only
+    /// tell that case apart by reading the HLSL declaration (a <c>row_major</c> modifier, or a
+    /// <c>#pragma pack_matrix(row_major)</c> before it) and comparing its shape with
+    /// <see cref="Rows"/> x <see cref="Columns"/>. Square matrices, every column-major matrix and
+    /// every other target are unaffected. <c>int</c> values are converted to floats, <c>uint</c> values
+    /// by their unsigned value (so <c>uint U = 3000000000;</c> is 3000000000, not negative), and an
+    /// integer beyond 2^24 is not exactly representable. <c>bool</c> is 0 or 1 on every target. How a
+    /// 32-bit word reads follows the HLSL declaration, not <see cref="Type"/>: reflection reports both
+    /// <c>int</c> and <c>uint</c> as <c>Int32</c>, and on Vulkan a <c>bool</c> too.</para>
     /// <para><b>MGFX and KNIFX.</b> It is exactly the default blob the file carries for the
     /// parameter (the initializer, read off the preprocessed source and evaluated, so constructors,
     /// brace lists, folding of constants and the like all count). It is <see langword="null"/>

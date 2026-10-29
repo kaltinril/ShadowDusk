@@ -27,8 +27,12 @@ using Rectangle = Microsoft.Xna.Framework.Rectangle;
 
 namespace ShadowDusk.Validation.InitializerDefaults;
 
-/// <summary>One shader and the pixel its default value must produce.</summary>
-internal sealed record DefaultCase(string Fx, bool GlSupported, byte R, byte G, byte B, byte A, int Tolerance = 1);
+/// <summary>
+/// One shader and the pixel its default value must produce. <paramref name="OnDirectX"/>, when set, is the
+/// pixel on the DirectX targets instead (a shape whose default DirectX refuses with SD0017).
+/// </summary>
+internal sealed record DefaultCase(string Fx, bool GlSupported, byte R, byte G, byte B, byte A, int Tolerance = 1,
+    (byte R, byte G, byte B, byte A)? OnDirectX = null);
 
 public static class InitializerDefaultsProbe
 {
@@ -50,6 +54,11 @@ public static class InitializerDefaultsProbe
         new("H_RowMajorMatrix.fx",   true,  0, 128, 0, 255),
         new("I_PackMatrixPragma.fx", true,  0, 128, 0, 255),
         new("J_RowMajor2x2.fx",      false, 0, 128, 0, 255),
+        // TALL row_major float4x3: on DirectX MonoGame's upload reaches rows 0..2 only. A zero fourth row
+        // (an affine matrix) is kept, symmetric or not; a non-zero one is SD0017 and zeros there, black.
+        new("K_RowMajorTallSymmetric.fx",  false, 64, 128, 191, 255),
+        new("L_RowMajorTallAsymmetric.fx", false, 32, 128, 32, 255),
+        new("M_RowMajorTallFourthRow.fx",  false, 64, 128, 191, 255, OnDirectX: (0, 0, 0, 255)),
     ];
 
     /// <summary>
@@ -82,7 +91,9 @@ public static class InitializerDefaultsProbe
                 string path = Path.Combine(dir, c.Fx);
                 jobs.Add(Compile(compiler, label, target, container, path, File.ReadAllText(path),
                     $"{Path.GetFileNameWithoutExtension(c.Fx)} [{container}]",
-                    new Expect(c.R, c.G, c.B, c.A, c.Tolerance), setR: null));
+                    target is PlatformTarget.DirectX or PlatformTarget.DirectX12 && c.OnDirectX is { } dx
+                        ? new Expect(dx.R, dx.G, dx.B, dx.A, c.Tolerance)
+                        : new Expect(c.R, c.G, c.B, c.A, c.Tolerance), setR: null));
             }
 
             // Control 1: the initializer removed. Must be black (the default IS what makes it red).

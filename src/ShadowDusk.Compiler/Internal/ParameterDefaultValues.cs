@@ -55,24 +55,32 @@ internal static class ParameterDefaultValues
             blobs.Add(blob);
         }
 
-        // A row_major matrix's blob is its rows in order (issue #423 follow-up), which is already the
-        // declaration's logical row-major order; its header may be the C x R transpose (Vulkan).
+        // A row_major matrix's blob is in register order (CompilationPipeline.InStorageOrder):
+        // Data[j * Rh + k] = M[j][k] for the rows the upload reaches, with header Rh x Ch, which on
+        // Vulkan is the declaration's C x R and on DirectX its R x C. Read it back to the declaration.
         if (p.IsRowMajor && p.Class == EffectParameterClass.Matrix)
-            return InOrder(p.Type, info.RowCount * info.ColumnCount, blobs, kind);
+        {
+            int rh = info.RowCount, ch = info.ColumnCount;
+            return FromRowMajorStorage(p.Type, rh, ch,
+                rows: p.IsHeaderTransposed ? ch : rh, columns: p.IsHeaderTransposed ? rh : ch, blobs, kind);
+        }
 
         return ToLogical(p.Class, p.Type, info.RowCount, info.ColumnCount, blobs, kind);
     }
 
-    private static float[]? InOrder(EffectParameterType type, int count, IReadOnlyList<byte[]> blobs, GlobalInitializerKind? kind)
+    private static float[]? FromRowMajorStorage(
+        EffectParameterType type, int rh, int ch, int rows, int columns, IReadOnlyList<byte[]> blobs,
+        GlobalInitializerKind? kind)
     {
-        var values = new float[count * blobs.Count];
+        var values = new float[rows * columns * blobs.Count];
         int at = 0;
         foreach (byte[] blob in blobs)
         {
-            if (blob.Length != count * 4)
+            if (blob.Length != rh * ch * 4)
                 return null;
-            for (int i = 0; i < count; i++)
-                values[at++] = ReadComponent(blob, i, type, kind);
+            for (int j = 0; j < rows; j++)
+                for (int k = 0; k < columns; k++)
+                    values[at++] = j < ch && k < rh ? ReadComponent(blob, j * rh + k, type, kind) : 0f;
         }
         return values;
     }

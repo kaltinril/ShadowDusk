@@ -283,6 +283,7 @@ internal sealed class SpirvReflectionParser
             Elements       = elements,
             Members        = BuildStructMembers(type),
             IsRowMajor     = hlslRowMajor && cls == EffectParameterClass.Matrix,
+            IsHeaderTransposed = hlslRowMajor && cls == EffectParameterClass.Matrix,   // see DescribeVariable
         };
     }
 
@@ -325,6 +326,8 @@ internal sealed class SpirvReflectionParser
                 Columns        = cols,
                 Elements       = elements,
                 Members        = BuildStructMembers(memberType),
+                IsRowMajor     = HlslRowMajor(st.Id, i) && cls == EffectParameterClass.Matrix,
+                IsHeaderTransposed = HlslRowMajor(st.Id, i) && cls == EffectParameterClass.Matrix,
             });
         }
 

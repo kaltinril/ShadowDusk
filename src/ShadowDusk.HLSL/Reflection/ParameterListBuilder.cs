@@ -45,6 +45,7 @@ public static class ParameterListBuilder
                     Columns     = variable.Columns,
                     Elements    = variable.Elements,
                     IsRowMajor  = variable.IsRowMajor,
+                    IsHeaderTransposed = variable.IsHeaderTransposed,
                     Annotations = annotationLookup.TryGetValue(variable.Name, out var annots)
                                   ? annots
                                   : null,
