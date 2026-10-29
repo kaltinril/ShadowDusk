@@ -53,6 +53,8 @@ internal sealed class SpirvReflectionParser
         public required TextureDimension Dimension { get; init; }
         // OpTypeImage's Sampled operand: 2 is a storage image (an HLSL RWTexture*), 1 a sampled one.
         public bool IsStorage { get; init; }
+        // Dim Buffer: an HLSL Buffer<T> / RWBuffer<T>, a texel buffer rather than a texture.
+        public bool IsTexelBuffer { get; init; }
     }
 
     private sealed class SamplerType : SpirvType { }
@@ -77,6 +79,7 @@ internal sealed class SpirvReflectionParser
 
     // Decorations keyed by target id.
     private readonly HashSet<uint>            _blockStructs = new();
+    private readonly HashSet<uint>            _bufferBlockStructs = new();
     private readonly Dictionary<uint, int>    _binding      = new();
     private readonly Dictionary<uint, int>    _descriptorSet = new();
     private readonly Dictionary<uint, int>    _arrayStride  = new();
@@ -183,6 +186,7 @@ internal sealed class SpirvReflectionParser
                 BindSlot         = textureSlot++,
                 Dimension        = image.Dimension,
                 IsStorage        = image.IsStorage,
+                IsTexelBuffer    = image.IsTexelBuffer,
                 RawBinding       = rawBinding,
                 RawDescriptorSet = rawSet,
                 ArrayLength      = arrayLength,
@@ -210,6 +214,7 @@ internal sealed class SpirvReflectionParser
                 BindSlot         = textureSlot++,
                 Dimension        = image.Dimension,
                 IsStorage        = image.IsStorage,
+                IsTexelBuffer    = image.IsTexelBuffer,
                 RawBinding       = rawBinding,
                 RawDescriptorSet = rawSet,
                 ArrayLength      = arrayLength,
@@ -268,6 +273,7 @@ internal sealed class SpirvReflectionParser
             BindSlot   = bindSlot,
             Variables  = variables,
             RawBinding = rawBinding,
+            IsStorageBuffer = _bufferBlockStructs.Contains(st.Id),
         };
     }
 
@@ -585,7 +591,12 @@ internal sealed class SpirvReflectionParser
                     break;
 
                 case SpirvOpcode.OpTypeImage when ops.Length >= 3:
-                    _types[ops[0]] = new ImageType { Dimension = MapDim((SpirvDim)ops[2]), IsStorage = ops.Length >= 7 && ops[6] == 2 };
+                    _types[ops[0]] = new ImageType
+                    {
+                        Dimension     = MapDim((SpirvDim)ops[2]),
+                        IsStorage     = ops.Length >= 7 && ops[6] == 2,
+                        IsTexelBuffer = (SpirvDim)ops[2] == SpirvDim.Buffer,
+                    };
                     break;
 
                 case SpirvOpcode.OpTypeSampler when ops.Length >= 1:
@@ -644,8 +655,13 @@ internal sealed class SpirvReflectionParser
         switch (decoration)
         {
             case SpirvDecoration.Block:
-            case SpirvDecoration.BufferBlock:
                 _blockStructs.Add(target);
+                break;
+            case SpirvDecoration.BufferBlock:
+                // A storage buffer (StructuredBuffer, ByteAddressBuffer and their RW forms) at
+                // DXC's default vulkan1.0 target: Uniform storage class, BufferBlock struct.
+                _blockStructs.Add(target);
+                _bufferBlockStructs.Add(target);
                 break;
             case SpirvDecoration.Binding when ops.Length >= 3:
                 _binding[target] = (int)ops[2];

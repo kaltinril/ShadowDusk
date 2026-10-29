@@ -38,6 +38,10 @@
          call and the result accessors one step at a time, to prove which ones reach DXC's
          setlocale and so must sit inside DxcForkGate. -->
     <InternalsVisibleTo Include="ShadowDusk.Integration.Tests" />
+    <!-- The Vulkan binding rewrite (VulkanTextureSamplerBindingRewriter) asks the managed
+         preprocessor which lines an untaken #if drops (FxMacroPreprocessor.SkippedLines), so a
+         Sample call in '#if 0' does not decide a texture's sampler. -->
+    <InternalsVisibleTo Include="ShadowDusk.Compiler" />
   </ItemGroup>
 
   <ItemGroup>

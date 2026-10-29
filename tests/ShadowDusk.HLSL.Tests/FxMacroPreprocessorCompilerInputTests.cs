@@ -198,6 +198,41 @@ public sealed class FxMacroPreprocessorCompilerInputTests
     }
 
     [Fact]
+    public void SkippedLines_AreTheTextLinesOfUntakenConditionalGroups()
+    {
+        // The Vulkan binding rewrite reads these so a Sample call in '#if 0' (or the branch the
+        // macros do not take) does not decide a texture's sampler.
+        const string src =
+            "#define VULKAN 1\n" +          // 1
+            "Texture2D A;\n" +              // 2
+            "#if 0\n" +                     // 3
+            "return A.Sample(U, uv);\n" +   // 4  skipped
+            "#endif\n" +                    // 5
+            "#if VULKAN\n" +                // 6
+            "return A.Sample(S, uv);\n" +   // 7
+            "#else\n" +                     // 8
+            "return A.Sample(T, \\\n" +     // 9  skipped (continued)
+            "    uv);\n" +                  // 10 skipped
+            "#endif\n" +                    // 11
+            "#define M A.Sample(W, uv)\n";  // 12 a macro body is not skipped
+
+        var result = FxMacroPreprocessor.SkippedLines(src, "t.fx");
+
+        result.IsSuccess.ShouldBeTrue(result.IsFailure ? $"{result.Error.Code}: {result.Error.Message}" : "ok");
+        result.Value.Lines.Order().ShouldBe([4, 9, 10]);
+        result.Value.PredefinedMacroUse.ShouldBeNull();
+    }
+
+    [Fact]
+    public void SkippedLines_ReportAConditionalOnACompilerPredefinedMacro()
+    {
+        var result = FxMacroPreprocessor.SkippedLines("#if __HLSL_VERSION >= 2021\nint a;\n#endif\n", "t.fx");
+
+        result.IsSuccess.ShouldBeTrue();
+        result.Value.PredefinedMacroUse.ShouldNotBeNull().Name.ShouldBe("__HLSL_VERSION");
+    }
+
+    [Fact]
     public void AnUnterminatedConditional_StillFailsWithSd0009()
     {
         var result = FxMacroPreprocessor.ProcessForCompiler("#if 1\nfloat4 a;\n", "t.fx");

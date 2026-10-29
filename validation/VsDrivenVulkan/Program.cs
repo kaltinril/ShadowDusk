@@ -381,6 +381,15 @@ return texArrPass ? 0 : 1;
 //   RegisterTwoSamplers       one texture (Tex1) sampled through two samplers: ShadowDusk aliases
 //                             it onto a second descriptor bound to the same parameter. Golden:
 //                             mgfxc on the two-texture form (Tex1b set to the same texture).
+//   RegisterSamplerPerPass    one sprite texture read through a different sampler in each of two
+//                             techniques, drawn through SpriteBatch ALONE (no parameter set), one row
+//                             per technique: each must show the sprite (the second with its channels
+//                             swapped). The second technique used to read an alias on slot 1, which
+//                             only the parameter fills. Golden: mgfxc with one sampler for both.
+//   RegisterSamplerPerStage   Tex1 read through one sampler in the VS and another in the PS. The PS's
+//                             texture is SpriteBatch's (slot 0, the cat), the VS's the Tex1 parameter
+//                             (a solid colour): cat * colour per pixel, where the old alias layout drew
+//                             colour * colour. Golden: mgfxc with one sampler for both stages.
 //
 // Positive controls (SHADOWDUSK_VK_CONTROL), each reverting one fix in the candidate; the run
 // must turn red with CONTROL-DETECTED, raised only when the row that fix guards fails:
@@ -390,22 +399,38 @@ return texArrPass ? 0 : 1;
 //                   explicit space0 gave before it was dropped).
 //   reserve-dead    RegisterDeadSampler compiled with SpriteTex on t1 (the layout the dead
 //                   sampler's reserved s0 used to force).
+//   whole-file-pairing  RegisterSamplerPerPass and RegisterSamplerPerStage compiled with the
+//                   second sampler's texture moved onto its own t1 declaration (the alias layout the
+//                   whole-file pairing produced; RegisterSamplerPerStage's copy is set to Tex1's
+//                   texture, as the alias was bound to Tex1).
 // ---------------------------------------------------------------------------------------
 async Task<int> RunRegisterSlotsPhase()
 {
 string control = Environment.GetEnvironmentVariable("SHADOWDUSK_VK_CONTROL")?.Trim() ?? "";
-if (control is not ("" or "ordinal-slots" or "keep-space" or "reserve-dead"))
+if (control is not ("" or "ordinal-slots" or "keep-space" or "reserve-dead" or "whole-file-pairing"))
 {
-    Console.Error.WriteLine($"unknown SHADOWDUSK_VK_CONTROL '{control}' for regslots (expected 'ordinal-slots', 'keep-space' or 'reserve-dead')");
+    Console.Error.WriteLine($"unknown SHADOWDUSK_VK_CONTROL '{control}' for regslots (expected 'ordinal-slots', 'keep-space', 'reserve-dead' or 'whole-file-pairing')");
     return 2;
 }
 if (control != "")
     Console.WriteLine($"[regslots-vulkan] POSITIVE CONTROL ACTIVE: {control} (this run is expected to FAIL)");
 
 string[] fixtures = ["RegisterLoneT1", "RegisterGapT0T2", "RegisterTexture2DArrayT1", "RegisterSpace0", "RegisterDeadSampler",
-                     "RegisterLoadOnly", "RegisterHelperPair", "RegisterPreprocessedPairs", "RegisterTwoSamplers"];
-// The row each fix-specific control must turn red.
-string? controlRow = control switch { "keep-space" => "RegisterSpace0", "reserve-dead" => "RegisterDeadSampler", _ => null };
+                     "RegisterLoadOnly", "RegisterHelperPair", "RegisterPreprocessedPairs", "RegisterTwoSamplers",
+                     "RegisterSamplerPerPass", "RegisterSamplerPerStage"];
+// A render row: the fixture it draws and the technique (the first one when null).
+var rows = fixtures.SelectMany(f => f == "RegisterSamplerPerPass"
+        ? new[] { (Row: f + ".Point", Fixture: f, Technique: (string?)"Point"), (Row: f + ".Linear", Fixture: f, Technique: (string?)"Linear") }
+        : new[] { (Row: f, Fixture: f, Technique: (string?)null) })
+    .ToList();
+// The rows each fix-specific control must turn red (one of them is enough).
+string[] controlRows = control switch
+{
+    "keep-space" => ["RegisterSpace0"],
+    "reserve-dead" => ["RegisterDeadSampler"],
+    "whole-file-pairing" => ["RegisterSamplerPerPass.Linear", "RegisterSamplerPerStage"],
+    _ => [],
+};
 string regOut = Path.Combine(repoRoot, "validation", "output", "regslots-vulkan");
 Directory.CreateDirectory(regOut);
 
@@ -416,7 +441,8 @@ foreach (string name in fixtures)
     string golden = Path.Combine(repoRoot, "tests", "fixtures", "golden", "Vulkan", name + ".mgfx");
 
     byte[]? goldenBytes = File.Exists(golden) ? await File.ReadAllBytesAsync(golden) : null;
-    regJobs.Add(new($"{name}.mgfxc", goldenBytes, goldenBytes is null ? $"golden not found: {golden}" : null));
+    foreach (var row in rows.Where(r => r.Fixture == name))
+        regJobs.Add(new($"{row.Row}.mgfxc", goldenBytes, goldenBytes is null ? $"golden not found: {golden}" : null, row.Technique));
 
     string fxSource = await File.ReadAllTextAsync(fx);
     if (control == "reserve-dead" && name == "RegisterDeadSampler")
@@ -427,6 +453,20 @@ foreach (string name in fixtures)
             throw new InvalidOperationException("reserve-dead control: SpriteTex declaration not found; update the control.");
         fxSource = fxSource.Replace(Unregistered, "Texture2D SpriteTex : register(t1);", StringComparison.Ordinal);
         Console.WriteLine("[regslots-vulkan] reserve-dead control: SpriteTex compiled on t1");
+    }
+    if (control == "whole-file-pairing" && name is "RegisterSamplerPerPass" or "RegisterSamplerPerStage")
+    {
+        // The pre-fix layout: the second sampler's pairing on an alias of the texture at t1.
+        (string tex, string call) = name == "RegisterSamplerPerPass"
+            ? ("SpriteTex", "SpriteTex.Sample(LinearSampler")
+            : ("Tex1", "Tex1.Sample(PixelSampler");
+        string declaration = $"Texture2D {tex} : register(t0);";
+        if (!fxSource.Contains(call, StringComparison.Ordinal) || !fxSource.Contains(declaration, StringComparison.Ordinal))
+            throw new InvalidOperationException($"whole-file-pairing control: {name}'s second pairing not found; update the control.");
+        fxSource = fxSource
+            .Replace(declaration, declaration + $" Texture2D {tex}Alias : register(t1);", StringComparison.Ordinal)
+            .Replace(call, call.Replace(tex + ".", tex + "Alias.", StringComparison.Ordinal), StringComparison.Ordinal);
+        Console.WriteLine($"[regslots-vulkan] whole-file-pairing control: {name}'s second sampler reads {tex}Alias on t1");
     }
     var result = await new EffectCompiler().CompileAsync(
         fxSource,
@@ -444,16 +484,20 @@ foreach (string name in fixtures)
             Console.WriteLine($"[regslots-vulkan] keep-space control: {SetDescriptorSets(cand, from: 1, to: 0)} DescriptorSet decoration(s) set back to 0");
         await File.WriteAllBytesAsync(Path.Combine(regOut, name + ".candidate.mgfx"), cand);
     }
-    regJobs.Add(new($"{name}.sd", cand, candErr));
+    foreach (var row in rows.Where(r => r.Fixture == name))
+        regJobs.Add(new($"{row.Row}.sd", cand, candErr, row.Technique));
 
     foreach ((string arm, byte[]? bytes) in new[] { ("mgfxc", goldenBytes), ("sd", cand) })
     {
         if (bytes is null)
             continue;
         var parsed = ShadowDusk.Integration.Tests.MgfxBlobReader.Parse(bytes);
-        var header = ShadowDusk.Integration.Tests.VulkanShaderCodeReader.Parse(parsed.Shaders.Single().Bytecode);
-        Console.WriteLine($"[regslots-vulkan] {name} {arm,-5} records=[{string.Join(", ", parsed.Samplers.Select(s => $"tex{s.TextureSlot}/samp{s.SamplerSlot}->param{s.Parameter}"))}] " +
-                          $"textureSlots=0x{header.TextureSlots:x} bindings=[{string.Join(",", header.Bindings.Select(b => b.Binding))}]");
+        string headers = string.Join("; ", parsed.Shaders.Select(sh =>
+        {
+            var header = ShadowDusk.Integration.Tests.VulkanShaderCodeReader.Parse(sh.Bytecode);
+            return $"{(sh.IsVertex ? "vs" : "ps")} textureSlots=0x{header.TextureSlots:x} bindings=[{string.Join(",", header.Bindings.Select(b => b.Binding))}]";
+        }));
+        Console.WriteLine($"[regslots-vulkan] {name} {arm,-5} records=[{string.Join(", ", parsed.Samplers.Select(s => $"s{s.ShaderIndex}:tex{s.TextureSlot}/samp{s.SamplerSlot}->param{s.Parameter}"))}] {headers}");
     }
 }
 
@@ -463,6 +507,7 @@ var slice0 = new Color(255, 0, 0, 255);
 var slice1 = new Color(0, 128, 255, 255);
 var tinted = new Color(51, 102, 102, 255); // lone * (1, 0.5, 1, 1)
 Microsoft.Xna.Framework.Graphics.Texture2D? loneTex = null, whiteTex = null, arrayTex = null;
+Color[]? catPixels = null;
 
 using var regGame = new EffectImageRenderer(catPath, regOut, regJobs, (effect, cat) =>
 {
@@ -472,6 +517,20 @@ using var regGame = new EffectImageRenderer(catPath, regOut, regJobs, (effect, c
     // accident (measured: the ordinal-slots control stayed green until this reset).
     for (int s = 0; s < 16; s++)
         gd.Textures[s] = null;
+    for (int s = 0; s < 4; s++)
+        gd.VertexTextures[s] = null;
+    if (catPixels is null)
+    {
+        catPixels = new Color[cat.Width * cat.Height];
+        cat.GetData(catPixels);
+    }
+    // RegisterSamplerPerStage's vertex shader: SpriteBatch's own projection (SpriteEffect's).
+    effect.Parameters["WVP"]?.SetValue(Matrix.CreateOrthographicOffCenter(0, gd.Viewport.Width, gd.Viewport.Height, 0, 0, -1));
+    if (effect.Parameters["Tex1Alias"] is { } t1Alias)
+    {
+        loneTex ??= Solid(gd, lone);
+        t1Alias.SetValue(loneTex);
+    }
     if (effect.Parameters["Tex1"] is { } t1)
     {
         loneTex ??= Solid(gd, lone);
@@ -513,7 +572,7 @@ foreach (var o in regGame.Outcomes)
 var regCaps = regGame.Captures.ToDictionary(c => c.Name, c => c);
 bool allPass = true;
 bool controlDetected = false;
-foreach (string name in fixtures)
+foreach (string name in rows.Select(r => r.Row))
 {
     bool haveGolden = regCaps.TryGetValue($"{name}.mgfxc", out var g);
     bool haveCand   = regCaps.TryGetValue($"{name}.sd", out var c);
@@ -529,6 +588,12 @@ foreach (string name in fixtures)
         "RegisterDeadSampler"      => cap => (HasVisibleContent(cap), $"the sprite (visible content); centre {Centre(cap)}"),
         // (cat + Tex1 + Tex1) / 3: green at least 136 everywhere. An unbound alias slot gives (cat + Tex1) / 3.
         "RegisterTwoSamplers"      => cap => AllPixels(cap, p => p.G >= 135 && p.A >= 254, "every pixel green >= 135 ((cat + Tex1 + Tex1) / 3)"),
+        // SpriteBatch's sprite on slot 0 in each technique; an unbound slot draws (0,0,0,0).
+        "RegisterSamplerPerPass.Point"  => cap => PerPixel(cap, catPixels!, k => k, 1, "every pixel the cat"),
+        "RegisterSamplerPerPass.Linear" => cap => PerPixel(cap, catPixels!, k => new Color(k.B, k.G, k.R, k.A), 1, "every pixel the cat, channels swapped (.bgra)"),
+        // PS: the sprite (cat); VS: the Tex1 parameter (lone). The old alias layout gave lone * lone.
+        "RegisterSamplerPerStage"  => cap => PerPixel(cap, catPixels!, k => new Color(k.R * lone.R / 255, k.G * lone.G / 255, k.B * lone.B / 255, k.A * lone.A / 255), 2,
+                                              $"every pixel cat * ({lone.R},{lone.G},{lone.B},{lone.A})"),
         // (cat + Tex1) / 2: green at least 102 everywhere (Tex1's 204 / 2). An unbound Tex1 gives cat / 2.
         "RegisterLoadOnly"         => cap => AllPixels(cap, p => p.G >= 101 && p.A >= 254, "every pixel green >= 101 ((cat + loaded texel) / 2)"),
         // (cat + white + white) / 3: every channel at least 170. One unbound texture gives (cat + white) / 3.
@@ -545,7 +610,7 @@ foreach (string name in fixtures)
     Console.WriteLine($"[regslots-vulkan] {name}: maxd {(maxd == int.MaxValue ? "n/a" : maxd)}; mgfxc {(goldenOk ? "OK" : "WRONG")} ({goldenDetail}); " +
                       $"candidate {(candOk ? "OK" : "WRONG")} ({candDetail}) -> {(pass ? "PASS" : "FAIL")}");
     bool rowRed = goldenOk && (!candOk || maxd > 1);
-    if (rowRed && (control == "ordinal-slots" || name == controlRow))
+    if (rowRed && (control == "ordinal-slots" || controlRows.Contains(name)))
         controlDetected = true;
 }
 
@@ -560,6 +625,21 @@ static Microsoft.Xna.Framework.Graphics.Texture2D Solid(Microsoft.Xna.Framework.
     var t = new Microsoft.Xna.Framework.Graphics.Texture2D(gd, 4, 4);
     t.SetData(Enumerable.Repeat(color, 16).ToArray());
     return t;
+}
+
+// Every pixel within 	olerance (per channel) of want(cat pixel) at the same position.
+static (bool Ok, string Detail) PerPixel((string Name, Color[] Pixels, int Width, int Height) cap, Color[] cat, Func<Color, Color> want, int tolerance, string what)
+{
+    if (cat.Length != cap.Pixels.Length)
+        return (false, $"{what}: capture is {cap.Pixels.Length} pixels, the cat {cat.Length}");
+    for (int i = 0; i < cat.Length; i++)
+    {
+        Color got = cap.Pixels[i], expect = want(cat[i]);
+        if (Math.Abs(got.R - expect.R) > tolerance || Math.Abs(got.G - expect.G) > tolerance
+            || Math.Abs(got.B - expect.B) > tolerance || Math.Abs(got.A - expect.A) > tolerance)
+            return (false, $"{what}: pixel {i} is ({got.R},{got.G},{got.B},{got.A}), want ({expect.R},{expect.G},{expect.B},{expect.A})");
+    }
+    return (true, what);
 }
 
 static string Centre((string Name, Color[] Pixels, int Width, int Height) cap)

@@ -9,8 +9,9 @@ using Microsoft.Xna.Framework.Graphics;
 
 namespace ShadowDusk.Validation;
 
-/// <summary>One shader to render: its <c>.mgfx</c> bytes (or a compile error).</summary>
-public sealed record ShaderJob(string Name, byte[]? Bytes, string? CompileError);
+/// <summary>One shader to render: its <c>.mgfx</c> bytes (or a compile error), drawn with
+/// <paramref name="Technique"/> (the effect's first technique when null).</summary>
+public sealed record ShaderJob(string Name, byte[]? Bytes, string? CompileError, string? Technique = null);
 
 /// <summary>What happened when we tried to load + render a job.</summary>
 public sealed record ShaderOutcome(
@@ -122,6 +123,10 @@ public sealed class EffectImageRenderer : Game
 
             try { _setParams(effect, _cat); }
             catch { /* a missing/typed param on one side must not abort the row */ }
+
+            if (job.Technique is not null)
+                effect.CurrentTechnique = effect.Techniques[job.Technique]
+                    ?? throw new InvalidOperationException($"technique '{job.Technique}' not found");
 
             // Immediate applies each pass before the draw. Opaque so the captured
             // image is exactly the shader output (cat is opaque; no blend bleed).

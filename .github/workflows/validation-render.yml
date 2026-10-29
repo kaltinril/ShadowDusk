@@ -733,6 +733,16 @@ jobs:
           SHADOWDUSK_VK_CONTROL: reserve-dead
         run: validation/run-with-vk-validation.sh control-reserve-dead --expect-red 'CONTROL-DETECTED' -- xvfb-run -a dotnet run --project validation/VsDrivenVulkan -c Release --no-build -- regslots
 
+      # RegisterSamplerPerPass and RegisterSamplerPerStage compiled with their second sampler's texture
+      # on its own t1 declaration, the alias layout the whole-file pairing produced: the second
+      # technique's SpriteBatch-only draw reads an empty slot, and the per-stage row draws the
+      # parameter's colour where the sprite belongs.
+      - name: Positive control, whole-file sampler pairing must fail the per-shader rows
+        if: ${{ !cancelled() }}
+        env:
+          SHADOWDUSK_VK_CONTROL: whole-file-pairing
+        run: validation/run-with-vk-validation.sh control-whole-file-pairing --expect-red 'CONTROL-DETECTED' -- xvfb-run -a dotnet run --project validation/VsDrivenVulkan -c Release --no-build -- regslots
+
       - name: Upload render outputs + validation-layer logs (debug)
         if: always()
         uses: actions/upload-artifact@v7

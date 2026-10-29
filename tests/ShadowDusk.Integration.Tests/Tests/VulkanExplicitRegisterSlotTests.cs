@@ -44,7 +44,7 @@ public sealed class VulkanExplicitRegisterSlotTests
     public static TheoryData<string> AllShapes() => new()
     {
         "RegisterLoneT1", "RegisterGapT0T2", "RegisterMismatchedTS", "RegisterTexture2DArrayT1", "RegisterSpace0", "RegisterDeadSampler",
-        "RegisterLoadOnly", "RegisterHelperPair", "RegisterPreprocessedPairs",
+        "RegisterLoadOnly", "RegisterHelperPair", "RegisterPreprocessedPairs", "RegisterSamplerPerPass", "RegisterSamplerPerStage",
     };
 
     [Theory]
@@ -407,19 +407,215 @@ public sealed class VulkanExplicitRegisterSlotTests
         // The linear + point idiom: Tex1 through LinearSampler and PointSampler. The second
         // pairing gets an alias of Tex1 on its own register; its record binds the Tex1 parameter
         // and the alias is not a parameter of its own. Same layout as mgfxc's two-texture form.
-        var subject = MgfxBlobReader.Parse(await CompileAsync("RegisterTwoSamplers", PlatformTarget.Vulkan));
+        CompiledShader compiled = await CompileShaderAsync("RegisterTwoSamplers", PlatformTarget.Vulkan);
+        var subject = MgfxBlobReader.Parse(compiled.Data);
         var golden  = MgfxBlobReader.Parse(await File.ReadAllBytesAsync(GoldenPath("RegisterTwoSamplers")));
 
         subject.ParameterNames.ShouldNotContain(n => n.Contains("_SDVkAlias", StringComparison.Ordinal));
         subject.Samplers.Select(s => (subject.ParameterNames[s.Parameter], s.TextureSlot, s.SamplerSlot))
             .ShouldBe([("SpriteTex", (byte)0, (byte)0), ("Tex1", (byte)1, (byte)1), ("Tex1", (byte)2, (byte)2)]);
 
+        // Three COMBINED_IMAGE_SAMPLER descriptors at 32..34, never a standalone sampler (mgfxc's own
+        // build of the one-texture form), and the same layout as mgfxc's two-texture form.
         var gotHeader  = VulkanShaderCodeReader.Parse(subject.Shaders.Single().Bytecode);
         var wantHeader = VulkanShaderCodeReader.Parse(golden.Shaders.Single().Bytecode);
+        gotHeader.Bindings.Select(b => (b.Binding, b.DescriptorType))
+            .ShouldBe([(32u, CombinedImageSampler), (33u, CombinedImageSampler), (34u, CombinedImageSampler)]);
         gotHeader.TextureSlots.ShouldBe(wantHeader.TextureSlots);
         gotHeader.SamplerSlots.ShouldBe(wantHeader.SamplerSlots);
         gotHeader.Bindings.Select(b => (b.Binding, b.DescriptorType))
             .ShouldBe(wantHeader.Bindings.Select(b => (b.Binding, b.DescriptorType)));
+
+        // The alias is announced: SpriteBatch fills slot 0 only, so the texture must be set by parameter.
+        ShaderError warning = compiled.Warnings.Where(w => w.Code == "SD0235").ShouldHaveSingleItem();
+        warning.Severity.ShouldBe(ShaderErrorSeverity.Warning);
+        warning.Message.ShouldContain("texture 'Tex1' is sampled through a second sampler, 'PointSampler', in shader 'MainPS'", Case.Sensitive);
+        warning.Message.ShouldContain("Effect.Parameters", Case.Sensitive);
+        warning.Line.ShouldBe(38);
+    }
+
+    // ---- One texture, a different sampler per compiled shader -----------------------------------
+
+    public static TheoryData<string> PerShaderSamplerShapes() => new() { "RegisterSamplerPerPass", "RegisterSamplerPerStage" };
+
+    [Theory]
+    [MemberData(nameof(PerShaderSamplerShapes))]
+    public async Task Vulkan_ATextureReadThroughADifferentSamplerPerShader_IsOneCombinedDescriptorAtItsSlotInEach(string stem)
+    {
+        // Each compiled shader is its own descriptor layout: the binding rewrite pairs per shader, so
+        // there is no alias and every shader reads the texture at slot 0 (where SpriteBatch binds the
+        // sprite). The golden is mgfxc 3.8.5 on the one-sampler form (see the fixture header).
+        CompiledShader compiled = await CompileShaderAsync(stem, PlatformTarget.Vulkan);
+        var subject = MgfxBlobReader.Parse(compiled.Data);
+        var golden  = MgfxBlobReader.Parse(await File.ReadAllBytesAsync(GoldenPath(stem)));
+
+        compiled.Warnings.ShouldNotContain(w => w.Code == "SD0235");
+        subject.ParameterNames.ShouldNotContain(n => n.Contains("_SDVkAlias", StringComparison.Ordinal));
+
+        // Shader by shader, matched by stage and order within it (mgfxc lists the pixel shader first).
+        static List<(bool IsVertex, byte TextureSlot, byte SamplerSlot, string Parameter, IReadOnlyList<(uint, uint)> Bindings)> PerShader(MgfxBlobReader r) =>
+            r.Shaders.OrderBy(s => s.IsVertex).ThenBy(s => s.Index)
+                .SelectMany(s => r.Samplers.Where(x => x.ShaderIndex == s.Index).Select(x => (
+                    s.IsVertex, x.TextureSlot, x.SamplerSlot, r.ParameterNames[x.Parameter],
+                    (IReadOnlyList<(uint, uint)>)VulkanShaderCodeReader.Parse(s.Bytecode).Bindings
+                        .Where(b => b.Binding >= 32).Select(b => (b.Binding, b.DescriptorType)).ToList())))
+                .ToList();
+
+        var got = PerShader(subject);
+        var want = PerShader(golden);
+        got.Count.ShouldBe(want.Count);
+        for (int i = 0; i < want.Count; i++)
+        {
+            (got[i].IsVertex, got[i].TextureSlot, got[i].SamplerSlot, got[i].Parameter)
+                .ShouldBe((want[i].IsVertex, want[i].TextureSlot, want[i].SamplerSlot, want[i].Parameter), $"record {i}");
+            got[i].Bindings.ShouldBe(want[i].Bindings, $"record {i} descriptor bindings");
+            got[i].Bindings.ShouldBe([(32u, CombinedImageSampler)], $"record {i}: one combined descriptor at slot 0");
+        }
+    }
+
+    [Fact]
+    public async Task Vulkan_ASampleCallInIf0_DoesNotDecideTheSampler()
+    {
+        // The '#if 0' call came first and used to pair SpriteTexture with U, which DXC then removed,
+        // leaving the live pairing on an alias at slot 1, away from SpriteBatch's slot 0.
+        const string source = """
+            #if SM6
+            #define PS_SHADERMODEL ps_6_0
+            #else
+            #define PS_SHADERMODEL ps_4_0
+            #endif
+            Texture2D SpriteTexture; SamplerState S; SamplerState U;
+            float4 MainPS(float4 pos : SV_Position, float4 color : COLOR0, float2 uv : TEXCOORD0) : SV_Target0 {
+            #if 0
+              return SpriteTexture.Sample(U, uv);
+            #endif
+              return SpriteTexture.Sample(S, uv) * color;
+            }
+            technique T { pass P { PixelShader = compile PS_SHADERMODEL MainPS(); } }
+            """;
+        var result = await CompileSourceAsync(source, "If0.fx");
+
+        result.IsSuccess.ShouldBeTrue(result.IsFailure ? string.Join("; ", result.Error.Select(e => $"{e.Code}: {e.Message}")) : "ok");
+        var subject = MgfxBlobReader.Parse(result.Value.Data);
+        MgfxSamplerRecord record = subject.Samplers.ShouldHaveSingleItem();
+        (subject.ParameterNames[record.Parameter], record.TextureSlot, record.SamplerSlot).ShouldBe(("SpriteTexture", (byte)0, (byte)0));
+        VulkanShaderCodeReader.Parse(subject.Shaders.Single().Bytecode).Bindings
+            .Select(b => (b.Binding, b.DescriptorType)).ShouldBe([(32u, CombinedImageSampler)]);
+        result.Value.Warnings.ShouldNotContain(w => w.Code == "SD0235");
+    }
+
+    [Fact]
+    public async Task Vulkan_ASecondTextureOnASamplerOnlyAnIf0CallShares_IsNotSD0028()
+    {
+        const string source = """
+            #if SM6
+            #define PS_SHADERMODEL ps_6_0
+            #else
+            #define PS_SHADERMODEL ps_5_0
+            #endif
+            Texture2D A; Texture2D B; SamplerState S; SamplerState U;
+            float4 MainPS(float4 pos : SV_Position, float4 color : COLOR0, float2 uv : TEXCOORD0) : SV_Target0 {
+            #if 0
+             return A.Sample(U, uv);
+            #endif
+             return A.Sample(S, uv) + B.Sample(U, uv); }
+            technique T { pass P { PixelShader = compile PS_SHADERMODEL MainPS(); } }
+            """;
+        var result = await CompileSourceAsync(source, "If0Shared.fx");
+
+        result.IsSuccess.ShouldBeTrue(result.IsFailure ? string.Join("; ", result.Error.Select(e => $"{e.Code}: {e.Message}")) : "ok");
+        var subject = MgfxBlobReader.Parse(result.Value.Data);
+        subject.Samplers.Select(s => (subject.ParameterNames[s.Parameter], s.TextureSlot, s.SamplerSlot))
+            .ShouldBe([("A", (byte)0, (byte)0), ("B", (byte)1, (byte)1)]);
+    }
+
+    [Fact]
+    public async Task Vulkan_AnAliasWhoseOriginalDXCRemoves_IsBoundToTheOriginalsParameterName()
+    {
+        // Both calls are co-live to the rewrite (no #if between them), so B's pairing gets an alias;
+        // DXC then removes the A call. The alias is the shader's only Tex1 and keeps the Tex1 name.
+        const string source = """
+            #if SM6
+            #define PS_SHADERMODEL ps_6_0
+            #else
+            #define PS_SHADERMODEL ps_4_0
+            #endif
+            Texture2D Tex1; SamplerState A; SamplerState B;
+            float4 MainPS(float4 pos : SV_Position, float4 color : COLOR0, float2 uv : TEXCOORD0) : SV_Target0 {
+              [branch] if (false) return Tex1.Sample(A, uv);
+              return Tex1.Sample(B, uv) * color;
+            }
+            technique T { pass P { PixelShader = compile PS_SHADERMODEL MainPS(); } }
+            """;
+        var result = await CompileSourceAsync(source, "AliasOnly.fx");
+
+        result.IsSuccess.ShouldBeTrue(result.IsFailure ? string.Join("; ", result.Error.Select(e => $"{e.Code}: {e.Message}")) : "ok");
+        var subject = MgfxBlobReader.Parse(result.Value.Data);
+        subject.ParameterNames.ShouldContain("Tex1");
+        subject.ParameterNames.ShouldNotContain(n => n.Contains("_SDVkAlias", StringComparison.Ordinal));
+        subject.ParameterNames[subject.Samplers.ShouldHaveSingleItem().Parameter].ShouldBe("Tex1");
+    }
+
+    [Fact]
+    public async Task Vulkan_AnIdentifierWithTheAliasSuffix_IsRefusedWithSD0234_AndIsAnOrdinaryNameElsewhere()
+    {
+        const string source = """
+            #if OPENGL
+            #define PS_SHADERMODEL ps_3_0
+            #elif SM6
+            #define PS_SHADERMODEL ps_6_0
+            #else
+            #define PS_SHADERMODEL ps_4_0
+            #endif
+            Texture2D Tex1_SDVkAlias1; SamplerState S;
+            float4 MainPS(float4 pos : SV_Position, float4 color : COLOR0, float2 uv : TEXCOORD0) : SV_Target0 { return Tex1_SDVkAlias1.Sample(S, uv) * color; }
+            technique T { pass P { PixelShader = compile PS_SHADERMODEL MainPS(); } }
+            """;
+
+        var vulkan = await CompileSourceAsync(source, "Reserved.fx");
+        vulkan.IsFailure.ShouldBeTrue();
+        ShaderError error = vulkan.Error.ShouldHaveSingleItem();
+        error.Code.ShouldBe("SD0234");
+        error.Message.ShouldContain("'Tex1_SDVkAlias1'", Case.Sensitive);
+        (error.File, error.Line, error.Column).ShouldBe(("Reserved.fx", 8, "Texture2D ".Length + 1));
+
+        // Only Vulkan declares aliases, so on OpenGL the name is the author's own parameter.
+        using var cts = new CancellationTokenSource(TestBudget.Compile);
+        var gl = await new EffectCompiler().CompileAsync(source, new CompilerOptions { Target = PlatformTarget.OpenGL, SourceFileName = "Reserved.fx" }, cts.Token);
+        gl.IsSuccess.ShouldBeTrue(gl.IsFailure ? string.Join("; ", gl.Error.Select(e => $"{e.Code}: {e.Message}")) : "ok");
+        MgfxBlobReader.Parse(gl.Value.Data).ParameterNames.ShouldContain("Tex1_SDVkAlias1");
+    }
+
+    [Theory]
+    [InlineData("StructuredBuffer<float4> Buf : register(t1);", "Buf[0]", "'Buf' is a storage buffer")]
+    [InlineData("RWStructuredBuffer<float4> Buf : register(u1);", "Buf[0]", "'Buf' is a storage buffer")]
+    [InlineData("ByteAddressBuffer Buf : register(t1);", "asfloat(Buf.Load4(0))", "'Buf' is a storage buffer")]
+    [InlineData("Buffer<float4> Buf;", "Buf[0]", "'Buf' is a typed buffer (a Buffer<T>, a texel buffer)")]
+    [InlineData("RWBuffer<float4> Buf : register(u1);", "Buf[0]", "'Buf' is a read-write typed buffer")]
+    public async Task Vulkan_ABufferResource_IsRefusedWithSD0233_AtItsDeclaration(string declaration, string read, string expected)
+    {
+        // A storage buffer used to compile silently to a UNIFORM_BUFFER descriptor the runtime never
+        // fills, and a Buffer<T> was refused as SD0228 with advice about declarations on one line.
+        string source = "#if SM6\n#define PS_SHADERMODEL ps_6_0\n#else\n#define PS_SHADERMODEL ps_5_0\n#endif\n" +
+                        "Texture2D T; SamplerState S;\n" +
+                        declaration + "\n" +
+                        $"float4 MainPS(float4 pos : SV_Position, float4 color : COLOR0, float2 uv : TEXCOORD0) : SV_Target0 {{ return T.Sample(S, uv) * {read}; }}\n" +
+                        "technique T0 { pass P { PixelShader = compile PS_SHADERMODEL MainPS(); } }\n";
+
+        var result = await CompileSourceAsync(source, "Buffers.fx");
+
+        result.IsFailure.ShouldBeTrue();
+        ShaderError error = result.Error.ShouldHaveSingleItem();
+        error.Code.ShouldBe("SD0233");
+        error.Message.ShouldContain(expected, Case.Sensitive);
+        error.Line.ShouldBe(7);
+        error.Column.ShouldBe(declaration.IndexOf(" Buf", StringComparison.Ordinal) + 2);
+    }
+
+    private static async Task<Result<CompiledShader, ShaderError[]>> CompileSourceAsync(string source, string fileName)
+    {
+        using var cts = new CancellationTokenSource(TestBudget.Compile);
+        return await new EffectCompiler().CompileAsync(source, new CompilerOptions { Target = PlatformTarget.Vulkan, SourceFileName = fileName }, cts.Token);
     }
 
     // ---- Corpus-wide: a texture parameter's Vulkan slot is its DirectX 12 slot ------------------
@@ -480,7 +676,10 @@ public sealed class VulkanExplicitRegisterSlotTests
             .OrderBy(x => x.IsVertex).ThenBy(x => x.Item2, StringComparer.Ordinal).ThenBy(x => x.TextureSlot)
             .ToList();
 
-    private static async Task<byte[]> CompileAsync(string stem, PlatformTarget target)
+    private static async Task<byte[]> CompileAsync(string stem, PlatformTarget target) =>
+        (await CompileShaderAsync(stem, target)).Data;
+
+    private static async Task<CompiledShader> CompileShaderAsync(string stem, PlatformTarget target)
     {
         string fxPath = stem.Contains(Path.DirectorySeparatorChar, StringComparison.Ordinal)
             ? TestHelpers.FixturePath(stem + ".fx")
@@ -493,7 +692,7 @@ public sealed class VulkanExplicitRegisterSlotTests
             SourceFileName = fxPath,
         }, cts.Token);
         result.IsSuccess.ShouldBeTrue(result.IsFailure ? string.Join("; ", result.Error.Select(e => $"{e.Code}: {e.Message}")) : "ok");
-        return result.Value.Data;
+        return result.Value;
     }
 
     private static string GoldenPath(string stem)

@@ -39,4 +39,10 @@ public sealed record TextureReflection
     /// SPIR-V reflection from <c>OpTypeImage</c>'s Sampled operand (2); false from DXIL/DXBC.
     /// </summary>
     public bool IsStorage { get; init; }
+    /// <summary>
+    /// True when the resource is a texel buffer (an HLSL <c>Buffer&lt;T&gt;</c> or <c>RWBuffer&lt;T&gt;</c>), not
+    /// a texture: <c>OpTypeImage</c> with <c>Dim Buffer</c>. Set by the SPIR-V reflection only; the Vulkan
+    /// target refuses it (<c>SD0233</c>), MonoGame's Vulkan effect format having no texel-buffer descriptor.
+    /// </summary>
+    internal bool IsTexelBuffer { get; init; }
 }

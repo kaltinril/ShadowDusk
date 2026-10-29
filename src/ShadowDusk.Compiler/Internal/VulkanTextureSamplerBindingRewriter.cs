@@ -190,8 +190,8 @@ internal static class VulkanTextureSamplerBindingRewriter
     /// <paramref name="Sampler"/> by the shader, at <paramref name="Offset"/> in the returned text.</summary>
     internal sealed record Alias(string Texture, string Sampler, string Name, int Offset);
 
-    /// <summary>The whole-file rewrite: every function counts as reachable.</summary>
-    public static string Rewrite(string hlsl) => Rewrite(hlsl, entryPoint: null, out _);
+    /// <summary>The whole-file rewrite: every function counts as reachable and every line as live.</summary>
+    public static string Rewrite(string hlsl) => Rewrite(hlsl, entryPoint: null, skippedLines: null, out _);
 
     /// <summary>
     /// The rewrite for ONE compiled shader: only the <c>Sample</c> calls and helper calls in
@@ -201,7 +201,16 @@ internal static class VulkanTextureSamplerBindingRewriter
     /// no alias. <see langword="null"/> (or an entry point not defined in the text) is the
     /// whole file. <paramref name="aliases"/> lists the aliases declared (see <see cref="AliasSuffix"/>).
     /// </summary>
-    internal static string Rewrite(string hlsl, string? entryPoint, out IReadOnlyList<Alias> aliases)
+    /// <param name="hlsl">The compile's flattened source.</param>
+    /// <param name="entryPoint">The shader's entry point, or <see langword="null"/> for the whole file.</param>
+    /// <param name="skippedLines">The 1-based lines of <paramref name="hlsl"/> an untaken conditional
+    /// group drops (<c>FxMacroPreprocessor.SkippedLines</c>), or <see langword="null"/> when that is not
+    /// known. A <c>Sample</c> call, a helper call or a sampler mention on such a line is not code this
+    /// compile can run, so it pairs nothing and keeps no sampler live: a call in <c>#if 0</c> no longer
+    /// gives a texture its sampler (it used to win the pairing as the first call in the file, leaving
+    /// the live pairing on a second, aliased descriptor away from slot 0).</param>
+    /// <param name="aliases">The aliases the rewrite declared.</param>
+    internal static string Rewrite(string hlsl, string? entryPoint, IReadOnlySet<int>? skippedLines, out IReadOnlyList<Alias> aliases)
     {
         aliases = Array.Empty<Alias>();
         hlsl = StripRegisterSpaces(hlsl);
@@ -233,9 +242,13 @@ internal static class VulkanTextureSamplerBindingRewriter
         if (textureNames.Count == 0 && samplerNames.Count == 0)
             return hlsl;
 
-        // What this shader can reach: a Sample or helper call inside a function the entry point
-        // never calls is dead code for it (its first textual pairing must not decide the pair).
-        Func<int, bool> inScope = ReachableScope(masked, entryPoint);
+        // What this shader can reach: a Sample or helper call on a line an untaken #if drops, or
+        // inside a function the entry point never calls, is dead code for it (its first textual
+        // pairing must not decide the pair). StripRegisterSpaces keeps every line where it was, so
+        // the skipped lines still number this text.
+        Func<int, bool> liveLine = LiveLines(masked, skippedLines);
+        Func<int, bool> reachable = ReachableScope(masked, entryPoint, liveLine);
+        Func<int, bool> inScope = offset => liveLine(offset) && reachable(offset);
 
         // First texture.Sample(sampler, ...) pairing wins per texture name. Alongside the
         // pairing, every call is checked against the earlier calls on the same sampler:
@@ -259,7 +272,7 @@ internal static class VulkanTextureSamplerBindingRewriter
         foreach (Match m in SampleCall.Matches(masked))
             if (inScope(m.Index))
                 events.Add((m.Groups[1].Value, m.Groups[2].Value, m.Index, m.Groups[1].Index));
-        events.AddRange(HelperPairs(masked, textureNames, samplerNames)
+        events.AddRange(HelperPairs(masked, textureNames, samplerNames, liveLine)
             .Where(p => inScope(p.Offset))
             .Select(p => (p.Tex, p.Samp, p.Offset, -1)));
         events.Sort((a, b) => a.Offset.CompareTo(b.Offset));
@@ -346,16 +359,26 @@ internal static class VulkanTextureSamplerBindingRewriter
         var pairedSamplers = new HashSet<string>(pairedSampler.Values, StringComparer.Ordinal);
         var deadSamplers = new HashSet<string>(StringComparer.Ordinal);
         foreach (string samp in samplerNames)
-        {
-            if (pairedSamplers.Contains(samp))
-                continue;
-            // A mention counts when this shader can reach it (outside every function, or in a
-            // function the entry point reaches); the declarations themselves never count.
-            var declarationSpans = samplerDecls.Where(d => d.Groups["name"].Value == samp).Select(d => (d.Index, End: d.Index + d.Length)).ToList();
-            bool live = Regex.Matches(masked, $@"\b{Regex.Escape(samp)}\b")
-                .Any(m => !declarationSpans.Any(d => m.Index >= d.Index && m.Index < d.End) && inScope(m.Index));
-            if (!live)
+            if (!pairedSamplers.Contains(samp) && !Referenced(samp, samplerDecls))
                 deadSamplers.Add(samp);
+
+        // Likewise an unregistered texture this shader never references (one FxPreParser declared for a
+        // legacy sampler whose calls sit in a skipped branch, say) is dead code: it is numbered after
+        // every other texture, so it never moves a live one off the t-register DirectX gives it.
+        // (Before the skipped lines were known, the skipped branch's call paired it onto its sampler's
+        // index, out of the way; examples such as Dissolve.fx declare both forms.)
+        var deadTextures = new HashSet<string>(StringComparer.Ordinal);
+        foreach (string tex in textureNames)
+            if (!pairedSampler.ContainsKey(tex) && !explicitIndex.ContainsKey(tex) && !Referenced(tex, textureDecls))
+                deadTextures.Add(tex);
+
+        // Whether the shader names the resource anywhere it can reach (outside every function, or in a
+        // function the entry point reaches) besides its own declarations.
+        bool Referenced(string name, MatchCollection declarations)
+        {
+            var declarationSpans = declarations.Where(d => d.Groups["name"].Value == name).Select(d => (d.Index, End: d.Index + d.Length)).ToList();
+            return Regex.Matches(masked, $@"\b{Regex.Escape(name)}\b")
+                .Any(m => !declarationSpans.Any(d => m.Index >= d.Index && m.Index < d.End) && inScope(m.Index));
         }
 
         var reserved = new HashSet<int>();
@@ -391,7 +414,10 @@ internal static class VulkanTextureSamplerBindingRewriter
         // Aliases (appended to textureNames after the declared textures) come last, so they never
         // move a declared texture's index.
         foreach (string tex in textureNames)
-            if (!explicitIndex.ContainsKey(tex))
+            if (!explicitIndex.ContainsKey(tex) && !deadTextures.Contains(tex))
+                texturesExplicitFirst.Add(tex);
+        foreach (string tex in textureNames)
+            if (deadTextures.Contains(tex))
                 texturesExplicitFirst.Add(tex);
 
         foreach (string tex in texturesExplicitFirst)
@@ -517,7 +543,7 @@ internal static class VulkanTextureSamplerBindingRewriter
     /// counts, the conservative direction). With no entry point, or one the text does not
     /// define, everything is in scope.
     /// </summary>
-    private static Func<int, bool> ReachableScope(string masked, string? entryPoint)
+    private static Func<int, bool> ReachableScope(string masked, string? entryPoint, Func<int, bool> live)
     {
         if (entryPoint is null)
             return _ => true;
@@ -543,6 +569,8 @@ internal static class VulkanTextureSamplerBindingRewriter
             {
                 foreach (Match call in CallName.Matches(masked.Substring(body.Start, body.End - body.Start)))
                 {
+                    if (!live(body.Start + call.Index))
+                        continue; // a call an untaken #if drops reaches nothing
                     string callee = call.Groups["fn"].Value;
                     if (names.Contains(callee) && reachable.Add(callee))
                         queue.Enqueue(callee);
@@ -562,7 +590,28 @@ internal static class VulkanTextureSamplerBindingRewriter
         };
     }
 
-    private static readonly Regex CallName = new(@"(?<![\w.])(?<fn>[A-Za-z_]\w*)\s*\(", RegexOptions.Compiled);
+    /// <summary>
+    /// Whether an offset of <paramref name="text"/> is on a line the compile keeps: false only on a
+    /// line in <paramref name="skippedLines"/> (1-based). Everything is live when the set is null or empty.
+    /// </summary>
+    private static Func<int, bool> LiveLines(string text, IReadOnlySet<int>? skippedLines)
+    {
+        if (skippedLines is null || skippedLines.Count == 0)
+            return _ => true;
+
+        var lineStarts = new List<int> { 0 };
+        for (int i = 0; i < text.Length; i++)
+            if (text[i] == '\n')
+                lineStarts.Add(i + 1);
+        return offset =>
+        {
+            int index = lineStarts.BinarySearch(offset);
+            int line = (index >= 0 ? index : ~index - 1) + 1;
+            return !skippedLines.Contains(line);
+        };
+    }
+
+    private static readonly Regex CallName =new(@"(?<![\w.])(?<fn>[A-Za-z_]\w*)\s*\(", RegexOptions.Compiled);
 
     private static void Collect(
         Match m,
@@ -621,7 +670,7 @@ internal static class VulkanTextureSamplerBindingRewriter
     /// Each pair is reported at its call site.
     /// </summary>
     private static List<(string Tex, string Samp, int Offset)> HelperPairs(
-        string masked, IReadOnlyList<string> textureNames, IReadOnlyList<string> samplerNames)
+        string masked, IReadOnlyList<string> textureNames, IReadOnlyList<string> samplerNames, Func<int, bool> live)
     {
         var result = new List<(string, string, int)>();
 
@@ -665,6 +714,8 @@ internal static class VulkanTextureSamplerBindingRewriter
         {
             foreach (Match s in SampleCall.Matches(masked.Substring(def.BodyStart, def.BodyEnd - def.BodyStart)))
             {
+                if (!live(def.BodyStart + s.Index))
+                    continue;
                 (int tp, string? tg) = Ref(def.Params, s.Groups[1].Value);
                 (int sp, string? sg) = Ref(def.Params, s.Groups[2].Value);
                 if (tp >= 0 || sp >= 0)
@@ -679,7 +730,7 @@ internal static class VulkanTextureSamplerBindingRewriter
         {
             foreach (Match c in Regex.Matches(masked, $@"(?<![\w.]){Regex.Escape(fn)}\s*\("))
             {
-                if (c.Index == def.HeaderAt)
+                if (c.Index == def.HeaderAt || !live(c.Index))
                     continue;
                 string?[]? args = Arguments(masked, c.Index + c.Length - 1);
                 if (args is null)

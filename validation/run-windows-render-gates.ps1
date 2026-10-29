@@ -130,8 +130,11 @@
                                    texture array must be refused with SD0221, since mgfxc 3.8.5's
                                    own Vulkan output for it binds nothing.
                                    Plus `-- regslots`: explicit register slots (a lone
-                                   register(t1), a t0+t2 gap, a Texture2DArray on t1) vs their
-                                   mgfxc 3.8.5 goldens through SpriteBatch, maxd 0 + a known colour.
+                                   register(t1), a t0+t2 gap, a Texture2DArray on t1, register spaces,
+                                   dead samplers, Load-only, helper/macro pairings, one texture through
+                                   two samplers, and one texture through a different sampler per
+                                   technique or per stage) vs their mgfxc 3.8.5 goldens through
+                                   SpriteBatch, maxd 0 + a known colour.
     * XNB direct writer          - validation/XnbContentLoad: a ShadowDusk-written .xnb through a
                                    real MonoGame WindowsDX Content.Load<Effect> vs stock mgcb's
                                    (pixel-identical), plus the envelope assertions (Phase 60).

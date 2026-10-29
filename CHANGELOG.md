@@ -14,6 +14,8 @@ that loads and renders identically to `mgfxc`'s in the real MonoGame/KNI runtime
 
 ### Added
 
+- **`TextureReflection.IsStorage`** (`ShadowDusk.Core.Reflection`): true for a read-write (storage) image, an HLSL `RWTexture*`, set by the SPIR-V reflection from `OpTypeImage`'s Sampled operand; false from DXIL/DXBC. The Vulkan target uses it to refuse such a texture (`SD0233`).
+
 ### Changed
 
 ### Fixed
@@ -88,6 +90,35 @@ that loads and renders identically to `mgfxc`'s in the real MonoGame/KNI runtime
   and `third-party/MonoGame/ParameterTypes.fx` (`Tex3D`/`TexCube` now slots 1/2, their
   registers); every other committed Vulkan entry and every DirectX 12, DirectX 11, OpenGL and FNA
   entry is unchanged.
+- **Vulkan: texture/sampler pairing is per compiled shader, and dead code no longer decides it.**
+  Each compiled shader is its own Vulkan descriptor layout, but the binding rewrite paired a texture
+  once for the whole file, from its first `Sample` call: a texture read through a point sampler in
+  one technique and a linear sampler in another (or through one sampler in the vertex shader and
+  another in the pixel shader) got an alias on slot 1 in the second shader, which SpriteBatch never
+  fills, so drawn through SpriteBatch alone that technique drew (0,0,0,0). A call in a function the
+  entry point never calls, or on a line an inactive `#if` drops (`#if 0`, the branch the macros do
+  not take, read by the managed preprocessor with the compile's macros), took the pairing the same
+  way, moving the live pair to an alias away from slot 0, or refusing a second texture on that
+  sampler as `SD0028`. Pairing now reads only the code each shader can run; a second sampler is
+  aliased only where both calls can be live (the two branches of one `#if` are resolved by the
+  preprocessed retry instead); an alias whose original DXC removed keeps the original's parameter
+  name; and an unregistered texture nothing live references (a legacy branch's synthesized
+  declaration) is numbered after every other texture. Declaring an alias now raises the warning
+  `SD0235` (set that texture through `Effect.Parameters`: SpriteBatch fills slot 0 only), and an
+  identifier using the reserved `_SDVkAlias` suffix is refused on Vulkan with `SD0234` (other targets
+  treat it as an ordinary name). Storage buffers (`StructuredBuffer`, `ByteAddressBuffer` and their
+  `RW` forms) compiled silently as a uniform-buffer descriptor the runtime never fills, and a
+  `Buffer<T>` was refused as `SD0228` with advice that did not apply: both are now `SD0233`, like a
+  read-write texture. Proven in real DesktopVK (`VsDrivenVulkan -- regslots`: `RegisterSamplerPerPass`,
+  both techniques through SpriteBatch alone, and `RegisterSamplerPerStage`, vs `mgfxc` on their
+  one-sampler forms, maxd 0, every pixel the expected colour, Khronos validation layer clean), with a
+  `whole-file-pairing` positive control that turns both red. **Vulkan output changes** for
+  `register-slots/RegisterPreprocessedPairs.fx` (its `#if 0` pairing no longer reaches the layout) and
+  `legacy-sampler-names/StateBlockUndeclaredTextureShared.fx` (outside the byte-identity corpus: its
+  second sampler now gets an aliased combined descriptor bound to `Tex`, and `SD0235`, where it
+  shipped a standalone sampler descriptor). With `Debug` on, 29 other corpus entries' Vulkan bytes
+  move because DXC embeds the rewritten source; their release bytes, and every DirectX 12, DirectX
+  11, OpenGL and FNA entry, are unchanged.
 
 ## [0.22.0] - 2026-10-28
 

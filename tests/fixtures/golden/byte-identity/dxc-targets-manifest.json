@@ -773,6 +773,18 @@
     "dxil": "12aa9d15cbaac79a1ef104b4eaf3aeb4f3ed312adb4243a27bcb4a5429554f09",
     "warnings": []
   },
+  "DirectX12.Debug/register-slots/RegisterSamplerPerPass.fx": {
+    "mgfx": "22afe0d560e9517019a61404a45625a3c43db247b436b5eba0ca9aa624713438",
+    "mgfxNormalized": "f2c5838e06b5b688106ca5f76c5515edbf14041446129b4841b471bf6a8d61b9",
+    "dxil": "389ab6af862027355b297013e606c223fb37549e4de4e166895fd6fa88c6c164",
+    "warnings": []
+  },
+  "DirectX12.Debug/register-slots/RegisterSamplerPerStage.fx": {
+    "mgfx": "c4d1a387665b1da654aecd4414b64177f6091a463bdd33befeb9a477873fc0b2",
+    "mgfxNormalized": "69240fa946c1a68dba0bb12c0205a39c4eae33ab3651c9147372b39108c0a84a",
+    "dxil": "d7eaf0d0f068d84f9ad0af81fbd33e40c72fee16b742f3d6c0d167345af0f84e",
+    "warnings": []
+  },
   "DirectX12.Debug/register-slots/RegisterSpace0.fx": {
     "mgfx": "9e4d423ef79acce5f62b71471117caa9181518b507daaf408118294897e78cee",
     "mgfxNormalized": "8a0368a81d465dfcc5aaf3cd02611f9de6735f4164475c9286df0c92e4860fc9",
@@ -1867,6 +1879,18 @@
     "dxil": "df4ceea277d65193f97eb4c38ffaf14613d6ef0b9a170c40eb06cd2c741cd6ad",
     "warnings": []
   },
+  "DirectX12/register-slots/RegisterSamplerPerPass.fx": {
+    "mgfx": "70ccdc8d59961fc5e589f3e95ef6a62263d217be7df9f0f49f9aaf6309aa3b4a",
+    "mgfxNormalized": "8af4eab2be85450a039edd86ae20e62a83924cc26fef0575896b349f2b761357",
+    "dxil": "63153dd431f88ff81c748095018debfe7cb82b3a52b30f78c479f0d8fad592ef",
+    "warnings": []
+  },
+  "DirectX12/register-slots/RegisterSamplerPerStage.fx": {
+    "mgfx": "eed132ea12d10d8987b416ed575d8c5445a865fb4327380082e8ae7d848d5446",
+    "mgfxNormalized": "1ed80b7501fdd0f25a95231faaf35d37591bf30d8e34de73c934544aabad848d",
+    "dxil": "4a57c0229f2ad4772bc4d620afbb8688edc8b4a760340a754d97acc79b2510e4",
+    "warnings": []
+  },
   "DirectX12/register-slots/RegisterSpace0.fx": {
     "mgfx": "830e8261cc23a52085bcc9452ac243de4e0c482a1cfb12bec494975882b8abc1",
     "mgfxNormalized": "f2c86fa836a59b8edb88908672704d3d6c77b5228ae649962eb1220da20ab66f",
@@ -2188,8 +2212,8 @@
     "warnings": []
   },
   "Vulkan.Debug/AlphaTestEffect.fx": {
-    "mgfx": "dc6ef4afafc21494c040d2d9796c035090282a17cabadf6a5fbf16b2dc186330",
-    "spirv": "bea6b295183e30ae1f279f98cdd218c808043ac1015e45b5823156376c14c6ae",
+    "mgfx": "1099ea8ccc7e8c0d4a9c579162d9aca26047fe5aeaa150fd2bacc18789ec8e3f",
+    "spirv": "b2d72c7e02cb6b44ea51bd9007d817176d0e4fe504b63189a757cb2d0c95b4cd",
     "warnings": []
   },
   "Vulkan.Debug/AnnotatedTechnique.fx": {
@@ -2203,13 +2227,13 @@
     "warnings": []
   },
   "Vulkan.Debug/ArrayUniformVs.fx": {
-    "mgfx": "44908d89224a23544b4f4063177480d9cc9f8d4f6725e09acb00c3d25a10b786",
-    "spirv": "3cde14cb78c8714c731ebc9269f63b43eac0a1c2c5c0922b1f35c604a480002f",
+    "mgfx": "c90861622ab53fcac324635401d5ac75bdb5a6090081486f043ff4580efebfda",
+    "spirv": "800e7cfc12274aa8d07cfeb52c329d541f9c7aef4292590ee724034b2c0ced70",
     "warnings": []
   },
   "Vulkan.Debug/BasicEffect.fx": {
-    "mgfx": "3335bef4195272a7544e24ae5c78356e42dce3019c410b0b73ccf23772bf05e1",
-    "spirv": "2e6bb996538e3cc23d8b8a9bc4981761a09e2cd706c745af5343496855715503",
+    "mgfx": "c1218d016b5937686305859ea072446ca3b9d33aacae557c54d996703832308b",
+    "spirv": "b1ba5c18400e1f6892fcc020b8e3a89ad9be0ab45a321af97f38dc6ed64ab103",
     "warnings": []
   },
   "Vulkan.Debug/BasicShader.fx": {
@@ -2243,23 +2267,23 @@
     ]
   },
   "Vulkan.Debug/Dissolve.fx": {
-    "mgfx": "c6ac7c6192f29d72bbbe0fc95efaa05eb7ba4faf9d642553dfd0282712757321",
-    "spirv": "a37476f8bef01de1c0213a1b430dba2987e54c21f22963c455a7cc27ce5280e1",
+    "mgfx": "b9bafbae8d593c6a776d0e1d7700c7b06fd135c1920dc1231c5dedc276ee78b3",
+    "spirv": "1dd6b43578b20ba63b34d98aeff438f92a1cf9dbcd3dd38f5890aae5308e8e3b",
     "warnings": []
   },
   "Vulkan.Debug/Dots.fx": {
-    "mgfx": "02555dc345d255d94672116399787e77723fd022e88d44771a7011a51d88da59",
-    "spirv": "146d325a4997d140eed3e2d8feb18b1967e9ea68c7db7d949cc0abf7b029b03b",
+    "mgfx": "147c0e5928163d7ddbf4bf9f28a8bf7cfb84044a002cc459cf82fa1dd022e42c",
+    "spirv": "aba9369694adc07589c43f8e27d406131d46e4a74bf623f5b01a572847633fcd",
     "warnings": []
   },
   "Vulkan.Debug/DualTextureEffect.fx": {
-    "mgfx": "9c7617f7afc7626f2dbb0013ee82336d479dfa8a62bb5c29279fa7d9048d531a",
-    "spirv": "138a399d02963d316b2ddb0088c0af68edc8316e892dc39856771d09c66fe7bc",
+    "mgfx": "9e5ecced730416b5a62da87dab45bf17f39297ed0cfec0e591d19642bff54fc9",
+    "spirv": "32863b86e36a3defe5bd45ee7fc9244dd879f76573418aec4f89c7230e174ee3",
     "warnings": []
   },
   "Vulkan.Debug/EnvironmentMapEffect.fx": {
-    "mgfx": "b8f3f5e7c82cb8d313033b8004858d7ea7a8ad8c560172a25e74bf0bfa2bf3e0",
-    "spirv": "c7d42fd83b00cd0beecc804bf3932acbd479f73058e1ba67d0c4a8ae3abc8edd",
+    "mgfx": "b14c3c7eace60904bd407f242be4109699a5e5fe38624a0a791720d34792b9ec",
+    "spirv": "40cbe9a5891ce9c8e907b9817fbe094bd20b8faa1efdccf840e0e5829809b2a6",
     "warnings": []
   },
   "Vulkan.Debug/Fading.fx": {
@@ -2268,13 +2292,13 @@
     "warnings": []
   },
   "Vulkan.Debug/FnaMultiPassStates.fx": {
-    "mgfx": "139cc0152d6d748a87367eff28bb69ba3ea7c8db94c8d83e7fb7a5aab96facc0",
-    "spirv": "28db653acc82352cecaa3b86995ad600e816929d8fa055ff2694f7d90da99a88",
+    "mgfx": "0a013433179829f005d65f4bda38a3ed72166574fc29f943c717c02cd8b4b8ef",
+    "spirv": "9a83371d6b766a7741e221e1ad9f915e11cabd17fb85c4e72da56fada01153f8",
     "warnings": []
   },
   "Vulkan.Debug/ForwardLighting.fx": {
-    "mgfx": "e1fd39e131ddeb1a9aad2a662216a97135e078836e0810b8cecddf94af607d86",
-    "spirv": "e66bb4465b6af0ff4e30b9b81915e7b6a290b034d60e18422ec9491ce63442b0",
+    "mgfx": "95cad490f65d62bd29e53b25c3a9660441b92c8a762682e7789abff955d74a76",
+    "spirv": "bc8fb4f8719f81a6cb5a2d69ad9bb23a17316dbec036fdce8000203dd1912ca3",
     "warnings": []
   },
   "Vulkan.Debug/Grayscale.fx": {
@@ -2410,23 +2434,23 @@
     "warnings": []
   },
   "Vulkan.Debug/Saturate.fx": {
-    "mgfx": "18b63a6a1cfdd0bb49f7fca8b60b7acbc5f3dd3aed41291683a349239c472875",
-    "spirv": "2415a2a7eb7870044bf2d35b8b66e8fa6afcf2b53d5b187987def8574a4ce101",
+    "mgfx": "9b90227ae8633e64b1962b8a790547638b23b1b9fb0f615ee10eae9ae93ee772",
+    "spirv": "328491a70c7477ecad7f45470ed46b9cf228cf2e693d7510ca76f3692ca525d0",
     "warnings": []
   },
   "Vulkan.Debug/Scanlines.fx": {
-    "mgfx": "5787ef10dec8e046a570fec37837f59dbf3724de5ec95ca915a4710adb85e431",
-    "spirv": "6f5c230051ce728aaeb128f578afc12cc5c1d123bb5ae71b7b168dd699743c79",
+    "mgfx": "4774ef2a2ee1cadc0a59b4f4548952481956a5a8602299b11bfbeff395b69586",
+    "spirv": "4da05c7bc47a46f2ecd73388aa431f3d17e2678b5abf7a0528c1400d67809683",
     "warnings": []
   },
   "Vulkan.Debug/Sepia.fx": {
-    "mgfx": "29a3d19ad8a4bf56ad6f017cfffa8df2475a5b76a8ae3ab4377298dce4ec2fd4",
-    "spirv": "a03f39fbc74186394f0adaa09922d126f423b9072fd76edc89289ed0cf1db49d",
+    "mgfx": "ec38bc87b208eb374382390a6d8f3a10484dacdf9aba9227da916fbb7514abd0",
+    "spirv": "d451d0f4e82227f7d3fe2f19f55a9d18d33395af07c32fc9b19a62cd9c4b09a2",
     "warnings": []
   },
   "Vulkan.Debug/SharedCbuffer.fx": {
-    "mgfx": "13cf3b388c54141ea3716c91ae3ad53654162d134f56fdd20742fa44d5a5eabf",
-    "spirv": "f38c7272816b1c0459f1e192850efa7a8f859d269c60105646501015d8de990a",
+    "mgfx": "03db2181e324ca442accf4b7e10e88a1b5dddec8789e5de22420163e373170c5",
+    "spirv": "91ee784addea3633411b5c28c862724a83dc9aa99a5ec607f91f2c8bc72f63a5",
     "warnings": []
   },
   "Vulkan.Debug/SharedSamplerPair.fx": {
@@ -2440,8 +2464,8 @@
     "warnings": []
   },
   "Vulkan.Debug/SkinnedEffect.fx": {
-    "mgfx": "4be99b4ef1aa6da799e67b58e7484fc477446f5a0f466b22e74775df39ad7df0",
-    "spirv": "b78e6e1dcc3dc784123c0359abc67e90346733bc7bc3a8ceb1be629c4716f85e",
+    "mgfx": "0bd249b62d0f8d7270cc742759ca07e5547f825d124438df3fc8ffbd4f39fce4",
+    "spirv": "4e928a7e095b9a5b5b4579da8903dc365d25be7bde3c6e34c8fb8e2f112f0200",
     "warnings": []
   },
   "Vulkan.Debug/Sm3SemanticStructs.fx": {
@@ -2455,8 +2479,8 @@
     "warnings": []
   },
   "Vulkan.Debug/SpriteEffect.fx": {
-    "mgfx": "e1ec997f6ae000bb425cc498ebd43a5c46307ea48b0355da3b6e31997c46e688",
-    "spirv": "d0680b11b517cf83c13e33fb395165a2fca5024630ebb2e67f121c7e74f5c5f7",
+    "mgfx": "306c54222009a2eefb781b4e6f0c434fe517789198d889477e80fbd3853b4c37",
+    "spirv": "67092e46d34cd34855637c878d307ddbbd02823490753db2667b87d27fc84712",
     "warnings": []
   },
   "Vulkan.Debug/StateBlendAdditive.fx": {
@@ -2490,13 +2514,13 @@
     "warnings": []
   },
   "Vulkan.Debug/VsTransformColorTexture.fx": {
-    "mgfx": "815dac031dcbb22eff7bca7c01384f2813361cbb06d98ebeeca7a82303773aa0",
-    "spirv": "b9d74dad42bc6a000293a74eb98851bbdfab3c3f1962177c931c5e5b8937932c",
+    "mgfx": "4c3358a56d99123efb6e6d741c33eb7d53a5573aef398358649a57f3b6a8d64a",
+    "spirv": "c907b535732955823264e55642d3962580fbfdcb477f95936fd4778665567a18",
     "warnings": []
   },
   "Vulkan.Debug/VsTransformColorTextureLegacyPos.fx": {
-    "mgfx": "0160e9e07dc1841c4274b31167ec5280b13d1cb8e2c48424e7e55ab649e9cae1",
-    "spirv": "e3b50ab97a91a44fa8673a1921794531b4e9ed1600ba8510e13672419b3c6b59",
+    "mgfx": "6af3dcc066e74ee90ad7e96cde62f3127442aa9ed19c3aec146804291b31ed29",
+    "spirv": "985344434916d95e79f46959f56b0f3248fe28cca0331265a5e74b7c3766c4ca",
     "warnings": []
   },
   "Vulkan.Debug/VsWaveQuadIntrinsics.fx": {
@@ -2520,8 +2544,8 @@
     "warnings": []
   },
   "Vulkan.Debug/examples/ExArrayTernaryAssign.fx": {
-    "mgfx": "d83edb07c870a6e7a3416c6b864ee4ce4e91dee7884774b4508de647cdce3de5",
-    "spirv": "2e9218fbfc341d589b40a38fe576760dcf7e77c8fc436e60ea3ce4a8a4516d22",
+    "mgfx": "b8dc041878f31df99b80557056030cf385584fb9f2cc4aa72a92c9f0f535eb6d",
+    "spirv": "5cd0fde9b17b6590f49090f51b35a91f77ec9147e0bfdf8c82afe3a842edcee8",
     "warnings": []
   },
   "Vulkan.Debug/examples/ExBareSamplerTex2D.fx": {
@@ -2695,8 +2719,8 @@
     "warnings": []
   },
   "Vulkan.Debug/examples/ExTernaryHelper.fx": {
-    "mgfx": "369fdb75327d40974baaacc89b51661e8943d70ebc51a1f48e7d2ace612b729e",
-    "spirv": "cb774efb2d1229401dac2d01febb2b02d6949a3913b3a28ad94debd1d1556c46",
+    "mgfx": "c604281e700527497b8903553186168a45f59077c77b6c496072cc5b1083959e",
+    "spirv": "b71f93ced507317e2869cd5ebda51b7e738a24364bb2d552aa428d24edb3f564",
     "warnings": []
   },
   "Vulkan.Debug/examples/ExTextureNamedTexture.fx": {
@@ -2715,8 +2739,8 @@
     "warnings": []
   },
   "Vulkan.Debug/examples/ExVsTextureFetch.fx": {
-    "mgfx": "6592aedd167374b3e838e80434e4ba3154f8cbd7140cf9ebb65973f9768956ec",
-    "spirv": "adab5b259ba2353cb4683297db5164d03954bd85693fd6d47d5f844ceee21fc2",
+    "mgfx": "f79690bc8532821f60ddcdaee82d32710edc4658570f8a252d2a130284748453",
+    "spirv": "397da4da363cf729cc4db73d5d438cb9d198bb1b251f5977f7b1a543b95fd900",
     "warnings": []
   },
   "Vulkan.Debug/examples/Issue106Repro.fx": {
@@ -2735,13 +2759,13 @@
     "warnings": []
   },
   "Vulkan.Debug/examples/Issue137VsEarlyReturn.fx": {
-    "mgfx": "48cb470eb107afd5c85c1edbd87a1ebbd910cc279e9f5af47acb8ee9f3c8c79d",
-    "spirv": "336ed7ef8b089b7465e8cf596ed82cf139331d3352199b2c2b6340f32b4aa5ad",
+    "mgfx": "fdaaca45f2004e0ae21b6a2b487de770e412b4b646ab8dcefc0b73f571779156",
+    "spirv": "5e344f5543e700704f0c08e8838e74973d0c3e2672654f725782e748271dea36",
     "warnings": []
   },
   "Vulkan.Debug/examples/Issue137VsRound.fx": {
-    "mgfx": "11066be92e7969e6bc83bae67dd0420e36ccc97fdd125d14c6991c2238e277db",
-    "spirv": "204ad5c29eb1db538fa9d4456434296981c3ec523a026db8088c0e9baa4e0e25",
+    "mgfx": "c4bcc40465118f274f2161317db1c3eb23365bc2a0bfccde5e77136b2a86ed6f",
+    "spirv": "160af6c1607990716f1e1a13063692b0df2a214b6d2989d2cad693a1f85c2c6f",
     "warnings": []
   },
   "Vulkan.Debug/examples/Issue139DerivativeExtension.fx": {
@@ -2836,7 +2860,17 @@
   },
   "Vulkan.Debug/register-slots/RegisterPreprocessedPairs.fx": {
     "mgfx": "88cd2a62a11d9090ea10afeac2e239eb52ab22d5c220452a1e8bef4610714cd3",
-    "spirv": "419f8c62cdeecb3cc38eac63541663deed9c072f504990c5f06499fe494ee3a4",
+    "spirv": "c898d3ab26039261966864196e1a4120ddbb480eb83df87ede097882354ce7c5",
+    "warnings": []
+  },
+  "Vulkan.Debug/register-slots/RegisterSamplerPerPass.fx": {
+    "mgfx": "7f42fe3464fee75246e4f9ab2c6b0608765fdd9cfccbc05051718aec6b5e6de8",
+    "spirv": "f548037044af8a7aac8f01c850bd9ab519ecbcc1e84e55cc00a936ab93233e1d",
+    "warnings": []
+  },
+  "Vulkan.Debug/register-slots/RegisterSamplerPerStage.fx": {
+    "mgfx": "9a9ebfb8bd0b9f58e15d1d9d7975fb0ec00855338f8ec2ce778e36c8c72b603d",
+    "spirv": "599072dc094ee86e5a70b07fd343826e33f9b744ce8517cb81f07b2623458391",
     "warnings": []
   },
   "Vulkan.Debug/register-slots/RegisterSpace0.fx": {
@@ -2852,7 +2886,9 @@
   "Vulkan.Debug/register-slots/RegisterTwoSamplers.fx": {
     "mgfx": "0dd7737c5ed2de2244dcf7138cb009ad91d178442b7fecfba600c9a0103a9585",
     "spirv": "5fe8466d0ff8aa07bc8f36500f315eaf181ef0f4b4666375658918a32946446e",
-    "warnings": []
+    "warnings": [
+      "register-slots/RegisterTwoSamplers.fx(38,87-87): warning SD0235: Vulkan target: texture \u0027Tex1\u0027 is sampled through a second sampler, \u0027PointSampler\u0027, in shader \u0027MainPS\u0027. MonoGame\u0027s DesktopVK binds a texture and a sampler as one combined descriptor, so ShadowDusk gives this pairing a second descriptor holding the same texture, bound to the \u0027Tex1\u0027 effect parameter. Set \u0027Tex1\u0027 through Effect.Parameters: SpriteBatch fills only the first texture slot, so a sprite texture read this way reaches only the first sampler."
+    ]
   },
   "Vulkan.Debug/render-states.fx": {
     "mgfx": "c8e1195c441c1c6cc2d51327bd0c87b6bbc50346950471873c4ac6d9f11469cd",
@@ -2880,8 +2916,8 @@
     ]
   },
   "Vulkan.Debug/textured.fx": {
-    "mgfx": "7cdf6471c97247eb00c740f367616f9ade59ae313bd629e5f493fe2d545e9484",
-    "spirv": "bf1f7b7f877f47010a28cfcfaefe1ce21fc7d3abc7a0c6b2c32dd688ef8914de",
+    "mgfx": "8ac7dfcf73e643a4586088e92939340141f90345e57d45b007bc1b1b97d66c8a",
+    "spirv": "2e720311e26d749d816a8f9398a5d1b69a124c07b26f738a36fe653d14e9323f",
     "warnings": []
   },
   "Vulkan.Debug/textured_vs_ps.fx": {
@@ -2890,18 +2926,18 @@
     ]
   },
   "Vulkan.Debug/third-party/Apos.Shapes/apos-shapes-aa.fx": {
-    "mgfx": "b82277e19afefb19678faecd0a31c2fe30ec58ffc1d254ebcb4b350b9923bd50",
-    "spirv": "e927682b26407694333e9ae141d3f3aa42cbd1e18f3cd2f893049b077ad19be8",
+    "mgfx": "35d1eaf49708e540d2eb5116b46de4b3eae70794578154b752cedada508c3bc8",
+    "spirv": "71f3f347a48427869838afdd93817bb4d53fc33c93b1f56277d52ec136a65dee",
     "warnings": []
   },
   "Vulkan.Debug/third-party/Apos.Shapes/apos-shapes-sm6.fx": {
-    "mgfx": "8d2c5c7f1ea6cfaf28e1c04d73507af980417327684841470ff9c6758f1d68d2",
-    "spirv": "9eadeedb6d78be5b4a9c9c605d7d62db8d7d2308631c5661bae9800b4e936567",
+    "mgfx": "4a30e3995d9c61c71cbd378a10568b8e7490a4f26716c3d9f08052ea87fe53f4",
+    "spirv": "4fce63f0015d3d1d7183544af01c89e27614cde83b6dbe4162db722f6f7b7768",
     "warnings": []
   },
   "Vulkan.Debug/third-party/Apos.Shapes/apos-shapes.fx": {
-    "mgfx": "4a52d33d478206ec6b8d806545df19d0844c492ddf7c430fda96468c411da97c",
-    "spirv": "c122bea1fe04dc3efc8e9ef94ff70676214ed16254543d8cdd07d0d34bcafae2",
+    "mgfx": "15a88fa42c4ee30959dca8bd51dfedc33602f684a4c458feb99971142025cb90",
+    "spirv": "42c2fbd53a02064de45e0f1e9fa44f6341d2c7cf111bb41ab1c0ad4bd1c8c895",
     "warnings": []
   },
   "Vulkan.Debug/third-party/Gum/FnaSample-Shader.fx": {
@@ -2975,8 +3011,8 @@
     "warnings": []
   },
   "Vulkan.Debug/third-party/MonoGame/ParameterTypes.fx": {
-    "mgfx": "cb51fdf70bff597d9dfc00c4ced99926f884d33a235ef9147d6f717c2387e862",
-    "spirv": "04fb23da0c3484f8a83bc55e91e82b7276292978814fe1e42402fd9eaf97f41c",
+    "mgfx": "cf9def9aedf310040c24b750e9f6df683909918f2d11be24ed4205a16c72b517",
+    "spirv": "ec805da969a70b986f06194f56d9f0d008ea1c6282e55f89747d417f49a523cd",
     "warnings": []
   },
   "Vulkan.Debug/third-party/MonoGame/ParserTest.fx": {
@@ -2995,8 +3031,8 @@
     "warnings": []
   },
   "Vulkan.Debug/third-party/MonoGame/TextureArrayEffect.fx": {
-    "mgfx": "452446051907545079f08853ccb9bfa14f9bf97edbe21261e139290e62703064",
-    "spirv": "d57271af3be22e91651887b3242df142e7c6379fae8be86e66841e9baf30b69c",
+    "mgfx": "c0f6bd54d32825303a398bf67307217c7569540787836979dd83e438a6d2f3c1",
+    "spirv": "acd375facddf081a71210bce6d472dd37e622cce48dcb6a29abd049440bcab3b",
     "warnings": []
   },
   "Vulkan.Debug/third-party/MonoGame/VertexTextureEffect.fx": {
@@ -3055,8 +3091,8 @@
     "warnings": []
   },
   "Vulkan.Debug/third-party/Nez/Reflection.fx": {
-    "mgfx": "ec47eb95c2ff4ad108c58235b97b3e3dfb47d60572636f6f71c0a4d9e4b47ae5",
-    "spirv": "74009d383a04d06edeadff63abc536909164e97624c447d35b318f7885333bdc",
+    "mgfx": "6dbe5bfe6bffa5d8d7924bc113c75efeff310bc5d700a0fef1e6381548e17bb2",
+    "spirv": "5bf581b36dfa8dc2c3462daae99c04e11a4fb31092d9666546739da15116448f",
     "warnings": []
   },
   "Vulkan.Debug/third-party/Nez/SpriteBlinkEffect.fx": {
@@ -3758,7 +3794,17 @@
   },
   "Vulkan/register-slots/RegisterPreprocessedPairs.fx": {
     "mgfx": "61414d5bedaa0912bb0fa95df5bbcb08e1a7ab4e9da0c80211fdc9501ab45099",
-    "spirv": "2c03084d52ba135aa0eaf29fea8d81c9cd67ce544db38d04f4133066c0269e52",
+    "spirv": "9765d7bd49ea4fd27c4933e563992e29bcc53f6937e8c26a13c5920a8821f98b",
+    "warnings": []
+  },
+  "Vulkan/register-slots/RegisterSamplerPerPass.fx": {
+    "mgfx": "991043bb98f868653f5a6ea90286aea117dc35f51b58af0278f10779f81e3b54",
+    "spirv": "f52d215f9c4f8b253515b7563c6d32d22b6c0bdd4c32e66a70d1a1749d92d6c9",
+    "warnings": []
+  },
+  "Vulkan/register-slots/RegisterSamplerPerStage.fx": {
+    "mgfx": "8644318eff32bbd9a5f5ba52c224a1f367379f0599999ac327562aa320631b7a",
+    "spirv": "4ac3ad225cc19b133a6237df4fa8884c48a2deae5710e3385e37c1a9ec6f2bdd",
     "warnings": []
   },
   "Vulkan/register-slots/RegisterSpace0.fx": {
@@ -3774,7 +3820,9 @@
   "Vulkan/register-slots/RegisterTwoSamplers.fx": {
     "mgfx": "709691586e7449261e2bb03bc4c91002d6a1d8b36d36c8aaabddd4541d7894c3",
     "spirv": "6172a554ef283b038dffe869cf6f0ac9d9562b32e9f651c585be56a99d35d3b4",
-    "warnings": []
+    "warnings": [
+      "register-slots/RegisterTwoSamplers.fx(38,87-87): warning SD0235: Vulkan target: texture \u0027Tex1\u0027 is sampled through a second sampler, \u0027PointSampler\u0027, in shader \u0027MainPS\u0027. MonoGame\u0027s DesktopVK binds a texture and a sampler as one combined descriptor, so ShadowDusk gives this pairing a second descriptor holding the same texture, bound to the \u0027Tex1\u0027 effect parameter. Set \u0027Tex1\u0027 through Effect.Parameters: SpriteBatch fills only the first texture slot, so a sprite texture read this way reaches only the first sampler."
+    ]
   },
   "Vulkan/render-states.fx": {
     "mgfx": "3ae7bc948a2b31bf99ef3cc046223ebe5cfb7fde05009fb12c51c3a343782c86",

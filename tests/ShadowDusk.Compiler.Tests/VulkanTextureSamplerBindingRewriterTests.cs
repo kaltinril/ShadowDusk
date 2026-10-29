@@ -699,6 +699,137 @@ public sealed class VulkanTextureSamplerBindingRewriterTests
         result.ShouldContain("SamplerState V : register(s3);", Case.Sensitive);
     }
 
+    // ---- Per compiled shader: reachability, skipped lines, co-live aliases ----------------
+
+    private static string RewriteFor(string hlsl, string entryPoint, out IReadOnlyList<VulkanTextureSamplerBindingRewriter.Alias> aliases, params int[] skippedLines) =>
+        VulkanTextureSamplerBindingRewriter.Rewrite(hlsl, entryPoint, skippedLines.Length == 0 ? null : skippedLines.ToHashSet(), out aliases);
+
+    [Fact]
+    public void Rewrite_ACallInAFunctionTheEntryPointNeverCalls_PairsNothing()
+    {
+        // The dead function's call came first in the file and used to give SpriteTexture its
+        // sampler, moving the live pair off slot 0.
+        const string hlsl = """
+            Texture2D SpriteTexture; SamplerState U; SamplerState S;
+            float4 Unused(float2 uv) { return SpriteTexture.Sample(U, uv); }
+            float4 H(Texture2D t, SamplerState s, float2 uv) { return t.Sample(s, uv); }
+            float4 AlsoUnused(float2 uv) { return H(SpriteTexture, U, uv); }
+            float4 MainPS(float2 uv : TEXCOORD0) : SV_Target0 { return SpriteTexture.Sample(S, uv); }
+            """;
+
+        string result = RewriteFor(hlsl, "MainPS", out var aliases);
+
+        result.ShouldContain("Texture2D SpriteTexture : register(t0);", Case.Sensitive);
+        result.ShouldContain("SamplerState S : register(s0);", Case.Sensitive);
+        result.ShouldNotContain("_SDVkAlias", Case.Sensitive);
+        aliases.ShouldBeEmpty();
+
+        // The whole-file rewrite still reads the first call (no entry point to scope by).
+        VulkanTextureSamplerBindingRewriter.Rewrite(hlsl).ShouldContain("SamplerState U : register(s0);", Case.Sensitive);
+    }
+
+    [Fact]
+    public void Rewrite_ATexturePerPassSampler_IsOneDescriptorAtItsSlotInEachShader()
+    {
+        // RegisterSamplerPerPass.fx: each compiled shader is its own descriptor layout, so the
+        // second pass needs no alias (it used to read an alias on slot 1, which SpriteBatch never fills).
+        const string hlsl = """
+            Texture2D SpriteTex : register(t0); SamplerState PointS : register(s0); SamplerState LinearS : register(s1);
+            float4 PS1(float2 uv : TEXCOORD0) : SV_Target0 { return SpriteTex.Sample(PointS, uv); }
+            float4 PS2(float2 uv : TEXCOORD0) : SV_Target0 { return SpriteTex.Sample(LinearS, uv); }
+            """;
+
+        string second = RewriteFor(hlsl, "PS2", out var aliases);
+
+        second.ShouldContain("SamplerState LinearS : register(s0);", Case.Sensitive);
+        second.ShouldNotContain("_SDVkAlias", Case.Sensitive);
+        aliases.ShouldBeEmpty();
+    }
+
+    [Fact]
+    public void Rewrite_ACallOnASkippedLine_PairsNothingAndKeepsNoSamplerLive()
+    {
+        // '#if 0' around the first call: the live pairing is S, on slot 0 (it used to be an alias on
+        // slot 1, away from SpriteBatch's texture). Line 4 is the one the preprocessor skips.
+        const string hlsl = """
+            Texture2D SpriteTexture; SamplerState S; SamplerState U : register(s0);
+            float4 MainPS(float2 uv : TEXCOORD0) : SV_Target0 {
+            #if 0
+              return SpriteTexture.Sample(U, uv);
+            #endif
+              return SpriteTexture.Sample(S, uv);
+            }
+            """;
+
+        string result = RewriteFor(hlsl, "MainPS", out var aliases, 4);
+
+        result.ShouldContain("Texture2D SpriteTexture : register(t0);", Case.Sensitive);
+        result.ShouldContain("SamplerState S : register(s0);", Case.Sensitive);
+        // U is named only on the skipped line, so it is dead and its s0 reserves nothing.
+        result.ShouldNotContain("SamplerState U : register(s0);", Case.Sensitive);
+        aliases.ShouldBeEmpty();
+    }
+
+    [Fact]
+    public void Rewrite_ASecondTextureOnASkippedLinesSampler_IsNotSD0028()
+    {
+        // A through U only in '#if 0' (line 4); live: A through S, B through U.
+        const string hlsl = """
+            Texture2D A; Texture2D B; SamplerState S; SamplerState U;
+            float4 MainPS(float2 uv : TEXCOORD0) : SV_Target0 {
+            #if 0
+             return A.Sample(U, uv);
+            #endif
+             return A.Sample(S, uv) + B.Sample(U, uv); }
+            """;
+
+        string result = RewriteFor(hlsl, "MainPS", out _, 4);
+
+        result.ShouldContain("Texture2D A : register(t0);", Case.Sensitive);
+        result.ShouldContain("SamplerState S : register(s0);", Case.Sensitive);
+        result.ShouldContain("Texture2D B : register(t1);", Case.Sensitive);
+        result.ShouldContain("SamplerState U : register(s1);", Case.Sensitive);
+    }
+
+    [Fact]
+    public void Rewrite_SecondSamplerInTheOtherBranchOfAnIf_IsNotAliased()
+    {
+        // Mutually exclusive branches: only one call survives the compile, so the second sampler is
+        // resolved by the preprocessed retry, not given an alias that would be the only live texture.
+        const string hlsl = """
+            Texture2D SpriteTexture; SamplerState PointS; SamplerState LinearS;
+            float4 MainPS(float2 uv : TEXCOORD0) : SV_Target0 {
+            #ifdef POINT_FILTER
+              return SpriteTexture.Sample(PointS, uv);
+            #else
+              return SpriteTexture.Sample(LinearS, uv);
+            #endif
+            }
+            """;
+
+        string result = RewriteFor(hlsl, "MainPS", out var aliases);
+
+        result.ShouldNotContain("_SDVkAlias", Case.Sensitive);
+        aliases.ShouldBeEmpty();
+    }
+
+    [Fact]
+    public void Rewrite_ACoLiveSecondSampler_DeclaresAnAliasAndReportsIt()
+    {
+        const string hlsl = """
+            Texture2D SpriteTexture; SamplerState S1; SamplerState S2;
+            float4 MainPS(float2 uv : TEXCOORD0) : SV_Target0 { return SpriteTexture.Sample(S1, uv) + SpriteTexture.Sample(S2, uv); }
+            """;
+
+        string result = RewriteFor(hlsl, "MainPS", out var aliases);
+
+        result.ShouldContain("Texture2D SpriteTexture : register(t0); Texture2D SpriteTexture_SDVkAlias1 : register(t1);", Case.Sensitive);
+        result.ShouldContain("SpriteTexture_SDVkAlias1.Sample(S2, uv)", Case.Sensitive);
+        var alias = aliases.ShouldHaveSingleItem();
+        (alias.Texture, alias.Sampler, alias.Name).ShouldBe(("SpriteTexture", "S2", "SpriteTexture_SDVkAlias1"));
+        result.Substring(alias.Offset).ShouldStartWith("SpriteTexture_SDVkAlias1.Sample(S2", Case.Sensitive);
+    }
+
     [Fact]
     public void Rewrite_AnUppercaseRegisterLetter_IsWrittenLowercase()
     {

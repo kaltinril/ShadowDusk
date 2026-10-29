@@ -616,11 +616,24 @@ internal sealed class CompilationPipeline
         var seenWarnings = new HashSet<(string File, int Line, int Column, string Code, string Message)>();
 
         var vulkanSources = new Dictionary<string, PreprocessedSource>(StringComparer.Ordinal);
+        // The lines an untaken #if drops from the text DXC compiles, read by the managed
+        // preprocessor with this compile's macros (they head the flattened text). Unknown (null)
+        // when the view cannot be built or a conditional tests a macro only DXC defines: the
+        // rewrite then treats every line as live, as it did before.
+        IReadOnlySet<int>? vulkanSkippedLines = null;
+        bool vulkanSkippedLinesRead = false;
         PreprocessedSource VulkanShaderSource(string entryPoint)
         {
             if (vulkanSources.TryGetValue(entryPoint, out PreprocessedSource? cached))
                 return cached;
-            string text = VulkanTextureSamplerBindingRewriter.Rewrite(preprocessed.Text, entryPoint, out var aliases);
+            if (!vulkanSkippedLinesRead)
+            {
+                vulkanSkippedLinesRead = true;
+                var skipped = ShadowDusk.HLSL.Preprocessing.FxMacroPreprocessor.SkippedLines(preprocessed.Text, sourceFileName);
+                if (skipped.IsSuccess && skipped.Value.PredefinedMacroUse is null)
+                    vulkanSkippedLines = skipped.Value.Lines;
+            }
+            string text = VulkanTextureSamplerBindingRewriter.Rewrite(preprocessed.Text, entryPoint, vulkanSkippedLines, out var aliases);
             foreach (var alias in aliases)
             {
                 var (file, line, column) = VulkanTextureSamplerBindingRewriter.Locate(text, alias.Offset);

@@ -38,8 +38,11 @@ namespace ShadowDusk.Compiler.Internal;
 /// <c>Sample</c> call that comes out of a macro, or a pairing hidden by an inactive <c>#if</c>,
 /// is literal or gone there), so a refusal stands only for a shape that retry cannot fix:</para>
 /// <list type="bullet">
-/// <item><c>SD0233</c>: a read-write image (<c>RWTexture*</c>, a UAV). MonoGame's Vulkan effect
-/// format has no storage-image descriptor.</item>
+/// <item><c>SD0233</c>: a storage resource: a read-write image (<c>RWTexture*</c>, a UAV), a texel buffer
+/// (<c>Buffer&lt;T&gt;</c>, <c>RWBuffer&lt;T&gt;</c>) or a storage buffer (<c>StructuredBuffer</c>,
+/// <c>ByteAddressBuffer</c> and their <c>RW</c> forms). MonoGame's Vulkan effect format binds uniform buffers
+/// and sampled textures only. A storage buffer used to compile silently as a uniform-buffer descriptor
+/// the runtime never fills, and a <c>Buffer&lt;T&gt;</c> was refused as SD0228 with advice that did not apply.</item>
 /// <item><c>SD0228</c>: a texture or sampler DXC auto-numbered below binding 32, so with no slot.
 /// <c>mgfxc</c>'s own arithmetic wraps such a slot to 224+.</item>
 /// <item><c>SD0229</c>: a resource outside its stage's descriptor set.</item>
@@ -92,8 +95,16 @@ internal static class VulkanResourceSlots
     public static Result<ReflectedEffect, ShaderError> FromBindings(
         ReflectedEffect reflected, ShaderStage stage, string compiledSource, string sourceFileName)
     {
-        if (reflected.Textures.FirstOrDefault(t => t.IsStorage) is { } storage)
-            return Result<ReflectedEffect, ShaderError>.Fail(StorageImage(storage.Name, compiledSource, sourceFileName));
+        if (reflected.Textures.FirstOrDefault(t => t.IsStorage || t.IsTexelBuffer) is { } storage)
+        {
+            string kind = !storage.IsTexelBuffer ? "a read-write resource (an RWTexture, a UAV)"
+                        : storage.IsStorage ? "a read-write typed buffer (an RWBuffer, a UAV)"
+                        : "a typed buffer (a Buffer<T>, a texel buffer)";
+            return Result<ReflectedEffect, ShaderError>.Fail(StorageResource(storage.Name, kind, compiledSource, sourceFileName));
+        }
+        if (reflected.ConstantBuffers.FirstOrDefault(c => c.IsStorageBuffer) is { } buffer)
+            return Result<ReflectedEffect, ShaderError>.Fail(StorageResource(
+                buffer.Name, "a storage buffer (a StructuredBuffer or ByteAddressBuffer, or an RW form of one)", compiledSource, sourceFileName));
 
         var below = new List<(string Kind, string Name, int Binding)>();
         foreach (TextureReflection tex in reflected.Textures)
@@ -144,7 +155,7 @@ internal static class VulkanResourceSlots
                      "runtime can bind. ShadowDusk pins every texture and sampler declaration it recognises to an " +
                      "explicit register before compiling (on the macro-expanded source too); " +
                      $"{(below.Count == 1 ? "this one is" : "these are")} declared in a form that rewrite does not " +
-                     "model, such as two on one line. Declare each on its own line with an explicit register " +
+                     "model, such as two names in one declaration ('Texture2D A, B;'). Declare each in its own statement with an explicit register " +
                      $"(e.g. ': register({example})'), or keep it out of the Vulkan build with '#if !VULKAN'.");
     }
 
@@ -186,13 +197,15 @@ internal static class VulkanResourceSlots
                      "no texture on its descriptor binding (" + textureList + "). MonoGame's DesktopVK binds a texture " +
                      "and the sampler it is sampled with as ONE combined descriptor, so ShadowDusk puts each pair on one " +
                      "register; it could not tell which texture this sampler is sampled with, and a standalone sampler " +
-                     "descriptor is a shape the runtime's descriptor writer does not handle. Sample the texture through " +
-                     "the sampler directly ('Tex.Sample(Sampler, uv)'), or pass both to a helper by name, rather than " +
-                     "through a construct the pairing does not follow (an array element, a struct member, a sampler " +
-                     "chosen at runtime).");
+                     "descriptor is a shape the runtime's descriptor writer does not handle. The pairing follows a direct " +
+                     "'Tex.Sample(Sampler, uv)' and a helper function called with the texture and the sampler by name. It " +
+                     "does not follow an array element, a struct member, a sampler chosen at runtime, or an overloaded " +
+                     "helper, and a texture already paired with another sampler gets a second descriptor for this one only " +
+                     "on a direct call, not inside a helper. Sample the texture through the sampler directly " +
+                     "('Tex.Sample(Sampler, uv)') in the shader function.");
     }
 
-    private static ShaderError StorageImage(string name, string compiledSource, string sourceFileName)
+    private static ShaderError StorageResource(string name, string kind, string compiledSource, string sourceFileName)
     {
         var (file, line, column) = Locate(compiledSource, name, sourceFileName);
         return new ShaderError(
@@ -200,10 +213,9 @@ internal static class VulkanResourceSlots
             Line:    line,
             Column:  column,
             Code:    StorageImageCode,
-            Message: $"Vulkan target: '{name}' is a read-write resource (an RWTexture, a UAV). MonoGame's Vulkan effect " +
-                     "format has no storage-image descriptor: its descriptor layout binds uniform buffers and sampled " +
-                     "textures only, and mgfxc 3.8.5 writes such a resource with a slot that does not bind. Keep it out " +
-                     "of the Vulkan build with '#if !VULKAN'.");
+            Message: $"Vulkan target: '{name}' is {kind}. MonoGame's Vulkan effect format has no descriptor for it: " +
+                     "its descriptor layout binds uniform buffers and sampled textures only, so the shader would read a " +
+                     "descriptor the runtime never writes. Keep it out of the Vulkan build with '#if !VULKAN'.");
     }
 
     // The first of `names` declared literally in the text, or the file with no line.
@@ -219,12 +231,13 @@ internal static class VulkanResourceSlots
     }
 
     // The declaration: `<Type>[<...>] name` (comments and strings masked). `RW` covers the
-    // read-write resource types (RWTexture2D, RWBuffer, ...).
+    // read-write resource types (RWTexture2D, RWBuffer, ...), \w*Buffer the buffer types (Buffer<T>,
+    // StructuredBuffer, ByteAddressBuffer, ConstantBuffer).
     private static (string File, int Line, int Column) Locate(string text, string name, string sourceFileName)
     {
         Match m = Regex.Match(
             ResourceArrayDiagnostics.MaskCommentsAndStrings(text),
-            $@"\b(?:RW\w*|Texture\w*|Sampler\w*|sampler\w*|cbuffer|ConstantBuffer)\b[^;{{}}()]*?\b{Regex.Escape(name)}\b",
+            $@"\b(?:RW\w*|Texture\w*|Sampler\w*|sampler\w*|cbuffer|\w*Buffer)\b[^;{{}}()]*?\b{Regex.Escape(name)}\b",
             RegexOptions.CultureInvariant);
         if (!m.Success)
             return (sourceFileName, 0, 0);
