@@ -130,11 +130,12 @@ node browser-vkd3d-gate.mjs               # publishes into .publish-vkd3d/; --sk
 
 **vkd3d compile options (issue #295).** `DirectX_Vkd3d/Sm3SemanticStructs.fx` is the manifest
 entry whose bytes depend on the options the host hands vkd3d (SM1-3 semantics on struct
-fields, mapped to `SV_Position` / `SV_Target` only by `MAP_SEMANTIC_NAMES`), so it is the
-end-to-end check that the browser host passes the same list as the desktop. The node gate
-(`node-test-vkd3d-wasm.mjs`) checks the same at the shim: it replays every compile with the
-options the desktop really passed, and requires that fixture to differ when replayed with
-none. The shim refuses to load a module that cannot take options (the pre-#295 build), so
+fields, mapped to `SV_Position` / `SV_Target` only by `MAP_SEMANTIC_NAMES`), and so is
+`DirectX_Vkd3d/HalfGlobals.fx` (`half` globals, refused with `E5002` without
+`ALLOW_HALF_GLOBALS`), so they are the end-to-end check that the browser host passes the same
+list as the desktop. The node gate (`node-test-vkd3d-wasm.mjs`) checks the same at the shim: it
+replays every compile with the options the desktop really passed, and requires those fixtures
+to differ (or be refused) when replayed with none. The shim refuses to load a module that cannot take options (the pre-#295 build), so
 both gates enforce that fixture like every other entry.
 
 **Warnings (issue #335).** A successful compile can carry a compiler's non-fatal diagnostics,

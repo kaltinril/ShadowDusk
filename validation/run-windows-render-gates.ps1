@@ -25,7 +25,9 @@
   history and evidence detail lives in docs/validation-matrix.md section 6.
     * MonoGame WindowsDX corpus  - validation/BaselineDx + CandidateDx + compare_dx.py
                                    (ShadowDusk DX vs mgfxc DX golden, real MonoGame WindowsDX).
-    * DX modern features (VTF)   - validation/DxModernFeatures (vkd3d vs fxc oracle, maxd 0).
+    * DX modern features (VTF)   - validation/DxModernFeatures (vkd3d vs fxc oracle, maxd 0;
+                                   plus the legacy-register and half-globals arms vs the
+                                   committed mgfxc goldens).
     * DX Apos.Shapes gallery     - validation/VsDrivenDx -- apos: the full 30-cell Apos.Shapes
                                    ShapeBatch gallery through the real NuGet package; d3dcompiler_47
                                    arm vs the real mgfxc DirectX_11 golden, vkd3d arm vs the
