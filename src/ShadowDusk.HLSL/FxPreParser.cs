@@ -563,8 +563,10 @@ public sealed class FxPreParser
                 // (`#if SM4 technique T {…} #else technique T {…} #endif`), so a duplicate is
                 // only an error once the text is preprocessed. The compile reads its techniques
                 // from the preprocessed translation unit (ParseTechniquesPreprocessed, issue
-                // #407), which reports a real duplicate as FX0005.
-                if (!techniqueNames.Add(tech.Name) && _preprocessed)
+                // #407), which reports a real duplicate as FX0005. Anonymous techniques all carry ""
+                // and are never duplicates: mgfxc 3.8.4.1 (OpenGL, DirectX_11), KNI's pipeline
+                // 4.3.9001 and fxc fx_2_0 compile two of them (measured 2026-10-28).
+                if (tech.Name.Length > 0 && !techniqueNames.Add(tech.Name) && _preprocessed)
                     return Fail<FxParseResult>(FxParseErrorCode.DuplicateTechniqueName,
                         $"Duplicate technique name '{tech.Name}'", tok);
 
@@ -2380,7 +2382,8 @@ public sealed class FxPreParser
                 var result = ParseTechnique();
                 if (result.IsFailure)
                     return Result<List<TechniqueInfo>, FxParseError>.Fail(result.Error);
-                if (!names.Add(result.Value.Name))
+                // An anonymous technique ("") is never a duplicate, as for passes (see above).
+                if (result.Value.Name.Length > 0 && !names.Add(result.Value.Name))
                 {
                     return Fail<List<TechniqueInfo>>(FxParseErrorCode.DuplicateTechniqueName,
                         $"Duplicate technique name '{result.Value.Name}'", tok);

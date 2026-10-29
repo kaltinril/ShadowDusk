@@ -489,6 +489,47 @@ public sealed class FxPreParserTests
         result.Value.Techniques[1].Passes.Select(p => p.Name).ShouldBe(["First", ""]);
     }
 
+    // New with the "" name: an anonymous pass beside a pass NAMED P0 (or P1, ...). The synthesized
+    // P0 collided with it, so `pass { } pass P0 { }` was FX0006 before; mgfxc compiles it.
+    [Fact]
+    public void Parse_AnonymousPassBesideAPassNamedP0_IsNotADuplicate()
+    {
+        const string source = """
+            technique T
+            {
+                pass { PixelShader = compile ps_3_0 PS(); }
+                pass P0 { PixelShader = compile ps_3_0 PS2(); }
+                pass P1 { PixelShader = compile ps_3_0 PS(); }
+            }
+            """;
+
+        var result = FxPreParser.Parse(source, sourceFile: "test.fx");
+
+        result.IsSuccess.ShouldBeTrue(result.IsFailure ? result.Error.Message : "");
+        result.Value.Techniques[0].Passes.Select(p => p.Name).ShouldBe(["", "P0", "P1"]);
+    }
+
+    // Two anonymous techniques both carry "" and are not duplicates (mgfxc 3.8.4.1 OpenGL and
+    // DirectX_11, KNI's pipeline 4.3.9001 and fxc fx_2_0 compile them, measured 2026-10-28), on
+    // the raw and on the preprocessed parse; a NAMED duplicate is still FX0005.
+    [Fact]
+    public void ParseTechniquesPreprocessed_TwoAnonymousTechniques_AreNotDuplicates()
+    {
+        const string source = """
+            technique { pass { PixelShader = compile ps_3_0 PS(); } }
+            technique { pass { PixelShader = compile ps_3_0 PS2(); } }
+            technique T { pass { PixelShader = compile ps_3_0 PS(); } }
+            """;
+
+        var raw = FxPreParser.Parse(source, sourceFile: "test.fx");
+        raw.IsSuccess.ShouldBeTrue(raw.IsFailure ? raw.Error.Message : "");
+        raw.Value.Techniques.Select(t => t.Name).ShouldBe(["", "", "T"]);
+
+        var preprocessed = FxPreParser.ParseTechniquesPreprocessed(source, sourceFile: "test.fx");
+        preprocessed.IsSuccess.ShouldBeTrue(preprocessed.IsFailure ? preprocessed.Error.Message : "");
+        preprocessed.Value.Techniques.Select(t => t.Name).ShouldBe(["", "", "T"]);
+    }
+
     [Fact]
     public void Parse_NamedDuplicateBesideAnonymousPass_StillReturnsFX0006()
     {
