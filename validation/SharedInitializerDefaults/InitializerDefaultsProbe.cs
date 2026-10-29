@@ -12,11 +12,11 @@
 // A control that turned red would mean the test cannot tell a default from a Set. Exit code 0 iff every
 // case and every control passes. See docs/validation-matrix.md section 6.
 //
-// With knifxReachRows (KNI WinForms.DX11), a second device on GraphicsProfile.Reach pins the shader model a
-// KNIFX container records for the MonoGame template's `ps_4_0_level_9_1`: KNI's own pipeline records 2.0,
-// which Reach (ceiling 2.0) loads, while `ps_4_0_level_9_3` (3.0) and `ps_4_0` (4.0) must be refused with
-// KNI's own "Shader model X is not supported by the current graphics profile 'Reach'". The refusals are
-// the positive controls: they prove the Reach device really checks the recorded version.
+// With knifxReachRows (the KNI drivers), a second device on GraphicsProfile.Reach pins the shader model a
+// KNIFX container records for `*_4_0_level_9_1`: KNI's own pipeline records 2.0, which Reach (ceiling 2.0)
+// loads, for a pixel and a vertex shader, while `*_4_0_level_9_3` (3.0), `ps_4_0` (4.0) and, on GL,
+// `ps_3_0` (3.0) must be refused with KNI's own "Shader model X is not supported by the current graphics
+// profile 'Reach'". The refusals are the positive controls: they prove the Reach device checks the version.
 
 using System;
 using System.Collections.Generic;
@@ -137,33 +137,73 @@ public static class InitializerDefaultsProbe
     }
 
     /// <summary>
-    /// The KNIFX rows run on a <see cref="GraphicsProfile.Reach"/> device: A_Tint as written
-    /// (<c>ps_4_0_level_9_1</c>, recorded 2.0) must load and render its default, and the same shader
-    /// rebuilt with <c>ps_4_0_level_9_3</c> (3.0) and <c>ps_4_0</c> (4.0) must be refused by KNI's
-    /// shader-model check.
+    /// The KNIFX rows run on a <see cref="GraphicsProfile.Reach"/> device (ceiling 2.0). A_Tint with its
+    /// pixel profile set to <c>ps_4_0_level_9_1</c> (recorded 2.0) must load and render its default, and
+    /// the same shader at <c>ps_4_0_level_9_3</c> (3.0), <c>ps_4_0</c> (4.0) and, on OpenGL,
+    /// <c>ps_3_0</c> (3.0; below mgfxc's DirectX floor, so not a DirectX row) must be refused by KNI's
+    /// shader-model check. A vertex-shader pair does the same for the VS profile: <c>vs_4_0_level_9_1</c>
+    /// loads, <c>vs_4_0_level_9_3</c> (with a 2.0 pixel shader, so only the VS can trip it) is refused.
     /// </summary>
     private static List<Job> ReachJobs(EffectCompiler compiler, string label, PlatformTarget target, string dir)
     {
         const string Level91 = "#define PS_SHADERMODEL ps_4_0_level_9_1";
+        const string GlArm = "#define PS_SHADERMODEL ps_3_0";
         string path = Path.Combine(dir, "A_Tint.fx");
         string tint = File.ReadAllText(path);
-        if (!tint.Contains(Level91, StringComparison.Ordinal))
-            throw new InvalidOperationException($"A_Tint.fx no longer contains '{Level91}'");
+        if (!tint.Contains(Level91, StringComparison.Ordinal) || !tint.Contains(GlArm, StringComparison.Ordinal))
+            throw new InvalidOperationException($"A_Tint.fx no longer contains '{Level91}' and '{GlArm}'");
 
-        return
-        [
-            Compile(compiler, label, target, EffectContainer.Knifx, path, tint,
-                "A_Tint ps_4_0_level_9_1 [Knifx] on Reach", new Expect(255, 0, 0, 255, 1), setR: null),
-            Compile(compiler, label, target, EffectContainer.Knifx, path,
-                tint.Replace(Level91, "#define PS_SHADERMODEL ps_4_0_level_9_3", StringComparison.Ordinal),
-                "CONTROL ps_4_0_level_9_3 [Knifx] refused on Reach", new Expect(0, 0, 0, 0, 0), setR: null,
-                expectRefusal: "Shader model 3.0 is not supported by the current graphics profile 'Reach'"),
-            Compile(compiler, label, target, EffectContainer.Knifx, path,
-                tint.Replace(Level91, "#define PS_SHADERMODEL ps_4_0", StringComparison.Ordinal),
-                "CONTROL ps_4_0 [Knifx] refused on Reach", new Expect(0, 0, 0, 0, 0), setR: null,
-                expectRefusal: "Shader model 4.0 is not supported by the current graphics profile 'Reach'"),
-        ];
+        // Both arms of the header name the same profile, so the row tests that profile on either target.
+        string Ps(string profile) => tint
+            .Replace(Level91, "#define PS_SHADERMODEL " + profile, StringComparison.Ordinal)
+            .Replace(GlArm, "#define PS_SHADERMODEL " + profile, StringComparison.Ordinal);
+
+        static string Refused(string sm) => $"Shader model {sm} is not supported by the current graphics profile 'Reach'";
+        var red = new Expect(255, 0, 0, 255, 1);
+        var none = new Expect(0, 0, 0, 0, 0);
+
+        var jobs = new List<Job>
+        {
+            Compile(compiler, label, target, EffectContainer.Knifx, path, Ps("ps_4_0_level_9_1"),
+                "PS ps_4_0_level_9_1 [Knifx] loads on Reach", red, setR: null),
+            Compile(compiler, label, target, EffectContainer.Knifx, path, Ps("ps_4_0_level_9_3"),
+                "CONTROL PS ps_4_0_level_9_3 [Knifx] refused on Reach", none, setR: null, expectRefusal: Refused("3.0")),
+            Compile(compiler, label, target, EffectContainer.Knifx, path, Ps("ps_4_0"),
+                "CONTROL PS ps_4_0 [Knifx] refused on Reach", none, setR: null, expectRefusal: Refused("4.0")),
+        };
+        if (target == PlatformTarget.OpenGL)
+            jobs.Add(Compile(compiler, label, target, EffectContainer.Knifx, path, Ps("ps_3_0"),
+                "CONTROL PS ps_3_0 [Knifx] refused on Reach", none, setR: null, expectRefusal: Refused("3.0")));
+
+        jobs.Add(Compile(compiler, label, target, EffectContainer.Knifx, "ReachVs.fx", ReachVs("vs_4_0_level_9_1"),
+            "VS vs_4_0_level_9_1 [Knifx] loads on Reach", red, setR: null));
+        jobs.Add(Compile(compiler, label, target, EffectContainer.Knifx, "ReachVs.fx", ReachVs("vs_4_0_level_9_3"),
+            "CONTROL VS vs_4_0_level_9_3 [Knifx] refused on Reach", none, setR: null, expectRefusal: Refused("3.0")));
+        return jobs;
     }
+
+    /// <summary>
+    /// A vertex + pixel effect for the Reach VS rows. The VS ignores SpriteBatch's transform and places
+    /// the quad from its texture coordinates, so a full-target sprite covers the target; the PS returns
+    /// the <c>Tint</c> default (red). The pixel profile is always <c>ps_4_0_level_9_1</c> (2.0).
+    /// </summary>
+    private static string ReachVs(string vsProfile) => $$"""
+        #if defined(OPENGL)
+        #define SV_POSITION POSITION
+        #endif
+        float4 Tint = float4(1, 0, 0, 1);
+        struct VsOut { float4 Pos : SV_POSITION; float4 Color : COLOR0; float2 Tc : TEXCOORD0; };
+        VsOut MainVS(float4 pos : POSITION0, float4 color : COLOR0, float2 tc : TEXCOORD0)
+        {
+            VsOut o;
+            o.Pos = float4(tc.x * 2 - 1, 1 - tc.y * 2, 0, 1);
+            o.Color = color;
+            o.Tc = tc;
+            return o;
+        }
+        float4 MainPS(VsOut i) : COLOR0 { return Tint; }
+        technique T { pass P0 { VertexShader = compile {{vsProfile}} MainVS(); PixelShader = compile ps_4_0_level_9_1 MainPS(); } }
+        """;
 
     private sealed record Expect(byte R, byte G, byte B, byte A, int Tolerance);
 
