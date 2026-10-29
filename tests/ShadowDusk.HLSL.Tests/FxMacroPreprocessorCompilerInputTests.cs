@@ -160,8 +160,7 @@ public sealed class FxMacroPreprocessorCompilerInputTests
     [InlineData("#if defined(__SHADER_TARGET_MAJOR) && __SHADER_TARGET_MAJOR > 5\nfloat4 a;\n#endif\n", "__SHADER_TARGET_MAJOR")]
     [InlineData("#if __spirv__\nfloat4 a;\n#endif\n", "__spirv__")]
     // Measured on the pinned DXC (2026-10-29): it defines these too, so a view that read them as
-    // undefined silently took the other branch (wrong Vulkan bindings, a crash or a silent change
-    // in the entry-point prototype proof).
+    // undefined silently took the other branch where DXC compiles the shaders.
     [InlineData("#ifdef __GNUC__\nfloat4 a;\n#endif\n", "__GNUC__")]
     [InlineData("#if __GNUC_MINOR__ > 1\nfloat4 a;\n#endif\n", "__GNUC_MINOR__")]
     [InlineData("#ifdef __GNUC_PATCHLEVEL__\nfloat4 a;\n#endif\n", "__GNUC_PATCHLEVEL__")]
@@ -172,11 +171,6 @@ public sealed class FxMacroPreprocessorCompilerInputTests
     [InlineData("#ifdef __LITTLE_ENDIAN__\nfloat4 a;\n#endif\n", "__LITTLE_ENDIAN__")]
     [InlineData("#ifdef __FLT_MAX__\nfloat4 a;\n#endif\n", "__FLT_MAX__")]
     [InlineData("#ifdef __DBL_MAX__\nfloat4 a;\n#endif\n", "__DBL_MAX__")]
-    // Any other reserved name the source never defines: DXC's set is not documented, so a
-    // name it might define is never assumed undefined.
-    [InlineData("#ifdef _WIN32\nfloat4 a;\n#endif\n", "_WIN32")]
-    [InlineData("#if defined(__x86_64__)\nfloat4 a;\n#endif\n", "__x86_64__")]
-    [InlineData("#ifndef __SOME_FUTURE_MACRO__\nfloat4 a;\n#endif\n", "__SOME_FUTURE_MACRO__")]
     // A name DXC defines is reported even where the source defines it later.
     [InlineData("#ifndef __GNUC__\n#define __GNUC__ 0\n#endif\n", "__GNUC__")]
     public void AConditionalOnACompilerPredefinedMacro_IsReported(string src, string macro)
@@ -193,12 +187,16 @@ public sealed class FxMacroPreprocessorCompilerInputTests
     [Theory]
     [InlineData("#ifndef __MY_HEADER_FXH__\n#define __MY_HEADER_FXH__\nfloat4 a;\n#endif\n")]
     [InlineData("#ifndef _MY_HEADER_FXH\n#define _MY_HEADER_FXH\nfloat4 a;\n#endif\n")]
-    // An include guard defined only in a branch the view skips is still the author's name.
-    [InlineData("#ifdef __GUARD__\n#else\n#define __GUARD__\n#endif\n")]
     [InlineData("#define __HLSL_VERSION 2018\n#if __HLSL_VERSION >= 2018\nfloat4 a;\n#endif\n")]
     [InlineData("#if OPENGL\nfloat4 a;\n#endif\n")]
-    [InlineData("#ifdef _lowercase\nfloat4 a;\n#endif\n")]          // not reserved: one '_' and a lower-case letter
-    // The toolchain's own macro (KNIFX builds pass it as a -D; DXC never defines it): Apos.Shapes tests it.
+    // A reserved name neither compiler defines is undefined to both, as it is to 0.22.1 and mgfxc
+    // (the review of 2026-10-29: treating every such name as unknown broke real effects that test
+    // _XBOX, _DEBUG or __PSSL__ on every target).
+    [InlineData("#ifdef _XBOX\nfloat4 a;\n#endif\n")]
+    [InlineData("#ifdef _DEBUG\nfloat4 a;\n#endif\n")]
+    [InlineData("#if defined(__PSSL__) || defined(_PS4)\nfloat4 a;\n#endif\n")]
+    [InlineData("#ifdef _WIN32\nfloat4 a;\n#endif\n")]
+    [InlineData("#if defined(__x86_64__)\nfloat4 a;\n#endif\n")]
     [InlineData("#if __KNIFX__\nfloat4 a;\n#endif\n")]
     [InlineData("float4 a = __LINE__;\n")]
     public void OrdinaryConditionals_AndAPredefinedMacroInPlainText_AreNotReported(string src)
@@ -209,32 +207,30 @@ public sealed class FxMacroPreprocessorCompilerInputTests
         result.Value.PredefinedMacroUse.ShouldBeNull();
     }
 
-    [Fact]
-    public void ACallerCanChooseEachCompilerMacroConditionalsOutcome_AndEveryOneIsRecorded()
+    [Theory]
+    [InlineData("#ifdef __GNUC__\nfloat4 a;\n#endif\n")]
+    [InlineData("#if __llvm__\nfloat4 a;\n#endif\n")]
+    [InlineData("#ifdef __FLT_MAX__\nfloat4 a;\n#endif\n")]
+    [InlineData("#ifdef __DBL_MAX__\nfloat4 a;\n#endif\n")]
+    [InlineData("#if __BYTE_ORDER__ == 1234\nfloat4 a;\n#endif\n")]
+    public void AMacroOnlyDxcDefines_IsNotReported_ForACompileThatNeverRunsDxc(string src)
     {
-        const string Src = "#ifdef __GNUC__\nfloat4 a;\n#elif __HLSL_VERSION >= 2021\nfloat4 b;\n#else\nfloat4 c;\n#endif\n#if OPENGL\nfloat4 d;\n#endif\n";
+        // DirectX 11 and FNA compile through fxc-faithful compilers that define none of these, as
+        // mgfxc's fxc does not: the view's "undefined" is right there, and 0.22.1's behaviour stays.
+        var result = FxMacroPreprocessor.ProcessForCompiler(src, "t.fx", compilerIsDxc: false);
 
-        // Natural outcomes: both read as undefined, so the #else; only the two compiler-macro
-        // conditionals are recorded (not `#if OPENGL`).
-        var natural = FxMacroPreprocessor.ProcessForCompiler(Src, "t.fx", new Dictionary<int, bool>());
-        natural.IsSuccess.ShouldBeTrue();
-        Lines(natural.Value.Text)[5].ShouldBe("float4 c;");
-        natural.Value.UnknownConditionals.ShouldNotBeNull();
-        natural.Value.UnknownConditionals!.Select(c => (c.PhysicalLine, c.Name, c.Natural, c.Taken))
-            .ShouldBe([(1, "__GNUC__", false, false), (3, "__HLSL_VERSION", false, false)]);
+        result.IsSuccess.ShouldBeTrue();
+        result.Value.PredefinedMacroUse.ShouldBeNull();
+    }
 
-        // Forcing the #elif true takes its branch.
-        var elif = FxMacroPreprocessor.ProcessForCompiler(Src, "t.fx", new Dictionary<int, bool> { [3] = true });
-        Lines(elif.Value.Text)[3].ShouldBe("float4 b;");
-        Lines(elif.Value.Text)[5].ShouldBe("");
-
-        // Forcing the #ifdef true takes it, and the #elif is then never evaluated (or recorded).
-        var gnuc = FxMacroPreprocessor.ProcessForCompiler(Src, "t.fx", new Dictionary<int, bool> { [1] = true });
-        Lines(gnuc.Value.Text)[1].ShouldBe("float4 a;");
-        gnuc.Value.UnknownConditionals!.Select(c => c.PhysicalLine).ShouldBe([1]);
-
-        // The ordinary overload records nothing and never forces.
-        FxMacroPreprocessor.ProcessForCompiler(Src, "t.fx").Value.UnknownConditionals.ShouldBeNull();
+    [Theory]
+    [InlineData("#if __HLSL_VERSION >= 2021\nfloat4 a;\n#endif\n", "__HLSL_VERSION")]
+    [InlineData("#if __spirv__\nfloat4 a;\n#endif\n", "__spirv__")]
+    [InlineData("#ifdef __clang__\nfloat4 a;\n#endif\n", "__clang__")]
+    public void The0221List_IsReportedOnEveryTarget(string src, string macro)
+    {
+        FxMacroPreprocessor.ProcessForCompiler(src, "t.fx", compilerIsDxc: false).Value.PredefinedMacroUse!.Name.ShouldBe(macro);
+        FxMacroPreprocessor.ProcessForCompiler(src, "t.fx", compilerIsDxc: true).Value.PredefinedMacroUse!.Name.ShouldBe(macro);
     }
 
     [Fact]

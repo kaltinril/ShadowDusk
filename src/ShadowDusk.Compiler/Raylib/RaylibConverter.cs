@@ -205,7 +205,8 @@ public static class RaylibConverter
             PlatformMacros.For(PlatformTarget.OpenGL),
             options.IncludeResolver ?? new FileSystemIncludeResolver(),
             options.AdditionalIncludePaths,
-            parse.Value);
+            parse.Value,
+            compilerIsDxc: true);
         if (techniques.IsFailure)
             return Result<RaylibShader, ShaderError[]>.Fail([techniques.Error]);
         FxParseResult rawParsed = parse.Value with { Techniques = techniques.Value.Techniques };
