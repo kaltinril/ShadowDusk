@@ -678,7 +678,7 @@ public sealed class VulkanTextureSamplerBindingRewriterTests
     public void Rewrite_AnExpressionArgument_OrAnOverloadedHelper_IsNotFollowed()
     {
         // Not unambiguous: `(U)` is an expression and `G` has two definitions. Neither pair is
-        // made here (the compile then reports the sampler without a texture, SD0230, loudly).
+        // made here (the compile then reports the sampler without a texture, SD0232, loudly).
         const string hlsl = """
             Texture2D B;
             SamplerState U;

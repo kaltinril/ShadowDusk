@@ -72,7 +72,7 @@ internal sealed class CompilationPipeline
         // Vulkan: a texture or sampler the binding rewrite could not see on the raw text (its
         // declaration comes out of a macro) was auto-numbered below binding 32 (SD0228), a register space it could not see put a
         // resource outside the stage's descriptor set (SD0229), or a sampler ended up with no texture on
-        // its binding because the pairing was hidden by a macro or an inactive #if (SD0230). Compile
+        // its binding because the pairing was hidden by a macro or an inactive #if (SD0232). Compile
         // once more from the preprocessed source, where the declaration is literal. Only after
         // that failure, so an effect that compiles from its raw source keeps exactly its bytes.
         if (compileFailure.UnpinnedVulkanResource)

@@ -38,12 +38,12 @@ namespace ShadowDusk.Compiler.Internal;
 /// <c>Sample</c> call that comes out of a macro, or a pairing hidden by an inactive <c>#if</c>,
 /// is literal or gone there), so a refusal stands only for a shape that retry cannot fix:</para>
 /// <list type="bullet">
-/// <item><c>SD0231</c>: a read-write image (<c>RWTexture*</c>, a UAV). MonoGame's Vulkan effect
+/// <item><c>SD0233</c>: a read-write image (<c>RWTexture*</c>, a UAV). MonoGame's Vulkan effect
 /// format has no storage-image descriptor.</item>
 /// <item><c>SD0228</c>: a texture or sampler DXC auto-numbered below binding 32, so with no slot.
 /// <c>mgfxc</c>'s own arithmetic wraps such a slot to 224+.</item>
 /// <item><c>SD0229</c>: a resource outside its stage's descriptor set.</item>
-/// <item><c>SD0230</c>: a sampler with no texture on its binding, a standalone
+/// <item><c>SD0232</c>: a sampler with no texture on its binding, a standalone
 /// <c>VK_DESCRIPTOR_TYPE_SAMPLER</c>, which <c>MGVK_UpdateDescriptors</c> does not handle (an
 /// unhandled <c>assert(0)</c> branch and an uninitialised descriptor write). It arises when the
 /// rewrite cannot see which texture a sampler is sampled with.</item>
@@ -61,9 +61,9 @@ internal static class VulkanResourceSlots
 
     internal const string WrongDescriptorSetCode = "SD0229";
 
-    internal const string SamplerWithoutTextureCode = "SD0230";
+    internal const string SamplerWithoutTextureCode = "SD0232";
 
-    internal const string StorageImageCode = "SD0231";
+    internal const string StorageImageCode = "SD0233";
 
     /// <summary>Every code <see cref="FromBindings"/> can return.</summary>
     internal static readonly IReadOnlySet<string> Codes =
@@ -81,8 +81,8 @@ internal static class VulkanResourceSlots
     /// Returns <paramref name="reflected"/> with each texture's and sampler's
     /// <see cref="TextureReflection.BindSlot"/> / <see cref="SamplerReflection.BindSlot"/> set to
     /// <c>RawBinding - 32</c>, or the first refusal that applies (see the class remarks):
-    /// <c>SD0231</c>, <c>SD0228</c> (naming EVERY resource below binding 32), <c>SD0229</c>,
-    /// <c>SD0230</c>. Constant buffers and parameters are returned unchanged.
+    /// <c>SD0233</c>, <c>SD0228</c> (naming EVERY resource below binding 32), <c>SD0229</c>,
+    /// <c>SD0232</c>. Constant buffers and parameters are returned unchanged.
     /// </summary>
     /// <param name="reflected">One stage's SPIR-V reflection.</param>
     /// <param name="stage">The stage, which decides the descriptor set its resources must be in.</param>

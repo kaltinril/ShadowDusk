@@ -153,7 +153,7 @@ internal static class VulkanTextureSamplerBindingRewriter
     // internal compiler error ("unknown register type found", X0000, no line) where its DXIL
     // backend (DirectX 12) and vkd3d (DirectX 11) accept it as HLSL allows, so on Vulkan the letter
     // is written lowercase. `u` (a UAV) is included so its space is dropped like any other; the
-    // UAV itself is then refused by name (SD0231), MonoGame's Vulkan format having no binding for it.
+    // UAV itself is then refused by name (SD0233), MonoGame's Vulkan format having no binding for it.
     private static readonly Regex RegisterSpace =
         new(@"\bregister\s*\(\s*(?<l>[tTsSbBuU])(?<n>\d+)\s*(?<space>,\s*[sS][pP][aA][cC][eE]\d+\s*)?\)", RegexOptions.Compiled);
 
@@ -247,7 +247,7 @@ internal static class VulkanTextureSamplerBindingRewriter
         // next to the original) and its calls are pointed at the alias; the pipeline folds the
         // alias back into the original's effect parameter, so setting `Tex` binds both slots. A
         // second sampler reached only through a helper is not aliased (the helper's body would
-        // have to change): it ends as SD0230.
+        // have to change): it ends as SD0232.
         var aliasOf = new Dictionary<(string Tex, string Samp), string>();
         var aliasesByTexture = new Dictionary<string, List<string>>(StringComparer.Ordinal);
         var aliasCallEdits = new List<(int Index, int Length, string Text)>();
@@ -513,7 +513,7 @@ internal static class VulkanTextureSamplerBindingRewriter
     /// <c>B</c> with <c>U</c>). Followed through helpers that call helpers. Only bare identifier
     /// arguments are followed (an array element or an expression is not unambiguous); a pair
     /// that stays hidden surfaces after the compile as a sampler with no texture on its binding
-    /// (<c>SD0230</c>, after the preprocessed retry), never as a silent split descriptor.
+    /// (<c>SD0232</c>, after the preprocessed retry), never as a silent split descriptor.
     /// Each pair is reported at its call site.
     /// </summary>
     private static List<(string Tex, string Samp, int Offset)> HelperPairs(

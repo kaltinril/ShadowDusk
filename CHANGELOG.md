@@ -73,13 +73,13 @@ that loads and renders identically to `mgfxc`'s in the real MonoGame/KNI runtime
   pairing hidden by an inactive `#if` all compiled to a separate `SAMPLED_IMAGE` + `SAMPLER` pair that
   MonoGame DesktopVK does not handle (the texture drew nothing). Pairs are now followed through helper
   calls, an output that would still carry a standalone sampler is compiled once more from the
-  preprocessed source, and what stays unpairable is refused with the new `SD0230`. One texture sampled
+  preprocessed source, and what stays unpairable is refused with the new `SD0232`. One texture sampled
   directly through two samplers (the linear + point idiom) gets a second combined descriptor: an alias
   declaration of the texture on its own register whose record binds the same effect parameter (set the
   texture through its parameter: SpriteBatch fills slot 0 only). A texture read only
   with `Load` now gets the sampler record `mgfxc` 3.8.5 writes for it (texture slot, sampler slot 255);
   it had none, so its parameter was never bound and it read (0,0,0,0). A read-write texture (UAV) is
-  refused with the new `SD0231`; an uppercase register letter (`register(T1)`), which DXC's SPIR-V
+  refused with the new `SD0233`; an uppercase register letter (`register(T1)`), which DXC's SPIR-V
   backend rejected with an internal compiler error, is written lowercase. Proven in real DesktopVK
   (`VsDrivenVulkan -- regslots`: `RegisterLoadOnly` vs `mgfxc`'s own build, `RegisterHelperPair` and
   `RegisterPreprocessedPairs` and `RegisterTwoSamplers` vs `mgfxc` on their explicit-register forms, maxd 0), with positive

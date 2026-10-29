@@ -326,7 +326,7 @@ public sealed class VulkanExplicitRegisterSlotTests
     }
 
     [Fact]
-    public async Task ASamplerThePairingCannotFollow_IsRefusedWithSD0230_AfterThePreprocessedRetry()
+    public async Task ASamplerThePairingCannotFollow_IsRefusedWithSD0232_AfterThePreprocessedRetry()
     {
         // It used to ship a standalone SAMPLER descriptor next to a SAMPLED_IMAGE, silently: the
         // shape MonoGame's MGVK_UpdateDescriptors does not handle.
@@ -349,7 +349,7 @@ public sealed class VulkanExplicitRegisterSlotTests
 
         result.IsFailure.ShouldBeTrue();
         ShaderError error = result.Error.ShouldHaveSingleItem();
-        error.Code.ShouldBe("SD0230");
+        error.Code.ShouldBe("SD0232");
         error.Message.ShouldContain("sampler 'U' has no texture on its descriptor binding", Case.Sensitive);
         error.Message.ShouldContain("'B'", Case.Sensitive);
         error.File.ShouldBe("Unpaired.fx");
@@ -376,7 +376,7 @@ public sealed class VulkanExplicitRegisterSlotTests
     }
 
     [Fact]
-    public async Task Vulkan_AReadWriteTexture_IsRefusedWithSD0231_AtItsDeclaration()
+    public async Task Vulkan_AReadWriteTexture_IsRefusedWithSD0233_AtItsDeclaration()
     {
         const string source = """
             #if SM6
@@ -395,7 +395,7 @@ public sealed class VulkanExplicitRegisterSlotTests
 
         result.IsFailure.ShouldBeTrue();
         ShaderError error = result.Error.ShouldHaveSingleItem();
-        error.Code.ShouldBe("SD0231");
+        error.Code.ShouldBe("SD0233");
         error.Message.ShouldContain("'W' is a read-write resource", Case.Sensitive);
         error.Line.ShouldBe(8);
         error.Column.ShouldBe("RWTexture2D<float4> ".Length + 1);

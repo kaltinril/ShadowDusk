@@ -176,7 +176,7 @@ public sealed class VulkanResourceSlotsTests
             .IsSuccess.ShouldBeTrue("a vertex shader's resources in set 0 are where DesktopVK binds them");
     }
     [Fact]
-    public void ASamplerWithNoTextureOnItsBinding_IsSD0230_NamingTheTextureLeftWithoutOne()
+    public void ASamplerWithNoTextureOnItsBinding_IsSD0232_NamingTheTextureLeftWithoutOne()
     {
         // A standalone SAMPLER descriptor (type 0), which MonoGame's descriptor writer does not
         // handle, next to the SAMPLED_IMAGE its texture became.
@@ -186,7 +186,7 @@ public sealed class VulkanResourceSlotsTests
         var result = VulkanResourceSlots.FromBindings(reflected, ShaderStage.Pixel, source, "x.fx");
 
         result.IsFailure.ShouldBeTrue();
-        result.Error.Code.ShouldBe("SD0230");
+        result.Error.Code.ShouldBe("SD0232");
         result.Error.Message.ShouldContain("sampler 'U' has no texture on its descriptor binding", Case.Sensitive);
         result.Error.Message.ShouldContain("binding: 'B'", Case.Sensitive);
         result.Error.Line.ShouldBe(4);
@@ -205,7 +205,7 @@ public sealed class VulkanResourceSlotsTests
     }
 
     [Fact]
-    public void AStorageImage_IsSD0231()
+    public void AStorageImage_IsSD0233()
     {
         const string source = "#line 1 \"effect.fx\"\nRWTexture2D<float4> W : register(u1);\n";
         ReflectedEffect reflected = Effect([("W", 1)], []);
@@ -214,7 +214,7 @@ public sealed class VulkanResourceSlotsTests
         var result = VulkanResourceSlots.FromBindings(reflected, ShaderStage.Pixel, source, "x.fx");
 
         result.IsFailure.ShouldBeTrue();
-        result.Error.Code.ShouldBe("SD0231");
+        result.Error.Code.ShouldBe("SD0233");
         result.Error.Message.ShouldContain("'W' is a read-write resource", Case.Sensitive);
         result.Error.Line.ShouldBe(1);
         result.Error.Column.ShouldBe("RWTexture2D<float4> ".Length + 1);
