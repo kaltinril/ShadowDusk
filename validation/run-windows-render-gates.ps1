@@ -79,6 +79,8 @@
                                    KNIFX output. Each driver has a no-initializer control that must
                                    render black, and the GL ones render the real mgfxc OpenGL build
                                    (zeros) as a second control. Dx12 and Vulkan are MonoGame 3.8.5.
+                                   KniDx and KniGl also open a Reach device: KNIFX ps/vs_4_0_level_9_1
+                                   must load (recorded SM 2.0); 9_3, 4_0 (and 3_0 on GL) refused.
     * Apos.Shapes GL render-proof - validation/VsDriven -- apos: a single shape plus a needle-thin
                                    ellipse vs the mgfxc OpenGL golden, tol 2/255. Uses the older
                                    apos-shapes.fx pin - the current revision's mgfxc GL compile is
@@ -325,8 +327,8 @@ $gates.Add(@{
 foreach ($drv in @(
     @('InitializerDefaultsGl',    'MonoGame DesktopGL'),
     @('InitializerDefaultsDx',    'MonoGame WindowsDX'),
-    @('InitializerDefaultsKniGl', 'KNI SDL2.GL, MGFX v10 and KNIFX'),
-    @('InitializerDefaultsKniDx', 'KNI WinForms.DX11, MGFX v10 and KNIFX'),
+    @('InitializerDefaultsKniGl', 'KNI SDL2.GL, MGFX v10 and KNIFX, plus the KNIFX shader model on a Reach device'),
+    @('InitializerDefaultsKniDx', 'KNI WinForms.DX11, MGFX v10 and KNIFX, plus the KNIFX shader model on a Reach device'),
     @('InitializerDefaultsDx12',  'MonoGame 3.8.5 WindowsDX12'))) {
     $project = "validation/$($drv[0])"
     $gates.Add(@{
