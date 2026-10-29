@@ -88,6 +88,10 @@ src/ShadowDusk.Slang.Wasm/wwwroot/slangc/shadowdusk-slangc.wasm
 
 # MGCB compiled content output (XNB wrappers — not the raw .mgfx golden files)
 *.xnb
+# ...except KNI's own prebuilt reference effects, vendored (Ms-PL) as the KNI EffectTest gate's
+# reference arm; see tests/fixtures/shaders/third-party/KNI/NOTICE.md.
+!tests/fixtures/shaders/third-party/KNI/DirectX/*.xnb
+!tests/fixtures/shaders/third-party/KNI/OpenGL/*.xnb
 *.mgcb.log
 Content/bin/
 Content/obj/
