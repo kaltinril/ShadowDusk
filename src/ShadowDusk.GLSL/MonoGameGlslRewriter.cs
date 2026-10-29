@@ -470,7 +470,9 @@ public static class MonoGameGlslRewriter
             // calls ONLY pixelShader.ApplySamplerTextureUnits(program) (the vertex
             // shader's sampler records never get a texture unit assigned), and
             // GraphicsDevice.OpenGL.cs has no VertexTextures/VertexSamplerStates
-            // apply path. So ANY emitted form — vs_s{k} contract or not — leaves
+            // apply path. KNI's GL backend has the same gap (ConcreteGraphicsContextGL sets
+            // the sampler uniforms of the PIXEL shader only; measured against KNI 4.2/4.3 by
+            // validation/KniEffectTest*). So ANY emitted form — vs_s{k} contract or not — leaves
             // the VS sampler reading texture unit 0's incidental contents: silently
             // wrong output in the real runtime, the exact failure mode this
             // project's purpose forbids. Until/unless the runtime gap is solved,
@@ -479,11 +481,12 @@ public static class MonoGameGlslRewriter
             if (samplerMatch.Success && isVertex)
             {
                 throw new MonoGameGlslRewriteException(
-                    "Vertex-stage texture sampling is not supported for the MonoGame OpenGL " +
-                    "target: MonoGame 3.8.2's GL runtime never assigns texture units to " +
-                    "VERTEX-shader samplers (ShaderProgramCache.Link applies only the pixel " +
-                    "shader's sampler records, and there is no GL VertexTextures path), so any " +
-                    "compiled output would silently sample the wrong texture at runtime. " +
+                    "Vertex-stage texture sampling is not supported for the MonoGame/KNI OpenGL " +
+                    "target: neither MonoGame's nor KNI's GL runtime assigns texture units to " +
+                    "VERTEX-shader samplers (both bind only the pixel shader's sampler uniforms: " +
+                    "MonoGame's ShaderProgramCache.Link, KNI's ConcreteGraphicsContextGL; mgfxc's " +
+                    "own OpenGL build of such a shader fails too), so any compiled output " +
+                    "would silently sample the wrong texture at runtime. " +
                     "Move the texture fetch to the pixel stage (or pass the data via a uniform).");
             }
             if (samplerMatch.Success)

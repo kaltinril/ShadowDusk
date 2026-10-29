@@ -14,6 +14,8 @@
 # future text-looking blob can't be silently mangled.)
 *.mgfx binary
 *.fxb  binary
+# KNI's own prebuilt reference effects (tests/fixtures/shaders/third-party/KNI/{DirectX,OpenGL}).
+*.xnb  binary
 *.wasm binary
 *.sksl text eol=lf
 

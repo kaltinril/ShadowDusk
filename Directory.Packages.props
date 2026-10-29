@@ -50,6 +50,32 @@
     <PackageVersion Include="MonoGame.Framework.WindowsDX" Version="3.8.2.1105" />
   </ItemGroup>
 
+  <!-- Validation-only, never a product dependency: the KNI EffectTest gate
+       (validation/KniEffectTest{KniGl,KniDx}). 4.2.9001 is the KNI line every other KNI harness
+       pins; the drivers also build against 4.3.9001 with -p:KniVersion=4.3.9001 (a VersionOverride,
+       with its own lock file). Older KNI harnesses keep their local pins (they opt out of central
+       management); these entries only apply to projects that reference them without a version. -->
+  <ItemGroup Label="KNI runtime validation (KniEffectTest gate)">
+    <PackageVersion Include="nkast.Xna.Framework"              Version="4.2.9001" />
+    <PackageVersion Include="nkast.Xna.Framework.Content"      Version="4.2.9001" />
+    <PackageVersion Include="nkast.Xna.Framework.Graphics"     Version="4.2.9001" />
+    <PackageVersion Include="nkast.Xna.Framework.Audio"        Version="4.2.9001" />
+    <PackageVersion Include="nkast.Xna.Framework.Media"        Version="4.2.9001" />
+    <PackageVersion Include="nkast.Xna.Framework.Input"        Version="4.2.9001" />
+    <PackageVersion Include="nkast.Xna.Framework.Game"         Version="4.2.9001" />
+    <PackageVersion Include="nkast.Kni.Platform.SDL2.GL"       Version="4.2.9001" />
+    <PackageVersion Include="nkast.Kni.Platform.WinForms.DX11" Version="4.2.9001" />
+  </ItemGroup>
+
+  <!-- Validation-only: MonoGame 3.8.5's native-runtime packages (WindowsDX12, DesktopVK), for the
+       KNI EffectTest gate's DX12 and Vulkan drivers. The older 3.8.5 harnesses keep local pins. -->
+  <ItemGroup Label="MonoGame 3.8.5 native runtimes (KniEffectTest gate)">
+    <PackageVersion Include="MonoGame.Framework.Native"       Version="3.8.5" />
+    <PackageVersion Include="MonoGame.Runtime.Windows.DX12"   Version="3.8.5" />
+    <PackageVersion Include="MonoGame.Runtime.Windows.Vulkan" Version="3.8.5" />
+    <PackageVersion Include="MonoGame.Runtime.Linux.Vulkan"   Version="3.8.5" />
+  </ItemGroup>
+
   <!-- Phase 59: validation-only, never a product dependency. validation/RaylibRoute renders the
        raylib converter's output in real Raylib-cs (raylib 6.0, glsl330). Pinned because the
        render gate's evidence is only as good as the runtime it ran against. -->

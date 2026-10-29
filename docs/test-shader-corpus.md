@@ -561,6 +561,37 @@ structurally valid Vulkan container (combined descriptors at binding ≥ 32, uni
 column-major matrices, `main` entry point, no `SPV_GOOGLE_*` extensions) or fail with a real
 diagnostic. There is no skip list to quietly grow.
 
+### KNI's own effect test shaders (the `validation/KniEffectTest*` gate)
+
+`tests/fixtures/shaders/third-party/KNI/` vendors the 11 `.fx` files that KNI's
+`Tests/Framework.Graphics/EffectTest.cs` loads (`kniEngine/kni` at commit `1dda67cf`, fetched
+2026-10-28, **Ms-PL**, Copyright (c) 2014-2025 Nick Kastellanos and 2009-2021 The MonoGame Team),
+unmodified apart from a prepended provenance comment, plus KNI's own prebuilt reference builds of
+eight of them (`DirectX/*.xnb`, `OpenGL/*.xnb`). KNI's author checked that test file against XNA,
+so these are the corpus's statement of what an XNA-compatible runtime expects after
+`EffectPass.Apply()`: which `GraphicsDevice.Textures[n]` and `SamplerStates[n]` an effect sets or
+leaves alone, and how a matrix default reads back. They are also the corpus's densest legacy
+XNA syntax: texture-less `sampler2D`s (`OldSyntax_x`, `OldSyntax_s0s1`), `sampler_state` texture
+references in both orders (`OldSyntax_t0t1`, `OldSyntax_t1t0`), `vs_2_0`/`ps_2_0` throughout,
+`BINORMAL`/`TANGENT` vertex inputs with three `COLORn` outputs in a struct
+(`DeferredBasicEffect`), brace-list matrix initializers (`OptimizedMatrix`, `OptimizedMatrixArray`)
+and a compute shader (`ComputeShader`, refused with `FX0014` like every compute stage).
+
+The licence handling, the upstream blob-SHA check and the per-target summary are in the
+directory's `NOTICE.md`; the real-engine table is `docs/validation-matrix.md` §6. The gate adds
+five ShadowDusk-authored **companion** shaders (`validation/SharedKniEffectTest/Companion/`: a
+`float4x4` brace-list default, a lone texture at `register(t1)`, a `Texture2DArray` slice, vertex
+texture fetch by `SampleLevel` and by `tex2Dlod`) that live outside `shaders/` on purpose: they
+are render fixtures with a CPU-known expected pixel, not corpus members. Real `mgfxc` builds of
+both sets (3.8.4.1 OpenGL / DirectX_11, 3.8.5 DirectX_12 / Vulkan) are in
+`tests/fixtures/golden/kni-effecttest/`, with what `mgfxc` refused listed in its `README.md`.
+
+The day they landed they found one bug, fixed in the same change: `OptimizedMatrix.fx` writes
+`float4x4 ColorMatrix =` and the brace list on the next line, and DXC's SPIR-V warning ("variable
+'X' will be placed in $Globals so initializer ignored") points at the brace line, so the warning
+survived although the default was preserved. Corpus-wide sweeps pick the eleven files up like
+any other fixture; their DirectX 12 and Vulkan entries are in the DXC cross-host manifest.
+
 ### XnaFiddle (the SkSL converter's `COLOR0` fixtures, issue #368)
 
 `tests/fixtures/shaders/third-party/XnaFiddle/` vendors the six example shaders from **XnaFiddle**

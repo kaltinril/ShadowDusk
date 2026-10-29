@@ -102,6 +102,13 @@
                                    driver (Mesa/Apple/ANGLE, from GL_RENDERER) must refuse
                                    (EXPECTED-REFUSED, SD0403); on a desktop GPU driver they must
                                    render and match like the rest, so this run is where they do.
+    * KNI EffectTest             - validation/KniEffectTest{KniGl,KniDx,Gl,Dx,Dx12,Vulkan}: every test
+                                   of KNI's own Tests/Framework.Graphics/EffectTest.cs (checked against
+                                   XNA by KNI's author) in the real engine, on KNI's vendored test
+                                   shaders plus five companions. GATE rows must pass, KNOWN-FAIL rows
+                                   (listed ShadowDusk bugs) must still fail, INFO rows are printed with
+                                   their reason, three positive controls must be caught. The KNI ones
+                                   run against nkast 4.2.9001 AND 4.3.9001; Vulkan is in that block.
     * Apos.Shapes GL render-proof - validation/VsDriven -- apos: a single shape plus a needle-thin
                                    ellipse vs the mgfxc OpenGL golden, tol 2/255. Uses the older
                                    apos-shapes.fx pin - the current revision's mgfxc GL compile is
@@ -384,6 +391,25 @@ foreach ($drv in @(
         Action = [scriptblock]::Create("Invoke-Checked 'dotnet' @('run', '--project', '$project', '-c', 'Release')")
     })
 }
+# KNI's own effect test suite (EffectTest.cs, checked against XNA by KNI's author) as a gate: each
+# driver prints a GATE / KNOWN-FAIL / INFO table and exits non-zero on a gated regression, a
+# known-failing row that unexpectedly passes (the fixing PR must flip it), or a missed positive
+# control. The Vulkan driver is in the Vulkan block below.
+foreach ($drv in @(
+    @('KniEffectTestKniGl', 'KNI 4.2.9001 SDL2.GL, MGFX v10 and KNIFX', @()),
+    @('KniEffectTestKniGl', 'KNI 4.3.9001 SDL2.GL, MGFX v10 and KNIFX', @('-p:KniVersion=4.3.9001')),
+    @('KniEffectTestKniDx', 'KNI 4.2.9001 WinForms.DX11, MGFX v10 and KNIFX', @()),
+    @('KniEffectTestKniDx', 'KNI 4.3.9001 WinForms.DX11, MGFX v10 and KNIFX', @('-p:KniVersion=4.3.9001')),
+    @('KniEffectTestGl',    'MonoGame DesktopGL', @()),
+    @('KniEffectTestDx',    'MonoGame WindowsDX', @()),
+    @('KniEffectTestDx12',  'MonoGame 3.8.5 WindowsDX12', @()))) {
+    $runArgs = (@('run', '--project', "validation/$($drv[0])", '-c', 'Release') + $drv[2] | ForEach-Object { "'$_'" }) -join ', '
+    $gates.Add(@{
+        Name   = "KNI EffectTest ($($drv[1]): KNI's own effect tests in the real engine, gated / known-failing / informational rows, 3 positive controls)"
+        # [scriptblock]::Create, not GetNewClosure(): a closure runs in a module scope that cannot see Invoke-Checked.
+        Action = [scriptblock]::Create("Invoke-Checked 'dotnet' @($runArgs)")
+    })
+}
 $gates.Add(@{
     Name   = 'Apos.Shapes GL render-proof (Phase 51 A3, real MonoGame DesktopGL vs mgfxc OpenGL golden)'
     Action = { Invoke-Checked 'dotnet' @('run', '--project', 'validation/VsDriven', '-c', 'Release', '--', 'apos') }
@@ -579,6 +605,10 @@ if (-not $SkipVulkan) {
         # a float4x3's translation row, zeroes a float3x2 and throws on float4x3[2]).
         Name   = 'Non-square matrix Set (issue #423, real MonoGame 3.8.5 DesktopVK vs MonoGame DX semantics)'
         Action = { Invoke-Checked 'dotnet' @('run', '--project', 'validation/NonSquareMatrixVulkan', '-c', 'Release') }
+    })
+    $gates.Add(@{
+        Name   = 'KNI EffectTest (MonoGame 3.8.5 DesktopVK: KNI''s own effect tests in the real engine, gated / known-failing / informational rows, positive controls)'
+        Action = { Invoke-Checked 'dotnet' @('run', '--project', 'validation/KniEffectTestVulkan', '-c', 'Release') }
     })
     $gates.Add(@{
         Name   = 'Vulkan VS-driven + Apos.Shapes #145 reproducer (ShadowDusk vs mgfxc 3.8.5 goldens, real MonoGame DesktopVK)'

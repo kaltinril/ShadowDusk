@@ -25,6 +25,18 @@ that loads and renders identically to `mgfxc`'s in the real MonoGame/KNI runtime
   (`validation/InitializerDefaultsKniDx`). An MGFX DirectX compile keeps `mgfxc`'s `SD0015` for all
   four, and the profiles KNI's pipeline refuses (`*_2_a`, `ps_2_b`, `*_sw`, SM1, `*_4_0_level_9_0`,
   SM6) stay `SD0015` on KNIFX, now naming KNI's rule. No output that compiled before changes.
+- **KNI's own effect test suite is now a render gate** (`validation/KniEffectTest{KniGl,KniDx,Gl,Dx,Dx12,Vulkan}`).
+  Every test of KNI's `Tests/Framework.Graphics/EffectTest.cs`, which KNI's author checked against XNA, runs in a
+  real engine on KNI's own test shaders, vendored under `tests/fixtures/shaders/third-party/KNI` (Ms-PL, with the
+  licence and a `NOTICE.md`; shader code unmodified, a provenance comment header prepended), plus five companion shaders for a matrix default, a texture at
+  `register(t1)`, a texture array and vertex texture fetch. Runtimes: KNI 4.2.9001 and 4.3.9001 (SDL2.GL and
+  WinForms.DX11, MGFX and KNIFX), MonoGame DesktopGL, WindowsDX, WindowsDX12 and DesktopVK, with real `mgfxc`
+  builds and KNI's own prebuilt `.xnb` as reference arms (the `.xnb` load only on KNI 4.3.9001; 4.2.9001 refuses
+  them as "for a newer version of KNI"). Each row is gated, a listed known ShadowDusk bug that must
+  keep failing until its fix flips it, or informational with the reason printed; positive controls must be
+  caught. A known-failing row must also fail for its listed reason, or the run is red. It is wired into CI
+  (llvmpipe, WARP, lavapipe with the Vulkan validation layer, the lavapipe job raising `vm.max_map_count` first;
+  first CI run pending) and into `run-windows-render-gates.ps1`; measured green locally. Test and validation only: no package changes.
 
 ### Changed
 
@@ -57,6 +69,8 @@ that loads and renders identically to `mgfxc`'s in the real MonoGame/KNI runtime
   binds unit 0), or declare the texture in the `.fx`
   (`Texture2D Tex; sampler2D s0 = sampler_state { Texture = (Tex); };`) and set `Parameters["Tex"]`,
   which works in both containers.
+- The `SD0210` message for vertex-stage texture sampling on OpenGL now names KNI too: KNI's GL backend, like
+  MonoGame's, binds only the pixel shader's sampler uniforms.
 
 ### Fixed
 
@@ -116,6 +130,16 @@ that loads and renders identically to `mgfxc`'s in the real MonoGame/KNI runtime
   compiled before compiles to the same bytes. Still open on OpenGL for skinned shaders: an `int4`/`uint4`
   `BLENDINDICES` input and `float4x3` bone uniforms are refused (`SD0210`), and the stock
   `SkinnedEffect.fx` stops earlier at `SD0010` (macro-defined techniques).
+- **DXC's "initializer ignored" warning no longer survives a kept default whose initializer starts on a later
+  line** (`float4x4 M =` then `{ ... };`, as in KNI's `OptimizedMatrix.fx`; also `float4 C` / `= ...` and multi-line
+  arrays and matrices). The default was stored but the warning was still shown on OpenGL and Vulkan, because it was
+  matched on the name's line and DXC's SPIR-V path reports the initializer's first token. It is now matched by
+  position anywhere in the declaration, from column 1 of the name's line (the name itself when another declaration
+  precedes it there) to the end of the initializer (`GlobalInitializerDefault.EndLine`/`EndColumn`, new init-only
+  properties), so a macro-written declaration on DirectX 12 loses it too, while the true warning of an unkept
+  declaration (one on a kept one's line, or one the reader does not see, such as inside a `namespace`) stays. The
+  variable name in DXC's message is no key: DXC names the first initialized global in every such warning. A removed
+  warning's `expanded from macro` note goes with it. Warnings only; no output byte changes.
 
 ## [0.22.1] - 2026-10-29
 

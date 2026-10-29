@@ -76,10 +76,12 @@ ShadowDusk/
 │   ├── ShadowDusk.BrowserTests/        # Headless KNI WebGL render validation (Playwright)
 │   │                                   #   (+ browser-slang-gate.mjs: full Slang in the browser, manifest bytes + render, issue #257)
 │   └── fixtures/
-│       ├── shaders/                    # Canonical .fx test shaders (155 .fx total + 7 .fxh headers, plus 17 .slang):
-│       │                               #   64 in the root + examples/ (50) + shadertoy/ (1, the pinned
-│       │                               #   ShaderToyRoute{Gl,Dx} fixture) + third-party/ (38): Nez (15, MIT),
+│       ├── shaders/                    # Canonical .fx test shaders (185 .fx total + 8 .fxh headers, plus 28 .slang):
+│       │                               #   74 in the root + examples/ (50) + shadertoy/ (1, the pinned
+│       │                               #   ShaderToyRoute{Gl,Dx} fixture) + third-party/ (55): Nez (15, MIT),
 │       │                               #   MonoGame (17, Ms-PL — the reference compiler's own acceptance set),
+│       │                               #   KNI (11, Ms-PL — KNI's EffectTest.cs shaders, unmodified, + KNI's own prebuilt
+│       │                               #   DirectX/ and OpenGL/ .xnb; feeds validation/KniEffectTest*), XnaFiddle (6, MIT),
 │       │                               #   Gum (3), Apos.Shapes (3) + raylib/ (2, Phase 59's CRT and handheld-LCD effects)
 │       │                               #   + texture-arrays/ (3, issues #324/#339/#340: Texture2D Tex[N] with mgfxc 3.8.5
 │       │                               #   DirectX_12 + Vulkan goldens only; OpenGL fails in mgfxc, DX11 is tracked apart)
@@ -94,6 +96,8 @@ ShadowDusk/
 │       └── golden/                     # Reference outputs: mgfxc .mgfx (DirectX_11/, DirectX_12/, OpenGL/, Vulkan/) + fxc fx_2_0 .fxb (FNA/) + byte-identity/
 │                                       #   + legacy-sampler-names/ (legacy sampler shapes, sources beside their mgfxc
 │                                       #   OpenGL/DirectX_11 goldens; the parameter NAME tests, outside the corpus sweeps)
+│                                       #   + kni-effecttest/ (real mgfxc 3.8.4.1 OpenGL/DirectX_11 and 3.8.5 DirectX_12/Vulkan
+│                                       #   builds of the KNI shaders + companions: the KniEffectTest gate's reference arm)
 │                                       #   + legacy-sampler-units/ (legacy beside modern samplers: OpenGL units and
 │                                       #   DirectX 11 sampler slots vs mgfxc; also the GL/DX render-arm fixtures)
 │                                       #   + legacy-lod-intrinsics/ (tex2Dlod/tex2Dbias/tex2Dproj render fixture, its
@@ -162,6 +166,9 @@ ShadowDusk/
 │                                  #     SkiaVsKni (issue #369: the SkSL converter in REAL SkiaSharp vs the same
 │                                  #       .fx on real KNI SDL2.GL, one process), …), DX (VsDrivenDx,
 │                                  #   DxModernFeatures, ShaderToyRouteDx (that route's DirectX arm), …),
+│                                  #   KniEffectTest{KniGl,KniDx,Gl,Dx,Dx12,Vulkan} (+ SharedKniEffectTest, with Companion/ .fx): KNI's own
+│                                  #   EffectTest.cs in the real engine, GATE / KNOWN-FAIL / INFO rows + positive controls,
+│                                  #   KNI drivers built against nkast 4.2.9001 AND 4.3.9001 (-p:KniVersion),
 │                                  #   InitializerDefaults{Gl,Dx,KniGl,KniDx,Dx12,Vulkan} (+ SharedInitializerDefaults): a global
 │                                  #   initializer is the default with no Set call, per real runtime (owner directive 2026-10-28),
 │                                  #   NonSquareMatrix{Vulkan,Dx} (+ SharedNonSquareMatrix): non-square matrix parameters Set from

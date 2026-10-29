@@ -25,7 +25,7 @@
   - Structurally **clean**: **98**
   - **Divergent** (>=1 level): **10**
   - Compile/parse **failures**: **10**
-- Non-golden census cells: **226** (**164** compile, **62** fail with a code)
+- Non-golden census cells: **248** (**172** compile, **76** fail with a code)
 
 ## Golden-backed fixtures — per-level structural verdict
 
@@ -338,7 +338,7 @@ is a CORRECT result, not a defect.
 | examples/ExVsColorReturn.fx | DirectX_11 | PASS |  |  |
 | examples/ExVsColorReturn.fx | OpenGL | PASS |  |  |
 | examples/ExVsTextureFetch.fx | DirectX_11 | PASS |  |  |
-| examples/ExVsTextureFetch.fx | OpenGL | FAIL | SD0210 | Vertex-stage texture sampling is not supported for the MonoGame OpenGL target: MonoGame 3.8.2's GL runtime never assigns texture units to VERTEX-shader samplers... |
+| examples/ExVsTextureFetch.fx | OpenGL | FAIL | SD0210 | Vertex-stage texture sampling is not supported for the MonoGame/KNI OpenGL target: neither MonoGame's nor KNI's GL runtime assigns texture units to VERTEX-shade... |
 | examples/Issue106Repro.fx | DirectX_11 | PASS |  |  |
 | examples/Issue106Repro.fx | OpenGL | PASS |  |  |
 | examples/Issue107DoWhile.fx | DirectX_11 | PASS |  |  |
@@ -395,6 +395,28 @@ is a CORRECT result, not a defect.
 | third-party/Gum/KniInCode-Shader.fx | OpenGL | FAIL | X0000 | use of undeclared identifier 'CurrentTexture' |
 | third-party/Gum/MonoGameInCode-Grayscale.fx | DirectX_11 | PASS |  |  |
 | third-party/Gum/MonoGameInCode-Grayscale.fx | OpenGL | PASS |  |  |
+| third-party/KNI/ComputeShader.fx | DirectX_11 | FAIL | FX0014 | 'ComputeShader' assigns a compute shader, which the consumer runtime cannot load: MonoGame's and KNI's Effect has exactly two shader stages, vertex and pixel, s... |
+| third-party/KNI/ComputeShader.fx | OpenGL | FAIL | FX0014 | 'ComputeShader' assigns a compute shader, which the consumer runtime cannot load: MonoGame's and KNI's Effect has exactly two shader stages, vertex and pixel, s... |
+| third-party/KNI/DeferredBasicEffect.fx | DirectX_11 | FAIL | SD0015 | compile target 'vs_2_0' is below the DirectX target's floor — mgfxc rejects it with "Invalid profile 'vs_2_0'. Vertex shader 'VertexShaderFunction' must be SM 4... |
+| third-party/KNI/DeferredBasicEffect.fx | OpenGL | FAIL | SD0210 | Unsupported vertex-input semantic 'BINORMAL0' for the MonoGame GL target. The attribute table models POSITION / COLOR / TEXCOORD / NORMAL; extend SemanticToVert... |
+| third-party/KNI/NewSyntax_s0s1t0t1.fx | DirectX_11 | FAIL | SD0015 | compile target 'ps_2_0' is below the DirectX target's floor — mgfxc rejects it with "Invalid profile 'ps_2_0'. Pixel shader 'PS_Main' must be SM 4.0 level 9.1 o... |
+| third-party/KNI/NewSyntax_s0s1t0t1.fx | OpenGL | PASS |  |  |
+| third-party/KNI/NewSyntax_t0t1.fx | DirectX_11 | FAIL | SD0015 | compile target 'ps_2_0' is below the DirectX target's floor — mgfxc rejects it with "Invalid profile 'ps_2_0'. Pixel shader 'PS_Main' must be SM 4.0 level 9.1 o... |
+| third-party/KNI/NewSyntax_t0t1.fx | OpenGL | PASS |  |  |
+| third-party/KNI/OldSyntax_s0s1.fx | DirectX_11 | FAIL | SD0015 | compile target 'ps_2_0' is below the DirectX target's floor — mgfxc rejects it with "Invalid profile 'ps_2_0'. Pixel shader 'PS_Main' must be SM 4.0 level 9.1 o... |
+| third-party/KNI/OldSyntax_s0s1.fx | OpenGL | PASS |  |  |
+| third-party/KNI/OldSyntax_s0s1t0t1.fx | DirectX_11 | FAIL | SD0015 | compile target 'ps_2_0' is below the DirectX target's floor — mgfxc rejects it with "Invalid profile 'ps_2_0'. Pixel shader 'PS_Main' must be SM 4.0 level 9.1 o... |
+| third-party/KNI/OldSyntax_s0s1t0t1.fx | OpenGL | PASS |  |  |
+| third-party/KNI/OldSyntax_t0t1.fx | DirectX_11 | FAIL | SD0015 | compile target 'ps_2_0' is below the DirectX target's floor — mgfxc rejects it with "Invalid profile 'ps_2_0'. Pixel shader 'PS_Main' must be SM 4.0 level 9.1 o... |
+| third-party/KNI/OldSyntax_t0t1.fx | OpenGL | PASS |  |  |
+| third-party/KNI/OldSyntax_t1t0.fx | DirectX_11 | FAIL | SD0015 | compile target 'ps_2_0' is below the DirectX target's floor — mgfxc rejects it with "Invalid profile 'ps_2_0'. Pixel shader 'PS_Main' must be SM 4.0 level 9.1 o... |
+| third-party/KNI/OldSyntax_t1t0.fx | OpenGL | PASS |  |  |
+| third-party/KNI/OldSyntax_x.fx | DirectX_11 | FAIL | SD0015 | compile target 'ps_2_0' is below the DirectX target's floor — mgfxc rejects it with "Invalid profile 'ps_2_0'. Pixel shader 'PS_Main' must be SM 4.0 level 9.1 o... |
+| third-party/KNI/OldSyntax_x.fx | OpenGL | PASS |  |  |
+| third-party/KNI/OptimizedMatrix.fx | DirectX_11 | FAIL | SD0015 | compile target 'ps_2_0' is below the DirectX target's floor — mgfxc rejects it with "Invalid profile 'ps_2_0'. Pixel shader 'PS_Main' must be SM 4.0 level 9.1 o... |
+| third-party/KNI/OptimizedMatrix.fx | OpenGL | PASS |  |  |
+| third-party/KNI/OptimizedMatrixArray.fx | DirectX_11 | FAIL | SD0015 | compile target 'ps_2_0' is below the DirectX target's floor — mgfxc rejects it with "Invalid profile 'ps_2_0'. Pixel shader 'PS_Main' must be SM 4.0 level 9.1 o... |
+| third-party/KNI/OptimizedMatrixArray.fx | OpenGL | PASS |  |  |
 | third-party/MonoGame/Bevels.fx | DirectX_11 | PASS |  |  |
 | third-party/MonoGame/Bevels.fx | OpenGL | PASS |  |  |
 | third-party/MonoGame/BlackOut.fx | DirectX_11 | PASS |  |  |
@@ -470,15 +492,17 @@ is a CORRECT result, not a defect.
 
 ### Census failure codes
 
-- `SD0015`: 22 cell(s) — FnaMultiPassStates.fx [DirectX_11], examples/ExIntUniformMember.fx [DirectX_11], examples/ExMat3UniformMember.fx [DirectX_11], examples/ExProfileSm3BothArms.fx [DirectX_11], examples/ExProfileSm3OnDirectX.fx [DirectX_11], examples/ExProfileSm6OnDirectX.fx [DirectX_11], third-party/Gum/FnaSample-Shader.fx [DirectX_11], third-party/Gum/KniInCode-Shader.fx [DirectX_11], third-party/Nez/Bevels.fx [DirectX_11], third-party/Nez/BloomCombine.fx [DirectX_11], third-party/Nez/BloomExtract.fx [DirectX_11], third-party/Nez/Crosshatch.fx [DirectX_11], third-party/Nez/GaussianBlur.fx [DirectX_11], third-party/Nez/HeatDistortion.fx [DirectX_11], third-party/Nez/Letterbox.fx [DirectX_11], third-party/Nez/Noise.fx [DirectX_11], third-party/Nez/PixelGlitch.fx [DirectX_11], third-party/Nez/Reflection.fx [DirectX_11], third-party/Nez/SpriteBlinkEffect.fx [DirectX_11], third-party/Nez/SpriteLines.fx [DirectX_11], third-party/Nez/Twist.fx [DirectX_11], third-party/Nez/Vignette.fx [DirectX_11]
+- `SD0015`: 32 cell(s) — FnaMultiPassStates.fx [DirectX_11], examples/ExIntUniformMember.fx [DirectX_11], examples/ExMat3UniformMember.fx [DirectX_11], examples/ExProfileSm3BothArms.fx [DirectX_11], examples/ExProfileSm3OnDirectX.fx [DirectX_11], examples/ExProfileSm6OnDirectX.fx [DirectX_11], third-party/Gum/FnaSample-Shader.fx [DirectX_11], third-party/Gum/KniInCode-Shader.fx [DirectX_11], third-party/KNI/DeferredBasicEffect.fx [DirectX_11], third-party/KNI/NewSyntax_s0s1t0t1.fx [DirectX_11], third-party/KNI/NewSyntax_t0t1.fx [DirectX_11], third-party/KNI/OldSyntax_s0s1.fx [DirectX_11], third-party/KNI/OldSyntax_s0s1t0t1.fx [DirectX_11], third-party/KNI/OldSyntax_t0t1.fx [DirectX_11], third-party/KNI/OldSyntax_t1t0.fx [DirectX_11], third-party/KNI/OldSyntax_x.fx [DirectX_11], third-party/KNI/OptimizedMatrix.fx [DirectX_11], third-party/KNI/OptimizedMatrixArray.fx [DirectX_11], third-party/Nez/Bevels.fx [DirectX_11], third-party/Nez/BloomCombine.fx [DirectX_11], third-party/Nez/BloomExtract.fx [DirectX_11], third-party/Nez/Crosshatch.fx [DirectX_11], third-party/Nez/GaussianBlur.fx [DirectX_11], third-party/Nez/HeatDistortion.fx [DirectX_11], third-party/Nez/Letterbox.fx [DirectX_11], third-party/Nez/Noise.fx [DirectX_11], third-party/Nez/PixelGlitch.fx [DirectX_11], third-party/Nez/Reflection.fx [DirectX_11], third-party/Nez/SpriteBlinkEffect.fx [DirectX_11], third-party/Nez/SpriteLines.fx [DirectX_11], third-party/Nez/Twist.fx [DirectX_11], third-party/Nez/Vignette.fx [DirectX_11]
 - `SD0010`: 8 cell(s) — minimal_vs_ps.fx [DirectX_11], minimal_vs_ps.fx [OpenGL], passthrough_vs.fx [DirectX_11], passthrough_vs.fx [OpenGL], textured_vs_ps.fx [DirectX_11], textured_vs_ps.fx [OpenGL], third-party/Gum/FnaSample-Shader.fx [OpenGL], third-party/MonoGame/ParameterTypes.fx [OpenGL]
 - `SD0210`: 7 cell(s) — examples/ExIntUniformMember.fx [OpenGL], examples/ExMat3UniformMember.fx [OpenGL], examples/ExVsTextureFetch.fx [OpenGL], third-party/MonoGame/Instancing.fx [OpenGL], third-party/MonoGame/TextureArrayEffect.fx [OpenGL], third-party/MonoGame/VertexTextureEffect.fx [OpenGL], third-party/Nez/Crosshatch.fx [OpenGL]
+- `SD0210`: 7 cell(s) — examples/ExIntUniformMember.fx [OpenGL], examples/ExMat3UniformMember.fx [OpenGL], examples/ExVsTextureFetch.fx [OpenGL], third-party/KNI/DeferredBasicEffect.fx [OpenGL], third-party/MonoGame/Instancing.fx [OpenGL], third-party/MonoGame/TextureArrayEffect.fx [OpenGL], third-party/Nez/Crosshatch.fx [OpenGL]
 - `SD0013`: 6 cell(s) — examples/ExProfileBogusLiteral.fx [DirectX_11], examples/ExProfileBogusLiteral.fx [OpenGL], examples/ExProfileTypo.fx [DirectX_11], examples/ExProfileTypo.fx [OpenGL], examples/ExProfileUndefinedMacro.fx [DirectX_11], examples/ExProfileUndefinedMacro.fx [OpenGL]
 - `X0000`: 5 cell(s) — third-party/Gum/KniInCode-Shader.fx [OpenGL], third-party/MonoGame/CustomSpriteBatchEffectComparisonSampler.fx [OpenGL], third-party/MonoGame/DefinesTest.fx [OpenGL], third-party/MonoGame/ParserTest.fx [OpenGL], third-party/MonoGame/PreprocessorTest.fx [OpenGL]
 - `SD0001`: 2 cell(s) — MinimalWithInclude.fx [DirectX_11], MinimalWithInclude.fx [OpenGL]
 - `SD0014`: 2 cell(s) — examples/ExProfileStageMismatch.fx [DirectX_11], examples/ExProfileStageMismatch.fx [OpenGL]
 - `SD0217`: 2 cell(s) — texture-arrays/TextureArray2.fx [OpenGL], texture-arrays/TextureArray4NoRegister.fx [OpenGL]
 - `FX0012`: 2 cell(s) — third-party/Nez/PaletteCycler.fx [DirectX_11], third-party/Nez/PaletteCycler.fx [OpenGL]
+- `FX0014`: 2 cell(s) — third-party/KNI/ComputeShader.fx [DirectX_11], third-party/KNI/ComputeShader.fx [OpenGL]
 - `SD0224`: 1 cell(s) — texture-arrays/SamplerArray2.fx [DirectX_11]
 - `SD0100`: 1 cell(s) — texture-arrays/SamplerArray2.fx [OpenGL]
 - `E5030`: 1 cell(s) — third-party/MonoGame/DefinesTest.fx [DirectX_11]

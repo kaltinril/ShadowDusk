@@ -815,6 +815,79 @@
     "dxil": "deeb9f4a58efae95052e336b1a6266ec0dc215bb455490bd9d257fc3714abc44",
     "warnings": []
   },
+  "DirectX12.Debug/third-party/KNI/ComputeShader.fx": {
+    "errors": [
+      "third-party/KNI/ComputeShader.fx(57,9-9): error FX0014: \u0027ComputeShader\u0027 assigns a compute shader, which the consumer runtime cannot load: MonoGame\u0027s and KNI\u0027s Effect has exactly two shader stages, vertex and pixel, so no compiler can produce an effect containing one. This is a runtime limit, not a ShadowDusk gap; mgfxc rejects this effect too. Remove the \u0027ComputeShader\u0027 assignment, or express the work in the vertex or pixel stage. (MonoGame issues #4567 and #7533 request these stages upstream and remain open and undesigned; the cpt-max/MonoGame fork does run them, but writes a different effect container stock MonoGame cannot read.)"
+    ]
+  },
+  "DirectX12.Debug/third-party/KNI/DeferredBasicEffect.fx": {
+    "errors": [
+      "third-party/KNI/DeferredBasicEffect.fx(97,1-1): error X0000: Semantic COLOR is invalid for shader model: ps",
+      "third-party/KNI/DeferredBasicEffect.fx(17,7-7): warning X0000: Initializer of external global will be ignored",
+      "third-party/KNI/DeferredBasicEffect.fx(18,7-7): warning X0000: Initializer of external global will be ignored",
+      "third-party/KNI/DeferredBasicEffect.fx(84,51-51): warning X0000: implicit truncation of vector type [-Wconversion]",
+      "third-party/KNI/DeferredBasicEffect.fx(84,30-30): warning X0000: implicit truncation of vector type [-Wconversion]",
+      "third-party/KNI/DeferredBasicEffect.fx(85,52-52): warning X0000: implicit truncation of vector type [-Wconversion]",
+      "third-party/KNI/DeferredBasicEffect.fx(85,30-30): warning X0000: implicit truncation of vector type [-Wconversion]",
+      "third-party/KNI/DeferredBasicEffect.fx(86,50-50): warning X0000: implicit truncation of vector type [-Wconversion]",
+      "third-party/KNI/DeferredBasicEffect.fx(86,30-30): warning X0000: implicit truncation of vector type [-Wconversion]",
+      "third-party/KNI/DeferredBasicEffect.fx(107,12-12): warning X0000: implicit truncation of vector type [-Wconversion]"
+    ]
+  },
+  "DirectX12.Debug/third-party/KNI/NewSyntax_s0s1t0t1.fx": {
+    "mgfx": "2f7253fe8bb647ee2375cc74cf77c55f60c477888948627d996f0181a29e39cc",
+    "mgfxNormalized": "4cbe74f997368f559781e829e5e263a36e2a636981d3ca1413df9e728e4cccf5",
+    "dxil": "9f69d43eeb54d3ec963547a293e9d0f7acece60f66bd1d6ec49f171fe09f638b",
+    "warnings": []
+  },
+  "DirectX12.Debug/third-party/KNI/NewSyntax_t0t1.fx": {
+    "mgfx": "4b42ed460ea4eadb91457423b4c79c61c1f7b96994b5c98bba6a0f2f11bf99fd",
+    "mgfxNormalized": "71f399212f2e440d3af9c7c28cb74fb9983a9ff36efcb2ba6a728377d3b164d3",
+    "dxil": "b0b773a943e30f86bc3c41f19f6102e6221d132383792d719850509120aa0719",
+    "warnings": []
+  },
+  "DirectX12.Debug/third-party/KNI/OldSyntax_s0s1.fx": {
+    "mgfx": "ee552fd6eef0a37277c2ebae7097eed49c4a9036877e13e7cbf084eb7ab13a5d",
+    "mgfxNormalized": "272104c9829973a82b6ad0baba3f7c3bb0c77e0b8a3d3406fd3e8af81c49faaf",
+    "dxil": "db54614a73d5d787d48a38089e153c696f66288cdaf25b170c993a2ca910ec32",
+    "warnings": []
+  },
+  "DirectX12.Debug/third-party/KNI/OldSyntax_s0s1t0t1.fx": {
+    "mgfx": "f76d4c2d528320d1cb4878f7215d805ad25531118dc8f263b358df820ca2990a",
+    "mgfxNormalized": "d4b5f5e4bfbe086f4d34737debcc066328164b49d2a4e7353de9a10e5f20b9b8",
+    "dxil": "db2c772e776d4300c58ca820da564df202b59038e4c1c5b25edda21c8db78c32",
+    "warnings": []
+  },
+  "DirectX12.Debug/third-party/KNI/OldSyntax_t0t1.fx": {
+    "mgfx": "581febc5e5ec07bf0d808ca7fd98e96f863f2e5e511c81c3fda84a50a5728f6a",
+    "mgfxNormalized": "9c0e7dd0a697799096720ab50c5a080921cc248103e40b56c497725326e3efb9",
+    "dxil": "479bdd48cd224cf7acd339055008f04b7cfdfb0a67538219fd76b60fa6e2f3dc",
+    "warnings": []
+  },
+  "DirectX12.Debug/third-party/KNI/OldSyntax_t1t0.fx": {
+    "mgfx": "d5ff0e088cb50a92563c7bfa103880db2a4fc03cbe35131bd2dbdad33d58cfff",
+    "mgfxNormalized": "e8b0eff40e65a8b4b23dd21c4c0b06f02dd1b3edde0d6c940e00bde8dfb1b806",
+    "dxil": "fa1d902ac2a01be1c1197a002366dd1033e5c794002269e6a451ef7b27de2cfe",
+    "warnings": []
+  },
+  "DirectX12.Debug/third-party/KNI/OldSyntax_x.fx": {
+    "mgfx": "406889d45dabefae7bbd720ac76a5c85e680cf838647f8f4c2f5e05e8f3ab5d7",
+    "mgfxNormalized": "56899df8a1d8b2f2a867113dd5e3528ed853e882c9259f734a902ac42348b34a",
+    "dxil": "aaf9ca7e7f4070dd2f0ce3e6fb7d5cfc00174afaef2fb34b0c18d3a8d71fc72f",
+    "warnings": []
+  },
+  "DirectX12.Debug/third-party/KNI/OptimizedMatrix.fx": {
+    "mgfx": "f1893728b74204223b39b09aa94b48079358e509969110b7e97dcf6b275e81a7",
+    "mgfxNormalized": "a3b17f35e203aa0f8fc5410794b002304cb6b7c087d9b1aa9e83b9e339aa7f90",
+    "dxil": "ae87fcc2a293379c64e34e6546d1a7a63a4ac8b19d637c2a858e5eddd44bfc5c",
+    "warnings": []
+  },
+  "DirectX12.Debug/third-party/KNI/OptimizedMatrixArray.fx": {
+    "mgfx": "8852191a0a8ad7d9fd95c65684215c95b97c24b7d385548effacb318ca2a3e5a",
+    "mgfxNormalized": "940957eec71a2df71bfb1e33722d790ebad909620dfdf6f1897b7dcff74211b3",
+    "dxil": "99f346de4532abc3eda3e7f43137a0b206eb137cc9bdc5c1a1317f6717fef043",
+    "warnings": []
+  },
   "DirectX12.Debug/third-party/MonoGame/Bevels.fx": {
     "mgfx": "3ce85dddccb34a95fe1536a562d758addfa98ef55a6b1bc20421459e5a739e89",
     "mgfxNormalized": "e0bfde68705f9fa350c403d57dc9ca9866e1072fa91342366de9726a1551bf86",
@@ -1856,6 +1929,79 @@
     "dxil": "f9a96cd0a8df40003bde0edb019766312e9a39f1150b37b4d09be814e3e0e65d",
     "warnings": []
   },
+  "DirectX12/third-party/KNI/ComputeShader.fx": {
+    "errors": [
+      "third-party/KNI/ComputeShader.fx(57,9-9): error FX0014: \u0027ComputeShader\u0027 assigns a compute shader, which the consumer runtime cannot load: MonoGame\u0027s and KNI\u0027s Effect has exactly two shader stages, vertex and pixel, so no compiler can produce an effect containing one. This is a runtime limit, not a ShadowDusk gap; mgfxc rejects this effect too. Remove the \u0027ComputeShader\u0027 assignment, or express the work in the vertex or pixel stage. (MonoGame issues #4567 and #7533 request these stages upstream and remain open and undesigned; the cpt-max/MonoGame fork does run them, but writes a different effect container stock MonoGame cannot read.)"
+    ]
+  },
+  "DirectX12/third-party/KNI/DeferredBasicEffect.fx": {
+    "errors": [
+      "third-party/KNI/DeferredBasicEffect.fx(97,1-1): error X0000: Semantic COLOR is invalid for shader model: ps",
+      "third-party/KNI/DeferredBasicEffect.fx(17,7-7): warning X0000: Initializer of external global will be ignored",
+      "third-party/KNI/DeferredBasicEffect.fx(18,7-7): warning X0000: Initializer of external global will be ignored",
+      "third-party/KNI/DeferredBasicEffect.fx(84,51-51): warning X0000: implicit truncation of vector type [-Wconversion]",
+      "third-party/KNI/DeferredBasicEffect.fx(84,30-30): warning X0000: implicit truncation of vector type [-Wconversion]",
+      "third-party/KNI/DeferredBasicEffect.fx(85,52-52): warning X0000: implicit truncation of vector type [-Wconversion]",
+      "third-party/KNI/DeferredBasicEffect.fx(85,30-30): warning X0000: implicit truncation of vector type [-Wconversion]",
+      "third-party/KNI/DeferredBasicEffect.fx(86,50-50): warning X0000: implicit truncation of vector type [-Wconversion]",
+      "third-party/KNI/DeferredBasicEffect.fx(86,30-30): warning X0000: implicit truncation of vector type [-Wconversion]",
+      "third-party/KNI/DeferredBasicEffect.fx(107,12-12): warning X0000: implicit truncation of vector type [-Wconversion]"
+    ]
+  },
+  "DirectX12/third-party/KNI/NewSyntax_s0s1t0t1.fx": {
+    "mgfx": "9a6cb76625db382976f54026d298497c1b2786f0afdb99652a7189866558ced2",
+    "mgfxNormalized": "87d287bcab915f10f437a60f51f25ed18c8d7fcd254698c752022d30563755d6",
+    "dxil": "cd2a644dc6f771ca0ea25307b9c87f8883fadd0e4eab4e778b5ed08cf44817cc",
+    "warnings": []
+  },
+  "DirectX12/third-party/KNI/NewSyntax_t0t1.fx": {
+    "mgfx": "9b912bde7cb7f646eea8e14b4a4f3dcc9b48532c993b3118ae1131174cad1cd5",
+    "mgfxNormalized": "a4be1d81e33026118537b82cc0cec2280500b13227535dc8b58d2c0aeaa04d5e",
+    "dxil": "cd2a644dc6f771ca0ea25307b9c87f8883fadd0e4eab4e778b5ed08cf44817cc",
+    "warnings": []
+  },
+  "DirectX12/third-party/KNI/OldSyntax_s0s1.fx": {
+    "mgfx": "be7e37656232afdcc7fb93b4eecb3eff2d484847dcffc20edd417cc4784e3733",
+    "mgfxNormalized": "d0ef73c19879bca98227c4e0ebb5578cb6f21eec27ea4469291cbb93ccb6e1c3",
+    "dxil": "1d57198bf07157fd69033ad5132fe227c394f25d0d7acb54ed0dbe528466abc6",
+    "warnings": []
+  },
+  "DirectX12/third-party/KNI/OldSyntax_s0s1t0t1.fx": {
+    "mgfx": "92457b048840082ac7b1b40cfa89cc90f1cbaeda134e7fef192595af9783da05",
+    "mgfxNormalized": "002a2e6998675c8f6fdeec98e47729e3e9d581a06f6b6667072360713bb804f7",
+    "dxil": "cd2a644dc6f771ca0ea25307b9c87f8883fadd0e4eab4e778b5ed08cf44817cc",
+    "warnings": []
+  },
+  "DirectX12/third-party/KNI/OldSyntax_t0t1.fx": {
+    "mgfx": "d50504b9d373c9e7ab262e70e52772b113cf4e0fbfd4a69080654a9ff3a4fd95",
+    "mgfxNormalized": "37fd85b195c2667dfd532a055a92518ec63ae78d7f0352a968461a1e346ddfd0",
+    "dxil": "ca48111b303e1552d1a2985ca500d82ad5627b7611bd22dd35fa1d2d40adc7ac",
+    "warnings": []
+  },
+  "DirectX12/third-party/KNI/OldSyntax_t1t0.fx": {
+    "mgfx": "38da082fd43b2885f3c461fbbf3d308d5194fab8cda5ab4a9f8a74f87c11c15d",
+    "mgfxNormalized": "3ceff4cb7ed7ec05c8ecc31a5557ababe782d50664b5527771f895a19e87b32b",
+    "dxil": "6bef526092279bed918c2277f2368937406bd8070e60caf2b9e0478be0d81a59",
+    "warnings": []
+  },
+  "DirectX12/third-party/KNI/OldSyntax_x.fx": {
+    "mgfx": "a4d2e78da4e10f0f7d7b5985007f0d2529295526c5ae83bfa7fd6fc8079b084a",
+    "mgfxNormalized": "8e60b3e3ff86106c1cba67de0bd016ef48f377778ee55fe694690b0a4f40e18a",
+    "dxil": "1d57198bf07157fd69033ad5132fe227c394f25d0d7acb54ed0dbe528466abc6",
+    "warnings": []
+  },
+  "DirectX12/third-party/KNI/OptimizedMatrix.fx": {
+    "mgfx": "3298a4ca2a088301a0003b762dc889207462816ef4ec9c90941ca0f9dd03d258",
+    "mgfxNormalized": "39d3b23c481a5f80684f7b42e3c6e4e88699751cfd78bb1df08a47b0f9cff8c2",
+    "dxil": "6fc48ebd547f3c782eae5f22ab280c6a70e5b41b279af315834f74c65b9d3e2b",
+    "warnings": []
+  },
+  "DirectX12/third-party/KNI/OptimizedMatrixArray.fx": {
+    "mgfx": "b17f438fb250785bfcb9cd27013a38e7361d8f6e509bb03dff4ef3d762d733d2",
+    "mgfxNormalized": "bd392193790fb3ba7d482926441edf3a2a76e08a57ccc457552836f42a8c8e92",
+    "dxil": "b9a2697ada5f96542742c8091548b0cf2585190aa6b4395a26862c1e63a68206",
+    "warnings": []
+  },
   "DirectX12/third-party/MonoGame/Bevels.fx": {
     "mgfx": "359cad873d734a9327df92cb6b33611aa8d54cb255eddd439dbc00f9b8dcbc52",
     "mgfxNormalized": "53e1db86aecd046143de32af83643f2a294cd1069eed02af7d3f643751654544",
@@ -2768,6 +2914,70 @@
     "spirv": "2a112fb5dc707b9325bbd78f1d01a7d8d7bf6ce20b53a2e971b8dfcf13df7e8d",
     "warnings": []
   },
+  "Vulkan.Debug/third-party/KNI/ComputeShader.fx": {
+    "errors": [
+      "third-party/KNI/ComputeShader.fx(57,9-9): error FX0014: \u0027ComputeShader\u0027 assigns a compute shader, which the consumer runtime cannot load: MonoGame\u0027s and KNI\u0027s Effect has exactly two shader stages, vertex and pixel, so no compiler can produce an effect containing one. This is a runtime limit, not a ShadowDusk gap; mgfxc rejects this effect too. Remove the \u0027ComputeShader\u0027 assignment, or express the work in the vertex or pixel stage. (MonoGame issues #4567 and #7533 request these stages upstream and remain open and undesigned; the cpt-max/MonoGame fork does run them, but writes a different effect container stock MonoGame cannot read.)"
+    ]
+  },
+  "Vulkan.Debug/third-party/KNI/DeferredBasicEffect.fx": {
+    "errors": [
+      "third-party/KNI/DeferredBasicEffect.fx(92,11-11): error X0000: invalid usage of semantic \u0027COLOR0\u0027 in shader profile ps",
+      "third-party/KNI/DeferredBasicEffect.fx(84,51-51): warning X0000: implicit truncation of vector type [-Wconversion]",
+      "third-party/KNI/DeferredBasicEffect.fx(84,30-30): warning X0000: implicit truncation of vector type [-Wconversion]",
+      "third-party/KNI/DeferredBasicEffect.fx(85,52-52): warning X0000: implicit truncation of vector type [-Wconversion]",
+      "third-party/KNI/DeferredBasicEffect.fx(85,30-30): warning X0000: implicit truncation of vector type [-Wconversion]",
+      "third-party/KNI/DeferredBasicEffect.fx(86,50-50): warning X0000: implicit truncation of vector type [-Wconversion]",
+      "third-party/KNI/DeferredBasicEffect.fx(86,30-30): warning X0000: implicit truncation of vector type [-Wconversion]",
+      "third-party/KNI/DeferredBasicEffect.fx(107,12-12): warning X0000: implicit truncation of vector type [-Wconversion]",
+      "third-party/KNI/DeferredBasicEffect.fx(17,27-27): warning X0000: variable \u0027World\u0027 will be placed in $Globals so initializer ignored",
+      "third-party/KNI/DeferredBasicEffect.fx(18,23-23): warning X0000: variable \u0027World\u0027 will be placed in $Globals so initializer ignored"
+    ]
+  },
+  "Vulkan.Debug/third-party/KNI/NewSyntax_s0s1t0t1.fx": {
+    "mgfx": "60bb86e6c2aec5d929af5de956c82a73815113e5f22f2afb7500003dec22953c",
+    "spirv": "d71a6d54a27246e674a9b23ee112b2fe9659e194498bf9bd45d062d33dc0228f",
+    "warnings": []
+  },
+  "Vulkan.Debug/third-party/KNI/NewSyntax_t0t1.fx": {
+    "mgfx": "de75c81b9314e540fb7323dcb81d414d5d0c6f88e1b390458dbd9635ffc30560",
+    "spirv": "fe702094c354cdab8b3b9062e6e778e3c6097807987f5216ccfe1c82c5039072",
+    "warnings": []
+  },
+  "Vulkan.Debug/third-party/KNI/OldSyntax_s0s1.fx": {
+    "mgfx": "6e2e2f37d6a878a4f031152ff974c7e3d6b45cc44ae0ecc94ba0e2bd0c5a1463",
+    "spirv": "7e91cde5b6dd6fa4e36d81dcac5285e3ea8ea205b3e96cd798110bb7dceb8d83",
+    "warnings": []
+  },
+  "Vulkan.Debug/third-party/KNI/OldSyntax_s0s1t0t1.fx": {
+    "mgfx": "a628a6a8cb66bd56dd329c3a21dd1ed44f2b8ee64343608b0638c07bee3ca54d",
+    "spirv": "7de47e08b536a3ec6634f5352048c5cea896d91d7c28208843d62e6be988baa7",
+    "warnings": []
+  },
+  "Vulkan.Debug/third-party/KNI/OldSyntax_t0t1.fx": {
+    "mgfx": "821b1417c7e46bdfacd1cbcd997fcbdc71938305ef620a4153d7f79651802330",
+    "spirv": "d4f95ce9cda2ca9dd53cb446a537e2645595297c0429abfafb2e06ef5059708a",
+    "warnings": []
+  },
+  "Vulkan.Debug/third-party/KNI/OldSyntax_t1t0.fx": {
+    "mgfx": "2126e42d4bfe254d84a889bd4bd2b88c1ce26a46dcac473ca5203fb89c8b9df6",
+    "spirv": "0f81e8f490476545e82eefb453dd400daf06cd7cd6e9c75c8ac38b39ad4b190b",
+    "warnings": []
+  },
+  "Vulkan.Debug/third-party/KNI/OldSyntax_x.fx": {
+    "mgfx": "ae82c4802de62b63ba0f7e3ce7425892baf1568511429f7ae9c4f332d08ee089",
+    "spirv": "87b9106b58a482f307f82ff29bea11e68efbc802323345edbc6e7c51afe12365",
+    "warnings": []
+  },
+  "Vulkan.Debug/third-party/KNI/OptimizedMatrix.fx": {
+    "mgfx": "c6eb2c0cccc1f0a2c3e1a29ba588dc2248f1c31a2bca4948c0f447ab6127d7db",
+    "spirv": "20f81ea080012d85cbcc98a454c237fe3643026540a4c30d1ba558cff5813226",
+    "warnings": []
+  },
+  "Vulkan.Debug/third-party/KNI/OptimizedMatrixArray.fx": {
+    "mgfx": "e1d87930ab8da9f2329e91941468b465f533bd19fa723a526fd42b180efc93d2",
+    "spirv": "d3ad2200007de666ff0c496ae270536ad3ab2469664b870ecb6af7388c2ce315",
+    "warnings": []
+  },
   "Vulkan.Debug/third-party/MonoGame/Bevels.fx": {
     "mgfx": "0422daf767c2e31b729363650f137bbae70c98d6cb44762078d5b30dabf006bc",
     "spirv": "8e989022ec9fb3869cd7326dd961aeed255594f47c87b65d20e4fb619bd70acc",
@@ -3643,6 +3853,70 @@
   "Vulkan/third-party/Gum/MonoGameInCode-Grayscale.fx": {
     "mgfx": "de0b747c7221a4553aa170a077802679521c8f7872036580ed6950b51ec00ca2",
     "spirv": "eca7cedb95610a522965e1299a4d00b9fd1fc59e9044b145c6efdb9706dc9611",
+    "warnings": []
+  },
+  "Vulkan/third-party/KNI/ComputeShader.fx": {
+    "errors": [
+      "third-party/KNI/ComputeShader.fx(57,9-9): error FX0014: \u0027ComputeShader\u0027 assigns a compute shader, which the consumer runtime cannot load: MonoGame\u0027s and KNI\u0027s Effect has exactly two shader stages, vertex and pixel, so no compiler can produce an effect containing one. This is a runtime limit, not a ShadowDusk gap; mgfxc rejects this effect too. Remove the \u0027ComputeShader\u0027 assignment, or express the work in the vertex or pixel stage. (MonoGame issues #4567 and #7533 request these stages upstream and remain open and undesigned; the cpt-max/MonoGame fork does run them, but writes a different effect container stock MonoGame cannot read.)"
+    ]
+  },
+  "Vulkan/third-party/KNI/DeferredBasicEffect.fx": {
+    "errors": [
+      "third-party/KNI/DeferredBasicEffect.fx(92,11-11): error X0000: invalid usage of semantic \u0027COLOR0\u0027 in shader profile ps",
+      "third-party/KNI/DeferredBasicEffect.fx(84,51-51): warning X0000: implicit truncation of vector type [-Wconversion]",
+      "third-party/KNI/DeferredBasicEffect.fx(84,30-30): warning X0000: implicit truncation of vector type [-Wconversion]",
+      "third-party/KNI/DeferredBasicEffect.fx(85,52-52): warning X0000: implicit truncation of vector type [-Wconversion]",
+      "third-party/KNI/DeferredBasicEffect.fx(85,30-30): warning X0000: implicit truncation of vector type [-Wconversion]",
+      "third-party/KNI/DeferredBasicEffect.fx(86,50-50): warning X0000: implicit truncation of vector type [-Wconversion]",
+      "third-party/KNI/DeferredBasicEffect.fx(86,30-30): warning X0000: implicit truncation of vector type [-Wconversion]",
+      "third-party/KNI/DeferredBasicEffect.fx(107,12-12): warning X0000: implicit truncation of vector type [-Wconversion]",
+      "third-party/KNI/DeferredBasicEffect.fx(17,27-27): warning X0000: variable \u0027World\u0027 will be placed in $Globals so initializer ignored",
+      "third-party/KNI/DeferredBasicEffect.fx(18,23-23): warning X0000: variable \u0027World\u0027 will be placed in $Globals so initializer ignored"
+    ]
+  },
+  "Vulkan/third-party/KNI/NewSyntax_s0s1t0t1.fx": {
+    "mgfx": "b2e1c1ceec283759a162f2555b085002875a65c9d6c607bd01851cdef74053e4",
+    "spirv": "0c9f54ca07909863fbd6e3470c0dd488e6342c49459a7b267643be29c8d115ef",
+    "warnings": []
+  },
+  "Vulkan/third-party/KNI/NewSyntax_t0t1.fx": {
+    "mgfx": "d94c040c383fe562a33f6c3ebe9a1e871a16b7fe885f5a03b7baf2e205b5a702",
+    "spirv": "0c9f54ca07909863fbd6e3470c0dd488e6342c49459a7b267643be29c8d115ef",
+    "warnings": []
+  },
+  "Vulkan/third-party/KNI/OldSyntax_s0s1.fx": {
+    "mgfx": "16b05b24d1bef6bb04f6a292d867dad6eaf1c3605c55ccdfe5f754f8adc47f69",
+    "spirv": "d122cacb314811afe555510db48c1d9864aabe11ce23a65beabaa65b6cda8ada",
+    "warnings": []
+  },
+  "Vulkan/third-party/KNI/OldSyntax_s0s1t0t1.fx": {
+    "mgfx": "a0e86f4c831410d4d0ac608548f09ea536cbaa241e642399086f32e0db178233",
+    "spirv": "0c9f54ca07909863fbd6e3470c0dd488e6342c49459a7b267643be29c8d115ef",
+    "warnings": []
+  },
+  "Vulkan/third-party/KNI/OldSyntax_t0t1.fx": {
+    "mgfx": "f8c5315921616db7463d5d33aeabeffbdbe0678148dae5ac86a6ee09eb9c7039",
+    "spirv": "47997b3e94c2136a9d22ec2e23dfb2730cd63ad7be91585f42b683ece08c885e",
+    "warnings": []
+  },
+  "Vulkan/third-party/KNI/OldSyntax_t1t0.fx": {
+    "mgfx": "7748ba768993a2502dd6001c2391aa5d4fb6c034907f4ae8ec52af053c6a20f2",
+    "spirv": "a276e414450efcdd7616142c2029c768b0cc9d565522f1b309eee7b00145b987",
+    "warnings": []
+  },
+  "Vulkan/third-party/KNI/OldSyntax_x.fx": {
+    "mgfx": "c9b434f8fb927fcdb07adbdd7fb9207825269b813d1fb5da0f94f702e0e92f29",
+    "spirv": "d122cacb314811afe555510db48c1d9864aabe11ce23a65beabaa65b6cda8ada",
+    "warnings": []
+  },
+  "Vulkan/third-party/KNI/OptimizedMatrix.fx": {
+    "mgfx": "0d3d8354b2598fe5208b140b4693673295dbd667e4e1ecfd7ed793d5986a3ffc",
+    "spirv": "ccbd96268bef03e6daad91da258d15a1728d4f6e76f831a8eb7c2219b3d78f33",
+    "warnings": []
+  },
+  "Vulkan/third-party/KNI/OptimizedMatrixArray.fx": {
+    "mgfx": "2cc59e6626c7e397deccfa42fdba0c32bf05b9641a7d7d580a45c5deeab5a40d",
+    "spirv": "dd12390f7223429027d19ccb2a663098ad788681d30474cdf60d4b5af1d5fb97",
     "warnings": []
   },
   "Vulkan/third-party/MonoGame/Bevels.fx": {
