@@ -79,6 +79,8 @@
                                    KNIFX output. Each driver has a no-initializer control that must
                                    render black, and the GL ones render the real mgfxc OpenGL build
                                    (zeros) as a second control. Dx12 and Vulkan are MonoGame 3.8.5.
+                                   KniDx and KniGl also open a Reach device: KNIFX ps/vs_4_0_level_9_1
+                                   must load (recorded SM 2.0); 9_3, 4_0 (and 3_0 on GL) refused.
     * Apos.Shapes GL render-proof - validation/VsDriven -- apos: a single shape plus a needle-thin
                                    ellipse vs the mgfxc OpenGL golden, tol 2/255. Uses the older
                                    apos-shapes.fx pin - the current revision's mgfxc GL compile is
@@ -325,8 +327,8 @@ $gates.Add(@{
 foreach ($drv in @(
     @('InitializerDefaultsGl',    'MonoGame DesktopGL'),
     @('InitializerDefaultsDx',    'MonoGame WindowsDX'),
-    @('InitializerDefaultsKniGl', 'KNI SDL2.GL, MGFX v10 and KNIFX'),
-    @('InitializerDefaultsKniDx', 'KNI WinForms.DX11, MGFX v10 and KNIFX'),
+    @('InitializerDefaultsKniGl', 'KNI SDL2.GL, MGFX v10 and KNIFX, plus the KNIFX shader model on a Reach device'),
+    @('InitializerDefaultsKniDx', 'KNI WinForms.DX11, MGFX v10 and KNIFX, plus the KNIFX shader model on a Reach device'),
     @('InitializerDefaultsDx12',  'MonoGame 3.8.5 WindowsDX12'))) {
     $project = "validation/$($drv[0])"
     $gates.Add(@{
@@ -335,6 +337,13 @@ foreach ($drv in @(
         Action = [scriptblock]::Create("Invoke-Checked 'dotnet' @('run', '--project', '$project', '-c', 'Release')")
     })
 }
+# Issue #423: non-square matrix parameters Set from C# (float4x3, float3x2, float4x3[2], trailing
+# matrices) land in the right registers in real MonoGame WindowsDX; the expectation is MonoGame's own
+# DirectX semantics, confirmed by the committed real mgfxc 3.8.5 DirectX_11 builds rendered alongside.
+$gates.Add(@{
+    Name   = 'Non-square matrix Set (issue #423, real MonoGame WindowsDX vs MonoGame DX semantics + mgfxc DirectX_11 builds)'
+    Action = { Invoke-Checked 'dotnet' @('run', '--project', 'validation/NonSquareMatrixDx', '-c', 'Release') }
+})
 $gates.Add(@{
     Name   = 'Apos.Shapes GL render-proof (Phase 51 A3, real MonoGame DesktopGL vs mgfxc OpenGL golden)'
     Action = { Invoke-Checked 'dotnet' @('run', '--project', 'validation/VsDriven', '-c', 'Release', '--', 'apos') }
@@ -523,6 +532,13 @@ if (-not $SkipVulkan) {
     $gates.Add(@{
         Name   = 'Initializer defaults (MonoGame 3.8.5 DesktopVK: a global initializer is the parameter default with no Set call, vs no-initializer control)'
         Action = { Invoke-Checked 'dotnet' @('run', '--project', 'validation/InitializerDefaultsVulkan', '-c', 'Release') }
+    })
+    $gates.Add(@{
+        # Issue #423: the same non-square Set cases on DesktopVK, against MonoGame's DirectX semantics.
+        # Real mgfxc 3.8.5's Vulkan builds render alongside, reported only (its transposed header drops
+        # a float4x3's translation row, zeroes a float3x2 and throws on float4x3[2]).
+        Name   = 'Non-square matrix Set (issue #423, real MonoGame 3.8.5 DesktopVK vs MonoGame DX semantics)'
+        Action = { Invoke-Checked 'dotnet' @('run', '--project', 'validation/NonSquareMatrixVulkan', '-c', 'Release') }
     })
     $gates.Add(@{
         Name   = 'Vulkan VS-driven + Apos.Shapes #145 reproducer (ShadowDusk vs mgfxc 3.8.5 goldens, real MonoGame DesktopVK)'

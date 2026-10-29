@@ -778,7 +778,7 @@ internal sealed class CompilationPipeline
                         // The GL attribute table maps each vs_v{k} → VertexElementUsage+index
                         // so MonoGame binds the right vertex element. Empty for DX / non-GL.
                         Attributes = compileOutput.Attributes,
-                        ShaderModel = ParseShaderModel(pass.VertexProfile),
+                        ShaderModel = KnifxShaderModel.Parse(pass.VertexProfile),
                         // Diagnostic strings written only by MGFX v11+ (ignored by v10/KNIFX).
                         SourceFile = EmbeddedSourceFile(options),
                         Entrypoint = pass.VertexEntryPoint ?? "<unknown>",
@@ -836,7 +836,7 @@ internal sealed class CompilationPipeline
                     shaderUniformLayouts[psIndex] = compileOutput.Uniforms;
                     compiledShaderBlobs.Add(new CompiledShaderBlob(compileOutput.Blob.Value, ShaderStage.Pixel)
                     {
-                        ShaderModel = ParseShaderModel(pass.PixelProfile),
+                        ShaderModel = KnifxShaderModel.Parse(pass.PixelProfile),
                         // Diagnostic strings written only by MGFX v11+ (ignored by v10/KNIFX).
                         SourceFile = EmbeddedSourceFile(options),
                         Entrypoint = pass.PixelEntryPoint ?? "<unknown>",
@@ -1071,16 +1071,18 @@ internal sealed class CompilationPipeline
                     {
                         // Fallback (B10): SPIRV-Cross renames a free uniform whose name
                         // collides with a GLSL reserved word (e.g. `noise` -> `_noise`,
-                        // legal+required GLSL), so the GLSL layout's name no longer
+                        // legal+required GLSL; also underscore runs and collisions), so the
+                        // GLSL layout's name no longer
                         // matches the reflected parameter (still `noise`) and the name
-                        // join misses. Recover the parameter through an OFFSET BRIDGE:
-                        // the GL uniform's BaseRegister * 16 is its byte offset, which
-                        // the reflected cbuffer variable carries as StartOffset — so the
-                        // variable's ORIGINAL name recovers the parameter without ever
-                        // trusting the SPIRV-Cross-emitted spelling. The parameter stays
-                        // exposed under its original name in the .mgfx; only the INDEX is
-                        // needed here. See docs/glsl-uniform-naming.md "Design notes".
-                        paramIndex = IndexOfParamByRegister(allConstantBuffers, allParameters, u.BaseRegister);
+                        // join misses. Recover the parameter by DECLARATION ORDER: the
+                        // reflected cbuffer variable at this member's position carries the
+                        // ORIGINAL name, so the parameter is found without trusting the
+                        // SPIRV-Cross-emitted spelling. Never by byte offset: packing makes
+                        // offsets differ between the DXIL and SPIR-V reflections (issue
+                        // #425). The parameter stays exposed under its original name in the
+                        // .mgfx; only the INDEX is needed here.
+                        paramIndex = IndexOfParamByDeclarationOrder(
+                            allConstantBuffers, allParameters, layout, u);
                     }
                     if (paramIndex < 0)
                         return Fail(new ShaderError(
@@ -1088,9 +1090,13 @@ internal sealed class CompilationPipeline
                             Line: 0,
                             Column: 0,
                             Code: "SD0012",
-                            Message: $"internal: GL uniform '{u.Name}' (shader #{i}) has no " +
-                                     "matching effect parameter — the GLSL uniform layout and " +
-                                     "the reflected parameter list diverged"), runWarnings);
+                            Message: $"GL uniform '{u.Name}' (shader #{i}) has no matching " +
+                                     "effect parameter: the GLSL uniform layout and the reflected " +
+                                     "parameter list diverged. SPIRV-Cross renames some uniforms " +
+                                     "(a GLSL reserved word, noise -> _noise; a run of underscores, " +
+                                     "my__val -> my_val; a name collision, _noise_1); a renamed " +
+                                     "uniform can only be mapped back when the stage's uniforms are " +
+                                     "all loose globals or in one cbuffer, so rename it otherwise"), runWarnings);
                     paramIndices.Add(paramIndex);
                     paramOffsets.Add((ushort)(u.BaseRegister * 16));
                     backedParamIndices.Add(paramIndex);
@@ -1191,6 +1197,16 @@ internal sealed class CompilationPipeline
         // Global initializer defaults (`float R = 1;`): DXC and vkd3d drop the initializer, so it is
         // read off the preprocessed source and carried to the writers (deliberate deviation from
         // mgfxc, project_decisions.md). Every MGFX and KNIFX output gets them.
+        // A row_major matrix's default blob is written in register order (issue #423 follow-up). Not on
+        // OpenGL: every GL compile is row-major (-Zpr) and ShadowDusk's own rewriter rebuilds the
+        // matrix from the column-by-column blob, which is render-proven there.
+        if (options.Target == PlatformTarget.OpenGL)
+        {
+            for (int i = 0; i < allParameters.Count; i++)
+                if (allParameters[i].IsRowMajor)
+                    allParameters[i] = allParameters[i] with { IsRowMajor = false, IsHeaderTransposed = false };
+        }
+
         IReadOnlyDictionary<string, GlobalInitializerDefault> parameterDefaults =
             ResolveParameterDefaults(preprocessed.Text, sourceFileName, allParameters, runWarnings);
         IReadOnlyList<EffectParameterInfo> effectParameterInfoList =
@@ -1199,7 +1215,7 @@ internal sealed class CompilationPipeline
         // Issue #413: the reflection result carries the very default blobs the writers are about to
         // write, so the two cannot disagree.
         IReadOnlyList<ParameterReflection> reflectedParameters =
-            ParameterDefaultValues.Attach(allParameters, effectParameterInfoList);
+            ParameterDefaultValues.Attach(allParameters, effectParameterInfoList, parameterDefaults);
 
         // Phase 43, F9: bake parsed sampler_state members (MinFilter/AddressU/…)
         // into per-sampler MGFX states, keyed by the .fx sampler name — the
@@ -1640,23 +1656,6 @@ internal sealed class CompilationPipeline
     // no-memo compiles give the same bytes; every real compile takes the memo.
     private static IDxbcShaderCompiler WithDxbcMemo(IDxbcShaderCompiler backend, CompilerOptions options) =>
         options.BypassDxbcMemo ? backend : new MemoizingDxbcCompiler(backend);
-
-    // Parse a pass profile string ("vs_3_0", "ps_2_0") into (Major, Minor) for the KNIFX
-    // per-shader ShaderVersion. MGFX v10 ignores this; KNIFX v11 records it (and a non-(0,0)
-    // value selects KNI's GLSL-directory parse path). Defaults to (3,0) — the MojoShader GL
-    // ceiling — when the profile is absent or unparseable.
-    private static (int Major, int Minor) ParseShaderModel(string? profile)
-    {
-        if (!string.IsNullOrEmpty(profile))
-        {
-            var m = System.Text.RegularExpressions.Regex.Match(profile, @"_(\d)_(\d)");
-            if (m.Success
-                && int.TryParse(m.Groups[1].Value, out int major)
-                && int.TryParse(m.Groups[2].Value, out int minor))
-                return (major, minor);
-        }
-        return (3, 0);
-    }
 
     // -------------------------------------------------------------------------
     // Recognized-profile validation (SD0013) — GL / DX / Vulkan path (Phase 48).
@@ -3024,44 +3023,80 @@ internal sealed class CompilationPipeline
     }
 
     /// <summary>
-    /// The OFFSET BRIDGE for the GL cbuffer/parameter join (B10), used ONLY when the
-    /// primary name match fails — which happens exactly when SPIRV-Cross renamed a
-    /// free uniform whose name collides with a GLSL reserved word (e.g. <c>noise</c> →
-    /// <c>_noise</c>). The GL uniform's byte offset is <c>baseRegister * 16</c>; the
-    /// reflected cbuffer variable at that <see cref="VariableReflection.StartOffset"/>
-    /// carries the ORIGINAL HLSL name, which recovers the effect-parameter index
-    /// without ever trusting the SPIRV-Cross-emitted spelling. Returns the parameter
-    /// index, or -1 if it cannot be resolved unambiguously (caller then keeps the loud
-    /// <c>SD0012</c> guard).
+    /// The DECLARATION-ORDER BRIDGE for the GL cbuffer/parameter join (B10), used ONLY
+    /// when the primary name match fails, which happens exactly when SPIRV-Cross renamed
+    /// a uniform: one named after a GLSL reserved word (<c>noise</c> → <c>_noise</c>; also
+    /// <c>filter</c>, <c>output</c>, …), one with a run of underscores (<c>my__val</c> →
+    /// <c>my_val</c>), or one whose rename collides with another name (<c>_noise_1</c>).
+    /// The rewriter's layout lists the block's members in declaration order, and the
+    /// reflected cbuffer lists its variables in that same order (every layout keeps it), so
+    /// the renamed <paramref name="uniform"/> is the reflected variable at its position
+    /// in the layout, whose ORIGINAL name recovers the effect-parameter index
+    /// without trusting the SPIRV-Cross spelling. Returns the parameter index, or -1 when
+    /// the mapping is not provably unambiguous (the caller then fails with
+    /// <c>SD0012</c>).
     ///
-    /// <para><b>Single-cbuffer only, by design (correctness over coverage).</b> The
-    /// reserved-word case is always a free global, which DXC reflects as a single
-    /// <c>$Globals</c> cbuffer — there a variable's effective byte offset is exactly
-    /// its <c>StartOffset</c>, so <c>StartOffset == baseRegister * 16</c> holds
-    /// directly. With MULTIPLE cbuffers the rewriter merges them into one packed
-    /// register space in GLSL-declaration order, which is NOT guaranteed to match the
-    /// reflection's cbuffer order, so the per-cbuffer base offset cannot be reliably
-    /// reconstructed here. Rather than risk MIS-mapping to the wrong parameter, this
-    /// declines (returns -1) for the multi-cbuffer case and lets <c>SD0012</c> stand.</para>
+    /// <para><b>Never by byte offset</b> (issue #425 review). The previous bridge matched
+    /// <c>StartOffset == baseRegister * 16</c>, which holds only when no member is packed
+    /// mid-register: after <c>float g;</c> a renamed <c>float3 noise</c> sits at byte 4 in
+    /// the DXIL reflection (HLSL packing) and byte 16 in the SPIR-V one (std140), so the
+    /// desktop mapped it onto the next variable and the browser did not; a packed scalar
+    /// (<c>float a; float b; float noise;</c>) mis-mapped on both. Position is the same on
+    /// every reflection source.</para>
+    ///
+    /// <para><b>Proven, not assumed:</b> the bridge requires a single reflected cbuffer
+    /// (the reserved-word case is always a free global in <c>$Globals</c>; with several
+    /// cbuffers the rewriter's merge order is not reconstructed), the same member count on
+    /// both sides, and every position to agree by name: exactly, or, at a renamed
+    /// position, a GLSL spelling that is not itself a parameter and an original name that
+    /// appears nowhere else in the layout. SPIRV-Cross's rename rules are deliberately not
+    /// modelled (an earlier prefix-only check refused valid underscore and collision
+    /// renames). Anything else declines.</para>
     /// </summary>
-    private static int IndexOfParamByRegister(
+    private static int IndexOfParamByDeclarationOrder(
         IReadOnlyList<ConstantBufferReflection> constantBuffers,
         IReadOnlyList<ParameterReflection> parameters,
-        int baseRegister)
+        IReadOnlyList<MonoGameGlslUniform> layout,
+        MonoGameGlslUniform uniform)
     {
-        // Only the unambiguous single-cbuffer ($Globals) case is bridged — see the
-        // remarks above for why the multi-cbuffer merge order is not reconstructed.
         if (constantBuffers.Count != 1)
             return -1;
 
-        int targetOffset = baseRegister * 16;
-        foreach (VariableReflection variable in constantBuffers[0].Variables)
+        int layoutIndex = -1;
+        for (int j = 0; j < layout.Count; j++)
+            if (ReferenceEquals(layout[j], uniform))
+                layoutIndex = j;
+
+        // Declaration order; OrderBy is stable, so equal offsets keep the reflected order.
+        var variables = constantBuffers[0].Variables.OrderBy(v => v.StartOffset).ToList();
+        if (variables.Count != layout.Count || layoutIndex < 0 || layoutIndex >= layout.Count)
+            return -1;
+
+        for (int j = 0; j < layout.Count; j++)
         {
-            if (variable.StartOffset == targetOffset)
-                return IndexOfParam(parameters, variable.Name);
+            string glslName = layout[j].Name;
+            string reflectedName = variables[j].Name;
+            if (glslName == reflectedName)
+                continue;
+            // A renamed position: SPIRV-Cross's spelling must not be some other parameter's
+            // name, and the original name must not appear elsewhere in the layout. The rename
+            // rule itself is not modelled (it prefixes reserved words, collapses runs of
+            // underscores and suffixes collisions): position is the proof.
+            bool renamed = IndexOfParam(parameters, glslName) < 0
+                && !LayoutHasName(layout, reflectedName);
+            if (!renamed)
+                return -1;
         }
 
-        return -1;
+        return IndexOfParam(parameters, variables[layoutIndex].Name);
+    }
+
+    private static bool LayoutHasName(IReadOnlyList<MonoGameGlslUniform> layout, string name)
+    {
+        foreach (MonoGameGlslUniform u in layout)
+            if (u.Name == name)
+                return true;
+        return false;
     }
 
     private static int IndexOfCbuffer(IReadOnlyList<ConstantBufferReflection> cbuffers, string name)
@@ -3175,9 +3210,13 @@ internal sealed class CompilationPipeline
             GlobalInitializerDefault? def = null;
             if (defaults.TryGetValue(param.Name, out GlobalInitializerDefault? candidate))
             {
-                string? mismatch = DefaultShapeMismatch(param, candidate);
+                (GlobalInitializerDefault stored, RowMajorRefusal? refusal) = InStorageOrder(param, candidate);
+                string? mismatch = refusal?.Reason ?? DefaultShapeMismatch(param, stored);
                 if (mismatch is null)
-                    def = candidate;
+                    def = stored;
+                else if (refusal is not null)
+                    warnings.Add(DefaultNotPreserved(candidate.File, candidate.Line, candidate.Column, param.Name, mismatch,
+                        refusal.Advice));
                 else
                     warnings.Add(DefaultNotPreserved(candidate.File, candidate.Line, candidate.Column, param.Name, mismatch));
             }
@@ -3199,6 +3238,93 @@ internal sealed class CompilationPipeline
 
         return result;
     }
+
+    /// <summary>
+    /// The default as the writers must store it for <paramref name="param"/>'s buffer layout, or why
+    /// a <c>row_major</c> one cannot be. The reader's blob is column by column
+    /// (<c>Data[c * R + r] = M[r][c]</c>). MonoGame uploads a parameter with header Rh x Ch as Ch
+    /// registers of Rh floats, register j taking <c>Data[j * Rh .. j * Rh + Rh - 1]</c>: right as it
+    /// is for HLSL's default column-major packing (one register per column, header R x C). A
+    /// <c>row_major</c> buffer holds one register per HLSL row (register j is <c>M[j][0..C-1]</c>), so
+    /// its blob is <c>Data[j * Rh + k] = M[j][k]</c> for every row j the upload reaches (j &lt; Ch)
+    /// and every column k inside a register (k &lt; Rh), zeros elsewhere. On Vulkan the header is the
+    /// C x R transpose and every element is reached (the rows in order); on DirectX it is R x C, so a
+    /// square matrix is the rows in order, a TALL one (R &gt; C) reaches rows 0..C-1 only (an element
+    /// in a row j &gt;= C is refused, an all-zero tail is kept: an affine world or bone matrix's
+    /// fourth column), and a WIDE one (C &gt; R) uploads C registers over a matrix of R, so it is
+    /// refused (the upload runs into the next member, or past the end of the buffer). An ARRAY is
+    /// uploaded element after element, each <c>Ch</c> registers on from the last
+    /// (<c>ConstantBuffer.SetParameter</c>: <c>offset += ColumnCount * 16</c>), while a row_major
+    /// array's buffer holds R registers per element, so unless <c>Ch == R</c> (Vulkan, or a square
+    /// matrix) every element after the first lands in the wrong registers: a DirectX tall row_major
+    /// array is refused too. Before this, a row_major default was the column-major blob and arrived
+    /// transposed, with no warning.
+    /// </summary>
+    private static (GlobalInitializerDefault Stored, RowMajorRefusal? Refusal) InStorageOrder(
+        ParameterReflection param, GlobalInitializerDefault def)
+    {
+        if (!param.IsRowMajor || def.Class != (byte)EffectParameterClass.Matrix || param.Class != EffectParameterClass.Matrix)
+            return (def, null);
+
+        int rows = def.Rows, cols = def.Columns;              // the declaration, R x C
+        int rh = param.Rows, ch = param.Columns;              // the header MonoGame uploads by
+        if (rh * ch != rows * cols)
+            return (def, null);                               // DefaultShapeMismatch reports it
+
+        if (ch > rows)
+            return (def, new RowMajorRefusal(
+                $"it is a row_major {rows}x{cols} matrix, whose buffer holds {rows} registers, one per row, " +
+                $"and MonoGame uploads its {rh}x{ch} parameter as {ch} registers of {rh} floats, past the matrix",
+                "A Set cannot fill those registers either (and last in the globals the first Apply throws). " +
+                ColumnMajorAdvice));
+
+        if (Math.Max(1, param.Elements) > 1 && ch != rows)
+            return (def, new RowMajorRefusal(
+                $"it is an array of row_major {rows}x{cols} matrices, whose buffer holds {rows} registers per element, " +
+                $"and MonoGame uploads each element {ch} registers after the last, so every element after the first " +
+                "lands in the wrong registers on this target",
+                "A Set of the array lands those elements in the wrong registers too. " + ColumnMajorAdvice +
+                " Separate (non-array) parameters also work."));
+
+        var blobs = new List<byte[]>(def.ElementBlobs.Count);
+        foreach (byte[] blob in def.ElementBlobs)
+        {
+            if (blob.Length != rows * cols * 4)
+                return (def, null);                           // DefaultShapeMismatch reports it
+            var stored = new byte[blob.Length];
+            for (int j = 0; j < rows; j++)
+            {
+                for (int k = 0; k < cols; k++)
+                {
+                    int source = (k * rows + j) * 4;
+                    if (j < ch && k < rh)
+                    {
+                        Buffer.BlockCopy(blob, source, stored, (j * rh + k) * 4, 4);
+                    }
+                    else if (def.Type == (byte)EffectParameterType.Single
+                                 ? BitConverter.ToSingle(blob, source) != 0f   // numerically: -0.0 is zero
+                                 : BitConverter.ToInt32(blob, source) != 0)
+                    {
+                        return (def, new RowMajorRefusal(
+                            $"it is a row_major {rows}x{cols} matrix, whose buffer holds one register per row, " +
+                            $"and MonoGame uploads its {rh}x{ch} parameter as {ch} registers of {rh} floats, so " +
+                            $"row {j} (non-zero in the initializer) is never written on this target",
+                            $"A Set cannot reach rows {ch} and beyond either. " + ColumnMajorAdvice +
+                            $" A row_major {rows}x{cols} default is kept on this target only when those rows are zero."));
+                    }
+                }
+            }
+            blobs.Add(stored);
+        }
+        return (def with { Rows = rh, Columns = ch, ElementBlobs = blobs }, null);
+    }
+
+    /// <summary>Why a row_major default cannot be stored, and the advice for it (a runtime Set does not help).</summary>
+    private sealed record RowMajorRefusal(string Reason, string Advice);
+
+    private const string ColumnMajorAdvice =
+        "Declare the matrix column-major instead: remove its row_major modifier, or, if a " +
+        "#pragma pack_matrix(row_major) applies, declare it column_major or after #pragma pack_matrix(column_major).";
 
     /// <summary>
     /// Why the default read off the source cannot be attached to the reflected parameter, or null
@@ -3231,13 +3357,14 @@ internal sealed class CompilationPipeline
     private static IReadOnlyList<ShaderError> WithViewWarning(List<ShaderError> warnings, ShaderError? viewWarning) =>
         viewWarning is null ? warnings : [viewWarning, .. warnings];
 
-    private static ShaderError DefaultNotPreserved(string file, int line, int column, string name, string reason) =>
+    internal static ShaderError DefaultNotPreserved(string file, int line, int column, string name, string reason,
+        string advice = "Set the parameter by name at runtime, or simplify the initializer.") =>
         new(File: file,
             Line: line,
             Column: column,
             Code: "SD0017",
             Message: $"the initializer of '{name}' was not preserved as its default value, so the effect ships " +
-                     $"a default of zero: {reason}. Set the parameter by name at runtime, or simplify the initializer.",
+                     $"a default of zero: {reason}. " + advice,
             Severity: ShaderErrorSeverity.Warning);
 
     /// <summary>

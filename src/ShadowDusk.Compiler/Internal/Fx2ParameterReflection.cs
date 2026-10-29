@@ -63,7 +63,7 @@ internal static class Fx2ParameterReflection
             if (!fromSource.TryGetValue(p.Name, out GlobalInitializerDefault? def)
                 || p.Class == EffectParameterClass.Object
                 || CompilationPipeline.DefaultShapeMismatch(p, def) is not null
-                || ParameterDefaultValues.ToLogical(p.Class, p.Type, def.Rows, def.Columns, def.ElementBlobs) is not { } values)
+                || ParameterDefaultValues.ToLogical(p.Class, p.Type, def.Rows, def.Columns, def.ElementBlobs, def.Kind) is not { } values)
                 continue;
             result[i] = p with { DefaultValue = Array.AsReadOnly(values) };
         }

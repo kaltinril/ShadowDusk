@@ -593,6 +593,8 @@ All SPIRV-Cross options below are expressed in both C++ API and **C API** form. 
 
 **cbuffer to GLSL std140 layout mismatch.** HLSL cbuffer packing and GLSL `std140` differ: in std140, a `vec3` occupies 16 bytes (padded to `vec4` size), while HLSL packs a `float3` in 12 bytes. If the SPIR-V path uses SPIRV-Cross without DXC's `-fvk-use-dx-layout`, the GLSL uniform block uses std140 rules and the C# game's constant data (laid out for HLSL rules) is misinterpreted. Always compile with `-fvk-use-dx-layout` and ensure SPIRV-Cross emits a matching layout.
 
+> **Superseded for OpenGL (issue #425, 2026-10-28):** the shipped GL path never uploads a UBO, so no game data is laid out against these offsets. The rewriter replaces the block with MojoShader's `{vs,ps}_uniforms_vec4[]`, one register per uniform, and SPIRV-Cross's `#version 140` output can express only std140, which HLSL packing breaks (a `float3` after a `float` failed with `SD0100`). OpenGL therefore compiles with `-fvk-use-gl-layout`. Vulkan, which ships the SPIR-V, keeps `-fvk-use-dx-layout`.
+
 ### Preprocessor and #include Handling
 
 MonoGame's `Preprocessor.cs` flattens all `#include` directives before passing to FXC because FXC requires Windows file system access. ShadowDusk must implement a platform-independent include resolver.

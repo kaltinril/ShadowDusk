@@ -162,6 +162,8 @@ ShadowDusk/
 │                                  #   DxModernFeatures, ShaderToyRouteDx (that route's DirectX arm), …),
 │                                  #   InitializerDefaults{Gl,Dx,KniGl,KniDx,Dx12,Vulkan} (+ SharedInitializerDefaults): a global
 │                                  #   initializer is the default with no Set call, per real runtime (owner directive 2026-10-28),
+│                                  #   NonSquareMatrix{Vulkan,Dx} (+ SharedNonSquareMatrix): non-square matrix parameters Set from
+│                                  #     C# and the stock SkinnedEffect, real DesktopVK vs WindowsDX (issue #423 probe),
 │                                  #   DX12 (BaselineDx12, CandidateDx12, VsDrivenDx12
 │                                  #     + compare_dx12.py), FNA (FnaValidation), KNI (KniDesktopGL, KniWinFormsDX, KniVsDriven),
 │                                  #   Vulkan (BaselineVulkan, CandidateVulkan, VsDrivenVulkan

@@ -245,8 +245,12 @@ GL); it never produces the DX11 shader payload.
 
 **How it works.** Each entry point is compiled with `-T <profile>` and `-E <entry>` (the
 `.fx`-declared name flows straight through, no mangling). For OpenGL the profile is `ps_5_0` /
-`vs_5_0` with `-spirv -fvk-use-dx-layout` (and `-auto-binding-space 1` for the pixel stage),
-so SPIR-V carries D3D constant-buffer offsets and clip-space conventions. On the **OpenGL** path
+`vs_5_0` with `-spirv -fvk-use-gl-layout` (and `-auto-binding-space 1` for the pixel stage):
+the uniform block is laid out **std140**, the only layout SPIRV-Cross's `#version 140` GLSL can
+express (issue #425: HLSL cbuffer packing put a `float3` declared after a `float` at byte 4, and
+SPIRV-Cross refused the block with `SD0100`). Those byte offsets never reach the GL output, which
+gives every uniform its own `{vs,ps}_uniforms_vec4[]` register (see the GLSL rewrite below). The
+**Vulkan** path ships its SPIR-V, so it keeps the HLSL packing (`-fvk-use-dx-layout`). On the **OpenGL** path
 matrices are packed **row-major** (`-Zpr`), which is what the GL rewriter's uniform upload assumes.
 The **Vulkan** path deliberately omits `-Zpr`, keeping HLSL's column-major default: that is what
 `mgfxc` emits and what MonoGame's runtime uploads a `Matrix` parameter for, so forcing row-major
@@ -355,9 +359,15 @@ into the **same** `ReflectedEffect` shape (constant buffers, textures, samplers,
 `VariableReflection` records its `StartOffset` (byte offset within the buffer), size, and type
 shape. A shared `ParameterListBuilder` flattens those cbuffer variables into the user-settable
 `ParameterReflection` list (merging the FX annotations from Stage 1) and appends the texture
-(and, on GL, sampler) object parameters. Because the SPIR-V was emitted with `-fvk-use-dx-layout`,
-the managed SPIR-V reflector reads byte offsets directly from the SPIR-V `Offset` decorations,
-so all three reflectors report the same layout. (SPIR-V discards HLSL semantic strings, so its
+(and, on GL, sampler) object parameters. The managed SPIR-V reflector reads byte offsets
+directly from the SPIR-V `Offset` decorations. Vulkan's SPIR-V is emitted with
+`-fvk-use-dx-layout`, so there all three reflectors report the same HLSL layout. OpenGL's is
+std140 (`-fvk-use-gl-layout`, issue #425): the same layout for every std140-legal block, with a
+member HLSL would pack mid-register moved to its own register. The GL cbuffer records come from
+the GLSL rewriter's register layout, and the one GL step that reads reflected variables for them
+(the bridge for a uniform SPIRV-Cross renamed off a GLSL reserved word, `noise` to `_noise`)
+matches by declaration order, never by byte offset, so the browser host's `.mgfx` stays
+byte-identical to the desktop's. (SPIR-V discards HLSL semantic strings, so its
 input/output signatures are intentionally empty, which is why it only serves the PS-only browser
 corpus.)
 

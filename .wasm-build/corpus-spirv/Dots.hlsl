@@ -7,10 +7,19 @@
 	#define SV_POSITION POSITION
 	#define PS_SHADERMODEL ps_3_0
 #else
-	#define PS_SHADERMODEL ps_4_0_level_9_1
+	#if SM6
+		#define PS_SHADERMODEL ps_6_0
+	#else
+		#define PS_SHADERMODEL ps_4_0_level_9_1
+	#endif
 #endif
 
+#if SM6
+Texture2D s0Texture;
 Texture2D s0_SDTexture; SamplerState s0;
+#else
+Texture2D s0_SDTexture; SamplerState s0;
+#endif
 
 float angle; // 0.5
 float scale; // 0.5
@@ -33,6 +42,15 @@ struct VertexShaderOutput
 	float2 TexCoord : TEXCOORD0;
 };
 
+#if SM6
+float4 PixelShaderFunction(VertexShaderOutput input) : SV_Target
+{
+    float4 color = s0Texture.Sample( s0, input.TexCoord );
+    float average = ( color.r + color.g + color.b ) / 3.0;
+    float val = average * 10.0 - 5.0 + pattern( angle, input.TexCoord, scale );
+    return float4( val, val, val, color.a );
+}
+#else
 float4 PixelShaderFunction(VertexShaderOutput input) : SV_Target
 {
     float4 color = s0_SDTexture.Sample( s0, input.TexCoord );
@@ -40,6 +58,7 @@ float4 PixelShaderFunction(VertexShaderOutput input) : SV_Target
     float val = average * 10.0 - 5.0 + pattern( angle, input.TexCoord, scale );
     return float4( val, val, val, color.a );
 }
+#endif
 
 
                     

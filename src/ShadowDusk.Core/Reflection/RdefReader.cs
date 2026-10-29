@@ -329,6 +329,7 @@ public static class RdefReader
             Columns        = columns,
             Elements       = elements,
             Members        = members.Value,
+            IsRowMajor     = cls == 2,   // D3D_SVC_MATRIX_ROWS
         });
     }
 

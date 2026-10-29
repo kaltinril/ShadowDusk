@@ -69,7 +69,8 @@ public sealed class RaylibConvertOptions
 /// <c>fragColor</c>, which is the only interface this slice emits against.
 /// </param>
 /// <param name="Uniforms">Every uniform the shader declares, under the GLSL name to pass to
-/// <c>GetShaderLocation</c>. Each is the HLSL global of the same name.</param>
+/// <c>GetShaderLocation</c>. Each is the HLSL global of the same name, with the default its HLSL
+/// declaration gives it (<see cref="RaylibUniform.DefaultValue"/>).</param>
 /// <param name="Samplers">Every sampler the shader declares (see <see cref="RaylibSampler"/>).</param>
 /// <param name="Warnings">Non-fatal findings, e.g. baked sampler states the consumer must apply (<c>SD0637</c>).</param>
 public sealed record RaylibShader(
@@ -82,7 +83,46 @@ public sealed record RaylibShader(
 /// <param name="Name">The GLSL uniform name (the HLSL global's name).</param>
 /// <param name="GlslType">The GLSL type, e.g. <c>vec4</c>; pick the matching <c>ShaderUniformDataType</c>.</param>
 /// <param name="ArrayLength">Element count for an array uniform, or <c>0</c> for a non-array.</param>
-public sealed record RaylibUniform(string Name, string GlslType, int ArrayLength);
+public sealed record RaylibUniform(string Name, string GlslType, int ArrayLength)
+{
+    /// <summary>
+    /// The default the HLSL declaration gives this uniform (<c>float Thickness = 1.0;</c>), or
+    /// <see langword="null"/> when it is unknown: the same values, in the same layout, as
+    /// <see cref="ParameterReflection.DefaultValue"/> on the MGFX route for the same source
+    /// (issue #435). The fragment shader declares the uniform WITHOUT a value, so raylib reads it
+    /// as zero until the caller sets it; set it to this value to get the effect the <c>.fx</c>
+    /// author declared.
+    /// </summary>
+    /// <remarks>
+    /// <para><b>Layout.</b> <c>max(1, ArrayLength)</c> elements one after another, each the
+    /// uniform's components in order, no padding: exactly the values
+    /// <c>SetShaderValueV(shader, loc, values, type, max(1, ArrayLength))</c> takes. Matrices do
+    /// not occur, because the converter refuses matrix uniforms (<c>SD0636</c>).</para>
+    /// <para><b>Values.</b> <c>int</c> values converted to floats, <c>uint</c> values by their
+    /// unsigned value (one beyond 2^24 is not exact), <c>bool</c> as 0 or 1; the MGFX route's value
+    /// for an OpenGL build (the converter's macro set). A <c>bool</c> global is a <c>uint</c> uniform
+    /// (SPIR-V has no bool in a uniform block). An <c>int</c>/<c>ivecN</c> uniform takes the values as
+    /// <c>int</c> (<c>ShaderUniformDataType.Int</c>...); a <c>uint</c>/<c>uvecN</c> one, a <c>bool</c>'s
+    /// included, as <c>uint</c> (<c>ShaderUniformDataType.UInt</c>...: <c>Int</c> on a <c>uint</c>
+    /// uniform is a GL error).</para>
+    /// <para><b>When it is <see langword="null"/>.</b> The global has no initializer, or the
+    /// initializer could not be evaluated or does not match the uniform's shape (the conversion
+    /// then carries the MGFX route's <c>SD0017</c> warning; so does a global with a default that no
+    /// listed uniform pairs with). Samplers are not uniforms here (see
+    /// <see cref="RaylibShader.Samplers"/>).</para>
+    /// </remarks>
+    public IReadOnlyList<float>? DefaultValue { get; init; }
+
+    /// <summary>Value equality, comparing <see cref="DefaultValue"/> element by element.</summary>
+    /// <param name="other">The uniform to compare with.</param>
+    public bool Equals(RaylibUniform? other) =>
+        other is not null && Name == other.Name && GlslType == other.GlslType && ArrayLength == other.ArrayLength
+        && (DefaultValue is null ? other.DefaultValue is null
+            : other.DefaultValue is not null && DefaultValue.SequenceEqual(other.DefaultValue));
+
+    /// <inheritdoc/>
+    public override int GetHashCode() => HashCode.Combine(Name, GlslType, ArrayLength, DefaultValue?.Count);
+}
 
 /// <summary>One <c>sampler2D</c> of a <see cref="RaylibShader"/>.</summary>
 /// <param name="UniformName">
@@ -352,7 +392,29 @@ public static class RaylibConverter
                     : new Dictionary<string, string>()))
             .ToList();
 
-        return RaylibGlslMapper.Map(seam.Value.Glsl, samplerInputs, parsed.StrippedHlsl, file);
+        Result<RaylibShader, ShaderError[]> mapped =
+            RaylibGlslMapper.Map(seam.Value.Glsl, samplerInputs, parsed.StrippedHlsl, file);
+        if (mapped.IsFailure)
+            return mapped;
+
+        // The declared default of each uniform (issue #435), read off the text DXC compiled by
+        // the machinery behind the MGFX route's ParameterReflection.DefaultValue. Reported beside
+        // the fragment shader, never written into it.
+        RaylibShader shader = mapped.Value;
+        var warnings = new List<ShaderError>(shader.Warnings);
+        IReadOnlyList<float>?[] defaults = ConvertedUniformDefaults.Resolve(
+            compilerInput,
+            file,
+            seam.Value.Glsl,
+            seam.Value.Spirv,
+            shader.Uniforms.Select(u => new ConvertedUniformDefaults.Uniform(u.Name, u.GlslType, u.ArrayLength)).ToList(),
+            [],
+            warnings);
+        return Result<RaylibShader, ShaderError[]>.Ok(shader with
+        {
+            Uniforms = shader.Uniforms.Select((u, i) => u with { DefaultValue = defaults[i] }).ToList().AsReadOnly(),
+            Warnings = warnings,
+        });
     }
 
     /// <summary>

@@ -91,6 +91,11 @@ public sealed class SpirvReflectionByteIdentityTests
         "SharedCbuffer", "SimpleLightShader", "SpriteAlphaTest",
         "StateBlendAdditive", "StateDepthStencil", "StateRasterizer", "Teleport", "VertexAndPixel",
         "VsTransformColorTexture", "annotations", "third-party/Apos.Shapes/apos-shapes", "render-states",
+        // Issue #425: GL now lays the uniform block out std140, so the SPIR-V reflection sees
+        // std140 offsets where the DXIL sees HLSL packing. This one packs a float3 behind a
+        // float (it failed GL with SD0100 before), so the two reflections differ in offsets and
+        // the bytes must still be the same.
+        "third-party/Nez/Reflection",
     };
 
     public static IEnumerable<object[]> Corpus() =>

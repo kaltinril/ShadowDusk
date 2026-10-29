@@ -424,6 +424,7 @@ internal static class D3DShaderInputType
 /// <summary>The <c>D3D_SHADER_VARIABLE_CLASS</c> values the extractor distinguishes.</summary>
 internal static class D3DShaderVariableClass
 {
+    public const uint MatrixRows = 2; // D3D_SVC_MATRIX_ROWS: a row_major matrix
     public const uint Struct = 5; // D3D_SVC_STRUCT
 }
 

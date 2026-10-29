@@ -11,6 +11,12 @@
 //     "HACK: We don't have real default parameters from mojoshader!") renders black.
 // A control that turned red would mean the test cannot tell a default from a Set. Exit code 0 iff every
 // case and every control passes. See docs/validation-matrix.md section 6.
+//
+// With knifxReachRows (the KNI drivers), a second device on GraphicsProfile.Reach pins the shader model a
+// KNIFX container records for `*_4_0_level_9_1`: KNI's own pipeline records 2.0, which Reach (ceiling 2.0)
+// loads, for a pixel and a vertex shader, while `*_4_0_level_9_3` (3.0), `ps_4_0` (4.0) and, on GL,
+// `ps_3_0` (3.0) must be refused with KNI's own "Shader model X is not supported by the current graphics
+// profile 'Reach'". The refusals are the positive controls: they prove the Reach device checks the version.
 
 using System;
 using System.Collections.Generic;
@@ -27,8 +33,12 @@ using Rectangle = Microsoft.Xna.Framework.Rectangle;
 
 namespace ShadowDusk.Validation.InitializerDefaults;
 
-/// <summary>One shader and the pixel its default value must produce.</summary>
-internal sealed record DefaultCase(string Fx, bool GlSupported, byte R, byte G, byte B, byte A, int Tolerance = 1);
+/// <summary>
+/// One shader and the pixel its default value must produce. <paramref name="OnDirectX"/>, when set, is the
+/// pixel on the DirectX targets instead (a shape whose default DirectX refuses with SD0017).
+/// </summary>
+internal sealed record DefaultCase(string Fx, bool GlSupported, byte R, byte G, byte B, byte A, int Tolerance = 1,
+    (byte R, byte G, byte B, byte A)? OnDirectX = null);
 
 public static class InitializerDefaultsProbe
 {
@@ -39,18 +49,38 @@ public static class InitializerDefaultsProbe
         new("B_Scale.fx",      true,  128, 128, 128, 255), // float Scale = 0.5;
         new("E_Array.fx",      true,  128, 128, 0, 255),   // float4 Colors[2] = { red, green };
         new("MatrixDefault.fx", true, 0,   128, 0, 255),   // float4x4 with M[0][1] = 1: a transposed blob gives (64,0,0)
+        new("G_PackedFloat3.fx", true, 128, 64, 255, 255), // issue #425: float3 packed behind a float, then a float4x4 (was SD0100 on GL)
         new("C_Vec2Mat2.fx",   false, 32,  96,  0, 255),   // float2 Offset + float2x2 0.5*I (mat2: not on GL, SD0210)
         new("D_IntBool.fx",    false, 128, 255, 0, 255),   // int Mode = 2; bool Flag = true; (int/bool: not on GL, SD0210)
+        // float2x3 + float3x2, every element distinct (issue #423: Vulkan reflected these transposed and
+        // shipped zeros, which renders black). Non-square matrices: not on GL, SD0210.
+        new("G_NonSquare.fx",  false, 191, 128, 64, 255),
+        // MatrixDefault.fx declared row_major, then under #pragma pack_matrix(row_major), then a row_major
+        // float2x2 (off GL). A row_major buffer holds one register per row, so the blob must be the rows in
+        // order; the column-by-column blob lands transposed and renders (64,0,0) (issue #423 follow-up).
+        new("H_RowMajorMatrix.fx",   true,  0, 128, 0, 255),
+        new("I_PackMatrixPragma.fx", true,  0, 128, 0, 255),
+        new("J_RowMajor2x2.fx",      false, 0, 128, 0, 255),
+        // TALL row_major float4x3: on DirectX MonoGame's upload reaches rows 0..2 only. A zero fourth row
+        // (an affine matrix) is kept, symmetric or not; a non-zero one is SD0017 and zeros there, black.
+        new("K_RowMajorTallSymmetric.fx",  false, 64, 128, 191, 255),
+        new("L_RowMajorTallAsymmetric.fx", false, 32, 128, 32, 255),
+        new("M_RowMajorTallFourthRow.fx",  false, 64, 128, 191, 255, OnDirectX: (0, 0, 0, 255)),
+        // An ARRAY of tall row_major float4x3: on DirectX each element is uploaded 3 registers after the last
+        // over a 4-register stride, so it is SD0017 and zeros there (black); Vulkan advances 4.
+        new("N_RowMajorTallArray.fx",      false, 32, 128, 32, 255, OnDirectX: (0, 0, 0, 255)),
     ];
 
     /// <summary>
     /// Runs the probe. <paramref name="mgfxcOpenGlControl"/> is true on the GL runtimes: the committed
-    /// mgfxc OpenGL build of RedDefault must render black. <paramref name="skipFloat2x2"/> skips C_Vec2Mat2 on
-    /// MonoGame DesktopVK, whose constant buffer throws on ANY float2x2 parameter (measured: the same throw with
-    /// the initializers removed), so it says nothing about defaults.
+    /// mgfxc OpenGL build of RedDefault must render black. C_Vec2Mat2 runs on DesktopVK too: it used to throw
+    /// there with or without initializers, because ShadowDusk's Vulkan reflection sized a buffer ending in a
+    /// float2x2 a register short (mgfxc's Vulkan build sizes it right) and MonoGame's upload ran past its end;
+    /// fixed in SpirvReflectionParser.
     /// </summary>
-    public static int Run(string label, PlatformTarget target, EffectContainer[] containers, bool mgfxcOpenGlControl, bool skipFloat2x2 = false)
+    public static int Run(string label, PlatformTarget target, EffectContainer[] containers, bool mgfxcOpenGlControl, bool knifxReachRows = false)
     {
+        WarnIfMapCountLow(label, target);
         var watchdog = new Thread(() =>
         {
             Thread.Sleep(240_000);
@@ -69,11 +99,12 @@ public static class InitializerDefaultsProbe
             foreach (DefaultCase c in Cases)
             {
                 if (!c.GlSupported && isGl) continue;
-                if (skipFloat2x2 && c.Fx == "C_Vec2Mat2.fx") continue;
                 string path = Path.Combine(dir, c.Fx);
                 jobs.Add(Compile(compiler, label, target, container, path, File.ReadAllText(path),
                     $"{Path.GetFileNameWithoutExtension(c.Fx)} [{container}]",
-                    new Expect(c.R, c.G, c.B, c.A, c.Tolerance), setR: null));
+                    target is PlatformTarget.DirectX or PlatformTarget.DirectX12 && c.OnDirectX is { } dx
+                        ? new Expect(dx.R, dx.G, dx.B, dx.A, c.Tolerance)
+                        : new Expect(c.R, c.G, c.B, c.A, c.Tolerance), setR: null));
             }
 
             // Control 1: the initializer removed. Must be black (the default IS what makes it red).
@@ -95,36 +126,144 @@ public static class InitializerDefaultsProbe
                 new Expect(0, 0, 0, 255, 0), null));
         }
 
-        using var game = new ProbeGame(jobs);
-        game.Run();
+        var results = new List<JobResult>();
+        int expected = jobs.Count;
+        using (var game = new ProbeGame(jobs, GraphicsProfile.HiDef))
+        {
+            game.Run();
+            results.AddRange(game.Results);
+        }
+
+        if (knifxReachRows)
+        {
+            List<Job> reachJobs = ReachJobs(compiler, label, target, dir);
+            expected += reachJobs.Count;
+            using var reach = new ProbeGame(reachJobs, GraphicsProfile.Reach);
+            reach.Run();
+            results.AddRange(reach.Results);
+        }
 
         int failures = 0;
         Console.WriteLine($"[{label}] results:");
-        foreach (JobResult r in game.Results)
+        foreach (JobResult r in results)
         {
             Console.WriteLine($"  [{(r.Ok ? "PASS" : "FAIL")}] {r.Name,-52} {r.Detail}");
             if (!r.Ok) failures++;
         }
 
-        if (game.Results.Count != jobs.Count)
+        if (results.Count != expected)
         {
-            Console.WriteLine($"[{label}] FAIL: only {game.Results.Count} of {jobs.Count} cases ran");
+            Console.WriteLine($"[{label}] FAIL: only {results.Count} of {expected} cases ran");
             return 1;
         }
 
-        Console.WriteLine($"[{label}] {game.Results.Count - failures}/{game.Results.Count} passed.");
+        Console.WriteLine($"[{label}] {results.Count - failures}/{results.Count} passed.");
         return failures == 0 ? 0 : 1;
     }
 
+    /// <summary>
+    /// On Linux, warns when <c>vm.max_map_count</c> is too low for a Vulkan run on Mesa lavapipe. Measured
+    /// 2026-10-28 (Mesa 25.2.8, MonoGame 3.8.5 DesktopVK): MonoGame's <c>MGG_Shader_Create</c> allocates about
+    /// 13,500 descriptor sets per shader and never frees them, and lavapipe backs each set with its own buffer
+    /// mapping, so a process holds ~13,500 more mappings per shader created. At the kernel's limit lavapipe's
+    /// <c>lvp_descriptor_set_create</c> does not check the failed map and segfaults in <c>memset</c> (exit 139),
+    /// minutes into the run with no managed output. 262,144 (GitHub's ubuntu image) is ~19 shaders; 65,530 (the
+    /// kernel default) ~4. A GPU driver does not map per set. The CI job raises the limit.
+    /// </summary>
+    private static void WarnIfMapCountLow(string label, PlatformTarget target)
+    {
+        const long Needed = 1_048_576;
+        if (target != PlatformTarget.Vulkan || !OperatingSystem.IsLinux()) return;
+        try
+        {
+            if (long.TryParse(File.ReadAllText("/proc/sys/vm/max_map_count").Trim(), out long limit) && limit < Needed)
+                Console.WriteLine($"[{label}] WARNING: vm.max_map_count is {limit}. On Mesa lavapipe MonoGame DesktopVK " +
+                    $"holds ~13,500 mappings per shader, so this run may segfault (exit 139) after ~{limit / 13_500} shaders. " +
+                    $"Raise it first: sudo sysctl -w vm.max_map_count=2097152");
+        }
+        catch (IOException) { /* not readable: nothing to say */ }
+        catch (UnauthorizedAccessException) { }
+    }
+
+    /// <summary>
+    /// The KNIFX rows run on a <see cref="GraphicsProfile.Reach"/> device (ceiling 2.0). A_Tint with its
+    /// pixel profile set to <c>ps_4_0_level_9_1</c> (recorded 2.0) must load and render its default, and
+    /// the same shader at <c>ps_4_0_level_9_3</c> (3.0), <c>ps_4_0</c> (4.0) and, on OpenGL,
+    /// <c>ps_3_0</c> (3.0; below mgfxc's DirectX floor, so not a DirectX row) must be refused by KNI's
+    /// shader-model check. A vertex-shader pair does the same for the VS profile: <c>vs_4_0_level_9_1</c>
+    /// loads, <c>vs_4_0_level_9_3</c> (with a 2.0 pixel shader, so only the VS can trip it) is refused.
+    /// </summary>
+    private static List<Job> ReachJobs(EffectCompiler compiler, string label, PlatformTarget target, string dir)
+    {
+        const string Level91 = "#define PS_SHADERMODEL ps_4_0_level_9_1";
+        const string GlArm = "#define PS_SHADERMODEL ps_3_0";
+        string path = Path.Combine(dir, "A_Tint.fx");
+        string tint = File.ReadAllText(path);
+        if (!tint.Contains(Level91, StringComparison.Ordinal) || !tint.Contains(GlArm, StringComparison.Ordinal))
+            throw new InvalidOperationException($"A_Tint.fx no longer contains '{Level91}' and '{GlArm}'");
+
+        // Both arms of the header name the same profile, so the row tests that profile on either target.
+        string Ps(string profile) => tint
+            .Replace(Level91, "#define PS_SHADERMODEL " + profile, StringComparison.Ordinal)
+            .Replace(GlArm, "#define PS_SHADERMODEL " + profile, StringComparison.Ordinal);
+
+        static string Refused(string sm) => $"Shader model {sm} is not supported by the current graphics profile 'Reach'";
+        var red = new Expect(255, 0, 0, 255, 1);
+        var none = new Expect(0, 0, 0, 0, 0);
+
+        var jobs = new List<Job>
+        {
+            Compile(compiler, label, target, EffectContainer.Knifx, path, Ps("ps_4_0_level_9_1"),
+                "PS ps_4_0_level_9_1 [Knifx] loads on Reach", red, setR: null),
+            Compile(compiler, label, target, EffectContainer.Knifx, path, Ps("ps_4_0_level_9_3"),
+                "CONTROL PS ps_4_0_level_9_3 [Knifx] refused on Reach", none, setR: null, expectRefusal: Refused("3.0")),
+            Compile(compiler, label, target, EffectContainer.Knifx, path, Ps("ps_4_0"),
+                "CONTROL PS ps_4_0 [Knifx] refused on Reach", none, setR: null, expectRefusal: Refused("4.0")),
+        };
+        if (target == PlatformTarget.OpenGL)
+            jobs.Add(Compile(compiler, label, target, EffectContainer.Knifx, path, Ps("ps_3_0"),
+                "CONTROL PS ps_3_0 [Knifx] refused on Reach", none, setR: null, expectRefusal: Refused("3.0")));
+
+        jobs.Add(Compile(compiler, label, target, EffectContainer.Knifx, "ReachVs.fx", ReachVs("vs_4_0_level_9_1"),
+            "VS vs_4_0_level_9_1 [Knifx] loads on Reach", red, setR: null));
+        jobs.Add(Compile(compiler, label, target, EffectContainer.Knifx, "ReachVs.fx", ReachVs("vs_4_0_level_9_3"),
+            "CONTROL VS vs_4_0_level_9_3 [Knifx] refused on Reach", none, setR: null, expectRefusal: Refused("3.0")));
+        return jobs;
+    }
+
+    /// <summary>
+    /// A vertex + pixel effect for the Reach VS rows. The VS ignores SpriteBatch's transform and places
+    /// the quad from its texture coordinates, so a full-target sprite covers the target; the PS returns
+    /// the <c>Tint</c> default (red). The pixel profile is always <c>ps_4_0_level_9_1</c> (2.0).
+    /// </summary>
+    private static string ReachVs(string vsProfile) => $$"""
+        #if defined(OPENGL)
+        #define SV_POSITION POSITION
+        #endif
+        float4 Tint = float4(1, 0, 0, 1);
+        struct VsOut { float4 Pos : SV_POSITION; float4 Color : COLOR0; float2 Tc : TEXCOORD0; };
+        VsOut MainVS(float4 pos : POSITION0, float4 color : COLOR0, float2 tc : TEXCOORD0)
+        {
+            VsOut o;
+            o.Pos = float4(tc.x * 2 - 1, 1 - tc.y * 2, 0, 1);
+            o.Color = color;
+            o.Tc = tc;
+            return o;
+        }
+        float4 MainPS(VsOut i) : COLOR0 { return Tint; }
+        technique T { pass P0 { VertexShader = compile {{vsProfile}} MainVS(); PixelShader = compile ps_4_0_level_9_1 MainPS(); } }
+        """;
+
     private sealed record Expect(byte R, byte G, byte B, byte A, int Tolerance);
 
-    private sealed record Job(string Name, byte[]? Bytes, string? CompileError, Expect Expected, float? SetR);
+    /// <param name="ExpectRefusal">When set, <c>new Effect()</c> must THROW with a message containing this text.</param>
+    private sealed record Job(string Name, byte[]? Bytes, string? CompileError, Expect Expected, float? SetR, string? ExpectRefusal = null);
 
     private sealed record JobResult(string Name, bool Ok, string Detail);
 
     private static Job Compile(
         EffectCompiler compiler, string label, PlatformTarget target, EffectContainer container,
-        string path, string source, string name, Expect expected, float? setR)
+        string path, string source, string name, Expect expected, float? setR, string? expectRefusal = null)
     {
         var result = compiler.CompileAsync(source, new CompilerOptions
         {
@@ -134,15 +273,15 @@ public static class InitializerDefaultsProbe
         }).GetAwaiter().GetResult();
 
         if (result.IsFailure)
-            return new Job(name, null, string.Join(" | ", result.Error.Select(e => $"{e.Code}: {e.Message}")), expected, setR);
+            return new Job(name, null, string.Join(" | ", result.Error.Select(e => $"{e.Code}: {e.Message}")), expected, setR, expectRefusal);
 
         // A default that is preserved must not leave DXC's now-untrue warning behind.
         foreach (ShaderError w in result.Value.Warnings)
             if (w.Message.Contains("initializer ignored", StringComparison.Ordinal) && path.EndsWith("RedDefault.fx", StringComparison.Ordinal))
-                return new Job(name, null, $"unexpected warning: {w.Code}: {w.Message}", expected, setR);
+                return new Job(name, null, $"unexpected warning: {w.Code}: {w.Message}", expected, setR, expectRefusal);
 
         Console.WriteLine($"[{label}] compiled {name}: {result.Value.Data.Length} bytes");
-        return new Job(name, result.Value.Data, null, expected, setR);
+        return new Job(name, result.Value.Data, null, expected, setR, expectRefusal);
     }
 
     private sealed class ProbeGame : Game
@@ -153,14 +292,14 @@ public static class InitializerDefaultsProbe
 
         public List<JobResult> Results { get; } = [];
 
-        public ProbeGame(IReadOnlyList<Job> jobs)
+        public ProbeGame(IReadOnlyList<Job> jobs, GraphicsProfile profile)
         {
             _jobs = jobs;
             _ = new GraphicsDeviceManager(this)
             {
                 PreferredBackBufferWidth = Size,
                 PreferredBackBufferHeight = Size,
-                GraphicsProfile = GraphicsProfile.HiDef,
+                GraphicsProfile = profile,
             };
             Window.Title = "ShadowDusk initializer defaults (headless)";
         }
@@ -182,6 +321,9 @@ public static class InitializerDefaultsProbe
 
             foreach (Job job in _jobs)
             {
+                // Flushed before each job, so a native crash (no managed results) still names the case it was in.
+                Console.WriteLine($"[probe] drawing {job.Name}");
+                Console.Out.Flush();
                 if (job.Bytes is null)
                 {
                     Results.Add(new JobResult(job.Name, false, "compile failed: " + job.CompileError));
@@ -192,7 +334,17 @@ public static class InitializerDefaultsProbe
                 try { effect = new Effect(GraphicsDevice, job.Bytes); }
                 catch (Exception ex)
                 {
-                    Results.Add(new JobResult(job.Name, false, "new Effect() threw: " + ex.Message));
+                    bool refused = job.ExpectRefusal is { } want && ex.Message.Contains(want, StringComparison.Ordinal);
+                    Results.Add(new JobResult(job.Name, refused,
+                        (refused ? "refused as expected: " : "new Effect() threw: ") + ex.Message));
+                    continue;
+                }
+
+                if (job.ExpectRefusal is { } expectedRefusal)
+                {
+                    Results.Add(new JobResult(job.Name, false,
+                        $"new Effect() loaded, but the {GraphicsDevice.GraphicsProfile} device must refuse it: \"{expectedRefusal}\""));
+                    effect.Dispose();
                     continue;
                 }
 

@@ -139,7 +139,9 @@ jobs:
         shell: pwsh
         run: |
           dotnet build tests/ShadowDusk.Integration.Tests -c Release -f ${{ matrix.tfm }}
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
           dotnet build tests/ShadowDusk.Slang.Tests -c Release -f ${{ matrix.tfm }}
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
 
       - name: Download the win-x64 manifest
         uses: actions/download-artifact@v8

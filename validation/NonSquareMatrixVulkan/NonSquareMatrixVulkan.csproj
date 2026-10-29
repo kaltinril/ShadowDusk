@@ -1,0 +1,32 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- Issue #423 real-engine probe: non-square matrix parameters Set from C# on real MonoGame 3.8.5
+       DesktopVK, plus the stock SkinnedEffect. Same packages as CandidateVulkan. Not in ShadowDusk.slnx.
+       See validation/SharedNonSquareMatrix/NonSquareMatrixProbe.cs and docs/validation-matrix.md section 6. -->
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net8.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <IsPackable>false</IsPackable>
+    <TreatWarningsAsErrors>false</TreatWarningsAsErrors>
+    <RootNamespace>ShadowDusk.Validation.NonSquareMatrix.Vulkan</RootNamespace>
+    <ManagePackageVersionsCentrally>false</ManagePackageVersionsCentrally>
+    <MonoGamePlatform>DesktopVK</MonoGamePlatform>
+  </PropertyGroup>
+
+  <ItemGroup Label="MonoGame 3.8.5 stable DesktopVK">
+    <PackageReference Include="MonoGame.Framework.Native" Version="3.8.5" />
+    <PackageReference Include="MonoGame.Runtime.Windows.Vulkan" Version="3.8.5" />
+    <PackageReference Include="MonoGame.Runtime.Linux.Vulkan" Version="3.8.5" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\ShadowDusk.Compiler\ShadowDusk.Compiler.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Compile Include="..\SharedNonSquareMatrix\*.cs" />
+  </ItemGroup>
+
+</Project>
