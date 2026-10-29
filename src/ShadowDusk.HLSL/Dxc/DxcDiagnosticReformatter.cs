@@ -147,10 +147,10 @@ internal static partial class DxcDiagnosticReformatter
                 {
                     Code = "SD0210",
                     Message = "A uniform-block member is placed where the std140 layout of the " +
-                              "MonoGame OpenGL target cannot hold it, almost always an explicit " +
-                              "packoffset that puts a vector mid-register (`float3 b : packoffset(c0.y)`). " +
-                              "OpenGL gives every uniform its own register, so remove the packoffset " +
-                              "or start the member on a register of its own (`packoffset(cN)`). DXC: " +
+                              "OpenGL compile (MonoGame/KNI OpenGL, raylib and SkSL all use it) cannot " +
+                              "hold it, almost always an explicit packoffset that puts a vector " +
+                              "mid-register (`float3 b : packoffset(c0.y)`). Remove the packoffset or " +
+                              "start the member on a register of its own (`packoffset(cN)`). DXC: " +
                               primary.Message,
                 };
             }
