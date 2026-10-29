@@ -504,6 +504,58 @@ public sealed class VulkanExplicitRegisterSlotTests
         result.Value.Warnings.ShouldNotContain(w => w.Code == "SD0235");
     }
 
+    // The third review's BLOCKER: a texture whose FIRST textual pairing is dead code. The whole-file
+    // rewrite paired SpriteTexture with U (the dead call), aliased the live S pairing, and DXC then
+    // removed the original, so the compile failed with the writer's internal SD0022 (the sampler
+    // record named a parameter that no longer existed). Each shape must now compile to the one
+    // combined descriptor at slot 0, bound to SpriteTexture, with no alias and no SD0235.
+    public static TheoryData<string, string> DeadFirstPairings() => new()
+    {
+        {
+            "uncalled function",
+            "float4 Unused(float2 uv) { return SpriteTexture.Sample(U, uv); }\n"
+        },
+        {
+            "uncalled helper call",
+            "float4 H(Texture2D t, SamplerState s, float2 uv) { return t.Sample(s, uv); }\n" +
+            "float4 Unused(float2 uv) { return H(SpriteTexture, U, uv); }\n"
+        },
+        {
+            "inactive #ifdef",
+            "#ifdef NOT_DEFINED_ANYWHERE\nfloat4 Legacy(float2 uv) { return SpriteTexture.Sample(U, uv); }\n#endif\n"
+        },
+        {
+            "inactive #if inside the entry point",
+            "#define USE_POINT 0\n"
+        },
+    };
+
+    [Theory]
+    [MemberData(nameof(DeadFirstPairings))]
+    public async Task Vulkan_ATexturesFirstPairingInDeadCode_CompilesToOneDescriptorAtSlot0_NotSD0022(string shape, string deadCode)
+    {
+        bool insideEntry = shape == "inactive #if inside the entry point";
+        string source =
+            "#if SM6\n#define PS_SHADERMODEL ps_6_0\n#else\n#define PS_SHADERMODEL ps_4_0\n#endif\n" +
+            "Texture2D SpriteTexture; SamplerState U; SamplerState S;\n" +
+            deadCode +
+            "float4 MainPS(float4 pos : SV_Position, float4 color : COLOR0, float2 uv : TEXCOORD0) : SV_Target0 {\n" +
+            (insideEntry ? "#if USE_POINT\n  return SpriteTexture.Sample(U, uv);\n#endif\n" : "") +
+            "  return SpriteTexture.Sample(S, uv) * color;\n}\n" +
+            "technique T { pass P { PixelShader = compile PS_SHADERMODEL MainPS(); } }\n";
+
+        var result = await CompileSourceAsync(source, "DeadFirst.fx");
+
+        result.IsSuccess.ShouldBeTrue(result.IsFailure ? $"{shape}: " + string.Join("; ", result.Error.Select(e => $"{e.Code}: {e.Message}")) : "ok");
+        var subject = MgfxBlobReader.Parse(result.Value.Data);
+        subject.ParameterNames.ShouldNotContain(n => n.Contains("_SDVkAlias", StringComparison.Ordinal));
+        MgfxSamplerRecord record = subject.Samplers.ShouldHaveSingleItem();
+        (subject.ParameterNames[record.Parameter], record.TextureSlot, record.SamplerSlot).ShouldBe(("SpriteTexture", (byte)0, (byte)0), shape);
+        VulkanShaderCodeReader.Parse(subject.Shaders.Single().Bytecode).Bindings
+            .Select(b => (b.Binding, b.DescriptorType)).ShouldBe([(32u, CombinedImageSampler)], shape);
+        result.Value.Warnings.ShouldNotContain(w => w.Code == "SD0235");
+    }
+
     [Fact]
     public async Task Vulkan_ASecondTextureOnASamplerOnlyAnIf0CallShares_IsNotSD0028()
     {
@@ -595,7 +647,7 @@ public sealed class VulkanExplicitRegisterSlotTests
     public async Task Vulkan_ABufferResource_IsRefusedWithSD0233_AtItsDeclaration(string declaration, string read, string expected)
     {
         // A storage buffer used to compile silently to a UNIFORM_BUFFER descriptor the runtime never
-        // fills, and a Buffer<T> was refused as SD0228 with advice about declarations on one line.
+        // fills, and a Buffer<T> compiled silently too (the first fix refused it as SD0228, whose advice did not apply).
         string source = "#if SM6\n#define PS_SHADERMODEL ps_6_0\n#else\n#define PS_SHADERMODEL ps_5_0\n#endif\n" +
                         "Texture2D T; SamplerState S;\n" +
                         declaration + "\n" +
