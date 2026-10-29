@@ -25,6 +25,19 @@ the reads after one early `return` share its fate. The source walk never evaluat
 every read under one is a maybe-read, and when the maybe-reads fxc keeps could change the order
 it refuses with `SD0230` and keeps declaration order.
 
+The `U*` shapes (2026-10-29, the final review) are shapes the walk does not model, each once
+numbered silently wrong: `U01`..`U14`, `U68`, `U69` are statements fxc DROPS before it numbers (a
+bare `tex2D(B, uv);`, in parentheses, a block, a loop, after an `if`, a void helper, a `for` init, a
+constructor `float4(tex2D(B, uv));`, `tex2Dgrad`, `Tb.Sample(SB, uv);`), refused; `U20`..`U43` are
+discarded values fxc KEEPS (`.r`, `* 2`, `* 0`, a cast, `clip`, `sincos`, a user function's call, a
+comma, `?:`, an unused local, a `for` init declaration), numbered; `U50`..`U56` are bare intrinsic
+calls fxc keeps and the walk refuses anyway (false refusals). `U60`..`U69` use a legacy sampler's
+texture through a method of its own (`GetDimensions`, `Load`, `Sample`, `SampleLevel`): `mgfxc`
+gives that use a second record (`A@t0 Tb@t1 Tb@t2`), refused. `U70`..`U74` read in a global
+initializer, numbered before the entry point's even when the global is unused, refused.
+`U80`..`U83` are a struct method and a namespace function (d3dcompiler only: vkd3d rejects the
+syntax), refused.
+
 What they pin (fxc's rule, per compiled shader): every explicit `register(tN)` on a `t`-register
 declaration takes `tN` out of circulation even when nothing reads the resource, and a modern
 resource read directly keeps it; then every legacy sampler's texture in the order the shader FIRST
@@ -35,11 +48,11 @@ register on the `texture2D` a `sampler_state` names only reserves it, and a lega
 
 `DirectX11TextureSlotOrderTests` compiles every shape with BOTH DXBC backends (vkd3d, and the
 `d3dcompiler_47` option on Windows) and expects `mgfxc`'s table, except the shapes it lists as
-known divergences (one texture behind two samplers, declarator-list sampler slots, a resource array,
+known divergences (one texture behind two samplers or behind a sampler and a method call, declarator-list sampler slots, a resource array,
 macro-declared samplers compiled natively, a sampler passed as a function argument, the refusals
 whose `mgfxc` order is not declaration order (the false-`SD0230` class), and on vkd3d the reads
-fxc folds away), and the shapes it expects to warn `SD0230`. Every shape either matches `mgfxc`
-exactly or warns.
+fxc folds away), and the shapes it expects to warn `SD0230`; vkd3d must reject `U80`..`U83`.
+Every shape either matches `mgfxc` exactly or warns.
 
 Consumers: `tests/ShadowDusk.Integration.Tests/Reflection/DirectX11TextureSlotOrderTests.cs`, the
 "texture-slots" arm of `validation/DxModernFeatures` and the texture-slot rows of

@@ -41,7 +41,11 @@ public sealed class DirectX11TextureSlotOrderTests
     /// uniform, an input, was broken: <c>P05</c>, <c>P09</c>, <c>P13</c>, <c>Q13</c>, <c>R01</c>,
     /// <c>R02</c> are fxc folding a condition that looked run-time). Here fxc kept the read (a
     /// uniform, an input), or folded it in a way the token order does not show (<c>K15</c>,
-    /// <c>K18</c>, <c>K20</c>, <c>D12</c>'s iteration order).
+    /// <c>K18</c>, <c>K20</c>, <c>D12</c>'s iteration order). The <c>U*</c> ones refuse shapes the
+    /// walk does not model at all: a bare call statement fxc keeps (<c>max(tex2D(B, uv), 0);</c>; the
+    /// walk refuses every bare call that reads, since fxc drops <c>tex2D(B, uv);</c> and
+    /// <c>float4(tex2D(B, uv));</c>), a read in a global initializer (fxc numbers it before the entry
+    /// point's), a struct method or namespace function (d3dcompiler only: vkd3d rejects the syntax).
     /// </summary>
     private static readonly HashSet<string> FalseSD0230 = new(StringComparer.Ordinal)
     {
@@ -53,6 +57,19 @@ public sealed class DirectX11TextureSlotOrderTests
         "Q02_SwitchDefaultMiddle", "Q03_SwitchThreeCases", "Q04_SwitchBranchAttr", "Q05_SwitchFlattenAttr", "Q06_SwitchFloatSel",
         "Q08_ElseIfChain", "Q09_ElseIfChain93", "Q14_UnsignedIntVecComp", "Q15_SwitchCaseBlockDefaultFirstTwoTex",
         "R05_UniformIncrement", "R06_ParamNoSemanticHelperUnused", "R07_ElseAfterBreakUncond", "T12_EarlyReturnReadLaterAgain",
+        "U50_StmtMax", "U51_StmtSaturate", "U52_StmtDot", "U53_StmtLerp", "U54_StmtAbs", "U55_StmtLength",
+        "U56_StmtModernSampleLegacyCoord",
+        "U70_StaticGlobalUnused", "U71_StaticGlobalHelper", "U72_StaticArrayInit", "U73_StaticGlobalOrderTwo", "U74_StaticGlobalUsed",
+        "U80_StructMethodFirst", "U81_StructMethodInExpr", "U83_NamespaceFunction",
+    };
+
+    /// <summary>
+    /// Shapes vkd3d-shader rejects outright (a struct method, a namespace: <c>E5000</c>), loudly; the
+    /// d3dcompiler_47 option compiles them and is held to the lists above.
+    /// </summary>
+    private static readonly HashSet<string> Vkd3dRejects = new(StringComparer.Ordinal)
+    {
+        "U80_StructMethodFirst", "U81_StructMethodInExpr", "U82_StructMethodLast", "U83_NamespaceFunction",
     };
 
     /// <summary>
@@ -62,7 +79,11 @@ public sealed class DirectX11TextureSlotOrderTests
     /// <item><c>TwoSamplersShareOneTexture</c>, <c>S13_ModernSampledAndStateNamed</c>: fxc gives every
     /// legacy sampler its own texture object, so one texture behind two samplers (or behind a
     /// sampler and a direct read) is two <c>mgfxc</c> records; the SM4 rewrite has one
-    /// <c>Texture2D</c>, so one record.</item>
+    /// <c>Texture2D</c>, so one record. The same for a legacy sampler's texture the shader also
+    /// calls a method on (<c>U60</c> <c>GetDimensions</c>, <c>U62</c> <c>Load</c>, <c>U63</c>
+    /// <c>Sample</c>, <c>U64</c> <c>SampleLevel</c>, <c>U65</c>, <c>U67</c> the sprite template with
+    /// <c>GetDimensions</c>): <c>mgfxc</c> has <c>A@t0 Tb@t1 Tb@t2</c>, ShadowDusk one <c>Tb</c>
+    /// record, and these warn <c>SD0230</c> (pre-existing on <c>main</c>, which warned nothing).</item>
     /// <item><c>A02_DeclListLegacyReverse</c>: <c>sampler2D A, B;</c> gets its SAMPLER slots in
     /// another order (texture slots match; same on <c>main</c> before this change).</item>
     /// <item><c>A01_TexArrayPlusLegacy</c>: a texture array beside a legacy sampler is not modelled;
@@ -83,6 +104,8 @@ public sealed class DirectX11TextureSlotOrderTests
     {
         "TwoSamplersShareOneTexture", "S13_ModernSampledAndStateNamed", "A02_DeclListLegacyReverse", "A01_TexArrayPlusLegacy",
         "B02_MacroTexture", "K13_SamplerParam",
+        "U60_StateTextureGetDimsUsed", "U62_StateTextureLoadFirst", "U63_StateTextureSampleKept", "U64_StateTextureSampleLevelKept",
+        "U65_StateTextureGetDimsAfter", "U67_SpriteTemplateGetDims",
     }.Union(FalseSD0230).ToHashSet(StringComparer.Ordinal);
 
     /// <summary>
@@ -104,11 +127,22 @@ public sealed class DirectX11TextureSlotOrderTests
     /// component, a value range, a loop that runs zero times, a uniform the shader assigns, a
     /// <c>uint</c> compared with <c>0</c>, a loop bound that truncates). Each of those was guessed
     /// wrong, silently, by a walk that tried to prove a condition run-time. <c>A01</c> and
-    /// <c>K13</c> refuse for their own reasons (a resource array, a sampler parameter).
+    /// <c>K13</c> refuse for their own reasons (a resource array, a sampler parameter). The
+    /// <c>U0*</c>/<c>U1*</c> shapes are bare call statements fxc DROPS before it numbers
+    /// (<c>tex2D(B, uv);</c>, in parentheses, a block, a loop, a void helper, a <c>for</c> init, a
+    /// constructor, <c>tex2Dgrad</c>, <c>Tb.Sample(SB, uv);</c>); the <c>U6*</c> ones and <c>S13</c>
+    /// use a legacy sampler's texture through a method of its own; <c>U82</c> is a struct method.
     /// </summary>
     private static readonly HashSet<string> ExpectedSD0230 = new HashSet<string>(StringComparer.Ordinal)
     {
         "A01_TexArrayPlusLegacy", "K13_SamplerParam",
+        "U01_StmtBareRead", "U02_StmtParenRead", "U03_StmtCtor", "U04_StmtCtorTwoArgs", "U05_StmtGrad", "U06_StmtBlock",
+        "U07_StmtInCertainLoop", "U08_StmtNestedRead", "U09_StmtAfterIf", "U10_VoidHelperBareRead", "U11_VoidHelperAssignThenBare",
+        "U12_ForInitBareRead", "U13_StmtStateSampler", "U14_StmtCtorMulti", "U68_StmtStateTextureSample", "U69_StmtStateTextureSampleLevel",
+        "S13_ModernSampledAndStateNamed", "U60_StateTextureGetDimsUsed", "U61_StateTextureGetDimsDead", "U62_StateTextureLoadFirst",
+        "U63_StateTextureSampleKept", "U64_StateTextureSampleLevelKept", "U65_StateTextureGetDimsAfter",
+        "U66_StateTextureSampleSwizzleStmt", "U67_SpriteTemplateGetDims",
+        "U82_StructMethodLast",
         "K01_CallZeroCond", "K02_LocalFromCall", "K03_CallIgnoresRuntimeArg", "K04_DefaultArgBranch", "K05_OutParamZero",
         "K06_TaintedByStaticBranch", "K07_AndFalse", "K08_AndMacroZero", "K09_VectorComponent", "K10_SaturateRange",
         "K11_StructMemberShadowsStatic", "K21_LoopCallZero", "K26_IfFalseLiteral", "K31_ZeroTripLoop", "K36_InputAssigned",
@@ -133,7 +167,7 @@ public sealed class DirectX11TextureSlotOrderTests
     public void TheGoldenFolder_HoldsEveryShape()
     {
         // MemberData over a folder would silently pass with zero rows if the fixtures were not copied.
-        AllShapes().Count.ShouldBeGreaterThanOrEqualTo(240);
+        AllShapes().Count.ShouldBeGreaterThanOrEqualTo(304);
     }
 
     [Fact]
@@ -174,6 +208,17 @@ public sealed class DirectX11TextureSlotOrderTests
 
     private static async Task AssertMatchesGolden(string shape, DxbcBackend backend)
     {
+        if (backend == DxbcBackend.Vkd3d && Vkd3dRejects.Contains(shape))
+        {
+            using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(120));
+            var rejected = await new EffectCompiler().CompileAsync(
+                await File.ReadAllTextAsync(SourcePath(shape), cts.Token),
+                new CompilerOptions { Target = PlatformTarget.DirectX, DxbcBackend = backend, SourceFileName = shape + ".fx" },
+                cts.Token);
+            rejected.IsFailure.ShouldBeTrue($"{shape} [{backend}] now compiles: take it off Vkd3dRejects and check its table");
+            return;
+        }
+
         (MgfxBlobReader subject, IReadOnlyList<ShaderError> warnings) = await CompileAsync(shape, backend);
         MgfxBlobReader golden = Golden(shape);
 
@@ -305,6 +350,19 @@ public sealed class DirectX11TextureSlotOrderTests
         warning.Message.ShouldContain("declarator list", Case.Sensitive);
         Tables(MgfxBlobReader.Parse(result.Value.Data))
             .ShouldHaveSingleItem().ShouldBe("ps: A@t2s1 T@t0s0 U@t1s1");
+    }
+
+    [Theory]
+    [InlineData("U60_StateTextureGetDimsUsed")]   // Tb.GetDimensions, then tex2D(A), then tex2D(SB)
+    [InlineData("U63_StateTextureSampleKept")]    // the author's own Tb.Sample(SB, uv), which the rewrite's reads look like
+    public async Task ALegacySamplersTextureWithAMethodOfItsOwn_WarnsSD0230(string shape)
+    {
+        // mgfxc 3.8.4.1: A@t0 Tb@t1 Tb@t2, the method use a record of its own. Counting the method
+        // call as the legacy read put Tb on t0, silently.
+        (MgfxBlobReader subject, IReadOnlyList<ShaderError> warnings) = await CompileAsync(shape, DxbcBackend.Vkd3d);
+        warnings.Where(w => w.Code == "SD0230").ShouldHaveSingleItem()
+                .Message.ShouldContain("'Tb' is also used through a method call", Case.Sensitive);
+        Tables(subject).ShouldHaveSingleItem().ShouldBe("ps: A@t0s0 Tb@t1s1");
     }
 
     [Fact]
