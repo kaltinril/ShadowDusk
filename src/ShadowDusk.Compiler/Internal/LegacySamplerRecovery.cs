@@ -134,6 +134,35 @@ internal static class LegacySamplerRecovery
     }
 
     /// <summary>
+    /// The preprocessed pre-parse alone, for a recovery that is not about legacy sampler syntax:
+    /// the Vulkan retry after <c>SD0228</c>, where a texture or sampler DECLARATION comes out of a
+    /// macro (<c>#define DECL_TEX(x) Texture2D x##Tex;</c>) and so is invisible to the Vulkan
+    /// binding rewrite on the raw text. On the preprocessed text the declaration is literal and
+    /// gets its register. Returns <see langword="null"/> when that text cannot be built faithfully
+    /// (a view error, or a conditional on a compiler-predefined macro), in which case the first
+    /// attempt's diagnostics stand.
+    /// </summary>
+    public static Outcome.Retry? PreprocessedRetry(
+        string rawSource,
+        string sourceFileName,
+        MacroSet macros,
+        IIncludeResolver includeResolver,
+        IReadOnlyList<string> additionalIncludePaths)
+    {
+        Result<PreprocessedSource, ShaderError> flattenedRaw = new Preprocessor().Flatten(
+            rawSource, sourceFileName, macros, includeResolver, additionalIncludePaths);
+        if (flattenedRaw.IsFailure)
+            return null;
+
+        Result<FxPreprocessedParse, ShaderError> parsed =
+            FxPreParser.ParsePreprocessed(flattenedRaw.Value.Text, sourceFileName);
+        if (parsed.IsFailure || parsed.Value.CompilerPredefinedMacro is not null)
+            return null;
+
+        return new Outcome.Retry(parsed.Value, flattenedRaw.Value.Text, flattenedRaw.Value.Warnings);
+    }
+
+    /// <summary>
     /// Turns <see cref="Evaluate"/>'s verdict into the final result of a compile or conversion
     /// whose first attempt (<paramref name="first"/>) failed on a DXC shader compile. Shared by
     /// <c>CompilationPipeline.Run</c> and the raylib and SkSL converters (issue #327), so the

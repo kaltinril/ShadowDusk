@@ -56,11 +56,34 @@ internal sealed class FxMacroPreprocessor
     // The first compiler-predefined macro a conditional tested, which this preprocessor cannot
     // know the value of (DXC defines it; nothing here does).
     private CompilerPredefinedMacroUse? _predefinedUse;
+    // The (1-based) physical lines of non-directive text inside a conditional group that is not
+    // taken, when the caller asked for them (SkippedLines).
+    private HashSet<int>? _skippedLines;
 
     private FxMacroPreprocessor(string sourceFile, bool compilerInput = false)
     {
         _file = sourceFile;
         _compilerInput = compilerInput;
+    }
+
+    /// <summary>
+    /// The lines of <paramref name="flattenedSource"/> the preprocessor drops because they sit in
+    /// a conditional group that is not taken (<c>#if 0</c>, the other branch of an
+    /// <c>#if</c>/<c>#else</c>): 1-based physical line numbers of the text as given, directive lines
+    /// themselves not included. <c>#define</c> bodies are NOT skipped lines (a macro is still used
+    /// where it is expanded). Also reports whether a conditional tested a compiler-predefined macro,
+    /// which the evaluation assumes undefined (see <see cref="ProcessForCompiler"/>), and returns the
+    /// compiler-input view itself (<c>View</c>: every macro expanded, line N of the view holding what
+    /// line N of the source held), so a caller can read what the code calls with no macro in the way.
+    /// </summary>
+    internal static Result<(IReadOnlySet<int> Lines, CompilerPredefinedMacroUse? PredefinedMacroUse, string View), ShaderError> SkippedLines(
+        string flattenedSource, string sourceFile)
+    {
+        var preprocessor = new FxMacroPreprocessor(sourceFile, compilerInput: true) { _skippedLines = new HashSet<int>() };
+        Result<string, ShaderError> view = preprocessor.Run(flattenedSource);
+        return view.IsFailure
+            ? Result<(IReadOnlySet<int>, CompilerPredefinedMacroUse?, string), ShaderError>.Fail(view.Error)
+            : Result<(IReadOnlySet<int>, CompilerPredefinedMacroUse?, string), ShaderError>.Ok((preprocessor._skippedLines!, preprocessor._predefinedUse, view.Value));
     }
 
     /// <summary>
@@ -246,7 +269,13 @@ internal sealed class FxMacroPreprocessor
 
             if (!isDirective)
             {
-                if (Active())
+                if (!Active())
+                {
+                    // Every physical line of the logical one (continuations included).
+                    for (int skipped = physicalLine; skipped <= i + 1; skipped++)
+                        _skippedLines?.Add(skipped);
+                }
+                else
                 {
                     if (pending.Count == 0)
                     {

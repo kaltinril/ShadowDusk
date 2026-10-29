@@ -18,6 +18,15 @@ public sealed record ConstantBufferReflection
     /// other resource. Default 0 for non-Vulkan.
     /// </summary>
     public int RawBinding { get; init; }
+    /// <summary>The raw SPIR-V <c>DescriptorSet</c> decoration. See <see cref="RawBinding"/>.</summary>
+    public int RawDescriptorSet { get; init; }
+    /// <summary>
+    /// True when the buffer is a storage buffer (an HLSL <c>StructuredBuffer</c>, <c>ByteAddressBuffer</c>
+    /// or one of their <c>RW</c> forms), not a constant buffer: a <c>BufferBlock</c> struct in the SPIR-V
+    /// reflection; false from DXIL/DXBC. The Vulkan target refuses it (<c>SD0233</c>), MonoGame's
+    /// Vulkan effect format having no storage-buffer descriptor.
+    /// </summary>
+    internal bool IsStorageBuffer { get; init; }
     /// <summary>The variables packed into the buffer, in offset order.</summary>
     public required IReadOnlyList<VariableReflection> Variables { get; init; }
 }

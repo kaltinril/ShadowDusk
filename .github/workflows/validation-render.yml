@@ -824,6 +824,14 @@ jobs:
         if: ${{ !cancelled() }}
         run: validation/run-with-vk-validation.sh legacy-lod -- xvfb-run -a dotnet run --project validation/VsDrivenVulkan -c Release --no-build -- legacy-lod
 
+      # Explicit register slots: a Vulkan texture's slot is its SPIR-V binding minus 32, as mgfxc
+      # 3.8.5 writes it and DesktopVK reads it. A lone register(t1), a t0+t2 gap and a
+      # Texture2DArray on t1 (slice 1) vs their mgfxc goldens through SpriteBatch, each with a
+      # known-colour check. Before the fix ShadowDusk wrote the ordinal slot and drew (0,0,0,0).
+      - name: Vulkan explicit register slots (lone t1, t0+t2 gap, Texture2DArray) vs mgfxc 3.8.5
+        if: ${{ !cancelled() }}
+        run: validation/run-with-vk-validation.sh regslots -- xvfb-run -a dotnet run --project validation/VsDrivenVulkan -c Release --no-build -- regslots
+
       # Own-output proof: mgfxc's Vulkan output for this corpus is unloadable (upstream
       # SlotOffset bug, see compare_vulkan.py), so BaselineVulkan is best-effort and
       # compare_vulkan.py fails only on a CANDIDATE problem. The validation layer is what
@@ -870,6 +878,42 @@ jobs:
         env:
           SHADOWDUSK_VK_CONTROL: spirv-1.3-header
         run: validation/run-with-vk-validation.sh control-spirv-version --expect-red '(VkShaderModuleCreateInfo|vkCreateShaderModule|spirv-val)' -- xvfb-run -a dotnet run --project validation/VsDrivenVulkan -c Release --no-build
+
+      # The candidate's slot records and header masks rewritten to ordinal numbering (the
+      # pre-fix bytes, measured equal apart from the content hash): the regslots row must go red.
+      - name: Positive control, ordinal texture slots must fail the register-slot row
+        if: ${{ !cancelled() }}
+        env:
+          SHADOWDUSK_VK_CONTROL: ordinal-slots
+        run: validation/run-with-vk-validation.sh control-ordinal-slots --expect-red 'CONTROL-DETECTED' -- xvfb-run -a dotnet run --project validation/VsDrivenVulkan -c Release --no-build -- regslots
+
+      # RegisterSpace0's SPIR-V DescriptorSet decorations set back to 0 (what an explicit space0
+      # gave before it was dropped). The layer reports the shader using a set the pipeline layout
+      # lacks (VUID ...-layout-07988) and the draw may then fault before the pixel verdict prints,
+      # so either marker proves the planted defect turned the lane red.
+      - name: Positive control, a kept register space must fail the register-slot row
+        if: ${{ !cancelled() }}
+        env:
+          SHADOWDUSK_VK_CONTROL: keep-space
+        run: validation/run-with-vk-validation.sh control-keep-space --expect-red '(CONTROL-DETECTED|layout-07988)' -- xvfb-run -a dotnet run --project validation/VsDrivenVulkan -c Release --no-build -- regslots
+
+      # RegisterDeadSampler compiled with its texture on t1, the layout a reserved dead sampler
+      # register used to force: a SpriteBatch-only draw then reads an empty slot.
+      - name: Positive control, a reserved dead sampler register must fail the register-slot row
+        if: ${{ !cancelled() }}
+        env:
+          SHADOWDUSK_VK_CONTROL: reserve-dead
+        run: validation/run-with-vk-validation.sh control-reserve-dead --expect-red 'CONTROL-DETECTED' -- xvfb-run -a dotnet run --project validation/VsDrivenVulkan -c Release --no-build -- regslots
+
+      # RegisterSamplerPerPass and RegisterSamplerPerStage compiled with their second sampler's texture
+      # on its own t1 declaration, the alias layout the whole-file pairing produced: the second
+      # technique's SpriteBatch-only draw reads an empty slot, and the per-stage row draws the
+      # parameter's colour where the sprite belongs.
+      - name: Positive control, whole-file sampler pairing must fail the per-shader rows
+        if: ${{ !cancelled() }}
+        env:
+          SHADOWDUSK_VK_CONTROL: whole-file-pairing
+        run: validation/run-with-vk-validation.sh control-whole-file-pairing --expect-red 'CONTROL-DETECTED' -- xvfb-run -a dotnet run --project validation/VsDrivenVulkan -c Release --no-build -- regslots
 
       - name: Upload render outputs + validation-layer logs (debug)
         if: always()

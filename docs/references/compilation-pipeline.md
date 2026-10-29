@@ -56,7 +56,8 @@ INPUT  shader.fx  (HLSL + FX9 effect blocks)
         │                          │                                  │                     │
         │                          ▼                                  │                     ▼
         │                  MonoGameGlslRewriter                       │              SpirvReflector
-        │                  (MojoShader-dialect GLSL)                  │               (reflection)
+        │                  (MojoShader-dialect GLSL)                  │               (reflection;
+        │                          │                                  │          slot = binding - 32)
         │                          │                                  │                     │
         └────────────┬─────────────┘                                  │                     ▼
                      ▼                                                 ▼         VulkanShaderCodeWrapper
