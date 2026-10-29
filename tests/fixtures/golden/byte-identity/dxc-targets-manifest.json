@@ -835,56 +835,56 @@
     ]
   },
   "DirectX12.Debug/third-party/KNI/NewSyntax_s0s1t0t1.fx": {
-    "mgfx": "2f7253fe8bb647ee2375cc74cf77c55f60c477888948627d996f0181a29e39cc",
-    "mgfxNormalized": "4cbe74f997368f559781e829e5e263a36e2a636981d3ca1413df9e728e4cccf5",
+    "mgfx": "5dcbf6e7af11649c7e24f1d568c500de8fd43b6c40214eafdd75753234717134",
+    "mgfxNormalized": "752f0b9d8ee5b19b3e9f82e00ddefaeb122866e3b7555a1392bd42fbad0922a6",
     "dxil": "9f69d43eeb54d3ec963547a293e9d0f7acece60f66bd1d6ec49f171fe09f638b",
     "warnings": []
   },
   "DirectX12.Debug/third-party/KNI/NewSyntax_t0t1.fx": {
-    "mgfx": "4b42ed460ea4eadb91457423b4c79c61c1f7b96994b5c98bba6a0f2f11bf99fd",
-    "mgfxNormalized": "71f399212f2e440d3af9c7c28cb74fb9983a9ff36efcb2ba6a728377d3b164d3",
+    "mgfx": "9194a64910ef0d90616b9a00baabbfb28b7843e8ed5388acce2214dea2aa95b8",
+    "mgfxNormalized": "8f8246494537a421ba64d6867f0ebcabc87b709bbc7d576cbb66c5cafde6bbe6",
     "dxil": "b0b773a943e30f86bc3c41f19f6102e6221d132383792d719850509120aa0719",
     "warnings": []
   },
   "DirectX12.Debug/third-party/KNI/OldSyntax_s0s1.fx": {
-    "mgfx": "ee552fd6eef0a37277c2ebae7097eed49c4a9036877e13e7cbf084eb7ab13a5d",
-    "mgfxNormalized": "272104c9829973a82b6ad0baba3f7c3bb0c77e0b8a3d3406fd3e8af81c49faaf",
+    "mgfx": "549fff4f10ce7f470ee4c026d232eb4579a4973a696d2d9956c0e8b9047850e0",
+    "mgfxNormalized": "5580ccc8838d23f0129e2002c033ab0f9432f10748304c6b5c3084e612182ee2",
     "dxil": "db54614a73d5d787d48a38089e153c696f66288cdaf25b170c993a2ca910ec32",
     "warnings": []
   },
   "DirectX12.Debug/third-party/KNI/OldSyntax_s0s1t0t1.fx": {
-    "mgfx": "f76d4c2d528320d1cb4878f7215d805ad25531118dc8f263b358df820ca2990a",
-    "mgfxNormalized": "d4b5f5e4bfbe086f4d34737debcc066328164b49d2a4e7353de9a10e5f20b9b8",
+    "mgfx": "d484127717fd0098bcaf60e726610b803ff1307202dad457f5ae27776811dc6e",
+    "mgfxNormalized": "49ed2ef9de4ad8bd0309094ad0d771645fc14eece6100618e44ca9d0c7579fe6",
     "dxil": "db2c772e776d4300c58ca820da564df202b59038e4c1c5b25edda21c8db78c32",
     "warnings": []
   },
   "DirectX12.Debug/third-party/KNI/OldSyntax_t0t1.fx": {
-    "mgfx": "581febc5e5ec07bf0d808ca7fd98e96f863f2e5e511c81c3fda84a50a5728f6a",
-    "mgfxNormalized": "9c0e7dd0a697799096720ab50c5a080921cc248103e40b56c497725326e3efb9",
+    "mgfx": "a91ff7faab0a7d39aa98dc08ab28b18a26388eeea4be6ac8894ea729b5f26801",
+    "mgfxNormalized": "727a47195f1ae8f95d9cd0c4e8da7c02445d00903ffb2dbfedc28612dc4ffae9",
     "dxil": "479bdd48cd224cf7acd339055008f04b7cfdfb0a67538219fd76b60fa6e2f3dc",
     "warnings": []
   },
   "DirectX12.Debug/third-party/KNI/OldSyntax_t1t0.fx": {
-    "mgfx": "d5ff0e088cb50a92563c7bfa103880db2a4fc03cbe35131bd2dbdad33d58cfff",
-    "mgfxNormalized": "e8b0eff40e65a8b4b23dd21c4c0b06f02dd1b3edde0d6c940e00bde8dfb1b806",
+    "mgfx": "3510af5d908722a507eb20965855f0a87619acd25a387a9f1a3672e691ab38f3",
+    "mgfxNormalized": "5ab7275a19c465c354bd15a203f43c5f6f8f88a4c757a132d676ca43205423d4",
     "dxil": "fa1d902ac2a01be1c1197a002366dd1033e5c794002269e6a451ef7b27de2cfe",
     "warnings": []
   },
   "DirectX12.Debug/third-party/KNI/OldSyntax_x.fx": {
-    "mgfx": "406889d45dabefae7bbd720ac76a5c85e680cf838647f8f4c2f5e05e8f3ab5d7",
-    "mgfxNormalized": "56899df8a1d8b2f2a867113dd5e3528ed853e882c9259f734a902ac42348b34a",
+    "mgfx": "3563708071a83b24eeed5b7338bb9aa2ff5d1cfc7629c1ddef8ad5a81622017d",
+    "mgfxNormalized": "d2c4de99a882bf7ffc50b1c29f09526f6bc9fc5ad7d8d2ba8908fee8addb192e",
     "dxil": "aaf9ca7e7f4070dd2f0ce3e6fb7d5cfc00174afaef2fb34b0c18d3a8d71fc72f",
     "warnings": []
   },
   "DirectX12.Debug/third-party/KNI/OptimizedMatrix.fx": {
-    "mgfx": "f1893728b74204223b39b09aa94b48079358e509969110b7e97dcf6b275e81a7",
-    "mgfxNormalized": "a3b17f35e203aa0f8fc5410794b002304cb6b7c087d9b1aa9e83b9e339aa7f90",
+    "mgfx": "a1044e077b46b6dc85a27ad1af30da92208856c0df38c18843fcbe50b72c4232",
+    "mgfxNormalized": "81325159ddabae34f7d4565880bcc832ac09173417b6a9f6ef2c7bed434698b0",
     "dxil": "ae87fcc2a293379c64e34e6546d1a7a63a4ac8b19d637c2a858e5eddd44bfc5c",
     "warnings": []
   },
   "DirectX12.Debug/third-party/KNI/OptimizedMatrixArray.fx": {
-    "mgfx": "8852191a0a8ad7d9fd95c65684215c95b97c24b7d385548effacb318ca2a3e5a",
-    "mgfxNormalized": "940957eec71a2df71bfb1e33722d790ebad909620dfdf6f1897b7dcff74211b3",
+    "mgfx": "1de1fe837a274dd039d046e9b8796255336f536596825b8f0c911c0c27d1272f",
+    "mgfxNormalized": "982db3a40f8df8159257f01bf3951eb76b41264edfbbf92aabba6f3f6052dc1b",
     "dxil": "99f346de4532abc3eda3e7f43137a0b206eb137cc9bdc5c1a1317f6717fef043",
     "warnings": []
   },
@@ -983,8 +983,8 @@
     "warnings": []
   },
   "DirectX12.Debug/third-party/MonoGame/VertexTextureEffect.fx": {
-    "mgfx": "a873899239886913c5efac14b5390459d560480213cef9eb6e1abc9ea0b8e9ea",
-    "mgfxNormalized": "4c68f43e3466bf25d3bd955dfa60974c71ec10bc8c663db85abd9b466a3d2cab",
+    "mgfx": "bb283dbad7f40bc04aebca95d9e955f8e0b194dd05636e8befbe4481baa18dbb",
+    "mgfxNormalized": "4d82cf65fe9e59d79d488bf3a38bc2300b99f8ae7a67e91d9093523e09f5bbf4",
     "dxil": "3775eddfd16fd1e1da102c0ec4a8d2daf6d6e4013691e4f68748b771fafb703f",
     "warnings": []
   },
@@ -1949,56 +1949,56 @@
     ]
   },
   "DirectX12/third-party/KNI/NewSyntax_s0s1t0t1.fx": {
-    "mgfx": "9a6cb76625db382976f54026d298497c1b2786f0afdb99652a7189866558ced2",
-    "mgfxNormalized": "87d287bcab915f10f437a60f51f25ed18c8d7fcd254698c752022d30563755d6",
+    "mgfx": "1495b8339b693e0c7312c4936a10e8be0c65c4a73459fdb92c5fd9b8cd23c467",
+    "mgfxNormalized": "8b767e15b6136bad544f0d1152ce1e6c349f84bf101074e1ab780d30c9d032db",
     "dxil": "cd2a644dc6f771ca0ea25307b9c87f8883fadd0e4eab4e778b5ed08cf44817cc",
     "warnings": []
   },
   "DirectX12/third-party/KNI/NewSyntax_t0t1.fx": {
-    "mgfx": "9b912bde7cb7f646eea8e14b4a4f3dcc9b48532c993b3118ae1131174cad1cd5",
-    "mgfxNormalized": "a4be1d81e33026118537b82cc0cec2280500b13227535dc8b58d2c0aeaa04d5e",
+    "mgfx": "ea16d23f88a79d728be491086ca242d89453d4c67ab24455f3859bdca4aa9235",
+    "mgfxNormalized": "9dfee3ba717c344950ea3de629ae8fd3f6b3725533ae4ee3f1a047465a29056a",
     "dxil": "cd2a644dc6f771ca0ea25307b9c87f8883fadd0e4eab4e778b5ed08cf44817cc",
     "warnings": []
   },
   "DirectX12/third-party/KNI/OldSyntax_s0s1.fx": {
-    "mgfx": "be7e37656232afdcc7fb93b4eecb3eff2d484847dcffc20edd417cc4784e3733",
-    "mgfxNormalized": "d0ef73c19879bca98227c4e0ebb5578cb6f21eec27ea4469291cbb93ccb6e1c3",
+    "mgfx": "8d16afe64a745a6015935a58607bc4c8ee612649bd8b92cc2c81b801050f03ca",
+    "mgfxNormalized": "13d89fe34518678f15ca07ce76ff728465f6fefbfc7c1d66cede33b05a4e4fc4",
     "dxil": "1d57198bf07157fd69033ad5132fe227c394f25d0d7acb54ed0dbe528466abc6",
     "warnings": []
   },
   "DirectX12/third-party/KNI/OldSyntax_s0s1t0t1.fx": {
-    "mgfx": "92457b048840082ac7b1b40cfa89cc90f1cbaeda134e7fef192595af9783da05",
-    "mgfxNormalized": "002a2e6998675c8f6fdeec98e47729e3e9d581a06f6b6667072360713bb804f7",
+    "mgfx": "ecee511a9012412c84a2a1182ca907959aef753ecf21f220b87e463252200c17",
+    "mgfxNormalized": "7dc4b8e5694b96c113dc7cdea60dc44b3a185c1e56be1ac556dd2e9f7eabbbd0",
     "dxil": "cd2a644dc6f771ca0ea25307b9c87f8883fadd0e4eab4e778b5ed08cf44817cc",
     "warnings": []
   },
   "DirectX12/third-party/KNI/OldSyntax_t0t1.fx": {
-    "mgfx": "d50504b9d373c9e7ab262e70e52772b113cf4e0fbfd4a69080654a9ff3a4fd95",
-    "mgfxNormalized": "37fd85b195c2667dfd532a055a92518ec63ae78d7f0352a968461a1e346ddfd0",
+    "mgfx": "b2ae3cc6cfccf09bb8cc8b78d6b1f8d22b57844f910faac590bba20967fe5ddb",
+    "mgfxNormalized": "e5fbb8e8e484a87990892a236e609c411a24d5aac223dd80cb584d5a35606790",
     "dxil": "ca48111b303e1552d1a2985ca500d82ad5627b7611bd22dd35fa1d2d40adc7ac",
     "warnings": []
   },
   "DirectX12/third-party/KNI/OldSyntax_t1t0.fx": {
-    "mgfx": "38da082fd43b2885f3c461fbbf3d308d5194fab8cda5ab4a9f8a74f87c11c15d",
-    "mgfxNormalized": "3ceff4cb7ed7ec05c8ecc31a5557ababe782d50664b5527771f895a19e87b32b",
+    "mgfx": "95a5c9ab97777eff4873b91df8b039a673494c8874304996dc4417b941516d25",
+    "mgfxNormalized": "5b0c39fd079e45200c4c11e31c7f64640268a39365b584011b93e13a990ce675",
     "dxil": "6bef526092279bed918c2277f2368937406bd8070e60caf2b9e0478be0d81a59",
     "warnings": []
   },
   "DirectX12/third-party/KNI/OldSyntax_x.fx": {
-    "mgfx": "a4d2e78da4e10f0f7d7b5985007f0d2529295526c5ae83bfa7fd6fc8079b084a",
-    "mgfxNormalized": "8e60b3e3ff86106c1cba67de0bd016ef48f377778ee55fe694690b0a4f40e18a",
+    "mgfx": "1c0992fec8f70cb2c55aa97dd25575776460ca6a5b966192a0520ec31090b65f",
+    "mgfxNormalized": "d73c8c3eb35e1e0d73d37bff5edfc32ac1e7de780145d96c9d619657eb0003d5",
     "dxil": "1d57198bf07157fd69033ad5132fe227c394f25d0d7acb54ed0dbe528466abc6",
     "warnings": []
   },
   "DirectX12/third-party/KNI/OptimizedMatrix.fx": {
-    "mgfx": "3298a4ca2a088301a0003b762dc889207462816ef4ec9c90941ca0f9dd03d258",
-    "mgfxNormalized": "39d3b23c481a5f80684f7b42e3c6e4e88699751cfd78bb1df08a47b0f9cff8c2",
+    "mgfx": "88439379da47b11004407d2f548f0ca15b990a894bd3e3af56fdea56090918c5",
+    "mgfxNormalized": "cac6fc35dede3f3aee40b28f004f665c270a396c884a6cc48e5463d45cf21e48",
     "dxil": "6fc48ebd547f3c782eae5f22ab280c6a70e5b41b279af315834f74c65b9d3e2b",
     "warnings": []
   },
   "DirectX12/third-party/KNI/OptimizedMatrixArray.fx": {
-    "mgfx": "b17f438fb250785bfcb9cd27013a38e7361d8f6e509bb03dff4ef3d762d733d2",
-    "mgfxNormalized": "bd392193790fb3ba7d482926441edf3a2a76e08a57ccc457552836f42a8c8e92",
+    "mgfx": "61a784872c49b489e590790ada0146f47b671aa2a0c95626e6c3fc9422793def",
+    "mgfxNormalized": "c15e1b9410b291f33d0d2ff588eaca3cad2ec3e710192755d42328a03c4ecaba",
     "dxil": "b9a2697ada5f96542742c8091548b0cf2585190aa6b4395a26862c1e63a68206",
     "warnings": []
   },
@@ -2097,8 +2097,8 @@
     "warnings": []
   },
   "DirectX12/third-party/MonoGame/VertexTextureEffect.fx": {
-    "mgfx": "9a7a9eca6fd00e8845c6de4e3efeb0b7924970cbe9969c51313c018fb25e767f",
-    "mgfxNormalized": "9244ee1e883063353eb48d73378a5585191d9587830f859f28cab003278fa827",
+    "mgfx": "79289aa186a3bbb52a5a77456602b9ddaba3a871118e2c5bb0ccc3c89afbed2f",
+    "mgfxNormalized": "c9f57291eedc6b59a3ca82f4adead96e293e02ecfd372f61ae68fd86f52f957b",
     "dxil": "5d88ac938a9f5811daa88a15cb112ff80f95f63b03f05127d38a7d797605f107",
     "warnings": []
   },
@@ -2485,7 +2485,7 @@
     "warnings": []
   },
   "Vulkan.Debug/SkinnedEffect.fx": {
-    "mgfx": "473d60b8fde791cd1015e5e6839405e96521ea09ac2bd20b925ab72c109de8a2",
+    "mgfx": "2efd3efdd0ea8e7e072fd1fba97084e87afaf5b8291257ca6615d428844963dc",
     "spirv": "b78e6e1dcc3dc784123c0359abc67e90346733bc7bc3a8ceb1be629c4716f85e",
     "warnings": []
   },
@@ -2934,47 +2934,47 @@
     ]
   },
   "Vulkan.Debug/third-party/KNI/NewSyntax_s0s1t0t1.fx": {
-    "mgfx": "60bb86e6c2aec5d929af5de956c82a73815113e5f22f2afb7500003dec22953c",
+    "mgfx": "8fa9dcf4ff9c4e9ed1835befde3db5e01b2f5b07e8d5fedb23b7bd806536779e",
     "spirv": "d71a6d54a27246e674a9b23ee112b2fe9659e194498bf9bd45d062d33dc0228f",
     "warnings": []
   },
   "Vulkan.Debug/third-party/KNI/NewSyntax_t0t1.fx": {
-    "mgfx": "de75c81b9314e540fb7323dcb81d414d5d0c6f88e1b390458dbd9635ffc30560",
+    "mgfx": "3b6a273e09082404b1bf7dd052fd6f59b5411ecb2a36ab906bed9fce582655d4",
     "spirv": "fe702094c354cdab8b3b9062e6e778e3c6097807987f5216ccfe1c82c5039072",
     "warnings": []
   },
   "Vulkan.Debug/third-party/KNI/OldSyntax_s0s1.fx": {
-    "mgfx": "6e2e2f37d6a878a4f031152ff974c7e3d6b45cc44ae0ecc94ba0e2bd0c5a1463",
+    "mgfx": "c7165f1e92c05534448a38294bd9c3f3a91b7d05cce7ca845e6a34c6f09e7dc7",
     "spirv": "7e91cde5b6dd6fa4e36d81dcac5285e3ea8ea205b3e96cd798110bb7dceb8d83",
     "warnings": []
   },
   "Vulkan.Debug/third-party/KNI/OldSyntax_s0s1t0t1.fx": {
-    "mgfx": "a628a6a8cb66bd56dd329c3a21dd1ed44f2b8ee64343608b0638c07bee3ca54d",
+    "mgfx": "4ea0887be0dbb40c28fbe1df3d871b9c8722eb944b40a6c25ed6cad81d72d580",
     "spirv": "7de47e08b536a3ec6634f5352048c5cea896d91d7c28208843d62e6be988baa7",
     "warnings": []
   },
   "Vulkan.Debug/third-party/KNI/OldSyntax_t0t1.fx": {
-    "mgfx": "821b1417c7e46bdfacd1cbcd997fcbdc71938305ef620a4153d7f79651802330",
+    "mgfx": "96bf0bd4e190cb6aeb6b8436f6d75580f48ff7e2cf05500b324b7d093f28d58f",
     "spirv": "d4f95ce9cda2ca9dd53cb446a537e2645595297c0429abfafb2e06ef5059708a",
     "warnings": []
   },
   "Vulkan.Debug/third-party/KNI/OldSyntax_t1t0.fx": {
-    "mgfx": "2126e42d4bfe254d84a889bd4bd2b88c1ce26a46dcac473ca5203fb89c8b9df6",
+    "mgfx": "1cd0cee57be9172be8d51cec6dd3b17788858ccec15a5d76dc01c802c290a53c",
     "spirv": "0f81e8f490476545e82eefb453dd400daf06cd7cd6e9c75c8ac38b39ad4b190b",
     "warnings": []
   },
   "Vulkan.Debug/third-party/KNI/OldSyntax_x.fx": {
-    "mgfx": "ae82c4802de62b63ba0f7e3ce7425892baf1568511429f7ae9c4f332d08ee089",
+    "mgfx": "891f9061ac590600539d9dc1a1ea1c040f1506ca69510bd1653b7b46bd2a9327",
     "spirv": "87b9106b58a482f307f82ff29bea11e68efbc802323345edbc6e7c51afe12365",
     "warnings": []
   },
   "Vulkan.Debug/third-party/KNI/OptimizedMatrix.fx": {
-    "mgfx": "c6eb2c0cccc1f0a2c3e1a29ba588dc2248f1c31a2bca4948c0f447ab6127d7db",
+    "mgfx": "d05d4bb1d61f57bccbd7564cf033f6749dceeb5db5f3ece9f16643f56fd3f762",
     "spirv": "20f81ea080012d85cbcc98a454c237fe3643026540a4c30d1ba558cff5813226",
     "warnings": []
   },
   "Vulkan.Debug/third-party/KNI/OptimizedMatrixArray.fx": {
-    "mgfx": "e1d87930ab8da9f2329e91941468b465f533bd19fa723a526fd42b180efc93d2",
+    "mgfx": "49b1506106cb65ca3e73601093b7ee0124b1a3ac912171685d4fad0b18e12085",
     "spirv": "d3ad2200007de666ff0c496ae270536ad3ab2469664b870ecb6af7388c2ce315",
     "warnings": []
   },
@@ -3059,7 +3059,7 @@
     "warnings": []
   },
   "Vulkan.Debug/third-party/MonoGame/VertexTextureEffect.fx": {
-    "mgfx": "48b98468ef53db19f731dbfb361f894f13bdb1c7f6d8bad0b6180424256fbcff",
+    "mgfx": "56d0dcdf7d444d0151504fc68fbb7abd9f13ae09a5e9e38ac9c14139e0e96a96",
     "spirv": "98bdccac3e45c75f6d5cdf974fbc89718d18267b4774ecdec83cf5280762cc03",
     "warnings": []
   },
@@ -3426,7 +3426,7 @@
     "warnings": []
   },
   "Vulkan/SkinnedEffect.fx": {
-    "mgfx": "a6d2b3f6af9b41a043a3790120d099d3d927ea08b92eec07245b6d41bb2b6d25",
+    "mgfx": "c1f38eb22c0b5053ee04bd1d97eefa627d021bdca97475dae82f586a99630a85",
     "spirv": "2297103754cb0602c5547184e4776053c7234f0902d4765839ae738230dda980",
     "warnings": []
   },
@@ -3875,47 +3875,47 @@
     ]
   },
   "Vulkan/third-party/KNI/NewSyntax_s0s1t0t1.fx": {
-    "mgfx": "b2e1c1ceec283759a162f2555b085002875a65c9d6c607bd01851cdef74053e4",
+    "mgfx": "569effa1580e037e5d5775020c010d49315b0692e4aec9997b9f8ac2e04f46ba",
     "spirv": "0c9f54ca07909863fbd6e3470c0dd488e6342c49459a7b267643be29c8d115ef",
     "warnings": []
   },
   "Vulkan/third-party/KNI/NewSyntax_t0t1.fx": {
-    "mgfx": "d94c040c383fe562a33f6c3ebe9a1e871a16b7fe885f5a03b7baf2e205b5a702",
+    "mgfx": "ed0ecf8e466ae97ff612e01bccfcfcfb2673df067f10430556c24a817097825b",
     "spirv": "0c9f54ca07909863fbd6e3470c0dd488e6342c49459a7b267643be29c8d115ef",
     "warnings": []
   },
   "Vulkan/third-party/KNI/OldSyntax_s0s1.fx": {
-    "mgfx": "16b05b24d1bef6bb04f6a292d867dad6eaf1c3605c55ccdfe5f754f8adc47f69",
+    "mgfx": "8bc93aa59384d93c6fe91e15e27d5da7217184e4f99feb243b3faad251228f09",
     "spirv": "d122cacb314811afe555510db48c1d9864aabe11ce23a65beabaa65b6cda8ada",
     "warnings": []
   },
   "Vulkan/third-party/KNI/OldSyntax_s0s1t0t1.fx": {
-    "mgfx": "a0e86f4c831410d4d0ac608548f09ea536cbaa241e642399086f32e0db178233",
+    "mgfx": "868c9836ab82d8e463db40e8df58925788ab23e5640801bb9cd5ac6e1257f77d",
     "spirv": "0c9f54ca07909863fbd6e3470c0dd488e6342c49459a7b267643be29c8d115ef",
     "warnings": []
   },
   "Vulkan/third-party/KNI/OldSyntax_t0t1.fx": {
-    "mgfx": "f8c5315921616db7463d5d33aeabeffbdbe0678148dae5ac86a6ee09eb9c7039",
+    "mgfx": "b91d92e2010b987440388645c4c1558e553408fc21f0674d3a928d6bd4da6390",
     "spirv": "47997b3e94c2136a9d22ec2e23dfb2730cd63ad7be91585f42b683ece08c885e",
     "warnings": []
   },
   "Vulkan/third-party/KNI/OldSyntax_t1t0.fx": {
-    "mgfx": "7748ba768993a2502dd6001c2391aa5d4fb6c034907f4ae8ec52af053c6a20f2",
+    "mgfx": "ff8b4feff659cd47b28f20ee76594aeebff1c258fcc48b79a1ea633158789f88",
     "spirv": "a276e414450efcdd7616142c2029c768b0cc9d565522f1b309eee7b00145b987",
     "warnings": []
   },
   "Vulkan/third-party/KNI/OldSyntax_x.fx": {
-    "mgfx": "c9b434f8fb927fcdb07adbdd7fb9207825269b813d1fb5da0f94f702e0e92f29",
+    "mgfx": "9be8d5475c0e0df25eab543571168f210d2b4d29686686e0e3e69c17d8e6771b",
     "spirv": "d122cacb314811afe555510db48c1d9864aabe11ce23a65beabaa65b6cda8ada",
     "warnings": []
   },
   "Vulkan/third-party/KNI/OptimizedMatrix.fx": {
-    "mgfx": "0d3d8354b2598fe5208b140b4693673295dbd667e4e1ecfd7ed793d5986a3ffc",
+    "mgfx": "2236bfb154fb4200e567ede78c5c4a5533735957bb357af2768d14a6c53d8b0f",
     "spirv": "ccbd96268bef03e6daad91da258d15a1728d4f6e76f831a8eb7c2219b3d78f33",
     "warnings": []
   },
   "Vulkan/third-party/KNI/OptimizedMatrixArray.fx": {
-    "mgfx": "2cc59e6626c7e397deccfa42fdba0c32bf05b9641a7d7d580a45c5deeab5a40d",
+    "mgfx": "9093fedc5303b14c52d81d433ac2948c97dc27bd0e00b3d6fb2a9e7dc08f1158",
     "spirv": "dd12390f7223429027d19ccb2a663098ad788681d30474cdf60d4b5af1d5fb97",
     "warnings": []
   },
@@ -4000,7 +4000,7 @@
     "warnings": []
   },
   "Vulkan/third-party/MonoGame/VertexTextureEffect.fx": {
-    "mgfx": "a2a7bcdc4eab5544c0f9a76d6ade2a894693127b964aff5031d39cdc8a77b7bc",
+    "mgfx": "8de31e24ed42398231b28988691c2ede42d1f6ad3c34667116004a5becad948c",
     "spirv": "d568f1cd7707c7c8512ee169afda2099a374f5353a7e724bca5350acf89ab56a",
     "warnings": []
   },
