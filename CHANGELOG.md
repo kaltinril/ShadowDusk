@@ -66,7 +66,24 @@ that loads and renders identically to `mgfxc`'s in the real MonoGame/KNI runtime
   keeps the space). The space is now dropped on Vulkan, also behind a macro (through the
   preprocessed retry), and a resource that still lands outside its stage's set is refused with the
   new `SD0229`. Proven in real DesktopVK (`VsDrivenVulkan -- regslots`, `RegisterSpace0` vs `mgfxc`'s
-  build of the shader without the spaces, maxd 0). **Vulkan output changes** for
+  build of the shader without the spaces, maxd 0).
+- **Vulkan: a sampler the binding rewrite could not pair no longer ships as a standalone descriptor.**
+  A texture passed to a helper with its sampler (`H(B, U, uv)`), a helper sampling a parameter
+  texture through a global sampler, a sampler name from a macro or a token-pasting macro, and a
+  pairing hidden by an inactive `#if` all compiled to a separate `SAMPLED_IMAGE` + `SAMPLER` pair that
+  MonoGame DesktopVK does not handle (the texture drew nothing). Pairs are now followed through helper
+  calls, an output that would still carry a standalone sampler is compiled once more from the
+  preprocessed source, and what stays unpairable is refused with the new `SD0230`. One texture sampled
+  directly through two samplers (the linear + point idiom) gets a second combined descriptor: an alias
+  declaration of the texture on its own register whose record binds the same effect parameter (set the
+  texture through its parameter: SpriteBatch fills slot 0 only). A texture read only
+  with `Load` now gets the sampler record `mgfxc` 3.8.5 writes for it (texture slot, sampler slot 255);
+  it had none, so its parameter was never bound and it read (0,0,0,0). A read-write texture (UAV) is
+  refused with the new `SD0231`; an uppercase register letter (`register(T1)`), which DXC's SPIR-V
+  backend rejected with an internal compiler error, is written lowercase. Proven in real DesktopVK
+  (`VsDrivenVulkan -- regslots`: `RegisterLoadOnly` vs `mgfxc`'s own build, `RegisterHelperPair` and
+  `RegisterPreprocessedPairs` and `RegisterTwoSamplers` vs `mgfxc` on their explicit-register forms, maxd 0), with positive
+  controls for the register-space and dead-sampler fixes. No previously committed fixture's output moves. **Vulkan output changes** for
   `examples/ExLegacyTextureDiscard.fx` (its sprite sampler `s0` now reads slot 0, like DirectX)
   and `third-party/MonoGame/ParameterTypes.fx` (`Tex3D`/`TexCube` now slots 1/2, their
   registers); every other committed Vulkan entry and every DirectX 12, DirectX 11, OpenGL and FNA
