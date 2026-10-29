@@ -743,6 +743,18 @@
     "dxil": "f10fc7a7fbb87856fbc1a1c5a3be13a6bb16329ab791fa0cb9db0deae8b879af",
     "warnings": []
   },
+  "DirectX12.Debug/register-slots/RegisterHelperPair.fx": {
+    "mgfx": "255c85634877055dfa4b4b170748f97d3085d92c527fd045e85d4feab3086ee5",
+    "mgfxNormalized": "9836b506c2b775a8b46dfe7d146dcf6bbc82e262d420cb29e8496c007f579fc2",
+    "dxil": "4ab9dde816887a4a887c6aac0bab80b816a48756d35244cad885403329f48c41",
+    "warnings": []
+  },
+  "DirectX12.Debug/register-slots/RegisterLoadOnly.fx": {
+    "mgfx": "82189808c155f2c6dd4e1a2c03e7c6e99ff0a98a7dc174025b92b57107caa486",
+    "mgfxNormalized": "159de1923581a4486976554687cd4baf4014431fd4e819c9d9830ac54d4cdc66",
+    "dxil": "42e370d6ad9aa9a3c3729f94d6808f6479254ff0521cb1b5599e96b02184d629",
+    "warnings": []
+  },
   "DirectX12.Debug/register-slots/RegisterLoneT1.fx": {
     "mgfx": "beec0225c17cd165e143985c46979c360603654c443befc550a5bdf455bde846",
     "mgfxNormalized": "ad7229b68280c022248a4360fe0060f4b28f9a7c8e7bdbb91253911d0cb425ea",
@@ -755,6 +767,12 @@
     "dxil": "cf81a1832c780b3c7cf71d257f890efad8acf2bc07056afed752e0f70dc62a50",
     "warnings": []
   },
+  "DirectX12.Debug/register-slots/RegisterPreprocessedPairs.fx": {
+    "mgfx": "6566b98a527bc0cd829b16708319c8f0f59d1f16d99e835d3a0083ca8ec67e8a",
+    "mgfxNormalized": "f90b70e0c01dff3dd6846d7ebbc1e539f100859603f22574930290bdefa30706",
+    "dxil": "12aa9d15cbaac79a1ef104b4eaf3aeb4f3ed312adb4243a27bcb4a5429554f09",
+    "warnings": []
+  },
   "DirectX12.Debug/register-slots/RegisterSpace0.fx": {
     "mgfx": "9e4d423ef79acce5f62b71471117caa9181518b507daaf408118294897e78cee",
     "mgfxNormalized": "8a0368a81d465dfcc5aaf3cd02611f9de6735f4164475c9286df0c92e4860fc9",
@@ -765,6 +783,12 @@
     "mgfx": "d9e9a9a6f8122e26094911e2eb091ad0300b8d7c4893de9e0a720de28dfb002e",
     "mgfxNormalized": "1da0cb1f4f9f4abbb41c47c1c27f5cffe2905005f871fad6e886975f8798875f",
     "dxil": "ac7605cdd343411daa9c6236b7a00e54df2eaef7a88e781a842c7a8b60aa8ee9",
+    "warnings": []
+  },
+  "DirectX12.Debug/register-slots/RegisterTwoSamplers.fx": {
+    "mgfx": "e787f0ef29616c6fe356d78b1be65344d7664f93254bd23db482daa952f5fa51",
+    "mgfxNormalized": "4d8000026de6d7a675529a1b0500be3a24010798178799a3c9958f414307f228",
+    "dxil": "7ef77910cc2f2a91e015e5c1a6b651c25c11a12a152e2b0418b6219b42765fda",
     "warnings": []
   },
   "DirectX12.Debug/render-states.fx": {
@@ -1813,6 +1837,18 @@
     "dxil": "fb89c65c0ae436b4212c5041caa2bcfd48efe906fe3a6f02647bf205692da13e",
     "warnings": []
   },
+  "DirectX12/register-slots/RegisterHelperPair.fx": {
+    "mgfx": "32826a53b5cda376e76f9a51a61158d294e682ce6b2f1919732327bc7c108421",
+    "mgfxNormalized": "732e4f5d8edca82ee7c535765505bda0547629125ce49a7a8209a55ae64d3697",
+    "dxil": "38b39af087327abb27e0a83661d3880759a39631776f04b42297073315088068",
+    "warnings": []
+  },
+  "DirectX12/register-slots/RegisterLoadOnly.fx": {
+    "mgfx": "6f92b8c8499798976dd37e869f533cfd6b1aa096bddfc306de37a92d55f76c75",
+    "mgfxNormalized": "d40b569adfc89f461cbe9c04275da0ba3adfd612779be26b6ec87b174cd9ce27",
+    "dxil": "1fcc878b520a0124c868b444068057dad2b976ed67a399df6c3dcde4c9fbdb83",
+    "warnings": []
+  },
   "DirectX12/register-slots/RegisterLoneT1.fx": {
     "mgfx": "fbb72b1382103ac0fb6969b9d7004ff52fc5211ee2eb8db8ee15da45bafef5c7",
     "mgfxNormalized": "a5859f9bb9f0a5b4316306cf3c611bfc5dac785b81543e0b288931f90e868e48",
@@ -1825,6 +1861,12 @@
     "dxil": "5aa96a62868d8ed9524130d1aa98730635a1398f807d12a521b3e990476ae344",
     "warnings": []
   },
+  "DirectX12/register-slots/RegisterPreprocessedPairs.fx": {
+    "mgfx": "9d741d68de9c7147be343bb2eff300382440684c744fbe91319161a6c085655d",
+    "mgfxNormalized": "e6dd51342cf689c9ec53f93567d74798492fac118bedb92a790d31b23c0da1ce",
+    "dxil": "df4ceea277d65193f97eb4c38ffaf14613d6ef0b9a170c40eb06cd2c741cd6ad",
+    "warnings": []
+  },
   "DirectX12/register-slots/RegisterSpace0.fx": {
     "mgfx": "830e8261cc23a52085bcc9452ac243de4e0c482a1cfb12bec494975882b8abc1",
     "mgfxNormalized": "f2c86fa836a59b8edb88908672704d3d6c77b5228ae649962eb1220da20ab66f",
@@ -1835,6 +1877,12 @@
     "mgfx": "e70de33f2111446fdaaea5ea48d6e50bf75c93633059058fd15e7203d2b229d3",
     "mgfxNormalized": "bbafde5aa20e6f840478eb93c106bdbb779bbb848dcdeca9403d8e1c00348675",
     "dxil": "0c84be933b6d1bca00d44672ac60ac8c827a1086f3ac7123922e3118cd63933e",
+    "warnings": []
+  },
+  "DirectX12/register-slots/RegisterTwoSamplers.fx": {
+    "mgfx": "7184b9ae49a6c2b3d9d6b4df0c846ff6fc2590f12d06a884900bfd60f5876d21",
+    "mgfxNormalized": "2256c3bebeeca887b0680429ecd53bf4e67c69a3bd10923fee9f70e154de9bb0",
+    "dxil": "fbb8fb0b12d6856a35115d1c3ebc2270f29b6fbc9fcc76bca425158e90cf9abb",
     "warnings": []
   },
   "DirectX12/render-states.fx": {
@@ -2766,6 +2814,16 @@
     "spirv": "ca349ef7f138421fb5cfe08f7bf8b571561e09ee1775a9512c7b0c9f69af01b5",
     "warnings": []
   },
+  "Vulkan.Debug/register-slots/RegisterHelperPair.fx": {
+    "mgfx": "55c0e33b0b4cf09d125b30a610cb64dc08ac8df5e35a291bc90a1931977f43ad",
+    "spirv": "b95d45c02e1db63997a23e7dc90d0d90645f0fd07defa504542ab0472a6fb699",
+    "warnings": []
+  },
+  "Vulkan.Debug/register-slots/RegisterLoadOnly.fx": {
+    "mgfx": "e59de6d27b625755a9ef43bc806f918b2f2930ed4ffdc188049234db46329f08",
+    "spirv": "40768d43bf1188cef09719eec5e5808a005b0d1683e08fa392a4ba338e45f042",
+    "warnings": []
+  },
   "Vulkan.Debug/register-slots/RegisterLoneT1.fx": {
     "mgfx": "9483d58b22c07fe3d0d0755f84e79b992eb990de589b60b59ad963395fc7b956",
     "spirv": "537a6d491087d1e42de343cd37ec6cb4b986c12bb1f1cd77ab5aa918e1aeca9b",
@@ -2776,6 +2834,11 @@
     "spirv": "1d7bba3ae3c9cac014f95a3ad88ab2089d40f86f36b52e5829900e0aa9d2f132",
     "warnings": []
   },
+  "Vulkan.Debug/register-slots/RegisterPreprocessedPairs.fx": {
+    "mgfx": "88cd2a62a11d9090ea10afeac2e239eb52ab22d5c220452a1e8bef4610714cd3",
+    "spirv": "419f8c62cdeecb3cc38eac63541663deed9c072f504990c5f06499fe494ee3a4",
+    "warnings": []
+  },
   "Vulkan.Debug/register-slots/RegisterSpace0.fx": {
     "mgfx": "ff65b5379eb1b2f002b28397d58f94428e6cad535d093de7cf6afdaee10d2a6d",
     "spirv": "12fe2a534d3cfc1ef87ce905cb5db87d2aa8fcd1b2c9e9ecd3b8715287e22b88",
@@ -2784,6 +2847,11 @@
   "Vulkan.Debug/register-slots/RegisterTexture2DArrayT1.fx": {
     "mgfx": "17b47b068928535e254da761a30179f2bd570233b70dd46341f38043362f081d",
     "spirv": "b34b54a2394b4049870877ddbc280d1ef35b849dfffb6802c9e7c78b84987f0b",
+    "warnings": []
+  },
+  "Vulkan.Debug/register-slots/RegisterTwoSamplers.fx": {
+    "mgfx": "0dd7737c5ed2de2244dcf7138cb009ad91d178442b7fecfba600c9a0103a9585",
+    "spirv": "5fe8466d0ff8aa07bc8f36500f315eaf181ef0f4b4666375658918a32946446e",
     "warnings": []
   },
   "Vulkan.Debug/render-states.fx": {
@@ -3668,6 +3736,16 @@
     "spirv": "17d8ba5a9bab6baa88ed565f896197da30e21288fcc793f7a5bd9d0aee8546f8",
     "warnings": []
   },
+  "Vulkan/register-slots/RegisterHelperPair.fx": {
+    "mgfx": "94e2af45ae040281a93918cb7f89f750e4a574deb9044406e87e61d5cb0b6c5a",
+    "spirv": "fc812316256e189730fc77b9c885df3c800a22f6a60e6e0e4e89604d1e1a0a81",
+    "warnings": []
+  },
+  "Vulkan/register-slots/RegisterLoadOnly.fx": {
+    "mgfx": "c13a6863e81d2341bfe1e37ef478f0230c63ea281e4c8244fd11386a1f978bb9",
+    "spirv": "134dce61881977933146c06f7471834d4100d31095a46a933931f308c48ca6c6",
+    "warnings": []
+  },
   "Vulkan/register-slots/RegisterLoneT1.fx": {
     "mgfx": "d6277072439aeb7760cbfd7b15e938d8ea603710238cd38add787feabef11144",
     "spirv": "85d2283f1f1184585ff722f78e609f8e47aba7e2dd7f7829e46b2918979b7933",
@@ -3678,6 +3756,11 @@
     "spirv": "22c79bf809ad7409ba9a970828c7a255fdc47d94739ef2c7cdb5166e09b1298f",
     "warnings": []
   },
+  "Vulkan/register-slots/RegisterPreprocessedPairs.fx": {
+    "mgfx": "61414d5bedaa0912bb0fa95df5bbcb08e1a7ab4e9da0c80211fdc9501ab45099",
+    "spirv": "2c03084d52ba135aa0eaf29fea8d81c9cd67ce544db38d04f4133066c0269e52",
+    "warnings": []
+  },
   "Vulkan/register-slots/RegisterSpace0.fx": {
     "mgfx": "e20d3b33f30c3cb13493e0a3380194464e890e69942ff241be3cc1700e29d2ca",
     "spirv": "6a8fdf3cf2e2a302499f3f0d81fb5ca1629bf5f15d168378a2fcd41462e7ee86",
@@ -3686,6 +3769,11 @@
   "Vulkan/register-slots/RegisterTexture2DArrayT1.fx": {
     "mgfx": "61ec0af94499b4ce2ddeb042117f2b995e3e8ec84dafdcea1a1c00c506d438b9",
     "spirv": "2328f0c4941a07b961a8d9fc7362831ef08c9583ca4fe74ecb7120abe15c2d45",
+    "warnings": []
+  },
+  "Vulkan/register-slots/RegisterTwoSamplers.fx": {
+    "mgfx": "709691586e7449261e2bb03bc4c91002d6a1d8b36d36c8aaabddd4541d7894c3",
+    "spirv": "6172a554ef283b038dffe869cf6f0ac9d9562b32e9f651c585be56a99d35d3b4",
     "warnings": []
   },
   "Vulkan/render-states.fx": {

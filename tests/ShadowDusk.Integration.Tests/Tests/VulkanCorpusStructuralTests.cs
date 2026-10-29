@@ -119,6 +119,16 @@ public sealed class VulkanCorpusStructuralTests
                         binding.Binding.ShouldBeGreaterThanOrEqualTo(32u, customMessage: $"{who}: the runtime recovers the texture slot as (binding - 32)");
                         break;
 
+                    // A texture with no sampler (read with Load): mgfxc 3.8.5 writes exactly this,
+                    // with a record of its own (sampler slot 255), and its build draws the texture
+                    // in real DesktopVK (register-slots/RegisterLoadOnly.fx). The record invariant
+                    // below requires that record. What stays forbidden is the standalone SAMPLER.
+                    case 2: // SAMPLED_IMAGE
+                        binding.Binding.ShouldBeGreaterThanOrEqualTo(32u, customMessage: $"{who}: the runtime recovers the texture slot as (binding - 32)");
+                        reader.Samplers.ShouldContain(s => s.ShaderIndex == shader.Index && s.TextureSlot == binding.Binding - 32 && s.SamplerSlot == 255,
+                            customMessage: $"{who}: a sampler-less texture at binding {binding.Binding} needs mgfxc's own record (slot {binding.Binding - 32}, sampler slot 255) or its parameter is never bound");
+                        break;
+
                     default:
                         Assert.Fail($"{who}: descriptor type {binding.DescriptorType} at binding " +
                                     $"{binding.Binding} — MonoGame's native descriptor writer only " +
@@ -131,7 +141,11 @@ public sealed class VulkanCorpusStructuralTests
 
             if (vk.Bindings.Any(b => b.DescriptorType == 1))
             {
-                vk.SamplerSlots.ShouldBe(vk.TextureSlots, customMessage: $"{who}: a combined descriptor occupies both slot masks, as mgfxc writes them");
+                // A combined descriptor occupies both slot masks, a sampler-less texture only the
+                // texture mask, as mgfxc writes them.
+                uint combinedMask = vk.Bindings.Where(b => b.DescriptorType == 1 && b.Binding is >= 32 and < 64)
+                    .Aggregate(0u, (mask, b) => mask | (1u << (int)(b.Binding - 32)));
+                vk.SamplerSlots.ShouldBe(combinedMask, customMessage: $"{who}: the sampler slot mask must name exactly the combined descriptors, as mgfxc writes it");
             }
 
             // A slot is (binding - 32) on both sides of the runtime: MGVK_UpdateDescriptors reads a

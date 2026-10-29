@@ -25,7 +25,7 @@
   - Structurally **clean**: **87**
   - **Divergent** (>=1 level): **21**
   - Compile/parse **failures**: **10**
-- Non-golden census cells: **238** (**174** compile, **64** fail with a code)
+- Non-golden census cells: **246** (**181** compile, **65** fail with a code)
 
 ## Golden-backed fixtures — per-level structural verdict
 
@@ -381,14 +381,22 @@ is a CORRECT result, not a defect.
 | register-slots/RegisterDeadSampler.fx | OpenGL | PASS |  |  |
 | register-slots/RegisterGapT0T2.fx | DirectX_11 | PASS |  |  |
 | register-slots/RegisterGapT0T2.fx | OpenGL | PASS |  |  |
+| register-slots/RegisterHelperPair.fx | DirectX_11 | PASS |  |  |
+| register-slots/RegisterHelperPair.fx | OpenGL | PASS |  |  |
+| register-slots/RegisterLoadOnly.fx | DirectX_11 | PASS |  |  |
+| register-slots/RegisterLoadOnly.fx | OpenGL | FAIL | SD0100 | SPIRV-Cross [build_combined_image_samplers]: texelFetch without sampler was found, but no dummy sampler has been created with build_dummy_sampler_for_combined_i... |
 | register-slots/RegisterLoneT1.fx | DirectX_11 | PASS |  |  |
 | register-slots/RegisterLoneT1.fx | OpenGL | PASS |  |  |
 | register-slots/RegisterMismatchedTS.fx | DirectX_11 | PASS |  |  |
 | register-slots/RegisterMismatchedTS.fx | OpenGL | PASS |  |  |
+| register-slots/RegisterPreprocessedPairs.fx | DirectX_11 | PASS |  |  |
+| register-slots/RegisterPreprocessedPairs.fx | OpenGL | PASS |  |  |
 | register-slots/RegisterSpace0.fx | DirectX_11 | PASS |  |  |
 | register-slots/RegisterSpace0.fx | OpenGL | PASS |  |  |
 | register-slots/RegisterTexture2DArrayT1.fx | DirectX_11 | PASS |  |  |
 | register-slots/RegisterTexture2DArrayT1.fx | OpenGL | FAIL | SD0210 | Unsupported sampler type for the MonoGame/KNI GL target: 'sampler2DArray'. The MojoShader-dialect rewrite models 'sampler2D', 'samplerCube' and 'sampler3D'; a '... |
+| register-slots/RegisterTwoSamplers.fx | DirectX_11 | PASS |  |  |
+| register-slots/RegisterTwoSamplers.fx | OpenGL | PASS |  |  |
 | texture-arrays/SamplerArray2.fx | DirectX_11 | FAIL | SD0224 | DirectX 11 target: 'Samplers' is an array of 2 samplers ('SamplerState Samplers[2]'). Real mgfxc (3.8.4.1 and 3.8.5) refuses an array of samplers on every profi... |
 | texture-arrays/SamplerArray2.fx | OpenGL | FAIL | SD0100 | SPIRV-Cross [build_combined_image_samplers]: Attempting to use arrays or structs of separate samplers. This is not possible to statically remap to plain GLSL. |
 | texture-arrays/TextureArray2.fx | DirectX_11 | PASS |  |  |
@@ -492,9 +500,9 @@ is a CORRECT result, not a defect.
 - `SD0013`: 6 cell(s) — examples/ExProfileBogusLiteral.fx [DirectX_11], examples/ExProfileBogusLiteral.fx [OpenGL], examples/ExProfileTypo.fx [DirectX_11], examples/ExProfileTypo.fx [OpenGL], examples/ExProfileUndefinedMacro.fx [DirectX_11], examples/ExProfileUndefinedMacro.fx [OpenGL]
 - `X0000`: 5 cell(s) — third-party/Gum/KniInCode-Shader.fx [OpenGL], third-party/MonoGame/CustomSpriteBatchEffectComparisonSampler.fx [OpenGL], third-party/MonoGame/DefinesTest.fx [OpenGL], third-party/MonoGame/ParserTest.fx [OpenGL], third-party/MonoGame/PreprocessorTest.fx [OpenGL]
 - `FX0012`: 4 cell(s) — third-party/MonoGame/VertexTextureEffect.fx [DirectX_11], third-party/MonoGame/VertexTextureEffect.fx [OpenGL], third-party/Nez/PaletteCycler.fx [DirectX_11], third-party/Nez/PaletteCycler.fx [OpenGL]
+- `SD0100`: 3 cell(s) — register-slots/RegisterLoadOnly.fx [OpenGL], texture-arrays/SamplerArray2.fx [OpenGL], third-party/Nez/Reflection.fx [OpenGL]
 - `SD0001`: 2 cell(s) — MinimalWithInclude.fx [DirectX_11], MinimalWithInclude.fx [OpenGL]
 - `SD0014`: 2 cell(s) — examples/ExProfileStageMismatch.fx [DirectX_11], examples/ExProfileStageMismatch.fx [OpenGL]
-- `SD0100`: 2 cell(s) — texture-arrays/SamplerArray2.fx [OpenGL], third-party/Nez/Reflection.fx [OpenGL]
 - `SD0217`: 2 cell(s) — texture-arrays/TextureArray2.fx [OpenGL], texture-arrays/TextureArray4NoRegister.fx [OpenGL]
 - `SD0224`: 1 cell(s) — texture-arrays/SamplerArray2.fx [DirectX_11]
 - `E5030`: 1 cell(s) — third-party/MonoGame/DefinesTest.fx [DirectX_11]

@@ -599,4 +599,125 @@ public sealed class VulkanTextureSamplerBindingRewriterTests
         result.ShouldContain("Texture2D B : register(t1);", Case.Sensitive);
         result.ShouldContain("SamplerState T : register(s1);", Case.Sensitive);
     }
+    [Fact]
+    public void Rewrite_AHelperTakingTextureAndSampler_PairsWhatItsCallSitePasses()
+    {
+        const string hlsl = """
+            Texture2D A;
+            SamplerState S;
+            Texture2D B;
+            SamplerState U;
+
+            float4 H(Texture2D t, SamplerState s, float2 uv) { return t.Sample(s, uv); }
+            float4 PS(float2 uv : TEXCOORD0) : SV_Target { return A.Sample(S, uv) + H(B, U, uv); }
+            """;
+
+        string result = VulkanTextureSamplerBindingRewriter.Rewrite(hlsl);
+
+        result.ShouldContain("Texture2D B : register(t1);", Case.Sensitive);
+        result.ShouldContain("SamplerState U : register(s1);", Case.Sensitive);
+    }
+
+    [Fact]
+    public void Rewrite_AHelperSamplingAParameterTextureThroughAGlobalSampler_PairsThem()
+    {
+        const string hlsl = """
+            Texture2D A;
+            SamplerState S;
+            Texture2D B;
+            SamplerState U;
+
+            float4 H(Texture2D t, float2 uv) { return t.Sample(U, uv); }
+            float4 PS(float2 uv : TEXCOORD0) : SV_Target { return A.Sample(S, uv) + H(B, uv); }
+            """;
+
+        string result = VulkanTextureSamplerBindingRewriter.Rewrite(hlsl);
+
+        result.ShouldContain("Texture2D B : register(t1);", Case.Sensitive);
+        result.ShouldContain("SamplerState U : register(s1);", Case.Sensitive);
+    }
+
+    [Fact]
+    public void Rewrite_HelpersCallingHelpers_AreFollowed()
+    {
+        const string hlsl = """
+            Texture2D B;
+            SamplerState U;
+
+            float4 Inner(Texture2D t, SamplerState s, float2 uv) { return t.Sample(s, uv); }
+            float4 Outer(Texture2D t, SamplerState s, float2 uv) { return Inner(t, s, uv); }
+            float4 PS(float2 uv : TEXCOORD0) : SV_Target { return Outer(B, U, uv); }
+            """;
+
+        string result = VulkanTextureSamplerBindingRewriter.Rewrite(hlsl);
+
+        result.ShouldContain("Texture2D B : register(t0);", Case.Sensitive);
+        result.ShouldContain("SamplerState U : register(s0);", Case.Sensitive);
+    }
+
+    [Fact]
+    public void Rewrite_AHelperCalledWithTwoTexturesForOneSampler_IsSD0028()
+    {
+        // The same shape as two direct calls through one sampler: one combined descriptor
+        // cannot serve two textures.
+        const string hlsl = """
+            Texture2D A;
+            Texture2D B;
+            SamplerState U;
+
+            float4 H(Texture2D t, SamplerState s, float2 uv) { return t.Sample(s, uv); }
+            float4 PS(float2 uv : TEXCOORD0) : SV_Target { return H(A, U, uv) + H(B, U, uv); }
+            """;
+
+        var act = () => VulkanTextureSamplerBindingRewriter.Rewrite(hlsl);
+
+        Should.Throw<VulkanSamplerSharingException>(act).Error.Code.ShouldBe("SD0028");
+    }
+
+    [Fact]
+    public void Rewrite_AnExpressionArgument_OrAnOverloadedHelper_IsNotFollowed()
+    {
+        // Not unambiguous: `(U)` is an expression and `G` has two definitions. Neither pair is
+        // made here (the compile then reports the sampler without a texture, SD0230, loudly).
+        const string hlsl = """
+            Texture2D B;
+            SamplerState U;
+            Texture2D C;
+            SamplerState V;
+
+            float4 H(Texture2D t, SamplerState s, float2 uv) { return t.Sample(s, uv); }
+            float4 G(Texture2D t, SamplerState s, float2 uv) { return t.Sample(s, uv); }
+            float4 G(Texture2D t, SamplerState s, float uv) { return t.Sample(s, float2(uv, uv)); }
+            float4 PS(float2 uv : TEXCOORD0) : SV_Target { return H(B, (U), uv) + G(C, V, uv); }
+            """;
+
+        string result = VulkanTextureSamplerBindingRewriter.Rewrite(hlsl);
+
+        result.ShouldContain("Texture2D B : register(t0);", Case.Sensitive);
+        result.ShouldContain("Texture2D C : register(t1);", Case.Sensitive);
+        result.ShouldContain("SamplerState U : register(s2);", Case.Sensitive);
+        result.ShouldContain("SamplerState V : register(s3);", Case.Sensitive);
+    }
+
+    [Fact]
+    public void Rewrite_AnUppercaseRegisterLetter_IsWrittenLowercase()
+    {
+        // DXC's SPIR-V backend rejects `register(T1)` with an internal compiler error (X0000, no
+        // line) that its DXIL backend and vkd3d accept.
+        const string hlsl = """
+            Texture2D A : register(T1);
+            SamplerState S : register(S1, SPACE0);
+            cbuffer P : register(B0) { float4 Tint; };
+            RWTexture2D<float4> W : register(U2, space0);
+
+            float4 PS(float2 uv : TEXCOORD0) : SV_Target { return A.Sample(S, uv) * Tint; }
+            """;
+
+        string result = VulkanTextureSamplerBindingRewriter.Rewrite(hlsl);
+
+        result.ShouldContain("Texture2D A : register(t1);", Case.Sensitive);
+        result.ShouldContain("SamplerState S : register(s1);", Case.Sensitive);
+        result.ShouldContain("cbuffer P : register(b0) {", Case.Sensitive);
+        result.ShouldContain("RWTexture2D<float4> W : register(u2);", Case.Sensitive);
+    }
 }

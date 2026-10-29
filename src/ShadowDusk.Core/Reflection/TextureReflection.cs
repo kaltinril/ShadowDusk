@@ -34,4 +34,9 @@ public sealed record TextureReflection
     /// <c>BindCount</c> when that is above 1 (issue #324).
     /// </summary>
     public int? ArrayLength { get; init; }
+    /// <summary>
+    /// True when the texture is a read-write (storage) image, an HLSL <c>RWTexture*</c>. Set by the
+    /// SPIR-V reflection from <c>OpTypeImage</c>'s Sampled operand (2); false from DXIL/DXBC.
+    /// </summary>
+    public bool IsStorage { get; init; }
 }

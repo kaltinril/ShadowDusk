@@ -33,9 +33,19 @@ public sealed class VulkanExplicitRegisterSlotTests
     // RegisterSpace0 and RegisterDeadSampler: the golden is mgfxc on the shape as MonoGame can run it
     // (spaces removed; the DirectX-equivalent t0/s0), because mgfxc's build of the file as written
     // draws nothing (see each fixture's header).
-    public static TheoryData<string> GoldenMatched() => new() { "RegisterLoneT1", "RegisterGapT0T2", "RegisterTexture2DArrayT1", "RegisterSpace0", "RegisterDeadSampler" };
+    // RegisterHelperPair and RegisterPreprocessedPairs likewise (mgfxc on the explicit-register form);
+    // RegisterLoadOnly is mgfxc on the file itself.
+    public static TheoryData<string> GoldenMatched() => new()
+    {
+        "RegisterLoneT1", "RegisterGapT0T2", "RegisterTexture2DArrayT1", "RegisterSpace0", "RegisterDeadSampler",
+        "RegisterLoadOnly", "RegisterHelperPair", "RegisterPreprocessedPairs",
+    };
 
-    public static TheoryData<string> AllShapes() => new() { "RegisterLoneT1", "RegisterGapT0T2", "RegisterMismatchedTS", "RegisterTexture2DArrayT1", "RegisterSpace0", "RegisterDeadSampler" };
+    public static TheoryData<string> AllShapes() => new()
+    {
+        "RegisterLoneT1", "RegisterGapT0T2", "RegisterMismatchedTS", "RegisterTexture2DArrayT1", "RegisterSpace0", "RegisterDeadSampler",
+        "RegisterLoadOnly", "RegisterHelperPair", "RegisterPreprocessedPairs",
+    };
 
     [Theory]
     [MemberData(nameof(GoldenMatched))]
@@ -315,6 +325,103 @@ public sealed class VulkanExplicitRegisterSlotTests
         error.Column.ShouldBe("Texture2D ".Length + 1);
     }
 
+    [Fact]
+    public async Task ASamplerThePairingCannotFollow_IsRefusedWithSD0230_AfterThePreprocessedRetry()
+    {
+        // It used to ship a standalone SAMPLER descriptor next to a SAMPLED_IMAGE, silently: the
+        // shape MonoGame's MGVK_UpdateDescriptors does not handle.
+        const string source = """
+            #if SM6
+            #define PS_SHADERMODEL ps_6_0
+            #else
+            #define PS_SHADERMODEL ps_4_0
+            #endif
+            Texture2D A;
+            SamplerState S;
+            Texture2D B;
+            SamplerState U;
+            float4 H(Texture2D t, SamplerState s, float2 uv) { return t.Sample(s, uv); }
+            float4 MainPS(float4 p : SV_Position, float2 uv : TEXCOORD0) : SV_Target0 { return A.Sample(S, uv) + H(B, (U), uv); }
+            technique T { pass P { PixelShader = compile PS_SHADERMODEL MainPS(); } }
+            """;
+        using var cts = new CancellationTokenSource(TestBudget.Compile);
+        var result = await new EffectCompiler().CompileAsync(source, new CompilerOptions { Target = PlatformTarget.Vulkan, SourceFileName = "Unpaired.fx" }, cts.Token);
+
+        result.IsFailure.ShouldBeTrue();
+        ShaderError error = result.Error.ShouldHaveSingleItem();
+        error.Code.ShouldBe("SD0230");
+        error.Message.ShouldContain("sampler 'U' has no texture on its descriptor binding", Case.Sensitive);
+        error.Message.ShouldContain("'B'", Case.Sensitive);
+        error.File.ShouldBe("Unpaired.fx");
+        error.Line.ShouldBe(9);
+    }
+
+    [Theory]
+    [InlineData("SamplerState S : register(S1);\nTexture2D A : register(T1);")]
+    [InlineData("SamplerState S : register(s1, SPACE0);\nTexture2D A : register(T1, space0);")]
+    public async Task Vulkan_AnUppercaseRegisterLetter_CompilesToItsSlot_AsOnDirectX12(string declarations)
+    {
+        // DXC's SPIR-V backend used to fail with an internal compiler error (X0000, no line).
+        string source = "#if SM6\n#define PS_SHADERMODEL ps_6_0\n#else\n#define PS_SHADERMODEL ps_4_0\n#endif\n" + declarations + "\n" +
+                        "float4 MainPS(float4 p : SV_Position, float2 uv : TEXCOORD0) : SV_Target0 { return A.Sample(S, uv); }\n" +
+                        "technique T { pass P { PixelShader = compile PS_SHADERMODEL MainPS(); } }\n";
+        using var cts = new CancellationTokenSource(TestBudget.Compile);
+        var vulkan = await new EffectCompiler().CompileAsync(source, new CompilerOptions { Target = PlatformTarget.Vulkan, SourceFileName = "Upper.fx" }, cts.Token);
+        var dx12 = await new EffectCompiler().CompileAsync(source, new CompilerOptions { Target = PlatformTarget.DirectX12, SourceFileName = "Upper.fx" }, cts.Token);
+
+        vulkan.IsSuccess.ShouldBeTrue(vulkan.IsFailure ? string.Join("; ", vulkan.Error.Select(e => $"{e.Code}: {e.Message}")) : "ok");
+        MgfxBlobReader.Parse(vulkan.Value.Data).Samplers.ShouldHaveSingleItem().TextureSlot.ShouldBe((byte)1);
+        if (dx12.IsSuccess)
+            MgfxBlobReader.Parse(dx12.Value.Data).Samplers.ShouldHaveSingleItem().TextureSlot.ShouldBe((byte)1);
+    }
+
+    [Fact]
+    public async Task Vulkan_AReadWriteTexture_IsRefusedWithSD0231_AtItsDeclaration()
+    {
+        const string source = """
+            #if SM6
+            #define PS_SHADERMODEL ps_6_0
+            #else
+            #define PS_SHADERMODEL ps_4_0
+            #endif
+            Texture2D A : register(t0);
+            SamplerState S : register(s0);
+            RWTexture2D<float4> W : register(u1, space0);
+            float4 MainPS(float4 p : SV_Position, float2 uv : TEXCOORD0) : SV_Target0 { W[uint2(0, 0)] = 1; return A.Sample(S, uv); }
+            technique T { pass P { PixelShader = compile PS_SHADERMODEL MainPS(); } }
+            """;
+        using var cts = new CancellationTokenSource(TestBudget.Compile);
+        var result = await new EffectCompiler().CompileAsync(source, new CompilerOptions { Target = PlatformTarget.Vulkan, SourceFileName = "Uav.fx" }, cts.Token);
+
+        result.IsFailure.ShouldBeTrue();
+        ShaderError error = result.Error.ShouldHaveSingleItem();
+        error.Code.ShouldBe("SD0231");
+        error.Message.ShouldContain("'W' is a read-write resource", Case.Sensitive);
+        error.Line.ShouldBe(8);
+        error.Column.ShouldBe("RWTexture2D<float4> ".Length + 1);
+    }
+
+    [Fact]
+    public async Task Vulkan_OneTextureThroughTwoSamplers_GetsTwoCombinedDescriptorsBoundToTheOneParameter()
+    {
+        // The linear + point idiom: Tex1 through LinearSampler and PointSampler. The second
+        // pairing gets an alias of Tex1 on its own register; its record binds the Tex1 parameter
+        // and the alias is not a parameter of its own. Same layout as mgfxc's two-texture form.
+        var subject = MgfxBlobReader.Parse(await CompileAsync("RegisterTwoSamplers", PlatformTarget.Vulkan));
+        var golden  = MgfxBlobReader.Parse(await File.ReadAllBytesAsync(GoldenPath("RegisterTwoSamplers")));
+
+        subject.ParameterNames.ShouldNotContain(n => n.Contains("_SDVkAlias", StringComparison.Ordinal));
+        subject.Samplers.Select(s => (subject.ParameterNames[s.Parameter], s.TextureSlot, s.SamplerSlot))
+            .ShouldBe([("SpriteTex", (byte)0, (byte)0), ("Tex1", (byte)1, (byte)1), ("Tex1", (byte)2, (byte)2)]);
+
+        var gotHeader  = VulkanShaderCodeReader.Parse(subject.Shaders.Single().Bytecode);
+        var wantHeader = VulkanShaderCodeReader.Parse(golden.Shaders.Single().Bytecode);
+        gotHeader.TextureSlots.ShouldBe(wantHeader.TextureSlots);
+        gotHeader.SamplerSlots.ShouldBe(wantHeader.SamplerSlots);
+        gotHeader.Bindings.Select(b => (b.Binding, b.DescriptorType))
+            .ShouldBe(wantHeader.Bindings.Select(b => (b.Binding, b.DescriptorType)));
+    }
+
     // ---- Corpus-wide: a texture parameter's Vulkan slot is its DirectX 12 slot ------------------
 
     public static TheoryData<string> CorpusFixtures()
@@ -350,7 +457,19 @@ public sealed class VulkanExplicitRegisterSlotTests
         if (vulkan is null || dx12 is null)
             return; // a refusal on either target is pinned by the byte-identity manifests
 
-        TextureSlots(vulkan).ShouldBe(TextureSlots(dx12), $"{relativePath}: texture parameter -> slot, per shader stage");
+        // Every DirectX 12 (parameter, slot) is on Vulkan too. Vulkan may bind a parameter at one more
+        // slot than DirectX 12: a texture sampled through two samplers needs a second combined
+        // descriptor (an alias of the texture), whose record binds the same parameter.
+        var vulkanSlots = TextureSlots(vulkan);
+        var dx12Slots = TextureSlots(dx12);
+        dx12Slots.ShouldBeSubsetOf(vulkanSlots, $"{relativePath}: every DirectX 12 texture parameter -> slot must be the Vulkan one too");
+        vulkanSlots.Select(s => (s.IsVertex, s.Parameter)).Distinct()
+            .ShouldBe(dx12Slots.Select(s => (s.IsVertex, s.Parameter)).Distinct(), ignoreOrder: true,
+                      customMessage: $"{relativePath}: Vulkan binds the same texture parameters as DirectX 12");
+        // An extra Vulkan slot is only ever an alias: the parameter's own slot is still its DirectX one.
+        foreach (var group in vulkanSlots.GroupBy(s => (s.IsVertex, s.Parameter)))
+            group.Min(s => s.Slot).ShouldBe(dx12Slots.Where(s => (s.IsVertex, s.Parameter) == group.Key).Min(s => s.Slot),
+                $"{relativePath}: {group.Key.Parameter}'s first Vulkan slot is its DirectX 12 slot");
     }
 
     // (shader stage, parameter name) -> texture slot, over every record of every shader.

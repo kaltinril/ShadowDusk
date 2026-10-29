@@ -51,6 +51,8 @@ internal sealed class SpirvReflectionParser
     private sealed class ImageType : SpirvType
     {
         public required TextureDimension Dimension { get; init; }
+        // OpTypeImage's Sampled operand: 2 is a storage image (an HLSL RWTexture*), 1 a sampled one.
+        public bool IsStorage { get; init; }
     }
 
     private sealed class SamplerType : SpirvType { }
@@ -180,6 +182,7 @@ internal sealed class SpirvReflectionParser
                 Name             = ResourceName(id),
                 BindSlot         = textureSlot++,
                 Dimension        = image.Dimension,
+                IsStorage        = image.IsStorage,
                 RawBinding       = rawBinding,
                 RawDescriptorSet = rawSet,
                 ArrayLength      = arrayLength,
@@ -206,6 +209,7 @@ internal sealed class SpirvReflectionParser
                 Name             = name,
                 BindSlot         = textureSlot++,
                 Dimension        = image.Dimension,
+                IsStorage        = image.IsStorage,
                 RawBinding       = rawBinding,
                 RawDescriptorSet = rawSet,
                 ArrayLength      = arrayLength,
@@ -581,7 +585,7 @@ internal sealed class SpirvReflectionParser
                     break;
 
                 case SpirvOpcode.OpTypeImage when ops.Length >= 3:
-                    _types[ops[0]] = new ImageType { Dimension = MapDim((SpirvDim)ops[2]) };
+                    _types[ops[0]] = new ImageType { Dimension = MapDim((SpirvDim)ops[2]), IsStorage = ops.Length >= 7 && ops[6] == 2 };
                     break;
 
                 case SpirvOpcode.OpTypeSampler when ops.Length >= 1:

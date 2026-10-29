@@ -32,14 +32,25 @@ namespace ShadowDusk.Compiler.Internal;
 /// where <c>mgfxc</c>'s build draws the texture). The same held for a <c>Texture2DArray</c> on
 /// <c>register(t1)</c>.</para>
 ///
-/// <para><b>Binding below 32</b> (<c>SD0228</c>). Every texture and sampler declaration the
-/// rewriter recognises reaches DXC with an explicit register, so its binding is at least 32. One
-/// it does not recognise is auto-numbered by DXC from 0 and has no slot the runtime can recover:
-/// <c>mgfxc</c>'s own arithmetic wraps such a slot to 224+ and its container access-violates in
-/// DesktopVK. Refused by name instead of written with a slot that cannot bind. The pipeline first
-/// retries such an effect once from its macro-expanded preprocessed source (a declaration that
-/// comes out of a macro is literal there), so the refusal stands only for a shape that retry
-/// cannot pin either.</para>
+/// <para><b>What it refuses</b>, each a shape MonoGame's DesktopVK cannot bind and that used to
+/// compile silently. The pipeline first retries such an effect once from its macro-expanded,
+/// conditional-evaluated preprocessed source (a declaration, a register space or a
+/// <c>Sample</c> call that comes out of a macro, or a pairing hidden by an inactive <c>#if</c>,
+/// is literal or gone there), so a refusal stands only for a shape that retry cannot fix:</para>
+/// <list type="bullet">
+/// <item><c>SD0231</c>: a read-write image (<c>RWTexture*</c>, a UAV). MonoGame's Vulkan effect
+/// format has no storage-image descriptor.</item>
+/// <item><c>SD0228</c>: a texture or sampler DXC auto-numbered below binding 32, so with no slot.
+/// <c>mgfxc</c>'s own arithmetic wraps such a slot to 224+.</item>
+/// <item><c>SD0229</c>: a resource outside its stage's descriptor set.</item>
+/// <item><c>SD0230</c>: a sampler with no texture on its binding, a standalone
+/// <c>VK_DESCRIPTOR_TYPE_SAMPLER</c>, which <c>MGVK_UpdateDescriptors</c> does not handle (an
+/// unhandled <c>assert(0)</c> branch and an uninitialised descriptor write). It arises when the
+/// rewrite cannot see which texture a sampler is sampled with.</item>
+/// </list>
+/// <para>A texture with no sampler on its binding (read only with <c>Load</c> or <c>[]</c>) is a
+/// valid <c>SAMPLED_IMAGE</c> that DesktopVK binds, and is not refused (the pipeline writes it the
+/// record <c>mgfxc</c> writes).</para>
 /// </summary>
 internal static class VulkanResourceSlots
 {
@@ -49,6 +60,14 @@ internal static class VulkanResourceSlots
     internal const string BelowOffsetCode = "SD0228";
 
     internal const string WrongDescriptorSetCode = "SD0229";
+
+    internal const string SamplerWithoutTextureCode = "SD0230";
+
+    internal const string StorageImageCode = "SD0231";
+
+    /// <summary>Every code <see cref="FromBindings"/> can return.</summary>
+    internal static readonly IReadOnlySet<string> Codes =
+        new HashSet<string>(StringComparer.Ordinal) { BelowOffsetCode, WrongDescriptorSetCode, SamplerWithoutTextureCode, StorageImageCode };
 
     /// <summary>
     /// The one descriptor set MonoGame's DesktopVK binds for a stage: the vertex shader's
@@ -61,9 +80,9 @@ internal static class VulkanResourceSlots
     /// <summary>
     /// Returns <paramref name="reflected"/> with each texture's and sampler's
     /// <see cref="TextureReflection.BindSlot"/> / <see cref="SamplerReflection.BindSlot"/> set to
-    /// <c>RawBinding - 32</c>. Fails with <c>SD0228</c>, naming EVERY texture and sampler whose
-    /// binding is below 32, or with <c>SD0229</c> for a resource outside the stage's descriptor set.
-    /// Constant buffers and parameters are returned unchanged.
+    /// <c>RawBinding - 32</c>, or the first refusal that applies (see the class remarks):
+    /// <c>SD0231</c>, <c>SD0228</c> (naming EVERY resource below binding 32), <c>SD0229</c>,
+    /// <c>SD0230</c>. Constant buffers and parameters are returned unchanged.
     /// </summary>
     /// <param name="reflected">One stage's SPIR-V reflection.</param>
     /// <param name="stage">The stage, which decides the descriptor set its resources must be in.</param>
@@ -73,6 +92,9 @@ internal static class VulkanResourceSlots
     public static Result<ReflectedEffect, ShaderError> FromBindings(
         ReflectedEffect reflected, ShaderStage stage, string compiledSource, string sourceFileName)
     {
+        if (reflected.Textures.FirstOrDefault(t => t.IsStorage) is { } storage)
+            return Result<ReflectedEffect, ShaderError>.Fail(StorageImage(storage.Name, compiledSource, sourceFileName));
+
         var below = new List<(string Kind, string Name, int Binding)>();
         foreach (TextureReflection tex in reflected.Textures)
             if (tex.RawBinding < SlotOffset)
@@ -91,6 +113,13 @@ internal static class VulkanResourceSlots
         if (outside.Count > 0)
             return Result<ReflectedEffect, ShaderError>.Fail(WrongSet(outside[0], stage, set, compiledSource, sourceFileName));
 
+        var lonelySamplers = reflected.Samplers.Where(s => reflected.Textures.All(t => t.RawBinding != s.RawBinding)).ToList();
+        if (lonelySamplers.Count > 0)
+        {
+            var lonelyTextures = reflected.Textures.Where(t => reflected.Samplers.All(s => s.RawBinding != t.RawBinding)).ToList();
+            return Result<ReflectedEffect, ShaderError>.Fail(SamplerWithoutTexture(lonelySamplers, lonelyTextures, compiledSource, sourceFileName));
+        }
+
         var textures = reflected.Textures.Select(t => t with { BindSlot = t.RawBinding - SlotOffset }).ToList();
         var samplers = reflected.Samplers.Select(s => s with { BindSlot = s.RawBinding - SlotOffset }).ToList();
         return Result<ReflectedEffect, ShaderError>.Ok(reflected with { Textures = textures, Samplers = samplers });
@@ -100,13 +129,7 @@ internal static class VulkanResourceSlots
         IReadOnlyList<(string Kind, string Name, int Binding)> below, string compiledSource, string sourceFileName)
     {
         // Located at the first one the source declares literally; every one is named.
-        (string File, int Line, int Column) at = (sourceFileName, 0, 0);
-        foreach (var (_, name, _) in below)
-        {
-            at = Locate(compiledSource, name, sourceFileName);
-            if (at.Line > 0)
-                break;
-        }
+        var at = FirstLocated(below.Select(b => b.Name), compiledSource, sourceFileName);
 
         string list = string.Join(", ", below.Select(b => $"{b.Kind} '{b.Name}' (binding {b.Binding})"));
         string example = below[0].Kind == "texture" ? "t0" : "s0";
@@ -139,17 +162,69 @@ internal static class VulkanResourceSlots
                      $"MonoGame's DesktopVK binds a {stageName} shader's resources from set {expected} only, so the " +
                      "shader would read a descriptor the runtime never writes (mgfxc 3.8.5's build of this shape " +
                      "draws (0,0,0,0)). A register space ('register(t1, space0)') is a Vulkan descriptor set; " +
-                     "ShadowDusk drops the space from every register clause it can see, and this one reaches the " +
-                     "compiler in a form it cannot (for example from a macro). Remove the ', spaceN' from the " +
-                     "declaration.");
+                     "ShadowDusk drops the space from every register clause it can see, so this set comes from a " +
+                     "form it cannot change: an explicit Vulkan binding attribute ('[[vk::binding(N, set)]]'), or a " +
+                     "space it cannot read. Remove the attribute or the ', spaceN' (ShadowDusk assigns every Vulkan " +
+                     "binding itself).");
     }
 
-    // The declaration: `<Type>[<...>] name` followed by `:` / `;` / `,` (comments and strings masked).
+    private static ShaderError SamplerWithoutTexture(
+        IReadOnlyList<SamplerReflection> samplers, IReadOnlyList<TextureReflection> textures, string compiledSource, string sourceFileName)
+    {
+        var at = FirstLocated(samplers.Select(s => s.Name), compiledSource, sourceFileName);
+        string samplerList = string.Join(", ", samplers.Select(s => $"'{s.Name}'"));
+        string textureList = textures.Count == 0
+            ? "no texture of this shader is without one"
+            : $"the texture{(textures.Count == 1 ? "" : "s")} with no sampler on {(textures.Count == 1 ? "its" : "their")} " +
+              $"binding: {string.Join(", ", textures.Select(t => $"'{t.Name}'"))}";
+        return new ShaderError(
+            File:    at.File,
+            Line:    at.Line,
+            Column:  at.Column,
+            Code:    SamplerWithoutTextureCode,
+            Message: $"Vulkan target: sampler{(samplers.Count == 1 ? "" : "s")} {samplerList} {(samplers.Count == 1 ? "has" : "have")} " +
+                     "no texture on its descriptor binding (" + textureList + "). MonoGame's DesktopVK binds a texture " +
+                     "and the sampler it is sampled with as ONE combined descriptor, so ShadowDusk puts each pair on one " +
+                     "register; it could not tell which texture this sampler is sampled with, and a standalone sampler " +
+                     "descriptor is a shape the runtime's descriptor writer does not handle. Sample the texture through " +
+                     "the sampler directly ('Tex.Sample(Sampler, uv)'), or pass both to a helper by name, rather than " +
+                     "through a construct the pairing does not follow (an array element, a struct member, a sampler " +
+                     "chosen at runtime).");
+    }
+
+    private static ShaderError StorageImage(string name, string compiledSource, string sourceFileName)
+    {
+        var (file, line, column) = Locate(compiledSource, name, sourceFileName);
+        return new ShaderError(
+            File:    file,
+            Line:    line,
+            Column:  column,
+            Code:    StorageImageCode,
+            Message: $"Vulkan target: '{name}' is a read-write resource (an RWTexture, a UAV). MonoGame's Vulkan effect " +
+                     "format has no storage-image descriptor: its descriptor layout binds uniform buffers and sampled " +
+                     "textures only, and mgfxc 3.8.5 writes such a resource with a slot that does not bind. Keep it out " +
+                     "of the Vulkan build with '#if !VULKAN'.");
+    }
+
+    // The first of `names` declared literally in the text, or the file with no line.
+    private static (string File, int Line, int Column) FirstLocated(IEnumerable<string> names, string compiledSource, string sourceFileName)
+    {
+        foreach (string name in names)
+        {
+            var at = Locate(compiledSource, name, sourceFileName);
+            if (at.Line > 0)
+                return at;
+        }
+        return (sourceFileName, 0, 0);
+    }
+
+    // The declaration: `<Type>[<...>] name` (comments and strings masked). `RW` covers the
+    // read-write resource types (RWTexture2D, RWBuffer, ...).
     private static (string File, int Line, int Column) Locate(string text, string name, string sourceFileName)
     {
         Match m = Regex.Match(
             ResourceArrayDiagnostics.MaskCommentsAndStrings(text),
-            $@"\b(?:Texture\w*|Sampler\w*|sampler\w*|cbuffer|ConstantBuffer)\b[^;{{}}()]*?\b{Regex.Escape(name)}\b",
+            $@"\b(?:RW\w*|Texture\w*|Sampler\w*|sampler\w*|cbuffer|ConstantBuffer)\b[^;{{}}()]*?\b{Regex.Escape(name)}\b",
             RegexOptions.CultureInvariant);
         if (!m.Success)
             return (sourceFileName, 0, 0);

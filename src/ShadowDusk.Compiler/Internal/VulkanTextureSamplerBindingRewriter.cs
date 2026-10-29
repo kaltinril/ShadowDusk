@@ -45,7 +45,12 @@ namespace ShadowDusk.Compiler.Internal;
 /// own binding). A sampler named nowhere but its own declaration is dead code DXC removes and
 /// reserves nothing. So an unregistered texture's index equals its DirectX t register except in
 /// one case: a live, unpaired sampler holds that number (DirectX keeps t and s registers apart,
-/// while Vulkan's bindings are one space, so the texture moves past it). Two
+/// while Vulkan's bindings are one space, so the texture moves past it). "Live" is textual: the
+/// name appears somewhere besides its declarations, so a sampler named only in a function that
+/// is never called, or by a same-named struct member, also counts as live. That errs toward
+/// reserving, the safe direction (a texture steps past a register DXC then frees; it can never
+/// land on a binding a live sampler keeps). Pairs are also followed through helper functions
+/// (see <see cref="HelperPairs"/>). Two
 /// descriptor-set-layout bindings at the same binding number is invalid regardless of shape,
 /// so an index is only shared deliberately, by the two halves of a pair. Note
 /// <c>-fvk-t-shift</c> and <c>-fvk-s-shift</c> both add 32, so <c>t2</c> and <c>s2</c> occupy
@@ -82,7 +87,7 @@ internal static class VulkanTextureSamplerBindingRewriter
     // TextureArrayEffect.fx, and without them the `\s+` after the type simply fails to match,
     // so the declaration is invisible — not paired, and its explicit register never reserved.
     private static readonly Regex TextureDecl =
-        new(@"\b(?<type>Texture(?:1D|2D|3D|Cube)(?:Array)?(?:MS(?:Array)?)?)(?<tmpl>\s*<[^>;{}]*>)?\s+(?<name>\w+)\s*(?::\s*register\s*\(\s*t(?<idx>\d+)\s*\)\s*)?;",
+        new(@"\b(?<type>Texture(?:1D|2D|3D|Cube)(?:Array)?(?:MS(?:Array)?)?)(?<tmpl>\s*<[^>;{}]*>)?\s+(?<name>\w+)\s*(?::\s*register\s*\(\s*[tT](?<idx>\d+)\s*\)\s*)?;",
             RegexOptions.Compiled);
 
     // Both the modern "SamplerState S;" and the SM4/SM6 shorthand "sampler S;" (what
@@ -92,7 +97,7 @@ internal static class VulkanTextureSamplerBindingRewriter
     // s-register space (MonoGame's CustomSpriteBatchEffectComparisonSampler.fx declares one),
     // so leaving it out both skipped its pairing and let its register go unreserved.
     private static readonly Regex SamplerDecl =
-        new(@"\b(?<type>SamplerComparisonState|SamplerState|sampler)\s+(?<name>\w+)\s*(?::\s*register\s*\(\s*s(?<idx>\d+)\s*\)\s*)?;",
+        new(@"\b(?<type>SamplerComparisonState|SamplerState|sampler)\s+(?<name>\w+)\s*(?::\s*register\s*\(\s*[sS](?<idx>\d+)\s*\)\s*)?;",
             RegexOptions.Compiled);
 
     // texture.Sample(sampler, ...) — the pairing signal. FxPreParser's legacy conversion
@@ -131,25 +136,41 @@ internal static class VulkanTextureSamplerBindingRewriter
     /// </summary>
     private const string SynthesizedTextureSuffix = "_SDTexture";
 
+    /// <summary>
+    /// The suffix of a texture ALIAS: a second declaration of one texture, synthesized when it is
+    /// sampled through a second sampler (<c>Tex_SDVkAlias1</c>). The pipeline drops the alias's
+    /// own effect parameter and binds its record to the original's.
+    /// </summary>
+    internal const string AliasSuffix = "_SDVkAlias";
+
     // `register(t1, space0)`: the register clause of a texture, sampler or constant buffer with an
     // explicit register SPACE. A space is a Vulkan descriptor set, and MonoGame's DesktopVK has
     // exactly one per stage (the vertex shader's set 0, the pixel shader's set 1, the
     // -auto-binding-space DxcFlagBuilder passes), so an explicit space can only put a resource in
     // a set the runtime never binds.
+    //
+    // Uppercase register letters too: DXC's SPIR-V backend rejects `register(T1)` with an
+    // internal compiler error ("unknown register type found", X0000, no line) where its DXIL
+    // backend (DirectX 12) and vkd3d (DirectX 11) accept it as HLSL allows, so on Vulkan the letter
+    // is written lowercase. `u` (a UAV) is included so its space is dropped like any other; the
+    // UAV itself is then refused by name (SD0231), MonoGame's Vulkan format having no binding for it.
     private static readonly Regex RegisterSpace =
-        new(@"\bregister\s*\(\s*(?<reg>[tsb]\d+)\s*,\s*space\d+\s*\)", RegexOptions.Compiled);
+        new(@"\bregister\s*\(\s*(?<l>[tTsSbBuU])(?<n>\d+)\s*(?<space>,\s*[sS][pP][aA][cC][eE]\d+\s*)?\)", RegexOptions.Compiled);
 
     /// <summary>
-    /// Drops the <c>, spaceN</c> from every texture, sampler and constant-buffer register clause,
-    /// so DXC puts the resource in the stage's own descriptor set. <c>mgfxc</c> 3.8.5 keeps the
+    /// Drops the <c>, spaceN</c> from every texture, sampler, constant-buffer and UAV register
+    /// clause, so DXC puts the resource in the stage's own descriptor set, and lowercases an
+    /// uppercase register letter (see <see cref="RegisterSpace"/>). <c>mgfxc</c> 3.8.5 keeps the
     /// space: <c>register(t1, space0)</c> in a pixel shader lands in set 0, and both its build and
     /// ShadowDusk's earlier one loaded into real DesktopVK and drew (0,0,0,0) (measured
-    /// 2026-10-28). Returns the text unchanged when no clause names a space.
+    /// 2026-10-28). Returns the text unchanged when no clause names a space or uses an uppercase letter.
     /// </summary>
     internal static string StripRegisterSpaces(string hlsl)
     {
         string masked = ResourceArrayDiagnostics.MaskCommentsAndStrings(hlsl);
-        MatchCollection clauses = RegisterSpace.Matches(masked);
+        var clauses = RegisterSpace.Matches(masked)
+            .Where(m => m.Groups["space"].Success || char.IsUpper(m.Groups["l"].Value[0]))
+            .ToList();
         if (clauses.Count == 0)
             return hlsl;
 
@@ -157,7 +178,8 @@ internal static class VulkanTextureSamplerBindingRewriter
         int copied = 0;
         foreach (Match m in clauses)
         {
-            result.Append(hlsl, copied, m.Index - copied).Append("register(").Append(m.Groups["reg"].Value).Append(')');
+            result.Append(hlsl, copied, m.Index - copied)
+                  .Append("register(").Append(char.ToLowerInvariant(m.Groups["l"].Value[0])).Append(m.Groups["n"].Value).Append(')');
             copied = m.Index + m.Length;
         }
         result.Append(hlsl, copied, hlsl.Length - copied);
@@ -208,15 +230,54 @@ internal static class VulkanTextureSamplerBindingRewriter
         var branchStack = new List<(int Group, int Branch)>();
         int nextDirective = 0, nextGroup = 0;
 
+        // Pairing events in source order: every direct `Tex.Sample(Samp, ...)` on globals, plus
+        // the pairs a helper function makes when it is called with global resources (see
+        // HelperPairs), each at its call site so the #if branch tracking applies to it too.
+        // TexAt is the offset of the texture identifier of a DIRECT call (-1 for a helper pair):
+        // the place a call can be pointed at an alias.
+        var events = new List<(string Tex, string Samp, int Offset, int TexAt)>();
         foreach (Match m in SampleCall.Matches(masked))
+            events.Add((m.Groups[1].Value, m.Groups[2].Value, m.Index, m.Groups[1].Index));
+        events.AddRange(HelperPairs(masked, textureNames, samplerNames).Select(p => (p.Tex, p.Samp, p.Offset, -1)));
+        events.Sort((a, b) => a.Offset.CompareTo(b.Offset));
+
+        // One texture sampled DIRECTLY through a second, different sampler (the linear + point
+        // idiom) needs a second combined descriptor holding the same image. Each extra pairing
+        // gets an ALIAS declaration of the texture (`Tex_SDVkAlias1`, on its own register, written
+        // next to the original) and its calls are pointed at the alias; the pipeline folds the
+        // alias back into the original's effect parameter, so setting `Tex` binds both slots. A
+        // second sampler reached only through a helper is not aliased (the helper's body would
+        // have to change): it ends as SD0230.
+        var aliasOf = new Dictionary<(string Tex, string Samp), string>();
+        var aliasesByTexture = new Dictionary<string, List<string>>(StringComparer.Ordinal);
+        var aliasCallEdits = new List<(int Index, int Length, string Text)>();
+
+        foreach (var (eventTex, samp, offset, texAt) in events)
         {
             // Advance the conditional-branch cursor to this call's position.
-            while (nextDirective < directives.Count && directives[nextDirective].Index < m.Index)
+            while (nextDirective < directives.Count && directives[nextDirective].Index < offset)
                 ApplyDirective(directives[nextDirective++].Groups["d"].Value, branchStack, ref nextGroup);
 
-            string tex = m.Groups[1].Value, samp = m.Groups[2].Value;
+            string tex = eventTex;
             if (!textureNames.Contains(tex) || !samplerNames.Contains(samp))
                 continue;
+
+            if (pairedSampler.TryGetValue(tex, out string? primary) && primary != samp && texAt >= 0
+                && !tex.Contains(AliasSuffix, StringComparison.Ordinal))
+            {
+                if (!aliasOf.TryGetValue((tex, samp), out string? alias))
+                {
+                    if (!aliasesByTexture.TryGetValue(tex, out var list))
+                        aliasesByTexture[tex] = list = new List<string>();
+                    alias = $"{tex}{AliasSuffix}{list.Count + 1}";
+                    list.Add(alias);
+                    aliasOf[(tex, samp)] = alias;
+                    textureNames.Add(alias);
+                    pairedSampler[alias] = samp;
+                }
+                aliasCallEdits.Add((texAt, tex.Length, alias));
+                tex = alias;
+            }
 
             if (!pairedSampler.ContainsKey(tex))
                 pairedSampler[tex] = samp;
@@ -228,10 +289,10 @@ internal static class VulkanTextureSamplerBindingRewriter
             foreach (var (earlierTex, _, earlierBranches) in calls)
             {
                 if (earlierTex != tex && !MutuallyExclusive(earlierBranches, branches))
-                    ThrowSharedSampler(hlsl, samp, earlierTex, tex, m.Index);
+                    ThrowSharedSampler(hlsl, samp, earlierTex, tex, offset);
             }
 
-            calls.Add((tex, m.Index, branches));
+            calls.Add((tex, offset, branches));
         }
 
         // Indices an auto-assigned texture must not take: every explicit TEXTURE register, and
@@ -286,6 +347,8 @@ internal static class VulkanTextureSamplerBindingRewriter
         foreach (string tex in textureNames)
             if (explicitIndex.ContainsKey(tex))
                 texturesExplicitFirst.Add(tex);
+        // Aliases (appended to textureNames after the declared textures) come last, so they never
+        // move a declared texture's index.
         foreach (string tex in textureNames)
             if (!explicitIndex.ContainsKey(tex))
                 texturesExplicitFirst.Add(tex);
@@ -364,10 +427,20 @@ internal static class VulkanTextureSamplerBindingRewriter
         // the same offset (masking keeps every offset, and a match lies outside any comment or
         // string, where the two texts are identical). Texture and sampler declarations never
         // overlap (different keywords), so one ordered pass places both.
-        var edits = new List<(int Index, int Length, string Text)>();
+        var edits = new List<(int Index, int Length, string Text)>(aliasCallEdits);
         foreach (Match m in textureDecls)
-            if (NeedsRewrite(m, registerIndex, out int ti))
-                edits.Add((m.Index, m.Length, $"{m.Groups["type"].Value}{m.Groups["tmpl"].Value} {m.Groups["name"].Value} : register(t{ti});"));
+        {
+            string name = m.Groups["name"].Value;
+            string declaration = NeedsRewrite(m, registerIndex, out int ti)
+                ? $"{m.Groups["type"].Value}{m.Groups["tmpl"].Value} {name} : register(t{ti});"
+                : m.Value;
+            // Each alias is declared right after the texture it aliases, same type and template.
+            if (aliasesByTexture.TryGetValue(name, out var aliases))
+                foreach (string alias in aliases)
+                    declaration += $" {m.Groups["type"].Value}{m.Groups["tmpl"].Value} {alias} : register(t{registerIndex[alias]});";
+            if (!ReferenceEquals(declaration, m.Value))
+                edits.Add((m.Index, m.Length, declaration));
+        }
         foreach (Match m in samplerDecls)
             if (NeedsRewrite(m, registerIndex, out int si))
                 edits.Add((m.Index, m.Length, $"{m.Groups["type"].Value} {m.Groups["name"].Value} : register(s{si});"));
@@ -413,6 +486,188 @@ internal static class VulkanTextureSamplerBindingRewriter
         while (reserved.Contains(next) || assigned.ContainsValue(next))
             next++;
         return next;
+    }
+
+    // ---- Helper-function pairing ----------------------------------------------------
+
+    // A function definition: name, parameter list (no nested parentheses), an optional return
+    // semantic, then the opening brace. Control-flow statements (`if (x) {`) also match; they have
+    // no resource parameters, so they contribute nothing.
+    private static readonly Regex FunctionHeader =
+        new(@"(?<![\w.])(?<fn>[A-Za-z_]\w*)\s*\((?<params>[^()]*)\)\s*(?::\s*\w+\s*)?\{", RegexOptions.Compiled);
+
+    // One parameter: optional modifiers, the type (with an optional template), the name.
+    private static readonly Regex ParameterDecl =
+        new(@"^\s*(?:(?:in|uniform|const)\s+)*(?<type>\w+)(?:\s*<[^>]*>)?\s+(?<name>\w+)", RegexOptions.Compiled);
+
+    private static readonly Regex ResourceType =
+        new(@"^(?:Texture\w*|SamplerState|SamplerComparisonState|sampler)$", RegexOptions.Compiled);
+
+    private static readonly Regex Identifier = new(@"^[A-Za-z_]\w*$", RegexOptions.Compiled);
+
+    /// <summary>
+    /// The global (texture, sampler) pairs made through helper functions: a helper that samples
+    /// its own texture/sampler PARAMETERS (<c>float4 H(Texture2D t, SamplerState s, float2 uv)
+    /// { return t.Sample(s, uv); }</c>), or a parameter texture through a GLOBAL sampler
+    /// (<c>t.Sample(U, uv)</c>), pairs whatever its call site passes (<c>H(B, U, uv)</c> pairs
+    /// <c>B</c> with <c>U</c>). Followed through helpers that call helpers. Only bare identifier
+    /// arguments are followed (an array element or an expression is not unambiguous); a pair
+    /// that stays hidden surfaces after the compile as a sampler with no texture on its binding
+    /// (<c>SD0230</c>, after the preprocessed retry), never as a silent split descriptor.
+    /// Each pair is reported at its call site.
+    /// </summary>
+    private static List<(string Tex, string Samp, int Offset)> HelperPairs(
+        string masked, IReadOnlyList<string> textureNames, IReadOnlyList<string> samplerNames)
+    {
+        var result = new List<(string, string, int)>();
+
+        // name -> (resource parameter names by position, body range); a later definition of the
+        // same name (an overload) is skipped: which one a call resolves to is not decidable here.
+        var functions = new Dictionary<string, (string?[] Params, int BodyStart, int BodyEnd, int HeaderAt)>(StringComparer.Ordinal);
+        var overloaded = new HashSet<string>(StringComparer.Ordinal);
+        foreach (Match m in FunctionHeader.Matches(masked))
+        {
+            string[] rawParams = m.Groups["params"].Value.Split(',');
+            var resourceParams = new string?[rawParams.Length];
+            bool any = false;
+            for (int i = 0; i < rawParams.Length; i++)
+            {
+                Match p = ParameterDecl.Match(rawParams[i]);
+                if (p.Success && ResourceType.IsMatch(p.Groups["type"].Value))
+                {
+                    resourceParams[i] = p.Groups["name"].Value;
+                    any = true;
+                }
+            }
+            int bodyStart = m.Index + m.Length - 1;
+            int bodyEnd = MatchingBrace(masked, bodyStart);
+            string fn = m.Groups["fn"].Value;
+            if (!any || bodyEnd < 0)
+                continue;
+            if (!functions.TryAdd(fn, (resourceParams, bodyStart, bodyEnd, m.Groups["fn"].Index)))
+                overloaded.Add(fn);
+        }
+        foreach (string fn in overloaded)
+            functions.Remove(fn);
+        if (functions.Count == 0)
+            return result;
+
+        // A sampling template per function: each side is a parameter index or a global name.
+        var templates = functions.ToDictionary(
+            f => f.Key,
+            f => new HashSet<(int TexParam, string? TexGlobal, int SampParam, string? SampGlobal)>(),
+            StringComparer.Ordinal);
+        foreach (var (fn, def) in functions)
+        {
+            foreach (Match s in SampleCall.Matches(masked.Substring(def.BodyStart, def.BodyEnd - def.BodyStart)))
+            {
+                (int tp, string? tg) = Ref(def.Params, s.Groups[1].Value);
+                (int sp, string? sg) = Ref(def.Params, s.Groups[2].Value);
+                if (tp >= 0 || sp >= 0)
+                    templates[fn].Add((tp, tg, sp, sg));
+            }
+        }
+
+        // Every call site of a helper, with its bare-identifier arguments (null otherwise) and the
+        // helper whose body it sits in (null at global scope or in a function with no resources).
+        var callSites = new List<(string Fn, string?[] Args, int Offset, string? Enclosing)>();
+        foreach (var (fn, def) in functions)
+        {
+            foreach (Match c in Regex.Matches(masked, $@"(?<![\w.]){Regex.Escape(fn)}\s*\("))
+            {
+                if (c.Index == def.HeaderAt)
+                    continue;
+                string?[]? args = Arguments(masked, c.Index + c.Length - 1);
+                if (args is null)
+                    continue;
+                string? enclosing = functions.FirstOrDefault(f => c.Index > f.Value.BodyStart && c.Index < f.Value.BodyEnd).Key;
+                callSites.Add((fn, args, c.Index, enclosing));
+            }
+        }
+
+        // Substitute until nothing new: a template resolved at a call site either names two
+        // globals (a pair) or still names a parameter of the enclosing helper (a template there).
+        var seen = new HashSet<(string, string, int)>();
+        for (bool changed = true; changed;)
+        {
+            changed = false;
+            foreach (var (fn, args, offset, enclosing) in callSites)
+            {
+                foreach (var (tp, tg, sp, sg) in templates[fn].ToList())
+                {
+                    string? tex = tp >= 0 ? (tp < args.Length ? args[tp] : null) : tg;
+                    string? samp = sp >= 0 ? (sp < args.Length ? args[sp] : null) : sg;
+                    if (tex is null || samp is null)
+                        continue;
+
+                    if (enclosing is not null)
+                    {
+                        (int etp, string? etg) = Ref(functions[enclosing].Params, tex);
+                        (int esp, string? esg) = Ref(functions[enclosing].Params, samp);
+                        if (etp >= 0 || esp >= 0)
+                        {
+                            changed |= templates[enclosing].Add((etp, etg, esp, esg));
+                            continue;
+                        }
+                    }
+
+                    if (textureNames.Contains(tex) && samplerNames.Contains(samp) && seen.Add((tex, samp, offset)))
+                        result.Add((tex, samp, offset));
+                }
+            }
+        }
+        return result;
+
+        static (int Param, string? Global) Ref(string?[] parameters, string name)
+        {
+            int i = Array.IndexOf(parameters, name);
+            return i >= 0 ? (i, null) : (-1, name);
+        }
+    }
+
+    // The index of the brace closing the one at `open`, or -1.
+    private static int MatchingBrace(string text, int open)
+    {
+        int depth = 0;
+        for (int i = open; i < text.Length; i++)
+        {
+            if (text[i] == '{') depth++;
+            else if (text[i] == '}' && --depth == 0) return i;
+        }
+        return -1;
+    }
+
+    // The top-level, comma-separated arguments of the call whose '(' is at `open`, each the bare
+    // identifier it is or null, or null when the call does not close.
+    private static string?[]? Arguments(string text, int open)
+    {
+        var args = new List<string?>();
+        int depth = 0, start = open + 1;
+        for (int i = open; i < text.Length; i++)
+        {
+            char ch = text[i];
+            if (ch is '(' or '[' or '{') depth++;
+            else if (ch is ')' or ']' or '}')
+            {
+                if (--depth == 0)
+                {
+                    Add(text.Substring(start, i - start));
+                    return args.ToArray();
+                }
+            }
+            else if (ch == ',' && depth == 1)
+            {
+                Add(text.Substring(start, i - start));
+                start = i + 1;
+            }
+        }
+        return null;
+
+        void Add(string arg)
+        {
+            string trimmed = arg.Trim();
+            args.Add(Identifier.IsMatch(trimmed) ? trimmed : null);
+        }
     }
 
     // ---- Shared-sampler detection (bug-hunt 2026-07-27 M5) ---------------------------

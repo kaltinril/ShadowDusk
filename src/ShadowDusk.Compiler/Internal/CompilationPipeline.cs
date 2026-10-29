@@ -70,8 +70,9 @@ internal sealed class CompilationPipeline
             return first;
 
         // Vulkan: a texture or sampler the binding rewrite could not see on the raw text (its
-        // declaration comes out of a macro) was auto-numbered below binding 32 (SD0228), or a register space it could not see put a
-        // resource outside the stage's descriptor set (SD0229). Compile
+        // declaration comes out of a macro) was auto-numbered below binding 32 (SD0228), a register space it could not see put a
+        // resource outside the stage's descriptor set (SD0229), or a sampler ended up with no texture on
+        // its binding because the pairing was hidden by a macro or an inactive #if (SD0230). Compile
         // once more from the preprocessed source, where the declaration is literal. Only after
         // that failure, so an effect that compiles from its raw source keeps exactly its bytes.
         if (compileFailure.UnpinnedVulkanResource)
@@ -85,11 +86,11 @@ internal sealed class CompilationPipeline
             if (retry is null)
                 return first;
             Result<CompiledShader, ShaderError[]> second = RunCore(hlslSource, options, retry, out _, cancellationToken);
-            // A retry that still fails with SD0228 (or SD0229) names what the preprocessed source could not pin
+            // A retry that still fails with one of VulkanResourceSlots' codes names what the preprocessed source could not pin
             // either, located through its #line map (the first attempt may name a resource the
             // retry already pinned, a macro-declared one, with no line). Any other retry failure is
             // the retry's own, so the first attempt's diagnostics stand.
-            if (second.IsSuccess || second.Error.Any(e => e.Code is VulkanResourceSlots.BelowOffsetCode or VulkanResourceSlots.WrongDescriptorSetCode))
+            if (second.IsSuccess || second.Error.Any(e => VulkanResourceSlots.Codes.Contains(e.Code)))
                 return second;
             return first;
         }
@@ -1007,6 +1008,11 @@ internal sealed class CompilationPipeline
 
                     foreach (ParameterReflection param in reflected.Parameters)
                     {
+                        // A Vulkan texture ALIAS (a second declaration of one texture, for its
+                        // second sampler; VulkanTextureSamplerBindingRewriter) is not an effect
+                        // parameter of its own: its record binds the original's.
+                        if (options.Target == PlatformTarget.Vulkan && IsVulkanTextureAlias(param.Name))
+                            continue;
                         if (seenParamNames.Add(param.Name))
                             allParameters.Add(param);
                     }
@@ -1080,8 +1086,11 @@ internal sealed class CompilationPipeline
         // TextureParameterName. Rendering is unchanged: the records point at the same texture.
         Dictionary<string, string> textureParameterNames =
             ApplySynthesizedSamplerParameterNames(allParameters, fxParsed.SynthesizedSamplerTextures);
-        string TextureParameterName(string textureName) =>
-            textureParameterNames.TryGetValue(textureName, out string? parameterName) ? parameterName : textureName;
+        string TextureParameterName(string textureName)
+        {
+            textureName = VulkanTextureAliasBase(textureName);
+            return textureParameterNames.TryGetValue(textureName, out string? parameterName) ? parameterName : textureName;
+        }
 
         // GL (Phase 43 F4/F5): one cbuffer record PER SHADER, built from the uniform
         // register layout the GLSL rewriter returned for that shader, deduplicated
@@ -1530,6 +1539,25 @@ internal sealed class CompilationPipeline
                             // The reflected sampler name is the .fx sampler identifier —
                             // the key the parsed sampler_state members were resolved under.
                             State:       samplerStateByName.GetValueOrDefault(samp.Name)));
+                    }
+
+                    // A texture with NO sampler on its binding (read with Load / operator[]) is a
+                    // SAMPLED_IMAGE descriptor, which DesktopVK binds, but with no record above its
+                    // parameter was never bound to a device slot and the shader read (0,0,0,0).
+                    // mgfxc 3.8.5 writes such a texture one record of its own: texture slot =
+                    // binding - 32, sampler slot 255 (none), an empty name, no state (measured; its
+                    // build draws the texture in real DesktopVK). Written the same way, in slot order.
+                    foreach (TextureReflection tex in textureRefs
+                                 .Where(t => samplerRefs.All(s => s.RawBinding != t.RawBinding))
+                                 .OrderBy(t => t.BindSlot))
+                    {
+                        samplers.Add(new MgfxSamplerInfo(
+                            Type:        SamplerTypeByte(tex.Dimension),
+                            TextureSlot: (byte)tex.BindSlot,
+                            SamplerSlot: byte.MaxValue,
+                            Name:        string.Empty,
+                            Parameter:   IndexOfParam(allParameters, TextureParameterName(tex.Name)),
+                            State:       null));
                     }
                 }
             }
@@ -2959,6 +2987,19 @@ internal sealed class CompilationPipeline
         }
 
         return renamed;
+    }
+
+    private static readonly System.Text.RegularExpressions.Regex VulkanTextureAlias = new(
+        "^(?<base>.+)" + System.Text.RegularExpressions.Regex.Escape(VulkanTextureSamplerBindingRewriter.AliasSuffix) + @"\d+$",
+        System.Text.RegularExpressions.RegexOptions.CultureInvariant);
+
+    private static bool IsVulkanTextureAlias(string name) => VulkanTextureAlias.IsMatch(name);
+
+    // The texture a Vulkan alias stands for, or the name itself.
+    private static string VulkanTextureAliasBase(string name)
+    {
+        var m = VulkanTextureAlias.Match(name);
+        return m.Success ? m.Groups["base"].Value : name;
     }
 
     /// <summary>
