@@ -33,7 +33,7 @@ real MonoGame WindowsDX and real KNI WinForms.DX11, maxd 0 after.
 
 ## 2. The rule fxc follows (measured, `mgfxc` 3.8.4.1 `/Profile:DirectX_11`)
 
-On the 144 shapes of `tests/fixtures/golden/dx11-texture-slots/` (sources and goldens beside each
+On the 180 shapes of `tests/fixtures/golden/dx11-texture-slots/` (sources and goldens beside each
 other) plus the 27 of `legacy-sampler-units/`, per compiled shader:
 
 1. Every explicit `register(tN)` on a `t`-register declaration (any texture, `Buffer`,
@@ -74,10 +74,27 @@ effect that has a legacy sampler (`CompilationPipeline.ReorderDirectX11TextureSl
   `BlendShader`, `SamplerStatesFull` broke under that option, maxd 255), and vkd3d 2.1's parser
   swaps the operands of `>` and `<=` (`LESS(b, a)`, `GEQUAL(b, a)` in `hlsl.y`), emitting the
   right-hand read first (maxd 128 on both backends). fxc numbers after inlining, unrolling and
-  folding compile-time conditions, but before algebraic dead-code removal (a dead store still
-  numbers its texture): the walk tracks which conditions are compile-time and REFUSES with
-  `SD0230` whenever such a branch could change the order (`D12_UnrollLoopIndex`), rather than
-  modelling fxc's folder;
+  folding every condition it can evaluate, but before algebraic dead-code removal (a dead store
+  still numbers its texture). Which conditions it folds is not predictable from the syntax: a
+  third review measured it folding a call that returns a constant, a local set from one, a
+  default or `out` argument, `k > 0 && false`, one component of `float2(k, 0)`,
+  `saturate(-1 - abs(k)) > 0`, a loop that never runs and a `return` under such a condition,
+  and NOT folding `k * 0 > 1`, `k - k > 0` or a `static` initialised from a uniform (goldens
+  `K01`..`K38`). An earlier walk that tracked "compile-time" values syntactically got every
+  folded one silently wrong. So every read under an `if`, a `switch`, a loop that may run zero
+  times, or after a `return`/`discard`/`break`/`continue` under one, is CONDITIONAL (a `break`
+  reaches only the end of its loop or switch), and the walk REFUSES with `SD0230` whenever a
+  conditional first read, if fxc dropped it, would let another texture's first read come before
+  the next read of the same texture (`D12_UnrollLoopIndex`, `K01`..`K11`, `K20`, `K21`, `K26`,
+  `K31`, `K36`, `K37`). The one exception is a condition CERTAINLY decided at run time: a uniform
+  (top-level, neither `static` nor `const`, not shadowed) or an entry input the entry never
+  assigns or passes out, of a signed numeric scalar, one vector component or a `bool`, bare,
+  negated or compared with a short literal or another such value; a `switch` on one; a `for`
+  whose first iteration certainly runs (literal or `static const` bounds, or a uniform bound) and
+  a `do` loop. Both arms of `?:` are read whatever the condition (measured with a literal
+  `false`, a `static const` and `0 > 1`), so they are not conditional. The walk also refuses a
+  read through a sampler parameter and a bound legacy texture it never saw read (`K13`: placing
+  it last by guess gave `A` on `t0` where `mgfxc` has `B`);
 - the preprocessed view gives the legacy textures and every explicit `t` register
   (`GlSamplerSlots.ExplicitTextureRegisters`, stage-qualified registers included);
 - when the planned slots differ, the shader is recompiled with every `t` resource's top-level
@@ -92,8 +109,9 @@ every legacy shader's bytes and parameter naming).
 
 Every case the check cannot model or apply keeps the previous slots and warns `SD0230`: a
 declaration through a macro or in a declarator list, a resource array, an unreadable RDEF or
-a preprocessed view that cannot be built, an order that depends on a compile-time branch, an
-overloaded function or a texture passed as a value.
+a preprocessed view that cannot be built, an order a conditional read could change, an
+overloaded function, a texture passed as a value, a sampler passed as a function argument, a
+bound texture whose read was not found, or two resources under one RDEF name.
 
 ## 4. Which bytes changed
 
@@ -121,8 +139,20 @@ list changed.
   record. Pinned as a known divergence.
 - **vkd3d keeps reads fxc folds away** (`D01`..`D10`: `x * 0`, `lerp(a, b, 1)`, `a - a`,
   `dot(x, 0)`, `saturate(-1 - abs(x))`): the dead texture keeps a record and a slot on vkd3d only.
-- **An order that depends on a compile-time branch** (`D12_UnrollLoopIndex`, an `[unroll]` loop
-  reading under `if (i == 2)`): fxc reads in iteration order; the walk refuses with `SD0230`.
+- **An order a condition could change** (`D12_UnrollLoopIndex`, an `[unroll]` loop reading under
+  `if (i == 2)`, and the `K*` probes): fxc folds what it can, the walk refuses with `SD0230`.
+  **Known false refusals**, loud, never silent: when fxc does NOT fold a condition the walk
+  cannot prove run-time (`K18_UniformTimesZero` `k * 0 > 1`, `K15_StaticFromUniform`
+  `static float s = k`), the warning fires and the slots stay in declaration order, which is not
+  `mgfxc`'s when the conditional read came first (`K15`, `K18`). The class needs a texture
+  whose first read is conditional, read again later, with another texture's first read in
+  between. Any refusal, correct ones included, falls back to declaration order, so it differs
+  from `mgfxc` whenever `mgfxc`'s order is not declaration order (`K20`, a folded `return`).
+  All three are in `KnownDivergence`.
+- **A legacy sampler passed as a function argument** (`K13_SamplerParam`) compiles natively: its
+  sampler slot is `s0` where `mgfxc` has `s1` (pre-existing), and its texture slots warn
+  `SD0230`. Passed AND read directly (`F(B, uv) + tex2D(B, uv)`) it does not compile on vkd3d
+  (`E5005`) and gets two texture records under d3dcompiler (pre-existing rewrite gap, not pinned).
 - **Legacy samplers a macro declares** (`B02_MacroTexture`) are compiled natively by the backend:
   texture slots match, the parameter is named after the sampler and the sampler slots differ
   (pre-existing, `project_facts.md`). A legacy sampler in an `#include`d header compiles natively

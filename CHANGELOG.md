@@ -37,18 +37,29 @@ that loads and renders identically to `mgfxc`'s in the real MonoGame/KNI runtime
   DXBC backends and every host: no compiled instruction stream carries it (`d3dcompiler_47`
   schedules its reads, emitting a read feeding `clip` first and `tex2D(A) * tex2D(B) +
   tex2D(C) * 2` C first, and vkd3d-shader swaps the operands of `>` and `<=`); the surviving
-  resources come from the shipped compile's own RDEF. Where the order depends on a compile-time
-  condition fxc folds before numbering (a branch on a constant or on an unrolled loop's counter),
-  the check refuses with `SD0230` rather than guess. Measured on 144 shapes
-  (`tests/fixtures/golden/dx11-texture-slots/`) and the 27 legacy-sampler goldens, on both
-  backends: `mgfxc`'s table (the 11 listed as divergent before included), except one texture
+  resources come from the shipped compile's own RDEF. fxc numbers after inlining and folding
+  every condition it can evaluate, which no syntactic test predicts (measured: a call returning a
+  constant, a local, a default or `out` argument, `k > 0 && false`, one component of a vector, a
+  loop that never runs, an unrolled loop's counter), so a texture whose first read sits under an
+  `if`, a `switch`, a loop that may run zero times, or after a `return`/`discard` under one, may
+  be numbered at any later read of it: when that could change the order against another texture,
+  the check refuses with `SD0230` rather than guess. Only a condition certainly decided at run
+  time (a uniform or an unmodified shader input, bare or compared with a literal, a `switch` on a
+  uniform) keeps its read in place, and both arms of `?:` always count. The price is a narrow
+  class of refusals where fxc would in fact keep the order (a condition fxc does not fold but the
+  check cannot prove run-time, such as `k * 0 > 1` or a `static` initialised from a uniform,
+  followed by a later read of the same texture): those keep the old slots, loudly. Measured on 180
+  shapes (`tests/fixtures/golden/dx11-texture-slots/`, 36 of them condition probes) and the 27
+  legacy-sampler goldens, on both backends: `mgfxc`'s table or an `SD0230` warning, never a
+  silent other order (the 11 listed as divergent before now match), except one texture
   behind two legacy samplers, or behind a legacy sampler and a direct read (one record, `mgfxc`
   has two), legacy samplers a macro declares (compiled natively, a pre-existing gap), and, on
   vkd3d only, reads vkd3d's optimiser keeps where fxc folds them (`x * 0`, `lerp(a, b, 1)`,
   `a - a`): the dead texture keeps a record and a slot. Anything the check cannot model or apply
   (a texture declared through a macro or in a declarator list, a resource array, an unreadable
-  preprocessed view, an order that depends on a compile-time branch, an overloaded function) keeps
-  the old slots and warns `SD0230`. **DirectX 11 and KNIFX DirectX output changes** only for
+  preprocessed view, an order a foldable condition could change, an overloaded function, a legacy
+  sampler passed as a function argument, a bound texture whose read the check did not find, two
+  resources under one name) keeps the old slots and warns `SD0230`. **DirectX 11 and KNIFX DirectX output changes** only for
   shaders whose legacy-sampler texture slots were not fxc's: in the corpus, `ForwardLighting.fx`,
   `SamplerPairMirror.fx` and `SamplerRegisterOrder.fx` (now `mgfxc`'s table exactly; the same
   three under the d3dcompiler backend), and none of the byte-identity manifests' fixtures;
