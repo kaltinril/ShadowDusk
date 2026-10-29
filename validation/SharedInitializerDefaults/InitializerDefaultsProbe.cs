@@ -44,6 +44,12 @@ public static class InitializerDefaultsProbe
         // float2x3 + float3x2, every element distinct (issue #423: Vulkan reflected these transposed and
         // shipped zeros, which renders black). Non-square matrices: not on GL, SD0210.
         new("G_NonSquare.fx",  false, 191, 128, 64, 255),
+        // MatrixDefault.fx declared row_major, then under #pragma pack_matrix(row_major), then a row_major
+        // float2x2 (off GL). A row_major buffer holds one register per row, so the blob must be the rows in
+        // order; the column-by-column blob lands transposed and renders (64,0,0) (issue #423 follow-up).
+        new("H_RowMajorMatrix.fx",   true,  0, 128, 0, 255),
+        new("I_PackMatrixPragma.fx", true,  0, 128, 0, 255),
+        new("J_RowMajor2x2.fx",      false, 0, 128, 0, 255),
     ];
 
     /// <summary>

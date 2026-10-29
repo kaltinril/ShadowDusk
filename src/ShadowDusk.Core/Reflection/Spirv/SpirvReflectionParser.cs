@@ -282,6 +282,7 @@ internal sealed class SpirvReflectionParser
             Columns        = cols,
             Elements       = elements,
             Members        = BuildStructMembers(type),
+            IsRowMajor     = hlslRowMajor && cls == EffectParameterClass.Matrix,
         };
     }
 

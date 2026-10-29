@@ -190,7 +190,7 @@ public sealed class InitializerDefaultsTests
     }
 
     [Fact]
-    public async Task RowMajorNonSquare_OnVulkan_KeepsMgfxcsHeader_FitsItsBuffer_AndIsAnSd0017()
+    public async Task RowMajorNonSquare_OnVulkan_KeepsMgfxcsHeader_FitsItsBuffer_AndKeepsItsDefault()
     {
         // Probe case I (issue #423): a row_major float2x3 LAST in the globals. MonoGame uploads
         // ColumnCount registers of RowCount floats; the row_major buffer holds one register per HLSL
@@ -215,9 +215,93 @@ public sealed class InitializerDefaultsTests
         cb.Size.ShouldBe(48);
         cb.Size.ShouldBeGreaterThanOrEqualTo(16 + (m.Columns - 1) * 16 + m.Rows * 4);
 
-        // Known gap: the declaration (2x3) disagrees with the header, so its initializer is not kept.
-        result.Value.Warnings.ShouldContain(w => w.Code == "SD0017" && w.Message.Contains("'M'", StringComparison.Ordinal));
-        m.DefaultValue.ShouldBe(new byte[24]);
+        // The 3x2 header uploads two registers of three floats from Data, which is the two rows in
+        // order, so the default is the rows in order, and the reflection reports the declaration.
+        result.Value.Warnings.ShouldNotContain(w => w.Code == "SD0017");
+        Floats(m.DefaultValue!).ShouldBe(new[] { 1f, 2f, 3f, 4f, 5f, 6f });
+        result.Value.Parameters.Single(p => p.Name == "M").DefaultValue.ShouldBe(new[] { 1f, 2f, 3f, 4f, 5f, 6f });
+    }
+
+    // ---- row_major matrix defaults (issue #423 follow-up) ----------------------------------
+
+    private static readonly float[] ColumnByColumnM01 = [0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0];
+    private static readonly float[] RowsInOrderM01 = [0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0];
+
+    [Theory]
+    [InlineData("H_RowMajorMatrix.fx", PlatformTarget.DirectX, EffectContainer.Mgfx)]
+    [InlineData("H_RowMajorMatrix.fx", PlatformTarget.DirectX12, EffectContainer.Mgfx)]
+    [InlineData("H_RowMajorMatrix.fx", PlatformTarget.Vulkan, EffectContainer.Mgfx)]
+    [InlineData("H_RowMajorMatrix.fx", PlatformTarget.DirectX, EffectContainer.Knifx)]
+    [InlineData("I_PackMatrixPragma.fx", PlatformTarget.DirectX, EffectContainer.Mgfx)]
+    [InlineData("I_PackMatrixPragma.fx", PlatformTarget.DirectX12, EffectContainer.Mgfx)]
+    [InlineData("I_PackMatrixPragma.fx", PlatformTarget.Vulkan, EffectContainer.Mgfx)]
+    public async Task RowMajorMatrixDefault_IsTheRowsInOrder(string fixture, PlatformTarget target, EffectContainer container)
+    {
+        // A row_major buffer holds one register per row and MonoGame copies Data into the registers
+        // in order, so the default must be M's rows in order. It used to be the column-by-column blob
+        // of a column-major matrix, which renders transposed in the real engine, with no warning.
+        CompiledShader c = await CompileAsync(fixture, target, container);
+        c.Warnings.ShouldNotContain(w => w.Code == "SD0017");
+        c.Parameters.Single(p => p.Name == "M").DefaultValue.ShouldBe(RowsInOrderM01, "reflection is the declaration");
+        if (container == EffectContainer.Mgfx)
+            Floats(Param(c, "M").DefaultValue!).ShouldBe(RowsInOrderM01);
+        else
+            IndexOf(c.Data, RowsInOrderM01.SelectMany(BitConverter.GetBytes).ToArray()).ShouldBeGreaterThanOrEqualTo(0);
+
+        // The column-major twin is unchanged.
+        Floats(Param(await CompileAsync("MatrixDefault.fx", target), "M").DefaultValue!).ShouldBe(ColumnByColumnM01);
+    }
+
+    [Theory]
+    [InlineData("H_RowMajorMatrix.fx")]
+    [InlineData("I_PackMatrixPragma.fx")]
+    public async Task RowMajorMatrixDefault_OnOpenGl_IsUnchanged(string fixture)
+    {
+        // Every OpenGL compile is row-major already (-Zpr) and ShadowDusk's GL rewriter rebuilds a
+        // float4x4 from the column-by-column blob (render-proven by MatrixDefault.fx), so row_major
+        // changes nothing there.
+        CompiledShader c = await CompileAsync(fixture, PlatformTarget.OpenGL);
+        Floats(Param(c, "M").DefaultValue!).ShouldBe(ColumnByColumnM01);
+        c.Parameters.Single(p => p.Name == "M").DefaultValue.ShouldBe(RowsInOrderM01, "reflection is the declaration");
+    }
+
+    [Theory]
+    [InlineData(PlatformTarget.DirectX)]
+    [InlineData(PlatformTarget.DirectX12)]
+    [InlineData(PlatformTarget.Vulkan)]
+    public async Task RowMajorFloat2x2Default_IsTheRowsInOrder(PlatformTarget target)
+    {
+        CompiledShader c = await CompileAsync("J_RowMajor2x2.fx", target);
+        c.Warnings.ShouldNotContain(w => w.Code == "SD0017");
+        Floats(Param(c, "M").DefaultValue!).ShouldBe(new[] { 0f, 1f, 0f, 0f });
+    }
+
+    [Theory]
+    [InlineData(PlatformTarget.DirectX)]
+    [InlineData(PlatformTarget.DirectX12)]
+    public async Task RowMajorNonSquareDefault_OnDirectX_IsALoudSd0017(PlatformTarget target)
+    {
+        // DirectX reflects a row_major float4x3 as 4x3, which MonoGame uploads as 3 registers of 4
+        // floats over a buffer of 4 registers of 3: no blob lands right (a Set does not either), so the
+        // default is refused loudly instead of being written scrambled.
+        const string src = """
+            #if SM6
+            #define PS ps_6_0
+            #else
+            #define PS ps_4_0
+            #endif
+            row_major float4x3 M = float4x3(1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12);
+            float4 MainPS(float4 pos : SV_Position) : SV_Target0 { return M[3].xyzz; }
+            technique T { pass P { PixelShader = compile PS MainPS(); } }
+            """;
+        var result = await new EffectCompiler().CompileAsync(
+            src, new CompilerOptions { Target = target, SourceFileName = "RowMajor43.fx" });
+        result.IsSuccess.ShouldBeTrue(result.IsFailure ? result.Error[0].Message : "");
+
+        ShaderError w = result.Value.Warnings.Single(x => x.Code == "SD0017");
+        w.Message.ShouldContain("row_major 4x3", Case.Sensitive);
+        Param(result.Value, "M").DefaultValue.ShouldBe(new byte[48]);
+        result.Value.Parameters.Single(p => p.Name == "M").DefaultValue.ShouldBeNull();
     }
 
     [Fact]

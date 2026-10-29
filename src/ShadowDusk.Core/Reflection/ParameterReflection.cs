@@ -27,6 +27,15 @@ public sealed record ParameterReflection
     public IReadOnlyList<AnnotationReflection>? Annotations { get; init; }
 
     /// <summary>
+    /// True for a matrix (or array of matrices) stored <c>row_major</c>: one buffer register per HLSL
+    /// row, from a <c>row_major</c> modifier, <c>#pragma pack_matrix(row_major)</c> or the compile's
+    /// packing flag. Internal: it decides the order of the default blob the writers get (issue #423
+    /// follow-up), and on OpenGL, whose matrix registers ShadowDusk's own rewriter lays out, the
+    /// pipeline ignores it.
+    /// </summary>
+    internal bool IsRowMajor { get; init; }
+
+    /// <summary>
     /// The default value the HLSL declaration gives the parameter (<c>float Scale = 2.0;</c>),
     /// or <see langword="null"/> when it is unknown.
     /// </summary>
@@ -35,8 +44,11 @@ public sealed record ParameterReflection
     /// after array element, each element in logical row-major order (the cell at row <c>r</c>,
     /// column <c>c</c> is at index <c>r * Columns + c</c>; a <c>float2x3</c> is
     /// <c>m00 m01 m02 m10 m11 m12</c>, the order its constructor takes). No register padding,
-    /// whatever the matrix packing, and not the column-by-column order of the blob in a
-    /// <c>.mgfx</c>. <c>int</c> values are converted to floats, <c>uint</c> values by their unsigned
+    /// whatever the matrix packing, and not the order of the blob in a <c>.mgfx</c> (column by
+    /// column, or the rows in order for a <c>row_major</c> matrix). For a <c>row_major</c>
+    /// non-square matrix on Vulkan, whose reflected shape is the C x R its buffer is uploaded by,
+    /// the value is still the declaration's R x C, row after row. <c>int</c> values are converted to
+    /// floats, <c>uint</c> values by their unsigned
     /// value (so <c>uint U = 3000000000;</c> is 3000000000, not negative), and an integer beyond 2^24
     /// is not exactly representable. <c>bool</c> is 0 or 1 on every target. How a 32-bit word reads
     /// follows the HLSL declaration, not <see cref="Type"/>: reflection reports both <c>int</c> and

@@ -54,7 +54,27 @@ internal static class ParameterDefaultValues
                 return null;
             blobs.Add(blob);
         }
+
+        // A row_major matrix's blob is its rows in order (issue #423 follow-up), which is already the
+        // declaration's logical row-major order; its header may be the C x R transpose (Vulkan).
+        if (p.IsRowMajor && p.Class == EffectParameterClass.Matrix)
+            return InOrder(p.Type, info.RowCount * info.ColumnCount, blobs, kind);
+
         return ToLogical(p.Class, p.Type, info.RowCount, info.ColumnCount, blobs, kind);
+    }
+
+    private static float[]? InOrder(EffectParameterType type, int count, IReadOnlyList<byte[]> blobs, GlobalInitializerKind? kind)
+    {
+        var values = new float[count * blobs.Count];
+        int at = 0;
+        foreach (byte[] blob in blobs)
+        {
+            if (blob.Length != count * 4)
+                return null;
+            for (int i = 0; i < count; i++)
+                values[at++] = ReadComponent(blob, i, type, kind);
+        }
+        return values;
     }
 
     /// <summary>

@@ -48,7 +48,8 @@ that loads and renders identically to `mgfxc`'s in the real MonoGame/KNI runtime
   shape, as on DirectX 11 and 12, with the same column-by-column default; the Vulkan parameter table of the new
   `G_NonSquare.fx` fixture equals the DirectX 12 one byte for byte. A `row_major` non-square matrix keeps the C x R
   header, because its buffer holds one register per HLSL row and that is the header the upload matches (a Set
-  matrix arrives transposed, as a `row_major float4x4` does on every backend); its initializer is still `SD0017`.
+  matrix arrives transposed, as a `row_major float4x4` does on every backend, except a `row_major floatNx2`, whose 2xN
+  header `SetValue(Matrix)` has no case for, so a Set does nothing, as in `mgfxc`'s Vulkan build).
   Real `mgfxc` 3.8.5 `/Profile:Vulkan` writes C x R for both packings (measured), so the column-major header
   deliberately departs from it: its build renders the cases above wrong, and MonoGame 3.8.5's own stock DesktopVK
   `SkinnedEffect` throws at the first `Apply` for the same reason. Proven in real MonoGame 3.8.5 DesktopVK against
@@ -65,6 +66,17 @@ that loads and renders identically to `mgfxc`'s in the real MonoGame/KNI runtime
   Vulkan build writes (measured: 48, and its build renders that shader). The short size was ShadowDusk's own. Only
   the constant-buffer size bytes of those Vulkan effects change; the `InitializerDefaultsVulkan` driver no longer
   skips its `float2x2` case.
+- **A `row_major` matrix's initializer default no longer lands transposed** (issue #423 follow-up, since 0.22.0).
+  `row_major float4x4 M = ...;` (or any matrix under `#pragma pack_matrix(row_major)`) was given the same
+  column-by-column default blob as a column-major matrix, but a `row_major` buffer holds one register per row and
+  MonoGame copies the blob into the registers in order, so the default arrived transposed, with no warning
+  (measured in real DesktopVK). The blob is now the rows in order, on DirectX 11, DirectX 12, Vulkan and KNIFX on DX,
+  for every square `row_major` matrix and, on Vulkan, non-square ones too. A `row_major` non-square matrix on
+  DirectX has no layout MonoGame's upload can fill, so its initializer is now the `SD0017` warning (naming the shape)
+  and a zero default instead of a scrambled one. OpenGL is unchanged (render-proven). Real `mgfxc` has no reference:
+  its DirectX_11 build refuses every `row_major` matrix and its Vulkan build writes zeros. Only those default blob
+  bytes change. Proven in real MonoGame by the new `H_RowMajorMatrix`, `I_PackMatrixPragma` and `J_RowMajor2x2`
+  cases of the `InitializerDefaults*` drivers.
 
 ## [0.22.0] - 2026-10-28
 

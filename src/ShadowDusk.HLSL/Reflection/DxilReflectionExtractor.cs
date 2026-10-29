@@ -205,6 +205,7 @@ public sealed class DxilReflectionExtractor
                     Columns        = typeDesc.ColumnCount,
                     Elements       = typeDesc.ElementCount,
                     Members        = ExtractStructMembers(varType, typeDesc),
+                    IsRowMajor     = (int)typeDesc.Class == 2,   // D3D_SVC_MATRIX_ROWS
                 });
             }
 

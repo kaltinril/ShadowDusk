@@ -1191,6 +1191,16 @@ internal sealed class CompilationPipeline
         // Global initializer defaults (`float R = 1;`): DXC and vkd3d drop the initializer, so it is
         // read off the preprocessed source and carried to the writers (deliberate deviation from
         // mgfxc, project_decisions.md). Every MGFX and KNIFX output gets them.
+        // A row_major matrix's default blob is written in register order (issue #423 follow-up). Not on
+        // OpenGL: every GL compile is row-major (-Zpr) and ShadowDusk's own rewriter rebuilds the
+        // matrix from the column-by-column blob, which is render-proven there.
+        if (options.Target == PlatformTarget.OpenGL)
+        {
+            for (int i = 0; i < allParameters.Count; i++)
+                if (allParameters[i].IsRowMajor)
+                    allParameters[i] = allParameters[i] with { IsRowMajor = false };
+        }
+
         IReadOnlyDictionary<string, GlobalInitializerDefault> parameterDefaults =
             ResolveParameterDefaults(preprocessed.Text, sourceFileName, allParameters, runWarnings);
         IReadOnlyList<EffectParameterInfo> effectParameterInfoList =
@@ -3162,9 +3172,10 @@ internal sealed class CompilationPipeline
             GlobalInitializerDefault? def = null;
             if (defaults.TryGetValue(param.Name, out GlobalInitializerDefault? candidate))
             {
-                string? mismatch = DefaultShapeMismatch(param, candidate);
+                GlobalInitializerDefault stored = InStorageOrder(param, candidate);
+                string? mismatch = RowMajorMismatch(param, candidate, stored) ?? DefaultShapeMismatch(param, stored);
                 if (mismatch is null)
-                    def = candidate;
+                    def = stored;
                 else
                     warnings.Add(DefaultNotPreserved(candidate.File, candidate.Line, candidate.Column, param.Name, mismatch));
             }
@@ -3185,6 +3196,52 @@ internal sealed class CompilationPipeline
         }
 
         return result;
+    }
+
+    /// <summary>
+    /// The default as the writers must store it for <paramref name="param"/>'s buffer layout. The
+    /// reader's blob is column by column (<c>Data[c * R + r] = M[r][c]</c>), which MonoGame uploads as
+    /// <c>ColumnCount</c> registers of <c>RowCount</c> floats: right for HLSL's default column-major
+    /// packing, one register per column. A <c>row_major</c> matrix holds one register per HLSL row, so
+    /// its blob must be the rows in order (<c>Data[r * C + c] = M[r][c]</c>), which is the column-by-
+    /// column blob of the C x R transpose; it is returned with that shape, which is the header Vulkan
+    /// reflects for it (and any square header). Before this, a row_major matrix's default landed
+    /// transposed in the real engine, with no warning.
+    /// </summary>
+    private static GlobalInitializerDefault InStorageOrder(ParameterReflection param, GlobalInitializerDefault def)
+    {
+        if (!param.IsRowMajor || def.Class != (byte)EffectParameterClass.Matrix)
+            return def;
+
+        var blobs = new List<byte[]>(def.ElementBlobs.Count);
+        foreach (byte[] blob in def.ElementBlobs)
+        {
+            if (blob.Length != def.Rows * def.Columns * 4)
+                return def;   // DefaultShapeMismatch reports it
+            var rowOrder = new byte[blob.Length];
+            for (int r = 0; r < def.Rows; r++)
+                for (int c = 0; c < def.Columns; c++)
+                    Buffer.BlockCopy(blob, (c * def.Rows + r) * 4, rowOrder, (r * def.Columns + c) * 4, 4);
+            blobs.Add(rowOrder);
+        }
+        return def with { Rows = def.Columns, Columns = def.Rows, ElementBlobs = blobs };
+    }
+
+    /// <summary>
+    /// Why a <c>row_major</c> non-square matrix's default cannot be stored, or null. Its buffer holds
+    /// R registers of C floats; MonoGame writes <c>ColumnCount</c> registers of <c>RowCount</c>
+    /// floats, so only a C x R header fills it. DirectX reflection reports the HLSL R x C, and no
+    /// blob reaches the right registers through it (a Set cannot either; validation-matrix section 7).
+    /// </summary>
+    private static string? RowMajorMismatch(ParameterReflection param, GlobalInitializerDefault declared, GlobalInitializerDefault stored)
+    {
+        if (ReferenceEquals(declared, stored) || declared.Rows == declared.Columns)
+            return null;
+        if (param.Rows == stored.Rows && param.Columns == stored.Columns)
+            return null;
+        return $"it is a row_major {declared.Rows}x{declared.Columns} matrix, whose buffer holds one register per row, " +
+               $"and MonoGame uploads a {param.Rows}x{param.Columns} parameter as {param.Columns} registers of " +
+               $"{param.Rows} floats, so no default can land in the right registers on this target";
     }
 
     /// <summary>
