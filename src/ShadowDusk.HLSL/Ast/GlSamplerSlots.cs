@@ -45,4 +45,15 @@ public sealed record GlSamplerSlots(
     /// </summary>
     public IReadOnlyDictionary<string, string> LegacySamplerTextures { get; init; } =
         new Dictionary<string, string>(StringComparer.Ordinal);
+
+    /// <summary>
+    /// TEXTURE name (as the preprocessed view spells it) -> the explicit <c>register(tN)</c> on its
+    /// declaration, for every texture declared with one (any <c>texture*</c> type, legacy
+    /// <c>texture</c>/<c>texture2D</c> and modern <c>Texture2D</c> alike, read or not). The DirectX
+    /// 11 texture slot assignment keeps each of these at its register and allocates around them:
+    /// fxc takes an explicit texture register out of circulation even when nothing reads the
+    /// texture, and the SM4 rewrite drops the clause from a legacy declaration.
+    /// </summary>
+    public IReadOnlyDictionary<string, int> ExplicitTextureRegisters { get; init; } =
+        new Dictionary<string, int>(StringComparer.Ordinal);
 }

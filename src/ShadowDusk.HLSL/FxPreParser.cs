@@ -1930,7 +1930,70 @@ public sealed class FxPreParser
                 LegacySamplerRegisters = legacyRegisters,
                 LegacyTextures = legacyTextures,
                 LegacySamplerTextures = legacySamplerTextures,
+                ExplicitTextureRegisters = CollectTextureRegisters(tokens),
             });
+    }
+
+    /// <summary>
+    /// Every <c>texture* [&lt;…&gt;] Name : register(tN)</c> declaration in <paramref name="tokens"/>
+    /// (any case of the <c>texture</c> type prefix, optional template arguments), as
+    /// texture name -> N. See <see cref="GlSamplerSlots.ExplicitTextureRegisters"/>.
+    /// </summary>
+    private static Dictionary<string, int> CollectTextureRegisters(IReadOnlyList<Token> tokens)
+    {
+        var registers = new Dictionary<string, int>(StringComparer.Ordinal);
+
+        var code = new List<Token>(tokens.Count);
+        foreach (Token t in tokens)
+        {
+            if (t.Kind is not (TokenKind.LineComment or TokenKind.BlockComment or TokenKind.Preprocessor))
+                code.Add(t);
+        }
+
+        for (int i = 0; i < code.Count; i++)
+        {
+            if (code[i].Kind != TokenKind.Identifier
+                || !code[i].Text.StartsWith("texture", StringComparison.OrdinalIgnoreCase))
+            {
+                continue;
+            }
+
+            int k = i + 1;
+            if (k < code.Count && code[k].Kind == TokenKind.LAngle)
+            {
+                while (k < code.Count && code[k].Kind is not (TokenKind.RAngle or TokenKind.Semicolon))
+                    k++;
+                if (k >= code.Count || code[k].Kind != TokenKind.RAngle)
+                    continue;
+                k++;
+            }
+
+            // The lexer drops ':', so the declaration reads `Type Name register ( tN )`.
+            if (k + 4 >= code.Count) continue;
+            if (code[k].Kind != TokenKind.Identifier) continue;
+            if (code[k + 1].Kind != TokenKind.Identifier ||
+                !string.Equals(code[k + 1].Text, "register", StringComparison.OrdinalIgnoreCase))
+            {
+                continue;
+            }
+            if (code[k + 2].Kind != TokenKind.LParen) continue;
+
+            Token slotTok = code[k + 3];
+            if (slotTok.Kind != TokenKind.Identifier ||
+                slotTok.Text.Length < 2 ||
+                (slotTok.Text[0] != 't' && slotTok.Text[0] != 'T') ||
+                !int.TryParse(slotTok.Text.AsSpan(1), System.Globalization.NumberStyles.None,
+                              System.Globalization.CultureInfo.InvariantCulture, out int slot))
+            {
+                continue;
+            }
+            if (code[k + 4].Kind != TokenKind.RParen) continue;
+
+            if (slot is >= 0 and <= 127)
+                registers[code[k].Text] = slot;
+        }
+
+        return registers;
     }
 
     // -------------------------------------------------------------------------

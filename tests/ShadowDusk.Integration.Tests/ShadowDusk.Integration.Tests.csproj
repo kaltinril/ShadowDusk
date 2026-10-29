@@ -91,6 +91,9 @@
     <!-- Legacy/modern sampler UNIT (OpenGL) and SLOT (DirectX 11) fixtures and their mgfxc
          3.8.4.1 goldens (LegacySamplerUnitTests), likewise outside the corpus sweeps. -->
     <None Include="..\..\tests\fixtures\golden\legacy-sampler-units\**\*" CopyToOutputDirectory="PreserveNewest" Link="fixtures\golden\legacy-sampler-units\%(RecursiveDir)%(Filename)%(Extension)" />
+    <!-- DirectX 11 legacy-sampler TEXTURE slot fixtures and their mgfxc 3.8.4.1 goldens
+         (DirectX11TextureSlotOrderTests), likewise outside the corpus sweeps. -->
+    <None Include="..\..\tests\fixtures\golden\dx11-texture-slots\**\*" CopyToOutputDirectory="PreserveNewest" Link="fixtures\golden\dx11-texture-slots\%(RecursiveDir)%(Filename)%(Extension)" />
     <!-- Global-initializer default fixtures and the mgfxc 3.8.4.1 DirectX_11 goldens whose default blobs
          they are compared to (InitializerDefaultsTests), outside the corpus sweeps. -->
     <None Include="..\..\tests\fixtures\golden\initializer-defaults\**\*" CopyToOutputDirectory="PreserveNewest" Link="fixtures\golden\initializer-defaults\%(RecursiveDir)%(Filename)%(Extension)" />
