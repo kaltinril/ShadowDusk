@@ -45,8 +45,12 @@ namespace ShadowDusk.Validation.NonSquareMatrix;
 /// <summary>
 /// One probe: the shader, how many pixels it writes, how to Set it, and the expected channels.
 /// <paramref name="GatedOnVulkan"/> gates a case on the Vulkan run only (the DX run reports it).
+/// <paramref name="VulkanExpected"/>, when set, replaces <paramref name="Expected"/> on the Vulkan run
+/// and gates it there: the measured real mgfxc 3.8.5 /Profile:Vulkan result for a shape with no DX
+/// reference, so the in-tree build must keep matching mgfxc's Vulkan build on it.
 /// </summary>
-internal sealed record ProbeCase(string Name, string Fx, int Width, Action<Effect> Set, float[] Expected, bool Gated, string Note, bool GatedOnVulkan = false);
+internal sealed record ProbeCase(string Name, string Fx, int Width, Action<Effect> Set, float[] Expected, bool Gated, string Note,
+    bool GatedOnVulkan = false, float[]? VulkanExpected = null);
 
 /// <summary>One build of the cases: a label and either a directory of prebuilt .mgfx files or an in-process target.</summary>
 public sealed record ProbeBuild(string Label, string? Directory, PlatformTarget? InProcessTarget);
@@ -88,7 +92,8 @@ public static class NonSquareMatrixProbe
                 Px(P(0, 0, 0, -1), P(0, 0, 0, -1)), true, "SetValue(Matrix) has no 2-row case: a no-op on every MonoGame backend"),
             new("D row_major float4x3 SetValue(Matrix)", "D_RowMajor4x3", 4, e => e.Parameters["M"]!.SetValue(m0),
                 Px(P(K(0, 0), K(0, 1), K(0, 2), -1), P(K(1, 0), K(1, 1), K(1, 2), -1), P(K(2, 0), K(2, 1), K(2, 2), -1), P(K(3, 0), K(3, 1), K(3, 2), -1)),
-                false, "informational: mgfxc DirectX_11 refuses the shape, so there is no DX reference; on Vulkan ShadowDusk writes mgfxc's row_major header, so the Set Matrix arrives transposed, as a row_major float4x4 does"),
+                false, "no DX reference (mgfxc DirectX_11 refuses the shape; informational on DX). Gated on Vulkan against the real mgfxc 3.8.5 Vulkan build's measured result: mgfxc's row_major header, so the Set Matrix arrives transposed, as a row_major float4x4 does",
+                VulkanExpected: Px(P(K(0, 0), K(1, 0), K(2, 0), -1), P(K(0, 1), K(1, 1), K(2, 1), -1), P(K(0, 2), K(1, 2), K(2, 2), -1), P(K(0, 3), K(1, 3), K(2, 3), -1))),
             new("E float4x3 B[2] SetValue(Matrix[])", "E_Array4x3", 8, e => e.Parameters["B"]!.SetValue(new[] { m0, m1 }),
                 Px(P(K(0, 0), K(0, 1), K(0, 2), -1), P(K(1, 0), K(1, 1), K(1, 2), -1), P(K(2, 0), K(2, 1), K(2, 2), -1), P(K(3, 0), K(3, 1), K(3, 2), -1),
                    P(K(0, 0) + 16, K(0, 1) + 16, K(0, 2) + 16, -1), P(K(1, 0) + 16, K(1, 1) + 16, K(1, 2) + 16, -1), P(K(2, 0) + 16, K(2, 1) + 16, K(2, 2) + 16, -1), P(K(3, 0) + 16, K(3, 1) + 16, K(3, 2) + 16, -1)),
@@ -132,7 +137,9 @@ public static class NonSquareMatrixProbe
             builds.Add(new ProbeBuild(a[..eq], Path.GetFullPath(a[(eq + 1)..]), null));
         }
 
-        ProbeCase[] cases = Cases();
+        ProbeCase[] cases = Cases()
+            .Select(c => inProcessTarget == PlatformTarget.Vulkan && c.VulkanExpected is { } vk ? c with { Expected = vk, GatedOnVulkan = true } : c)
+            .ToArray();
         var compiler = new EffectCompiler();
         var jobs = new List<Job>();
         foreach (ProbeBuild b in builds)

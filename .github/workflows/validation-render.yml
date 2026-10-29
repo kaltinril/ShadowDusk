@@ -578,6 +578,7 @@ jobs:
             validation/output/candidate-dx12/**
             validation/output/diff-dx12/**
             validation/output-slang-full-corpus/**
+            validation/output/nonsquare-matrix/**
           if-no-files-found: ignore
           retention-days: 7
 
@@ -729,5 +730,6 @@ jobs:
             validation/output/baseline-vulkan/**
             validation/output/diff-vulkan/**
             validation/output/vk-validation/**
+            validation/output/nonsquare-matrix/**
           if-no-files-found: ignore
           retention-days: 7
