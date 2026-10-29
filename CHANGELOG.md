@@ -183,6 +183,13 @@ that loads and renders identically to `mgfxc`'s in the real MonoGame/KNI runtime
   `L_RowMajorTallAsymmetric`, `M_RowMajorTallFourthRow` and `N_RowMajorTallArray` cases of the `InitializerDefaults*` drivers; KNIFX on DX
   is byte-tested only, its real-engine proof waits for the separate KNIFX `_level_9_x` shader-model fix (the KNIFX
   arm of `InitializerDefaultsKniDx` is red on `main` for that reason).
+- **The FNA defaults gate failed on devices that round 0.5 down.** `FnaValidation -- defaults`
+  failed `DefaultsScale`, `DefaultsIntBool` and `DefaultsArray` on an RTX 3080 (D3D11 and OpenGL)
+  although ShadowDusk's build matched `fxc`'s exactly: those fixtures put 0.5 in a channel
+  (127.5/255), which the device rendered as 127 against a pin of 128. The reference-centre vs
+  pin sanity check now allows +-1 per channel, as the `InitializerDefaults*` drivers do; the
+  ShadowDusk vs `fxc` comparison (parameters and every pixel) is still exact. Validation only,
+  no output change.
 
 ## [0.22.0] - 2026-10-28
 

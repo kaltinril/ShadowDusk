@@ -26,8 +26,9 @@ namespace ShadowDusk.Validation.Fna;
 /// <item>reads every numeric parameter back through FNA's own getters (the values MojoShader parsed
 /// out of the <c>.fxb</c>): the candidate's must equal the reference's exactly;</item>
 /// <item>renders a 64x64 target through SpriteBatch with the effect: every pixel must be identical
-/// across the arms, and the centre pixel must equal the value pinned from the reference compiler
-/// (so two arms that are BOTH zero cannot pass).</item>
+/// across the arms, and the reference's centre pixel must match the value pinned from the reference
+/// compiler within +-1 per channel (so two arms that are BOTH zero cannot pass; the +-1 absorbs
+/// the device-dependent rounding of 0.5 to 127 or 128).</item>
 /// </list>
 /// The reference is Microsoft's fx_2_0 compiler (<see cref="ReferenceFx2Compiler"/>, byte-identical
 /// to <c>fxc /T fx_2_0</c>), the oracle for what the FNA runtime should see.
@@ -167,9 +168,15 @@ public static class InitializerDefaultsGate
                 pixelsEqual = reference.Pixels!.SequenceEqual(candidate.Pixels!);
                 if (!pixelsEqual) problems.Add("rendered pixels differ");
                 centre = Centre(candidate.Pixels!);
+                // Sanity check of the oracle only (the strict reference == candidate comparison is
+                // pixelsEqual above, exact). Several fixtures put 0.5 in a channel, i.e. 127.5/255,
+                // which the GPU/driver rounds to 127 or 128 depending on the device, so the pin is
+                // matched within +-1 per channel, as the InitializerDefaults* drivers do
+                // (validation/SharedInitializerDefaults/InitializerDefaultsProbe.cs). Anything
+                // further off means the oracle really moved.
                 int[] refCentre = Centre(reference.Pixels!);
-                if (!refCentre.SequenceEqual(row.ExpectedCenter))
-                    problems.Add($"REFERENCE centre {Fmt(refCentre)} != pinned {Fmt(row.ExpectedCenter)} (the oracle moved: re-pin deliberately)");
+                if (!WithinPinTolerance(refCentre, row.ExpectedCenter))
+                    problems.Add($"REFERENCE centre {Fmt(refCentre)} != pinned {Fmt(row.ExpectedCenter)} +-{PinTolerance} (the oracle moved: re-pin deliberately)");
             }
 
             if (Environment.GetEnvironmentVariable("SHADOWDUSK_FNA_DEFAULTS_VERBOSE") == "1")
@@ -220,6 +227,14 @@ public static class InitializerDefaultsGate
         Console.WriteLine($"[fna-defaults] PNGs: {outDir}");
         return ok ? 0 : 1;
     }
+
+    /// <summary>Per-channel tolerance of the reference-centre vs pin sanity check only (0.5 rounds
+    /// to 127 or 128 by device). Never applied to the reference vs candidate comparison.</summary>
+    private const int PinTolerance = 1;
+
+    private static bool WithinPinTolerance(int[] actual, int[] pinned) =>
+        actual.Length == pinned.Length
+        && actual.Zip(pinned).All(p => Math.Abs(p.First - p.Second) <= PinTolerance);
 
     private static async Task<(byte[]? Bytes, string? Error)> CompileCandidate(EffectCompiler compiler, string path, string source)
     {
