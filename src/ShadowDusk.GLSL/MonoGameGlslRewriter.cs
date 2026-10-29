@@ -202,7 +202,35 @@ public static class MonoGameGlslRewriter
         @"^\s*\}\s*([A-Za-z_][A-Za-z0-9_]*)\s*;\s*$",
         RegexOptions.Compiled);
 
+    // out mat3 out_var_TEXCOORD2;  (VS)  /  in mat3 in_var_TEXCOORD2;  (PS)
+    // A MATRIX interpolant (an HLSL `float3x3 m : TEXCOORD2` output/input — the
+    // tangent-to-world basis of every normal-mapped shader, KNI's DeferredBasicEffect).
+    private static readonly Regex MatrixVaryingDecl = new(
+        @"^\s*(in|out)\s+(mat[234](?:x[234])?)\s+((?:in|out)_var_[A-Za-z0-9_]+)\s*;\s*$",
+        RegexOptions.Compiled);
+
     private sealed record InputVarying(string Identifier, string Type, string VaryingName);
+
+    /// <summary>
+    /// A matrix interpolant split across consecutive <c>vTexCoord{n}</c> varyings the way
+    /// fxc (and so mgfxc) packs it: one register per HLSL COLUMN (column_major, the
+    /// default), register <c>n + k</c> holding column <c>k</c>. In SPIRV-Cross's GLSL the
+    /// matrix's columns are the HLSL ROWS (DXC maps an HLSL <c>floatRxC</c> to a GLSL
+    /// matrix of R columns of C components), so register <c>n + k</c> is GLSL row
+    /// <c>k</c>: <c>vec(m[0][k], m[1][k], …)</c>. A <c>row_major</c> interpolant reaches the
+    /// rewriter as byte-identical GLSL (measured), so it is packed the same way, where fxc
+    /// would give it one ROW per register; both stages come from this rewrite, so the effect
+    /// renders the same either way.
+    /// </summary>
+    /// <param name="Identifier">The SPIRV-Cross name (<c>out_var_TEXCOORD2</c> / <c>in_var_TEXCOORD2</c>).</param>
+    /// <param name="Type">The GLSL matrix type (<c>mat3</c>, <c>mat2x4</c>, …).</param>
+    /// <param name="Columns">GLSL columns (= HLSL rows): the components each register carries.</param>
+    /// <param name="Rows">GLSL rows (= HLSL columns): the number of registers / varyings.</param>
+    /// <param name="VaryingNames">The <c>vTexCoord{n+k}</c> names, one per register.</param>
+    /// <param name="Temp">VS only: the global the body writes, copied to the varyings at the end of <c>main</c>.</param>
+    private sealed record MatrixVarying(
+        string Identifier, string Type, int Columns, int Rows,
+        IReadOnlyList<string> VaryingNames, string? Temp);
 
     /// <summary>One parsed uniform block: its instance name and members in order.</summary>
     private sealed record UniformBlock(
@@ -265,6 +293,7 @@ public static class MonoGameGlslRewriter
         var positionOutputIds = new List<string>();             // VS: out_var_POSITION{0} -> gl_Position
         var attributes = new List<MonoGameGlslAttribute>();     // VS: in_var_* -> attribute vs_vK
         var attributeReads = new List<InputVarying>();          // VS: in_var_* read width/rename
+        var matrixVaryings = new List<MatrixVarying>();         // VS out / PS in: matN interpolants
         var uniformBlocks = new List<UniformBlock>();           // ALL std140 blocks, in order
         int uniformDeclInsertIndex = -1;                        // where the merged decl goes
 
@@ -404,6 +433,27 @@ public static class MonoGameGlslRewriter
                 continue;
             }
 
+            // Rule 4c: a MATRIX interpolant (VS output / PS input) -> one legacy
+            // vTexCoord{n+k} varying per register, packed as fxc packs it (see
+            // MatrixVarying). A VS matrix INPUT (a matrix vertex attribute) is not
+            // modelled: it is left for ThrowIfUnrewrittenStageIo to refuse loudly.
+            var matMatch = MatrixVaryingDecl.Match(line);
+            if (matMatch.Success && (matMatch.Groups[1].Value == "out") == isVertex)
+            {
+                var mv = ParseMatrixVarying(
+                    matMatch.Groups[3].Value, matMatch.Groups[2].Value, isVertex, glsl);
+                matrixVaryings.Add(mv);
+                foreach (var name in mv.VaryingNames)
+                {
+                    output.Add($"varying vec4 {name};");
+                }
+                if (mv.Temp is not null)
+                {
+                    output.Add($"{mv.Type} {mv.Temp};");
+                }
+                continue;
+            }
+
             // Rule 4: input declaration.
             var inMatch = InputVaryingDecl.Match(line);
             if (inMatch.Success)
@@ -535,6 +585,29 @@ public static class MonoGameGlslRewriter
         foreach (var id in positionOutputIds)
         {
             body = ReplaceWord(body, id, "gl_Position");
+        }
+
+        // Matrix interpolants (Rule 4c). Two interpolants landing on the same
+        // vTexCoord{n} (a float3x3 at TEXCOORD2 beside a TEXCOORD3) would silently
+        // alias; fxc refuses that overlap, and so do we.
+        if (matrixVaryings.Count > 0)
+        {
+            var declared = (isVertex ? outputVaryings : inputVaryings).Select(v => v.VaryingName)
+                .Concat(matrixVaryings.SelectMany(m => m.VaryingNames));
+            string? clash = declared.GroupBy(n => n).FirstOrDefault(g => g.Count() > 1)?.Key;
+            if (clash is not null)
+            {
+                throw new MonoGameGlslRewriteException(
+                    $"GLSL rewrite: two interpolants share the legacy varying '{clash}' — a matrix " +
+                    "interpolant occupies one TEXCOORD register per column, so its semantic range " +
+                    "overlaps another interpolant's semantic.");
+            }
+        }
+        foreach (var mv in matrixVaryings)
+        {
+            body = mv.Temp is not null
+                ? InjectMatrixVaryingCopyOut(ReplaceWord(body, mv.Identifier, mv.Temp), mv)
+                : ReplaceWord(body, mv.Identifier, MatrixVaryingReadExpression(mv));
         }
 
         // Uniform members: <Instance>.<member> -> {prefix}_uniforms_vec4[reg]<swizzle>
@@ -1463,6 +1536,99 @@ public static class MonoGameGlslRewriter
         return sem is "POSITION" or "POSITION0";
     }
 
+    private const string Components = "xyzw";
+
+    /// <summary>
+    /// Models one matrix interpolant declaration (Rule 4c). Only a <c>TEXCOORD{n}</c>
+    /// semantic is modelled: it spans <c>vTexCoord{n}</c> … <c>vTexCoord{n+Rows-1}</c>,
+    /// the registers fxc gives it. Anything else (a matrix at <c>COLOR0</c>, whose
+    /// second register has no legacy varying name) fails loudly.
+    /// </summary>
+    private static MatrixVarying ParseMatrixVarying(
+        string identifier, string type, bool isVertex, string sourceGlsl)
+    {
+        var sem = StripInterfacePrefix(identifier).ToUpperInvariant();
+        string digits = sem.StartsWith("TEXCOORD", StringComparison.Ordinal) ? sem["TEXCOORD".Length..] : "";
+        if (!sem.StartsWith("TEXCOORD", StringComparison.Ordinal)
+            || !(digits.Length == 0 || (digits.All(char.IsAsciiDigit) && digits.Length <= 2)))
+        {
+            throw new MonoGameGlslRewriteException(
+                $"GLSL rewrite: matrix interpolant '{identifier}' ({type}) uses semantic '{sem}'; " +
+                "only a TEXCOORD semantic is modelled for a matrix interpolant on the MonoGame " +
+                "OpenGL target (it spans one TEXCOORD register per matrix column).");
+        }
+        int baseIndex = digits.Length == 0 ? 0 : int.Parse(digits, System.Globalization.CultureInfo.InvariantCulture);
+
+        // matN = N columns x N rows; matCxR = C columns x R rows (GLSL notation).
+        int columns = type[3] - '0';
+        int rows = type.Length > 4 ? type[5] - '0' : columns;
+
+        var names = Enumerable.Range(0, rows).Select(k => $"vTexCoord{baseIndex + k}").ToList();
+
+        string? temp = null;
+        if (isVertex)
+        {
+            temp = $"vs_oT{baseIndex}_mat";
+            if (Regex.IsMatch(sourceGlsl, $@"\b{Regex.Escape(temp)}\b"))
+            {
+                throw new MonoGameGlslRewriteException(
+                    $"GLSL rewrite collision: source already contains identifier '{temp}', which " +
+                    "clashes with the matrix-interpolant temporary. Cannot safely rewrite.");
+            }
+        }
+        return new MatrixVarying(identifier, type, columns, rows, names, temp);
+    }
+
+    /// <summary>
+    /// PS read of a matrix interpolant: the matrix rebuilt from its registers,
+    /// <c>m[c][k] = vTexCoord{n+k}[c]</c> (the inverse of the VS copy-out).
+    /// </summary>
+    private static string MatrixVaryingReadExpression(MatrixVarying mv)
+    {
+        var cols = Enumerable.Range(0, mv.Columns).Select(c =>
+            $"vec{mv.Rows}(" + string.Join(", ", mv.VaryingNames.Select(v => $"{v}.{Components[c]}")) + ")");
+        return $"{mv.Type}(" + string.Join(", ", cols) + ")";
+    }
+
+    /// <summary>
+    /// VS copy-out of a matrix interpolant: once the body has written the temporary,
+    /// register <c>k</c> receives GLSL row <c>k</c>,
+    /// <c>vTexCoord{n+k}.xyz = vec3(m[0][k], m[1][k], m[2][k])</c>, immediately before
+    /// SPIRV-Cross's trailing depth-convention line (the end of <c>main</c>, where the
+    /// position fixup also goes), else before <c>main</c>'s closing brace. An early
+    /// <c>return</c> would skip it, so that shape fails loudly.
+    /// </summary>
+    private static string InjectMatrixVaryingCopyOut(string body, MatrixVarying mv)
+    {
+        if (Regex.IsMatch(body, @"\breturn\b"))
+        {
+            throw new MonoGameGlslRewriteException(
+                $"GLSL rewrite: the vertex shader writes the matrix interpolant '{mv.Identifier}' " +
+                "and contains a 'return' statement; the end-of-main copy-out to its TEXCOORD " +
+                "registers would be skipped on that path, so this shape is not modelled.");
+        }
+
+        var lines = body.Split('\n').ToList();
+        int insertAt = lines.FindLastIndex(l => l.Trim() == SpirvCrossDepthFixupLine);
+        if (insertAt < 0)
+        {
+            insertAt = lines.FindLastIndex(l => l.Trim() == "}");
+        }
+        if (insertAt < 0)
+        {
+            throw new MonoGameGlslRewriteException(
+                $"GLSL rewrite: could not find the end of main() to copy the matrix interpolant " +
+                $"'{mv.Identifier}' out to its varyings.");
+        }
+
+        string swizzle = Components[..mv.Columns];
+        var copy = Enumerable.Range(0, mv.Rows).Select(k =>
+            $"    {mv.VaryingNames[k]}.{swizzle} = vec{mv.Columns}(" +
+            string.Join(", ", Enumerable.Range(0, mv.Columns).Select(c => $"{mv.Temp}[{c}][{k}]")) + ");");
+        lines.InsertRange(insertAt, copy);
+        return string.Join("\n", lines);
+    }
+
     private static string SemanticToVaryingName(string identifier)
     {
         // identifier looks like "in_var_TEXCOORD0" (PS input) or "out_var_COLOR0"
@@ -1480,7 +1646,7 @@ public static class MonoGameGlslRewriter
             // same semantic, and fxc/mgfxc treat them identically. DXC mirrors the author's
             // spelling verbatim, so the bare form arrives as `in_var_COLOR`. Collapsing it
             // here is the same normalization IsPositionSemantic (POSITION ≡ POSITION0),
-            // ParseTrailingIndex, and the SV_Target rewrite already perform — without it a
+            // VertexSemanticMapper, and the SV_Target rewrite already perform — without it a
             // pixel-only pass declaring `: COLOR` emits `var_COLOR`, which MonoGame's
             // built-in SpriteEffect VS (writing vFrontColor) can never link against.
             case "COLOR":
@@ -1538,52 +1704,39 @@ public static class MonoGameGlslRewriter
     /// <summary>
     /// Maps a vertex-input semantic (<c>in_var_&lt;SEM&gt;</c>) to MonoGame's
     /// <c>VertexElementUsage</c> byte + semantic index, as the .mgfx attribute table
-    /// needs. Covers the SpriteBatch-compatible set this phase targets —
-    /// POSITION / COLOR / TEXCOORD / NORMAL — and is verified against the mgfxc VS
-    /// goldens (SpriteEffect: vs_v0=Position/0, vs_v1=Color/0, vs_v2=TexCoord/0;
-    /// DualTexture: TEXCOORD1 → usage 2 index 1). The byte values are MonoGame's
-    /// <c>VertexElementUsage</c> enum: Position=0, Color=1, TextureCoordinate=2,
-    /// Normal=3.
+    /// needs. The table is <see cref="ShadowDusk.Core.Reflection.VertexSemanticMapper"/>,
+    /// the one every attribute-table backend shares (Vulkan, DirectX 12), so GL cannot
+    /// drift from them: POSITION=0, COLOR=1, TEXCOORD=2, NORMAL=3, BINORMAL=4,
+    /// TANGENT=5, BLENDINDICES=6, BLENDWEIGHT=7, DEPTH=8, FOG=9, PSIZE=10. Verified
+    /// against mgfxc 3.8.4.1 <c>/Profile:OpenGL</c>, which writes exactly these usage
+    /// bytes and the semantic's own index (<c>TEXCOORD3</c> is TextureCoordinate/3,
+    /// <c>BLENDWEIGHT1</c> BlendWeight/1); MonoGame's and KNI's GL runtimes bind each
+    /// <c>VertexElement</c> to the attribute whose record carries its usage+index
+    /// (issue: KNI EffectTest <c>DeferredBasicEffect</c>, <c>BINORMAL0</c> was SD0210).
     /// </summary>
     private static (byte Usage, byte Index) SemanticToVertexUsage(string identifier)
     {
-        // Uppercased: HLSL semantics are case-insensitive and DXC mirrors the author's
-        // spelling, so ": position" must map like ": POSITION" (bug-hunt 2026-07-27 M3).
+        // The mapper uppercases: HLSL semantics are case-insensitive and DXC mirrors the
+        // author's spelling, so ": position" maps like ": POSITION" (bug-hunt 2026-07-27 M3).
         var sem = StripInterfacePrefix(identifier).ToUpperInvariant();
+        var (usage, index) = ShadowDusk.Core.Reflection.VertexSemanticMapper.Map(sem, out bool recognized);
 
-        if (sem.StartsWith("POSITION"))
-            return (0, ParseTrailingIndex(sem, "POSITION"));
-        if (sem.StartsWith("COLOR"))
-            return (1, ParseTrailingIndex(sem, "COLOR"));
-        if (sem.StartsWith("TEXCOORD"))
-            return (2, ParseTrailingIndex(sem, "TEXCOORD"));
-        if (sem.StartsWith("NORMAL"))
-            return (3, ParseTrailingIndex(sem, "NORMAL"));
-
-        // Unknown semantic: a real effect using an attribute the table doesn't model
-        // would bind to the wrong vertex element (silent, not a link error). Fail
-        // loudly so it's caught at compile time, consistent with the sampler guard.
-        throw new MonoGameGlslRewriteException(
-            $"Unsupported vertex-input semantic '{sem}' for the MonoGame GL target. The " +
-            $"attribute table models POSITION / COLOR / TEXCOORD / NORMAL; extend " +
-            $"SemanticToVertexUsage to support '{sem}'.");
-    }
-
-    private static byte ParseTrailingIndex(string sem, string baseName)
-    {
-        var tail = sem[baseName.Length..];
-        if (tail.Length == 0)
-            return 0;
-        // TryParse: a non-numeric tail (e.g. POSITIONT, which shares POSITION's prefix)
-        // must surface as the loud unsupported-semantic rewrite error below, not as a raw
-        // FormatException that bypasses the pipeline's MonoGameGlslRewriteException catch
-        // and escapes the library as an unhandled throw (bug-hunt 2026-07-27 N4).
-        // byte.TryParse also rejects indices above 255, which the record cannot carry.
-        if (byte.TryParse(tail, out byte index))
-            return index;
-        throw new MonoGameGlslRewriteException(
-            $"Unsupported vertex-input semantic '{sem}' for the MonoGame GL target: " +
-            $"'{tail}' is not a supported numeric semantic index.");
+        // NOT the mapper's TextureCoordinate fallback: mgfxc's GL path compiles through
+        // fxc vs_3_0, which REFUSES an unknown input semantic (X4502, measured with
+        // `MYSEM0`), so there is no mgfxc output to be equivalent to, and a defaulted
+        // attribute would bind to whatever TextureCoordinate element the vertex
+        // declaration happens to carry (silent, not a link error). Fail loudly instead,
+        // as before. A non-numeric tail (POSITIONT, bug-hunt 2026-07-27 N4) and an
+        // index the one-byte record cannot carry land here too.
+        if (!recognized || index > byte.MaxValue)
+        {
+            throw new MonoGameGlslRewriteException(
+                $"Unsupported vertex-input semantic '{sem}' for the MonoGame GL target. The " +
+                "attribute table models POSITION / COLOR / TEXCOORD / NORMAL / BINORMAL / " +
+                "TANGENT / BLENDINDICES / BLENDWEIGHT / DEPTH / FOG / PSIZE, each with an " +
+                "optional semantic index of 0-255.");
+        }
+        return (usage, (byte)index);
     }
 
     /// <summary>
