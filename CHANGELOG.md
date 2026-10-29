@@ -60,6 +60,12 @@ that loads and renders identically to `mgfxc`'s in the real MonoGame/KNI runtime
   keeps its number. A `#line` that spans lines now numbers the next line as DXC does (from the line its number
   is on). DXC always compiled such sources correctly; only what ShadowDusk reads off the view changes, and an
   effect without a multi-line comment in a directive is unchanged byte for byte.
+- **`ParameterReflection.DefaultValue` reads a `bool` as 0 or 1 on Vulkan and a `uint` above 2^31 as its unsigned value**
+  (issue #427). On Vulkan a `bool` parameter is `Int32` (SPIR-V has no bool in a uniform block, and real `mgfxc`'s
+  Vulkan build says `Int32` too), so `bool Flag = true;` reflected -1, indistinguishable from `int Flag = -1;`; and
+  every target reflects a `uint` as `Int32`, so `uint U = 3000000000;` reflected -1294967296. The value is now read by
+  the HLSL declaration's kind (exposed as the new `GlobalInitializerDefault.Kind` / `GlobalInitializerKind` in
+  `ShadowDusk.HLSL`). `ParameterReflection.Type` stays `Int32` on Vulkan, and no emitted byte changes. This changes what 0.22.0 reported for those two cases (its "Vulkan `bool` reads -1" note no longer applies).
 
 ## [0.22.0] - 2026-10-28
 

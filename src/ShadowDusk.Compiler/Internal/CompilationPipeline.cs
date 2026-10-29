@@ -1199,7 +1199,7 @@ internal sealed class CompilationPipeline
         // Issue #413: the reflection result carries the very default blobs the writers are about to
         // write, so the two cannot disagree.
         IReadOnlyList<ParameterReflection> reflectedParameters =
-            ParameterDefaultValues.Attach(allParameters, effectParameterInfoList);
+            ParameterDefaultValues.Attach(allParameters, effectParameterInfoList, parameterDefaults);
 
         // Phase 43, F9: bake parsed sampler_state members (MinFilter/AddressU/…)
         // into per-sampler MGFX states, keyed by the .fx sampler name — the

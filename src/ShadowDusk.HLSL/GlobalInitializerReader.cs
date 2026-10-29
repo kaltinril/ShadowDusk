@@ -33,7 +33,40 @@ public sealed record GlobalInitializerDefault(
     IReadOnlyList<byte[]> ElementBlobs,
     string File,
     int Line,
-    int Column);
+    int Column)
+{
+    private readonly GlobalInitializerKind? _kind;
+
+    /// <summary>
+    /// The declared scalar kind. <see cref="Type"/> is the MGFX type, which is <c>Int32</c> for both
+    /// <c>int</c> and <c>uint</c> (and every compiler we drive reflects a <c>uint</c> as <c>Int32</c>,
+    /// a <c>bool</c> too on Vulkan), so this is what says how a 32-bit word of the blob reads
+    /// (issue #427). When not set it follows <see cref="Type"/>: Bool, Int or Float.
+    /// </summary>
+    public GlobalInitializerKind Kind
+    {
+        get => _kind ?? Type switch
+        {
+            1 => GlobalInitializerKind.Bool,
+            2 => GlobalInitializerKind.Int,
+            _ => GlobalInitializerKind.Float,
+        };
+        init => _kind = value;
+    }
+}
+
+/// <summary>The scalar kind an HLSL numeric declaration is made of.</summary>
+public enum GlobalInitializerKind
+{
+    /// <summary><c>float</c>, <c>half</c>, <c>min16float</c> ... (vectors and matrices of them too).</summary>
+    Float,
+    /// <summary><c>int</c>, <c>min16int</c> ...: a two's-complement 32-bit word.</summary>
+    Int,
+    /// <summary><c>uint</c>, <c>dword</c>, <c>min16uint</c> ...: an unsigned 32-bit word.</summary>
+    UInt,
+    /// <summary><c>bool</c>: a 32-bit word, true when non-zero (written as <c>0xFFFFFFFF</c>).</summary>
+    Bool,
+}
 
 /// <summary>A global initializer the reader found but could not turn into a default.</summary>
 /// <param name="Name">The declared name.</param>
@@ -771,7 +804,16 @@ public static class GlobalInitializerReader
                     blobs,
                     nameTok.File,
                     nameTok.Line,
-                    nameTok.Col);
+                    nameTok.Col)
+                {
+                    Kind = type.Kind switch
+                    {
+                        Kind.Bool => GlobalInitializerKind.Bool,
+                        Kind.Int => GlobalInitializerKind.Int,
+                        Kind.UInt => GlobalInitializerKind.UInt,
+                        _ => GlobalInitializerKind.Float,
+                    },
+                };
             }
             catch (EvalException e)
             {
