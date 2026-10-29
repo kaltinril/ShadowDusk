@@ -29,11 +29,20 @@ that loads and renders identically to `mgfxc`'s in the real MonoGame/KNI runtime
   blanked from DXC's input (lines and columns kept), which is what DXC's DXIL path and fxc
   already do with them: the effect compiles to exactly the bytes of the same effect without the
   prototype, and `mgfxc` 3.8.4.1 compiles these shapes too. An unused overload prototype
-  (different parameters, no definition) is dropped the same way, as fxc compiles past it. What
-  cannot be compiled safely is refused with the new `SD0236` instead of a crash: a call to the
-  entry point between its prototype and its definition, an overload prototype of an entry point
-  the source calls, and a prototype a macro produces. DirectX 11, DirectX 12 and FNA never had
-  the fault and are unchanged; no output changes for any effect without an entry-point prototype.
+  (different parameters, no definition) is dropped the same way, as fxc compiles past it. The
+  blanked range is proven rather than guessed: the source with it blanked must preprocess to
+  exactly the original tokens minus the prototype's, so a macro call on the prototype's line
+  (`DECL_PARAM(Unused) float4 PS(...);`) is never removed with it, while a prototype a macro
+  completes (`: POS_OUT`), writes whole (`DECLARE(PS)`) or names (`#define PF PSX`) is removed
+  exactly. What cannot be compiled safely is refused with the new `SD0236` instead of a crash:
+  a call to the entry point between its prototype and its definition, an overload prototype of
+  an entry point the source calls (`mgfxc` compiles both), a prototype that says more than its
+  definition (an attribute, a leading `inline`, `static` or `precise`, a parameter's
+  interpolation modifier or default value, which DXC may merge into the definition), a macro
+  call writing the prototype together with other code, and a declaration shape the reading does
+  not model (a second declarator). DirectX 11, DirectX 12 and FNA never had the fault and are
+  unchanged; no output changes for any effect without an entry-point prototype (all 245 fixture
+  `.fx` files compile as before on OpenGL and Vulkan).
 
 ## [0.22.1] - 2026-10-29
 
