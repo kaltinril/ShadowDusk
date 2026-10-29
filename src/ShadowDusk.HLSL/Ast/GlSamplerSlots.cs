@@ -47,11 +47,12 @@ public sealed record GlSamplerSlots(
         new Dictionary<string, string>(StringComparer.Ordinal);
 
     /// <summary>
-    /// Every matrix-typed <c>TEXCOORD</c> interpolant declaration in the preprocessed source, with
-    /// its HLSL shape and majorness. Not a sampler fact: it rides on the same view because the
-    /// OpenGL rewriter cannot see majorness in DXC's output, and fxc packs a <c>row_major</c>
-    /// matrix interpolant by rows (see <see cref="MatrixInterpolantDeclaration"/>).
+    /// Function name -> the matrix declarations its signature carries, for every function
+    /// DEFINED in the preprocessed source (the compile looks up the entry points its passes name).
+    /// Not a sampler fact: it rides on the same view because the OpenGL rewriter cannot see
+    /// majorness in DXC's output, and fxc packs a <c>row_major</c> matrix interpolant by rows
+    /// (see <see cref="MatrixInterpolantDeclaration"/>).
     /// </summary>
-    public IReadOnlyList<MatrixInterpolantDeclaration> MatrixInterpolants { get; init; } =
-        Array.Empty<MatrixInterpolantDeclaration>();
+    public IReadOnlyDictionary<string, EntryPointMatrixInterpolants> EntryPointInterpolants { get; init; } =
+        new Dictionary<string, EntryPointMatrixInterpolants>(StringComparer.Ordinal);
 }

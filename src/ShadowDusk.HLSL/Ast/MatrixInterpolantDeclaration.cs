@@ -3,8 +3,8 @@
 namespace ShadowDusk.HLSL.Ast;
 
 /// <summary>
-/// One MATRIX-typed declaration carrying a <c>TEXCOORD</c> semantic inside a struct or a parameter
-/// list (an interpolant, e.g. <c>row_major float3x3 TangentToWorld : TEXCOORD2</c>), read off the
+/// One MATRIX-typed declaration with a semantic in an entry point's signature (a parameter, the
+/// return value, or a member of a struct either of those uses, at any depth), read off the
 /// preprocessed source by <see cref="FxPreParser.CollectGlSamplerSlots(string, string, FxParseResult)"/>.
 ///
 /// <para>The OpenGL target needs it because DXC emits byte-identical SPIR-V, and so GLSL, for a
@@ -16,8 +16,8 @@ namespace ShadowDusk.HLSL.Ast;
 /// <c>row_major floatNx1</c> spreads over N registers in fxc but reaches the rewriter as a plain
 /// vector, so it is recorded too, to be refused.</para>
 /// </summary>
-/// <param name="Semantic">The semantic, uppercased, index included (<c>TEXCOORD</c> is <c>TEXCOORD0</c>).</param>
-/// <param name="Name">The declared member or parameter name.</param>
+/// <param name="Semantic">The semantic, normalized (<see cref="ShadowDusk.Core.Reflection.SemanticName.Normalize"/>).</param>
+/// <param name="Name">The declared member, parameter or function name.</param>
 /// <param name="Rows">HLSL rows (<c>float4x3</c> is 4 rows of 3 columns).</param>
 /// <param name="Columns">HLSL columns.</param>
 /// <param name="RowMajor">The declaration (or the typedef it uses) says <c>row_major</c>.</param>
@@ -31,3 +31,16 @@ public sealed record MatrixInterpolantDeclaration(
     /// </summary>
     public bool IsDegenerate => RowMajor ? (Columns == 1 && Rows > 1) : (Rows == 1 && Columns > 1);
 }
+
+/// <summary>
+/// The matrix declarations one entry point's signature carries, split by direction: what it
+/// reads (parameters without <c>out</c>) and what it writes (its return value and its
+/// <c>out</c> parameters; an <c>inout</c> one is both). <see cref="Unmodelled"/> names the
+/// signature shapes whose register layout is not modelled (a semantic on a struct-typed
+/// declaration whose struct holds a matrix, an overloaded entry-point name): a compile of that
+/// entry point that meets a matrix interpolant is refused.
+/// </summary>
+public sealed record EntryPointMatrixInterpolants(
+    IReadOnlyList<MatrixInterpolantDeclaration> Inputs,
+    IReadOnlyList<MatrixInterpolantDeclaration> Outputs,
+    IReadOnlyList<string> Unmodelled);

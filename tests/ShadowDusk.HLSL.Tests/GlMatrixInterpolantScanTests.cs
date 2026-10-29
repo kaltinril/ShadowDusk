@@ -10,63 +10,116 @@ using Xunit;
 namespace ShadowDusk.HLSL.Tests;
 
 /// <summary>
-/// The matrix-interpolant declarations the OpenGL rewrite needs from the HLSL source
-/// (<see cref="GlSamplerSlots.MatrixInterpolants"/>): DXC emits byte-identical GLSL for a
+/// The matrix declarations each entry point's signature carries
+/// (<see cref="GlSamplerSlots.EntryPointInterpolants"/>): DXC emits byte-identical GLSL for a
 /// <c>row_major</c> and a <c>column_major</c> interpolant, while fxc packs the first one row per
 /// register and the second one column per register (measured against <c>mgfxc</c> 3.8.4.1 in real
-/// MonoGame DesktopGL). Read off the preprocessed view, so an inactive branch does not count.
+/// MonoGame DesktopGL), so the OpenGL rewrite takes the layout from the entry point's own
+/// declarations. Read off the preprocessed view, so an inactive branch does not count.
 /// </summary>
 public sealed class GlMatrixInterpolantScanTests
 {
-    private static IReadOnlyList<MatrixInterpolantDeclaration> Scan(string body)
+    private static IReadOnlyDictionary<string, EntryPointMatrixInterpolants> Scan(string body)
     {
         string flattened = PlatformMacros.For(PlatformTarget.OpenGL).ToTextPrepend("t.fx") + body;
         var parsed = FxPreParser.Parse(flattened, "t.fx");
         parsed.IsSuccess.ShouldBeTrue(parsed.IsFailure ? parsed.Error.Message : "");
         var slots = FxPreParser.CollectGlSamplerSlots(flattened, "t.fx", parsed.Value);
         slots.IsSuccess.ShouldBeTrue(slots.IsFailure ? slots.Error.Message : "");
-        return slots.Value.MatrixInterpolants;
+        return slots.Value.EntryPointInterpolants;
     }
 
     [Fact]
-    public void StructMembers_RecordShapeAndMajorness()
+    public void StructReturn_RecordsOutputsWithShapeAndMajorness()
     {
-        var found = Scan("""
+        var vs = Scan("""
             struct VSOut
             {
                 float4 Position : POSITION0;
                 float3x3 Frame : TEXCOORD2;
-                row_major float4x3 M : texcoord5;
+                row_major float4x3 M : texcoord05;
                 column_major float2x2 N : TEXCOORD;
                 float3 NotAMatrix : TEXCOORD9;
             };
-            """);
+            VSOut VS(float4 p : POSITION0) { VSOut o = (VSOut)0; return o; }
+            """)["VS"];
 
-        found.ShouldBe(new[]
+        vs.Inputs.ShouldBeEmpty();
+        vs.Unmodelled.ShouldBeEmpty();
+        vs.Outputs.ShouldBe(new[]
         {
             new MatrixInterpolantDeclaration("TEXCOORD2", "Frame", 3, 3, false),
-            new MatrixInterpolantDeclaration("TEXCOORD5", "M", 4, 3, true),
+            new MatrixInterpolantDeclaration("TEXCOORD5", "M", 4, 3, true),   // index by value
             new MatrixInterpolantDeclaration("TEXCOORD0", "N", 2, 2, false),
         });
     }
 
     [Fact]
-    public void OutParameter_TypedefAndMatrixTemplate_AreSeen()
+    public void ReturnSemantic_OutParams_TypedefsAndTemplates_AreSeen()
     {
-        var found = Scan("""
+        var vs = Scan("""
             typedef row_major float3x3 RowFrame;
             typedef float2x4 Plain;
-            void VS(float4 p : POSITION0, out float4 o : POSITION0, out row_major float3x3 A : TEXCOORD0,
-                    out RowFrame B : TEXCOORD3, out matrix<float, 2, 3> C : TEXCOORD6, out Plain D : TEXCOORD8) { }
-            """);
+            row_major float3x3 VS(float4 p : POSITION0, out float4 o : POSITION0, out RowFrame B : TEXCOORD3,
+                                  out matrix<float, 2, 3> C : TEXCOORD6, inout Plain D : TEXCOORD8, uniform float3x3 U) : TEXCOORD0
+            { o = p; return (float3x3)0; }
+            """)["VS"];
 
-        found.ShouldBe(new[]
+        vs.Outputs.ShouldBe(new[]
         {
-            new MatrixInterpolantDeclaration("TEXCOORD0", "A", 3, 3, true),
+            new MatrixInterpolantDeclaration("TEXCOORD0", "VS", 3, 3, true),
             new MatrixInterpolantDeclaration("TEXCOORD3", "B", 3, 3, true),
             new MatrixInterpolantDeclaration("TEXCOORD6", "C", 2, 3, false),
             new MatrixInterpolantDeclaration("TEXCOORD8", "D", 2, 4, false),
         });
+        vs.Inputs.ShouldBe(new[] { new MatrixInterpolantDeclaration("TEXCOORD8", "D", 2, 4, false) });
+    }
+
+    [Fact]
+    public void CommaDeclarators_ShareTheTypeAndMajorness()
+    {
+        Scan("""
+            struct O { float4 P : POSITION0; row_major float3x3 A : TEXCOORD0, B : TEXCOORD3; };
+            O VS() { return (O)0; }
+            """)["VS"].Outputs.Select(d => (d.Semantic, d.RowMajor))
+            .ShouldBe(new[] { ("TEXCOORD0", true), ("TEXCOORD3", true) });
+    }
+
+    [Fact]
+    public void NestedStructMembers_AreSeen_OuterSemanticOnAMatrixStruct_IsUnmodelled()
+    {
+        var found = Scan("""
+            struct Inner { row_major float3x3 M : TEXCOORD0; };
+            struct Holder { float3x3 M; };
+            struct A { float4 P : POSITION0; Inner I; };
+            struct B { float4 P : POSITION0; Holder H : TEXCOORD0; };
+            A VSA() { return (A)0; }
+            B VSB() { return (B)0; }
+            """);
+
+        found["VSA"].Outputs.ShouldBe(new[] { new MatrixInterpolantDeclaration("TEXCOORD0", "M", 3, 3, true) });
+        found["VSB"].Outputs.ShouldBeEmpty();
+        found["VSB"].Unmodelled.Single().ShouldContain("Holder", Case.Sensitive);
+    }
+
+    [Fact]
+    public void EachEntryPoint_HasItsOwnDeclarations()
+    {
+        // Two techniques may declare one semantic differently; and an unused struct is nobody's.
+        var found = Scan("""
+            struct Unused { float1x3 Weird : TEXCOORD1; };
+            struct OA { float4 P : POSITION0; row_major float3x3 M : TEXCOORD0; };
+            struct OB { float4 P : POSITION0; float3x3 M : TEXCOORD0; };
+            OA VSA() { return (OA)0; }
+            OB VSB() { return (OB)0; }
+            float4 PSA(OA i) : COLOR0 { return 1; }
+            """);
+
+        found["VSA"].Outputs.Single().RowMajor.ShouldBeTrue();
+        found["VSB"].Outputs.Single().RowMajor.ShouldBeFalse();
+        found["PSA"].Inputs.Single().RowMajor.ShouldBeTrue();
+        found["PSA"].Outputs.ShouldBeEmpty();
+        found.Values.SelectMany(e => e.Inputs.Concat(e.Outputs)).ShouldNotContain(d => d.Name == "Weird");
     }
 
     [Fact]
@@ -75,19 +128,25 @@ public sealed class GlMatrixInterpolantScanTests
         // fxc ignores #pragma pack_matrix for interpolants (measured: mgfxc still packs by columns).
         Scan("""
             #pragma pack_matrix(row_major)
-            struct VSOut { float4 Position : POSITION0; float3x3 Frame : TEXCOORD2; };
-            """).Single().RowMajor.ShouldBeFalse();
+            struct O { float4 Position : POSITION0; float3x3 Frame : TEXCOORD2; };
+            O VS() { return (O)0; }
+            """)["VS"].Outputs.Single().RowMajor.ShouldBeFalse();
     }
 
     [Fact]
-    public void GlobalsAndInactiveBranches_AreNotInterpolants()
+    public void InactiveBranches_AndOverloads()
     {
-        Scan("""
-            row_major float4x4 World : TEXCOORD0;
+        var found = Scan("""
             #if !OPENGL
-            struct Dead { row_major float3x3 F : TEXCOORD2; };
+            struct O { float4 P : POSITION0; row_major float3x3 F : TEXCOORD2; };
+            O VS() { return (O)0; }
             #endif
-            """).ShouldBeEmpty();
+            float4 Twice(float4 a) { return a; }
+            float4 Twice(float3 a) { return a.xyzz; }
+            """);
+
+        found.ContainsKey("VS").ShouldBeFalse();
+        found["Twice"].Unmodelled.Single().ShouldContain("overloads", Case.Sensitive);
     }
 
     [Theory]
@@ -98,7 +157,7 @@ public sealed class GlMatrixInterpolantScanTests
     [InlineData("float1x1", false, false)]
     public void DegenerateShapes_AreFlagged(string type, bool rowMajor, bool degenerate)
     {
-        Scan($"struct S {{ {(rowMajor ? "row_major " : "")}{type} X : TEXCOORD1; }};").Single()
-            .IsDegenerate.ShouldBe(degenerate);
+        Scan($"float4 PS({(rowMajor ? "row_major " : "")}{type} X : TEXCOORD1) : COLOR0 {{ return 1; }}")["PS"]
+            .Inputs.Single().IsDegenerate.ShouldBe(degenerate);
     }
 }

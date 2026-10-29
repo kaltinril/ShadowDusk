@@ -76,18 +76,32 @@ public sealed record MonoGameGlslUniform(
 /// register layout.
 /// </summary>
 /// <param name="RowMajor">
-/// <c>TEXCOORD{n}</c> semantics (uppercased, index included) whose matrix interpolant is
-/// declared <c>row_major</c>: packed one HLSL row per register, as fxc does.
+/// Semantics (normalized: uppercased, index by value, <c>TEXCOORD0</c>) whose matrix interpolant
+/// THIS stage's entry point declares <c>row_major</c>: packed one HLSL row per register, as fxc does.
 /// </param>
 /// <param name="Refused">
-/// Interpolant semantics with no faithful layout, each with the reason, refused loudly when any
-/// interpolant of either stage carries it (a semantic declared <c>row_major</c> in one place and
-/// <c>column_major</c> in another, so which stage is which cannot be told; a <c>float1xN</c>,
-/// which fxc spreads over N registers).
+/// Interpolant semantics of this stage with no faithful layout, each with the reason, refused
+/// loudly when an interpolant carries it (a <c>float1xN</c>, which fxc spreads over N registers;
+/// two declarations of one semantic with different majorness).
 /// </param>
 public sealed record MonoGameGlslInterpolantPacking(
     IReadOnlySet<string> RowMajor,
-    IReadOnlyDictionary<string, string> Refused);
+    IReadOnlyDictionary<string, string> Refused)
+{
+    /// <summary>
+    /// Every matrix interpolant semantic this stage's entry point declares (normalized). A matrix
+    /// interpolant the rewrite meets that is not in it has no known layout and is refused, never
+    /// packed by a guessed majorness.
+    /// </summary>
+    public IReadOnlySet<string> Declared { get; init; } = new HashSet<string>(StringComparer.Ordinal);
+
+    /// <summary>Vertex-input semantics with no faithful attribute layout (a <c>float1xN</c> input, which fxc spreads over N attributes), refused when met.</summary>
+    public IReadOnlyDictionary<string, string> RefusedVertexInputs { get; init; } =
+        new Dictionary<string, string>(StringComparer.Ordinal);
+
+    /// <summary>Signature shapes of the entry point the scan does not model, quoted when an undeclared matrix interpolant is refused.</summary>
+    public IReadOnlyList<string> Unmodelled { get; init; } = Array.Empty<string>();
+}
 
 /// <summary>
 /// Result of <see cref="MonoGameGlslRewriter.Rewrite(string, ShaderStage, IReadOnlyList{int}?)"/>.
@@ -348,6 +362,7 @@ public static class MonoGameGlslRewriter
         var attributes = new List<MonoGameGlslAttribute>();     // VS: in_var_* -> attribute vs_vK
         var attributeReads = new List<InputVarying>();          // VS: in_var_* read width/rename
         var matrixVaryings = new List<MatrixVarying>();         // VS out / PS in: matN interpolants
+        var attributeSemantics = new Dictionary<string, string>(StringComparer.Ordinal); // vs_vK -> semantic base name
         var uniformBlocks = new List<UniformBlock>();           // ALL std140 blocks, in order
         int uniformDeclInsertIndex = -1;                        // where the merged decl goes
 
@@ -522,16 +537,34 @@ public static class MonoGameGlslRewriter
                     // the source width (matches the SpriteEffect golden). The semantic
                     // → VertexElementUsage+index mapping is captured for the .mgfx
                     // attribute table so MonoGame binds the right vertex element.
+                    if (interpolants is not null
+                        && interpolants.RefusedVertexInputs.TryGetValue(InterpolantKey(ident), out string? inputReason))
+                    {
+                        throw new MonoGameGlslRewriteException(
+                            $"GLSL rewrite: vertex input '{ident}' cannot be laid out the way fxc lays it out " +
+                            $"for the MonoGame OpenGL target: {inputReason}");
+                    }
                     var (usage, index) = SemanticToVertexUsage(ident);
+                    string inputSemantic = InputSemanticBase(ident);
 
                     // Two inputs naming the same element (`: POSITION0` beside `: SV_POSITION`,
                     // or `: POSITION0` beside `: Position0`) are ONE input register to fxc, so
                     // mgfxc writes one record and both read it. Two records with one
                     // (usage, index) would leave the second attribute unbound (it reads zero):
-                    // merge them the way fxc does.
+                    // merge them the way fxc does. Only the same semantic spelled two ways
+                    // merges: two DIFFERENT semantics the shared table maps to one element
+                    // (`PSIZE0` beside `POINTSIZE0`) have no mgfxc counterpart (fxc refuses
+                    // POINTSIZE, X4502), so that pair fails loudly.
                     MonoGameGlslAttribute? same = attributes.FirstOrDefault(a => a.Usage == usage && a.Index == index);
                     if (same is not null)
                     {
+                        if (attributeSemantics[same.Name] != inputSemantic)
+                        {
+                            throw new MonoGameGlslRewriteException(
+                                $"GLSL rewrite: vertex inputs with the semantics {attributeSemantics[same.Name]} and " +
+                                $"{inputSemantic} map to the same vertex element (usage {usage}, index {index}); " +
+                                "fxc gives them no shared register, so there is no reference layout. Use one semantic.");
+                        }
                         attributeReads.Add(new InputVarying(ident, type, same.Name));
                         continue;
                     }
@@ -539,6 +572,7 @@ public static class MonoGameGlslRewriter
                     int slot = attributes.Count;
                     var attrName = $"vs_v{slot}";
                     attributes.Add(new MonoGameGlslAttribute(slot, attrName, usage, index));
+                    attributeSemantics[attrName] = inputSemantic;
                     // The attribute is DECLARED vec4 (mgfxc form) but a narrower source
                     // (float3 POSITION / float2 TEXCOORD) must read a truncating swizzle
                     // so a use like `vec4(in_var_POSITION0, 1.0)` stays well-typed.
@@ -669,7 +703,7 @@ public static class MonoGameGlslRewriter
             {
                 throw new MonoGameGlslRewriteException(
                     $"GLSL rewrite: two interpolants share the legacy varying '{clash}' — a matrix " +
-                    "interpolant occupies one TEXCOORD register per column, so its semantic range " +
+                    "interpolant occupies one TEXCOORD register per HLSL column (per row for row_major), so its semantic range " +
                     "overlaps another interpolant's semantic.");
             }
         }
@@ -1626,14 +1660,28 @@ public static class MonoGameGlslRewriter
             throw new MonoGameGlslRewriteException(
                 $"GLSL rewrite: matrix interpolant '{identifier}' ({type}) uses semantic '{sem}'; " +
                 "only a TEXCOORD semantic is modelled for a matrix interpolant on the MonoGame " +
-                "OpenGL target (it spans one TEXCOORD register per matrix column).");
+                "OpenGL target (it spans one TEXCOORD register per matrix column, or row for row_major).");
         }
         int baseIndex = digits.Length == 0 ? 0 : int.Parse(digits, System.Globalization.CultureInfo.InvariantCulture);
+        string key = $"TEXCOORD{baseIndex}";
+
+        // The layout depends on the HLSL declaration, which DXC's output does not carry: with the
+        // entry point's declarations in hand, a matrix interpolant it does not declare (a shape the
+        // scan does not model) is refused rather than packed by a guessed majorness.
+        if (interpolants is not null && !interpolants.Declared.Contains(key))
+        {
+            throw new MonoGameGlslRewriteException(
+                $"GLSL rewrite: matrix interpolant '{identifier}' ({type}) has no declaration the OpenGL " +
+                "target could read its row_major / column_major layout from, so its registers cannot be " +
+                "laid out the way fxc lays them out" +
+                (interpolants.Unmodelled.Count > 0 ? ": " + string.Join("; ", interpolants.Unmodelled) : ".") +
+                " Declare it directly as a struct member or parameter of the entry point, or report the shape.");
+        }
 
         // matN = N columns x N rows; matCxR = C columns x R rows (GLSL notation).
         int columns = type[3] - '0';
         int rows = type.Length > 4 ? type[5] - '0' : columns;
-        bool rowMajor = interpolants?.RowMajor.Contains($"TEXCOORD{baseIndex}") == true;
+        bool rowMajor = interpolants?.RowMajor.Contains(key) == true;
         int registers = rowMajor ? columns : rows;
 
         var names = Enumerable.Range(0, registers).Select(k => $"vTexCoord{baseIndex + k}").ToList();
@@ -1653,13 +1701,17 @@ public static class MonoGameGlslRewriter
     }
 
     /// <summary>
-    /// The interpolant semantic an identifier carries, as <see cref="MonoGameGlslInterpolantPacking"/>
-    /// keys it (uppercased; a bare <c>TEXCOORD</c> is <c>TEXCOORD0</c>).
+    /// The semantic an identifier carries, as <see cref="MonoGameGlslInterpolantPacking"/> keys it
+    /// (<see cref="ShadowDusk.Core.Reflection.SemanticName.Normalize"/>: uppercased, index by value).
     /// </summary>
     private static string InterpolantKey(string identifier)
+        => ShadowDusk.Core.Reflection.SemanticName.Normalize(StripInterfacePrefix(identifier));
+
+    /// <summary>A vertex input's semantic name for the duplicate-input merge: <c>SV_POSITION</c> is <c>POSITION</c>, as fxc treats it.</summary>
+    private static string InputSemanticBase(string identifier)
     {
-        var sem = StripInterfacePrefix(identifier).ToUpperInvariant();
-        return sem == "TEXCOORD" ? "TEXCOORD0" : sem;
+        string name = ShadowDusk.Core.Reflection.SemanticName.BaseName(StripInterfacePrefix(identifier));
+        return name == "SV_POSITION" ? "POSITION" : name;
     }
 
     private static void ThrowIfRefusedInterpolant(string identifier, MonoGameGlslInterpolantPacking? interpolants)
@@ -1737,6 +1789,13 @@ public static class MonoGameGlslRewriter
         // ": TexCoord0" (VS) and ": TEXCOORD0" (PS) must produce the SAME varying or
         // the GL link fails at Effect load (bug-hunt 2026-07-27 M3).
         var sem = StripInterfacePrefix(identifier).ToUpperInvariant();
+
+        // The index is a VALUE (fxc reads TEXCOORD00 as TEXCOORD0), so a VS writing `: TEXCOORD00`
+        // and a PS reading `: TEXCOORD0` link, and agree with the matrix-interpolant naming.
+        if (ShadowDusk.Core.Reflection.SemanticName.BaseName(sem) is "TEXCOORD" or "COLOR")
+        {
+            sem = ShadowDusk.Core.Reflection.SemanticName.Normalize(sem);
+        }
 
         switch (sem)
         {

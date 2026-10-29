@@ -285,8 +285,84 @@ void main()
         Should.Throw<MonoGameGlslRewriteException>(act).Message.ShouldContain("vs_oT2_mat", Case.Sensitive);
     }
 
+    // The entry point declares TEXCOORD1 and TEXCOORD2 as matrices; `semantics` of them are row_major.
     private static MonoGameGlslInterpolantPacking RowMajor(params string[] semantics) =>
-        new(new HashSet<string>(semantics, StringComparer.Ordinal), new Dictionary<string, string>(StringComparer.Ordinal));
+        new(new HashSet<string>(semantics, StringComparer.Ordinal), new Dictionary<string, string>(StringComparer.Ordinal))
+        {
+            Declared = new HashSet<string>(["TEXCOORD1", "TEXCOORD2"], StringComparer.Ordinal),
+        };
+
+    [Fact]
+    public void MatrixInterpolant_WithNoScannedDeclaration_IsRefused_NotGuessed()
+    {
+        // With the entry point's declarations in hand, a matrix interpolant it does not declare
+        // (a shape the scan does not model) has no known majorness: refused, never column-packed.
+        var packing = new MonoGameGlslInterpolantPacking(new HashSet<string>(), new Dictionary<string, string>())
+        {
+            Unmodelled = ["'I' carries the semantic TEXCOORD2 on a struct type"],
+        };
+
+        var act = () => MonoGameGlslRewriter.Rewrite(MatrixVs, ShaderStage.Vertex, null, packing);
+
+        string message = Should.Throw<MonoGameGlslRewriteException>(act).Message;
+        message.ShouldContain("out_var_TEXCOORD2", Case.Sensitive);
+        message.ShouldContain("'I' carries the semantic TEXCOORD2 on a struct type", Case.Sensitive);
+    }
+
+    [Fact]
+    public void RefusedVertexInput_FailsLoudly()
+    {
+        var packing = new MonoGameGlslInterpolantPacking(new HashSet<string>(), new Dictionary<string, string>())
+        {
+            RefusedVertexInputs = new Dictionary<string, string> { ["TEXCOORD1"] = "'W' is a 1x4 matrix" },
+        };
+
+        var act = () => MonoGameGlslRewriter.Rewrite(Vs("vec4", "in_var_TEXCOORD1"), ShaderStage.Vertex, null, packing);
+
+        Should.Throw<MonoGameGlslRewriteException>(act).Message.ShouldContain("'W' is a 1x4 matrix", Case.Sensitive);
+    }
+
+    [Fact]
+    public void LeadingZeroIndex_IsTheSameVaryingAsItsValue()
+    {
+        // fxc reads TEXCOORD00 as TEXCOORD0, so a VS writing one and a PS reading the other link.
+        const string vs = """
+#version 140
+in vec4 in_var_POSITION0;
+out vec4 out_var_TEXCOORD00;
+void main()
+{
+    gl_Position = in_var_POSITION0;
+    out_var_TEXCOORD00 = in_var_POSITION0;
+    gl_Position.z = 2.0 * gl_Position.z - gl_Position.w;
+}
+""";
+        MonoGameGlslRewriter.Rewrite(vs, ShaderStage.Vertex).Glsl.ShouldContain("varying vec4 vTexCoord0;", Case.Sensitive);
+    }
+
+    [Fact]
+    public void TwoDifferentSemanticsForOneElement_AreRefused_NotMerged()
+    {
+        // PSIZE0 and POINTSIZE0 both map to PointSize/0 in the shared table; fxc refuses POINTSIZE
+        // (X4502), so there is no layout to merge them into.
+        const string vs = """
+#version 140
+in vec4 in_var_POSITION0;
+in float in_var_PSIZE0;
+in float in_var_POINTSIZE0;
+out vec4 out_var_TEXCOORD0;
+void main()
+{
+    gl_Position = in_var_POSITION0;
+    out_var_TEXCOORD0 = vec4(in_var_PSIZE0, in_var_POINTSIZE0, 0.0, 1.0);
+}
+""";
+        var act = () => MonoGameGlslRewriter.Rewrite(vs, ShaderStage.Vertex);
+
+        string message = Should.Throw<MonoGameGlslRewriteException>(act).Message;
+        message.ShouldContain("PSIZE", Case.Sensitive);
+        message.ShouldContain("POINTSIZE", Case.Sensitive);
+    }
 
     [Fact]
     public void RowMajorMatrixInterpolant_VertexStage_PacksOneHlslRowPerRegister_LikeFxc()
@@ -346,7 +422,10 @@ void main()
     {
         var packing = new MonoGameGlslInterpolantPacking(
             new HashSet<string>(StringComparer.Ordinal),
-            new Dictionary<string, string>(StringComparer.Ordinal) { ["TEXCOORD5"] = "the reason given" });
+            new Dictionary<string, string>(StringComparer.Ordinal) { ["TEXCOORD5"] = "the reason given" })
+        {
+            Declared = new HashSet<string>(["TEXCOORD2"], StringComparer.Ordinal),
+        };
 
         var act = () => MonoGameGlslRewriter.Rewrite(stage == ShaderStage.Vertex ? MatrixVs : MatrixPs, stage, null, packing);
 

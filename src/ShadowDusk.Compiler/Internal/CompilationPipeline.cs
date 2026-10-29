@@ -601,7 +601,7 @@ internal sealed class CompilationPipeline
         IReadOnlySet<string> legacyGlTextures = new HashSet<string>(StringComparer.Ordinal);
         IReadOnlyDictionary<string, string> legacySamplerTextureView = new Dictionary<string, string>(StringComparer.Ordinal);
         ShaderError? reservationError = null;
-        MonoGameGlslInterpolantPacking? glInterpolants = null;
+        IReadOnlyDictionary<string, EntryPointMatrixInterpolants>? glEntryInterpolants = null;
         IReadOnlyDictionary<string, int> legacySamplerRegisters = new Dictionary<string, int>(StringComparer.Ordinal);
         if (options.Target == PlatformTarget.OpenGL)
         {
@@ -618,7 +618,7 @@ internal sealed class CompilationPipeline
                 legacySamplerRegisters = reservation.Value.LegacySamplerRegisters;
                 legacyGlTextures = reservation.Value.LegacyTextures;
                 legacySamplerTextureView = reservation.Value.LegacySamplerTextures;
-                glInterpolants = GlInterpolantPacking(reservation.Value.MatrixInterpolants);
+                glEntryInterpolants = reservation.Value.EntryPointInterpolants;
             }
             else
             {
@@ -749,7 +749,7 @@ internal sealed class CompilationPipeline
                         reservedGlSamplerSlots: reservedGlSamplerSlots,
                         glTextureDeclarationOrder: options.GlTextureDeclarationOrder,
                         legacyGlTextures: legacyGlTextures,
-                        glInterpolants: glInterpolants,
+                        glInterpolants: GlInterpolantPacking(glEntryInterpolants, pass.VertexEntryPoint, ShaderStage.Vertex),
                         cancellationToken);
 
                     if (compileOutput.Blob.IsFailure)
@@ -808,7 +808,7 @@ internal sealed class CompilationPipeline
                         reservedGlSamplerSlots: reservedGlSamplerSlots,
                         glTextureDeclarationOrder: options.GlTextureDeclarationOrder,
                         legacyGlTextures: legacyGlTextures,
-                        glInterpolants: glInterpolants,
+                        glInterpolants: GlInterpolantPacking(glEntryInterpolants, pass.PixelEntryPoint, ShaderStage.Pixel),
                         cancellationToken);
 
                     if (compileOutput.Blob.IsFailure)
@@ -2461,43 +2461,64 @@ internal sealed class CompilationPipeline
     }
 
     /// <summary>
-    /// What the OpenGL rewriter must know about the effect's matrix interpolants, from their
-    /// declarations in the preprocessed source (DXC's GLSL is identical for row_major and
-    /// column_major, and for <c>float1xN</c> and a vector, but fxc lays each out differently):
-    /// the semantics declared <c>row_major</c> (packed one row per register, as fxc does);
-    /// and, refused when met, a semantic declared with both majornesses (one declaration per
-    /// stage is not known here, so neither layout is provably fxc's) and a degenerate
-    /// <c>float1xN</c> / <c>row_major floatNx1</c>, which fxc spreads over N registers.
+    /// What the OpenGL rewriter must know about ONE entry point's matrix interpolants, from the
+    /// declarations its own signature carries in the preprocessed source (DXC's GLSL is identical
+    /// for row_major and column_major, and for <c>float1xN</c> and a vector, while fxc lays each out
+    /// differently). The vertex stage's interpolants are what it writes, the pixel stage's what it
+    /// reads; each stage is laid out as fxc lays out its own declaration, so two techniques, or a
+    /// VS and a PS, may declare one semantic differently. Every matrix semantic the signature
+    /// declares is listed, so the rewrite can refuse a matrix interpolant it has no declaration
+    /// for instead of guessing column packing. Refused when met: a degenerate <c>float1xN</c> /
+    /// <c>row_major floatNx1</c> (fxc spreads it over N registers), as an interpolant or a vertex
+    /// input; two declarations of one semantic with different majorness in one signature.
     /// </summary>
     private static MonoGameGlslInterpolantPacking GlInterpolantPacking(
-        IReadOnlyList<MatrixInterpolantDeclaration> declarations)
+        IReadOnlyDictionary<string, EntryPointMatrixInterpolants>? entryPoints, string? entryPoint, ShaderStage stage)
     {
         var rowMajor = new HashSet<string>(StringComparer.Ordinal);
+        var declared = new HashSet<string>(StringComparer.Ordinal);
         var refused = new Dictionary<string, string>(StringComparer.Ordinal);
-        foreach (IGrouping<string, MatrixInterpolantDeclaration> group in declarations.GroupBy(d => d.Semantic))
+        var refusedInputs = new Dictionary<string, string>(StringComparer.Ordinal);
+        var unmodelled = new List<string>();
+        if (entryPoints is null || entryPoint is null || !entryPoints.TryGetValue(entryPoint, out EntryPointMatrixInterpolants? found))
+            return new MonoGameGlslInterpolantPacking(rowMajor, refused) { Declared = declared, RefusedVertexInputs = refusedInputs };
+
+        static string Degenerate(MatrixInterpolantDeclaration d) =>
+            $"'{d.Name}' is a {(d.RowMajor ? "row_major " : "")}{d.Rows}x{d.Columns} matrix, which fxc spreads over " +
+            $"{Math.Max(d.Rows, d.Columns)} registers of one component each, but which reaches the OpenGL rewrite as " +
+            "a single vector; declare it as a vector instead.";
+
+        bool vertex = stage == ShaderStage.Vertex;
+        IReadOnlyList<MatrixInterpolantDeclaration> interpolants = vertex ? found.Outputs : found.Inputs;
+        foreach (IGrouping<string, MatrixInterpolantDeclaration> group in interpolants.GroupBy(d => d.Semantic))
         {
             MatrixInterpolantDeclaration? degenerate = group.FirstOrDefault(d => d.IsDegenerate);
             if (degenerate is not null)
             {
-                refused[group.Key] = $"'{degenerate.Name}' is a {(degenerate.RowMajor ? "row_major " : "")}" +
-                    $"{degenerate.Rows}x{degenerate.Columns} matrix, which fxc spreads over " +
-                    $"{Math.Max(degenerate.Rows, degenerate.Columns)} TEXCOORD registers of one component each, " +
-                    "but which reaches the OpenGL rewrite as a single vector; declare it as a vector instead.";
+                refused[group.Key] = Degenerate(degenerate);
                 continue;
             }
-            bool anyRow = group.Any(d => d.RowMajor), anyColumn = group.Any(d => !d.RowMajor);
-            if (anyRow && anyColumn)
+            if (group.Any(d => d.RowMajor) && group.Any(d => !d.RowMajor))
             {
-                refused[group.Key] = $"it is declared as a row_major matrix ('{group.First(d => d.RowMajor).Name}') " +
-                    $"and as a column_major one ('{group.First(d => !d.RowMajor).Name}'); fxc packs the two " +
-                    "differently (one row per register against one column per register), and which declaration " +
-                    "belongs to which stage is not modelled. Declare both the same way.";
+                refused[group.Key] = $"'{entryPoint}' declares it both as a row_major matrix and as a column_major one.";
                 continue;
             }
-            if (anyRow)
+            declared.Add(group.Key);
+            if (group.Any(d => d.RowMajor))
                 rowMajor.Add(group.Key);
         }
-        return new MonoGameGlslInterpolantPacking(rowMajor, refused);
+        if (vertex)
+        {
+            foreach (MatrixInterpolantDeclaration d in found.Inputs.Where(d => d.IsDegenerate))
+                refusedInputs[d.Semantic] = Degenerate(d);
+        }
+        unmodelled.AddRange(found.Unmodelled);
+        return new MonoGameGlslInterpolantPacking(rowMajor, refused)
+        {
+            Declared = declared,
+            RefusedVertexInputs = refusedInputs,
+            Unmodelled = unmodelled,
+        };
     }
 
     private static (Result<byte[], ShaderError> Blob, ReadOnlyMemory<byte> DxilBlob, ReadOnlyMemory<byte> SpirvBlob, IReadOnlyList<MgfxVertexAttributeInfo> Attributes, IReadOnlyList<MonoGameGlslUniform> Uniforms, IReadOnlyList<ShaderError> Warnings)

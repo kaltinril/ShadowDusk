@@ -90,6 +90,9 @@ public sealed class GlVertexSemanticTests
         "packing/MatToVec22", "packing/RowMatToVec22", "packing/VecToMat43", "packing/VecToRowMat43",
         "packing/VecToMat34", "packing/VecToRowMat22", "packing/TypedefRowMatToVec33",
         "packing/PragmaRowMajorMatToVec33", "packing/DuplicatePosition",
+        "packing/RetValRowMatToVec33", "packing/CommaDeclRowMat", "packing/LeadingZeroRowMatToVec33",
+        "packing/RowMatToColMat33", "packing/NestedStructRowMatToVec33", "packing/UnusedDegenerateStruct",
+        "packing/TwoTechniques",
     };
 
     private static readonly HashSet<string> NonSquare = new(StringComparer.Ordinal)
@@ -123,21 +126,39 @@ public sealed class GlVertexSemanticTests
             .ShouldContain("vTexCoord2.xyz = vec3(vs_oT2_mat[0][0], vs_oT2_mat[1][0], vs_oT2_mat[2][0]);", Case.Sensitive);
     }
 
+    [Fact]
+    public async Task EachStage_IsLaidOutFromItsOwnEntryPoint()
+    {
+        // A row_major VS output read by a column_major PS input (mgfxc compiles it): the VS packs
+        // rows, the PS rebuilds from columns, each as fxc lays out its own declaration.
+        var r = MgfxBlobReader.Parse(await CompileAsync("packing/RowMatToColMat33"));
+        Encoding.ASCII.GetString(r.Shaders.Single(s => s.IsVertex).Bytecode)
+            .ShouldContain("vTexCoord2.xyz = vs_oT2_mat[0];", Case.Sensitive);
+        Encoding.ASCII.GetString(r.Shaders.Single(s => !s.IsVertex).Bytecode)
+            .ShouldContain("mat3(vec3(vTexCoord2.x, vTexCoord3.x, vTexCoord4.x)", Case.Sensitive);
+    }
+
     [Theory]
-    // mgfxc compiles this one (a row_major VS output read as a column_major PS input); which
-    // declaration belongs to which stage is not modelled, so neither layout is provably fxc's.
+    // A semantic on a struct-typed member whose struct holds a matrix: the matrix's registers
+    // come from the outer semantic, a shape the declaration scan does not model (mgfxc compiles it).
     [InlineData("""
-        struct VSOut { float4 Position : POSITION0; row_major float3x3 F : TEXCOORD2; };
-        struct PSIn { float4 Position : POSITION0; float3x3 F : TEXCOORD2; };
-        VSOut VS(float4 p : POSITION0) { VSOut o; o.Position = p; o.F = float3x3(p.xyz, p.yzx, p.zxy); return o; }
-        float4 PS(PSIn i) : COLOR0 { return float4(i.F[0], 1); }
-        """, "row_major")]
+        struct Inner { row_major float3x3 M; };
+        struct VSOut { float4 Position : POSITION0; Inner I : TEXCOORD2; };
+        VSOut VS(float4 p : POSITION0) { VSOut o; o.Position = p; o.I.M = float3x3(p.xyz, p.yzx, p.zxy); return o; }
+        float4 PS(float4 a : TEXCOORD2) : COLOR0 { return a; }
+        """, "Inner")]
     // fxc spreads a float1x3 over three registers of one component; DXC hands the rewrite a vec3.
     [InlineData("""
         struct VSOut { float4 Position : POSITION0; float1x3 A : TEXCOORD2; };
         VSOut VS(float4 p : POSITION0) { VSOut o; o.Position = p; o.A = (float1x3)p.xyz; return o; }
         float4 PS(VSOut i) : COLOR0 { return float4((float3)i.A, 1); }
         """, "1x3")]
+    // The same as a VERTEX INPUT: mgfxc emits four attributes (TEXCOORD2..5), one register each.
+    [InlineData("""
+        struct VSIn { float4 Position : POSITION0; float1x4 W : TEXCOORD2; };
+        float4 VS(VSIn i) : POSITION0 { return i.Position + float4(i.W[0][0], i.W[0][1], i.W[0][2], i.W[0][3]); }
+        float4 PS() : COLOR0 { return 1; }
+        """, "1x4")]
     public async Task UnmodelledInterpolantLayout_FailsLoudly(string body, string expected)
     {
         string src = body + "\ntechnique T { pass P { VertexShader = compile vs_3_0 VS(); PixelShader = compile ps_3_0 PS(); } }\n";

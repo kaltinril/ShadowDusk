@@ -1930,7 +1930,7 @@ public sealed class FxPreParser
                 LegacySamplerRegisters = legacyRegisters,
                 LegacyTextures = legacyTextures,
                 LegacySamplerTextures = legacySamplerTextures,
-                MatrixInterpolants = CollectMatrixInterpolants(tokens),
+                EntryPointInterpolants = GlEntryPointInterpolantScanner.Scan(tokens),
             });
     }
 
@@ -2463,123 +2463,6 @@ public sealed class FxPreParser
     /// separate pass so it cannot perturb the rewrite: a shape it does not recognise costs an
     /// allocation difference, never a parse.</para>
     /// </summary>
-    private static readonly System.Text.RegularExpressions.Regex MatrixTypeName = new(
-        @"^(?:float|half|double|min16float|min10float|int|uint|bool|dword|min16int|min16uint)([1-4])x([1-4])$",
-        System.Text.RegularExpressions.RegexOptions.Compiled);
-
-    private static readonly HashSet<string> InterpolantModifiers = new(StringComparer.Ordinal)
-    {
-        "in", "out", "inout", "row_major", "column_major", "linear", "centroid", "nointerpolation",
-        "noperspective", "sample", "const", "precise", "snorm", "unorm",
-    };
-
-    /// <summary>
-    /// Every matrix-typed declaration with a <c>TEXCOORD</c> semantic in a struct body or a
-    /// parameter list (see <see cref="MatrixInterpolantDeclaration"/>). Matrix types are
-    /// <c>floatRxC</c> and friends, <c>matrix</c> (float4x4), <c>matrix&lt;T, R, C&gt;</c>, and a
-    /// <c>typedef</c> of any of them (which may itself say <c>row_major</c>). The lexer drops
-    /// <c>:</c> and <c>[ ]</c>, so a declaration is <c>[modifiers] TYPE NAME [count] TEXCOORDn</c>.
-    /// </summary>
-    internal static List<MatrixInterpolantDeclaration> CollectMatrixInterpolants(IReadOnlyList<Token> tokens)
-    {
-        var code = new List<Token>(tokens.Count);
-        foreach (Token t in tokens)
-        {
-            if (t.Kind is not (TokenKind.LineComment or TokenKind.BlockComment or TokenKind.Preprocessor))
-                code.Add(t);
-        }
-
-        // A matrix type starting at code[i]: its shape, explicit majorness, and the index just past it.
-        var typedefs = new Dictionary<string, (int Rows, int Cols, bool? RowMajor)>(StringComparer.Ordinal);
-        bool TryMatrixType(int i, out int rows, out int cols, out bool? rowMajor, out int next)
-        {
-            rows = cols = 0; rowMajor = null; next = i;
-            if (i >= code.Count || code[i].Kind != TokenKind.Identifier) return false;
-            string text = code[i].Text;
-            var m = MatrixTypeName.Match(text);
-            if (m.Success)
-            {
-                rows = m.Groups[1].Value[0] - '0'; cols = m.Groups[2].Value[0] - '0'; next = i + 1;
-                return true;
-            }
-            if (typedefs.TryGetValue(text, out var td))
-            {
-                (rows, cols, rowMajor) = td; next = i + 1;
-                return true;
-            }
-            if (text != "matrix") return false;
-            // matrix<T, R, C>, or a bare `matrix` (float4x4).
-            if (i + 7 < code.Count && code[i + 1].Kind == TokenKind.LAngle
-                && code[i + 3].Kind == TokenKind.Comma && code[i + 4].Kind == TokenKind.Number
-                && code[i + 5].Kind == TokenKind.Comma && code[i + 6].Kind == TokenKind.Number
-                && code[i + 7].Kind == TokenKind.RAngle
-                && int.TryParse(code[i + 4].Text, out rows) && int.TryParse(code[i + 6].Text, out cols))
-            {
-                next = i + 8;
-                return true;
-            }
-            rows = cols = 4; next = i + 1;
-            return true;
-        }
-
-        bool? MajornessBefore(int i, int floor)
-        {
-            for (int k = i - 1; k >= floor && code[k].Kind == TokenKind.Identifier && InterpolantModifiers.Contains(code[k].Text); k--)
-            {
-                if (code[k].Text == "row_major") return true;
-                if (code[k].Text == "column_major") return false;
-            }
-            return null;
-        }
-
-        var found = new List<MatrixInterpolantDeclaration>();
-        int braceDepth = 0, parenDepth = 0;
-        for (int i = 0; i < code.Count; i++)
-        {
-            Token t = code[i];
-            if (t.Kind == TokenKind.LBrace) { braceDepth++; continue; }
-            if (t.Kind == TokenKind.RBrace) { braceDepth = Math.Max(0, braceDepth - 1); continue; }
-            if (t.Kind == TokenKind.LParen) { parenDepth++; continue; }
-            if (t.Kind == TokenKind.RParen) { parenDepth = Math.Max(0, parenDepth - 1); continue; }
-
-            // typedef [row_major|column_major] TYPE NAME ;
-            if (t.Kind == TokenKind.Identifier && t.Text == "typedef")
-            {
-                int k = i + 1;
-                bool? major = null;
-                while (k < code.Count && code[k].Kind == TokenKind.Identifier && InterpolantModifiers.Contains(code[k].Text))
-                {
-                    if (code[k].Text == "row_major") major = true;
-                    if (code[k].Text == "column_major") major = false;
-                    k++;
-                }
-                if (TryMatrixType(k, out int tr, out int tc, out bool? inner, out int after)
-                    && after < code.Count && code[after].Kind == TokenKind.Identifier)
-                {
-                    typedefs[code[after].Text] = (tr, tc, major ?? inner);
-                }
-                continue;
-            }
-
-            if (braceDepth == 0 && parenDepth == 0) continue;   // a global (a uniform), not an interpolant
-            if (!TryMatrixType(i, out int rows, out int cols, out bool? typeMajor, out int nameAt)) continue;
-            if (nameAt >= code.Count || code[nameAt].Kind != TokenKind.Identifier) continue;
-            int semAt = nameAt + 1;
-            if (semAt < code.Count && code[semAt].Kind == TokenKind.Number) semAt++;   // NAME[count]
-            if (semAt >= code.Count || code[semAt].Kind != TokenKind.Identifier) continue;
-            string sem = code[semAt].Text.ToUpperInvariant();
-            if (!sem.StartsWith("TEXCOORD", StringComparison.Ordinal)) continue;
-            string digits = sem["TEXCOORD".Length..];
-            if (digits.Length > 0 && !digits.All(char.IsAsciiDigit)) continue;
-            if (digits.Length == 0) sem = "TEXCOORD0";
-
-            bool rowMajor = MajornessBefore(i, 0) ?? typeMajor ?? false;
-            found.Add(new MatrixInterpolantDeclaration(sem, code[nameAt].Text, rows, cols, rowMajor));
-            i = semAt;
-        }
-        return found;
-    }
-
     private static Dictionary<string, int> CollectLegacySamplerRegisters(IReadOnlyList<Token> tokens)
     {
         var registers = new Dictionary<string, int>(StringComparer.Ordinal);

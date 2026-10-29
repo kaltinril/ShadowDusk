@@ -18,7 +18,10 @@ link by.
   whole and read as separate vectors, or the reverse; 3x3, 4x3, 3x4, 2x2; column_major and
   explicit `row_major`; a `typedef row_major`; `#pragma pack_matrix(row_major)`), so a render
   shows the register layout fxc gives it; `DuplicatePosition` is `POSITION0` beside
-  `SV_POSITION`. Goldens are `packing/<Shape>.OpenGL.mgfx`.
+  `SV_POSITION`. The entry-point attribution shapes: a row_major return value
+  (`RetValRowMatToVec33`), comma declarators, `TEXCOORD00`, a row_major VS output read as a
+  column_major PS input, a nested struct, an unused struct holding a `float1x3`, and two
+  techniques declaring one semantic differently. Goldens are `packing/<Shape>.OpenGL.mgfx`.
 
 Consumers:
 
