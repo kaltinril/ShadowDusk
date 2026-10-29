@@ -53,10 +53,10 @@ that loads and renders identically to `mgfxc`'s in the real MonoGame/KNI runtime
   slots rather than guess. Both arms of `?:` always count, and reads sharing their conditions
   share their fate (everything after one early `return` stays or goes together). The price is a
   class of loud refusals where fxc in fact keeps the order: a texture first read under a uniform
-  or input condition and read again after another texture (26 of the 240 golden shapes, among
+  or input condition and read again after another texture (26 of the 304 golden shapes, among
   them `if (k > 0)` on a uniform and a `switch` on one), and the real Apos.Shapes shader (issue
   #202), whose blur branch reads the dither noise and returns ahead of the ramp reads: it keeps
-  its declaration-order slots, which are `mgfxc`'s, and warns. Measured on 240 shapes
+  its declaration-order slots, which are `mgfxc`'s, and warns. Measured on 304 shapes
   (`tests/fixtures/golden/dx11-texture-slots/`, 95 of them condition probes from two reviews) and
   the 27 legacy-sampler goldens, on both backends: `mgfxc`'s table or an `SD0230` warning, never a
   silent other order (the 11 listed as divergent before now match), except one texture
@@ -68,7 +68,18 @@ that loads and renders identically to `mgfxc`'s in the real MonoGame/KNI runtime
   (a texture declared through a macro or in a declarator list, a resource array, an unreadable
   preprocessed view, an order a foldable condition could change, an overloaded function, a legacy
   sampler passed as a function argument, a bound texture whose read the check did not find, two
-  resources under one name) keeps the old slots and warns `SD0230`. **DirectX 11 and KNIFX DirectX output changes** only for
+  resources under one name) keeps the old slots and warns `SD0230`. So do four shapes the final
+  review found numbered silently wrong (measured against `mgfxc`, the `U*` goldens): a statement
+  that discards a call reading a texture (fxc DROPS `tex2D(B, uv);`, `(tex2D(B, uv));`,
+  `float4(tex2D(B, uv));` and `Tb.Sample(SB, uv);` before it numbers, in a block, a loop, a void
+  helper or a `for` init too, but keeps `.r`, `* 2`, a cast, `clip(...)` and a user function's
+  call; every bare call that reads warns except `clip`, `sincos` and a user function's, so a bare
+  `max`/`saturate`/`dot` statement is a false warning), a read or user-function call in a global
+  initializer (numbered before the entry point's, even for an unused global), a function defined
+  inside a struct or namespace, and a legacy sampler's texture the shader also uses through a
+  method of its own (`Tb.GetDimensions`, `Tb.Load`, even `Tb.Sample`: `mgfxc` gives that use a
+  second record, `A@t0 Tb@t1 Tb@t2`; ShadowDusk keeps one `Tb` record, as on `main`, and now
+  warns). **DirectX 11 and KNIFX DirectX output changes** only for
   shaders whose legacy-sampler texture slots were not fxc's: in the corpus, `ForwardLighting.fx`,
   `SamplerPairMirror.fx` and `SamplerRegisterOrder.fx` (now `mgfxc`'s table exactly; the same
   three under the d3dcompiler backend), and none of the byte-identity manifests' fixtures;
