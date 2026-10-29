@@ -95,6 +95,14 @@ public sealed record MonoGameGlslInterpolantPacking(
     /// </summary>
     public IReadOnlySet<string> Declared { get; init; } = new HashSet<string>(StringComparer.Ordinal);
 
+    /// <summary>
+    /// Interpolant semantics this stage declares as a degenerate matrix (column_major
+    /// <c>float1xN</c> / row_major <c>floatNx1</c>), with N: fxc lays it out over N one-component
+    /// registers (<c>vTexCoord{n}.x</c> … <c>vTexCoord{n+N-1}.x</c>), while DXC hands the rewrite one
+    /// <c>vecN</c>, which the rewrite splits the same way.
+    /// </summary>
+    public IReadOnlyDictionary<string, int> Split { get; init; } = new Dictionary<string, int>(StringComparer.Ordinal);
+
     /// <summary>Vertex-input semantics with no faithful attribute layout (a <c>float1xN</c> input, which fxc spreads over N attributes), refused when met.</summary>
     public IReadOnlyDictionary<string, string> RefusedVertexInputs { get; init; } =
         new Dictionary<string, string>(StringComparer.Ordinal);
@@ -363,6 +371,7 @@ public static class MonoGameGlslRewriter
         var attributeReads = new List<InputVarying>();          // VS: in_var_* read width/rename
         var matrixVaryings = new List<MatrixVarying>();         // VS out / PS in: matN interpolants
         var attributeSemantics = new Dictionary<string, string>(StringComparer.Ordinal); // vs_vK -> semantic base name
+        var splitVaryings = new List<SplitVarying>();           // degenerate matrix interpolants
         var uniformBlocks = new List<UniformBlock>();           // ALL std140 blocks, in order
         int uniformDeclInsertIndex = -1;                        // where the merged decl goes
 
@@ -583,6 +592,14 @@ public static class MonoGameGlslRewriter
                 {
                     // PS input = a legacy varying the built-in/custom VS wrote.
                     ThrowIfRefusedInterpolant(ident, interpolants);
+                    if (interpolants is not null && interpolants.Split.TryGetValue(InterpolantKey(ident), out int splitCount))
+                    {
+                        var sv = ParseSplitVarying(ident, type, splitCount, isVertex: false, glsl);
+                        splitVaryings.Add(sv);
+                        foreach (var name in sv.VaryingNames)
+                            output.Add($"varying vec4 {name};");
+                        continue;
+                    }
                     var varyingName = SemanticToVaryingName(ident);
                     inputVaryings.Add(new InputVarying(ident, type, varyingName));
                     output.Add($"varying vec4 {varyingName};");
@@ -618,6 +635,15 @@ public static class MonoGameGlslRewriter
 
                     ThrowIfRefusedInterpolant(ident, interpolants);
                     var type = outVaryMatch.Groups[1].Value;
+                    if (interpolants is not null && interpolants.Split.TryGetValue(InterpolantKey(ident), out int splitCount))
+                    {
+                        var sv = ParseSplitVarying(ident, type, splitCount, isVertex: true, glsl);
+                        splitVaryings.Add(sv);
+                        foreach (var name in sv.VaryingNames)
+                            output.Add($"varying vec4 {name};");
+                        output.Add($"{type} {sv.Temp};");
+                        continue;
+                    }
                     var varyingName = SemanticToVaryingName(ident);
                     outputVaryings.Add(new InputVarying(ident, type, varyingName));
                     output.Add($"varying vec4 {varyingName};");
@@ -694,10 +720,11 @@ public static class MonoGameGlslRewriter
         // Matrix interpolants (Rule 4c). Two interpolants landing on the same
         // vTexCoord{n} (a float3x3 at TEXCOORD2 beside a TEXCOORD3) would silently
         // alias; fxc refuses that overlap, and so do we.
-        if (matrixVaryings.Count > 0)
+        if (matrixVaryings.Count > 0 || splitVaryings.Count > 0)
         {
             var declared = (isVertex ? outputVaryings : inputVaryings).Select(v => v.VaryingName)
-                .Concat(matrixVaryings.SelectMany(m => m.VaryingNames));
+                .Concat(matrixVaryings.SelectMany(m => m.VaryingNames))
+                .Concat(splitVaryings.SelectMany(s => s.VaryingNames));
             string? clash = declared.GroupBy(n => n).FirstOrDefault(g => g.Count() > 1)?.Key;
             if (clash is not null)
             {
@@ -712,6 +739,26 @@ public static class MonoGameGlslRewriter
             body = mv.Temp is not null
                 ? InjectMatrixVaryingCopyOut(ReplaceWord(body, mv.Identifier, mv.Temp), mv)
                 : ReplaceWord(body, mv.Identifier, MatrixVaryingReadExpression(mv));
+        }
+        foreach (var sv in splitVaryings)
+        {
+            if (sv.Temp is not null)
+            {
+                if (Regex.IsMatch(body, @"\breturn\b"))
+                {
+                    throw new MonoGameGlslRewriteException(
+                        $"GLSL rewrite: the vertex shader writes the split interpolant '{sv.Identifier}' and " +
+                        "contains a 'return' statement; the end-of-main copy-out would be skipped on that path.");
+                }
+                var copy = sv.VaryingNames.Select((name, k) =>
+                    $"    {name}.x = {sv.Temp}{(sv.VaryingNames.Count > 1 ? "." + Components[k] : "")};");
+                body = InsertAtEndOfMain(ReplaceWord(body, sv.Identifier, sv.Temp), sv.Identifier, copy);
+            }
+            else
+            {
+                body = ReplaceWord(body, sv.Identifier,
+                    $"{sv.Type}(" + string.Join(", ", sv.VaryingNames.Select(n => n + ".x")) + ")");
+            }
         }
 
         // Uniform members: <Instance>.<member> -> {prefix}_uniforms_vec4[reg]<swizzle>
@@ -1668,14 +1715,18 @@ public static class MonoGameGlslRewriter
         // The layout depends on the HLSL declaration, which DXC's output does not carry: with the
         // entry point's declarations in hand, a matrix interpolant it does not declare (a shape the
         // scan does not model) is refused rather than packed by a guessed majorness.
-        if (interpolants is not null && !interpolants.Declared.Contains(key))
+        // Without the packing argument (the three-parameter overload) the layout is unknown too.
+        if (interpolants is null || !interpolants.Declared.Contains(key))
         {
             throw new MonoGameGlslRewriteException(
-                $"GLSL rewrite: matrix interpolant '{identifier}' ({type}) has no declaration the OpenGL " +
-                "target could read its row_major / column_major layout from, so its registers cannot be " +
-                "laid out the way fxc lays them out" +
-                (interpolants.Unmodelled.Count > 0 ? ": " + string.Join("; ", interpolants.Unmodelled) : ".") +
-                " Declare it directly as a struct member or parameter of the entry point, or report the shape.");
+                $"GLSL rewrite: matrix interpolant '{identifier}' ({type}) has no declaration in the entry " +
+                "point's signature that the OpenGL target's declaration scan recognizes, so its row_major / " +
+                "column_major layout, and with it the registers fxc gives it, is unknown" +
+                (interpolants is null
+                    ? " (no interpolant packing was supplied to the rewrite)."
+                    : interpolants.Unmodelled.Count > 0 ? ": " + string.Join("; ", interpolants.Unmodelled) + "." : ".") +
+                " The scan reads parameters, the return value and return semantic, members of file-scope structs " +
+                "and typedefs at any depth, and matrix<T, R, C>; please report the shape it missed.");
         }
 
         // matN = N columns x N rows; matCxR = C columns x R rows (GLSL notation).
@@ -1702,7 +1753,7 @@ public static class MonoGameGlslRewriter
 
     /// <summary>
     /// The semantic an identifier carries, as <see cref="MonoGameGlslInterpolantPacking"/> keys it
-    /// (<see cref="ShadowDusk.Core.Reflection.SemanticName.Normalize"/>: uppercased, index by value).
+    /// (uppercased, index by value).
     /// </summary>
     private static string InterpolantKey(string identifier)
         => ShadowDusk.Core.Reflection.SemanticName.Normalize(StripInterfacePrefix(identifier));
@@ -1757,6 +1808,20 @@ public static class MonoGameGlslRewriter
                 "registers would be skipped on that path, so this shape is not modelled.");
         }
 
+        string swizzle = Components[..mv.Width];
+        var copy = Enumerable.Range(0, mv.Registers).Select(k => mv.RowMajor
+            ? $"    {mv.VaryingNames[k]}.{swizzle} = {mv.Temp}[{k}];"
+            : $"    {mv.VaryingNames[k]}.{swizzle} = vec{mv.Columns}(" +
+              string.Join(", ", Enumerable.Range(0, mv.Columns).Select(c => $"{mv.Temp}[{c}][{k}]")) + ");");
+        return InsertAtEndOfMain(body, mv.Identifier, copy);
+    }
+
+    /// <summary>
+    /// Inserts <paramref name="copy"/> before SPIRV-Cross's trailing depth-convention line (the end
+    /// of <c>main</c>), else before <c>main</c>'s closing brace.
+    /// </summary>
+    private static string InsertAtEndOfMain(string body, string identifier, IEnumerable<string> copy)
+    {
         var lines = body.Split('\n').ToList();
         int insertAt = lines.FindLastIndex(l => l.Trim() == SpirvCrossDepthFixupLine);
         if (insertAt < 0)
@@ -1766,17 +1831,45 @@ public static class MonoGameGlslRewriter
         if (insertAt < 0)
         {
             throw new MonoGameGlslRewriteException(
-                $"GLSL rewrite: could not find the end of main() to copy the matrix interpolant " +
-                $"'{mv.Identifier}' out to its varyings.");
+                $"GLSL rewrite: could not find the end of main() to copy the interpolant " +
+                $"'{identifier}' out to its varyings.");
         }
-
-        string swizzle = Components[..mv.Width];
-        var copy = Enumerable.Range(0, mv.Registers).Select(k => mv.RowMajor
-            ? $"    {mv.VaryingNames[k]}.{swizzle} = {mv.Temp}[{k}];"
-            : $"    {mv.VaryingNames[k]}.{swizzle} = vec{mv.Columns}(" +
-              string.Join(", ", Enumerable.Range(0, mv.Columns).Select(c => $"{mv.Temp}[{c}][{k}]")) + ");");
         lines.InsertRange(insertAt, copy);
         return string.Join("\n", lines);
+    }
+
+    /// <summary>
+    /// A degenerate matrix interpolant (column_major <c>float1xN</c> / row_major <c>floatNx1</c>) that
+    /// DXC hands over as one <c>vecN</c>: fxc gives it N one-component registers, so component
+    /// <c>k</c> is <c>vTexCoord{n+k}.x</c>. The VS writes a temporary and copies it out at the end of
+    /// <c>main</c>; the PS reads <c>vecN(vTexCoord{n}.x, …)</c>.
+    /// </summary>
+    private sealed record SplitVarying(string Identifier, string Type, IReadOnlyList<string> VaryingNames, string? Temp);
+
+    private static SplitVarying ParseSplitVarying(string identifier, string type, int count, bool isVertex, string sourceGlsl)
+    {
+        string key = InterpolantKey(identifier);
+        int width = type == "float" ? 1 : type[3] - '0';
+        if (!key.StartsWith("TEXCOORD", StringComparison.Ordinal) || width != count)
+        {
+            throw new MonoGameGlslRewriteException(
+                $"GLSL rewrite: interpolant '{identifier}' ({type}) is declared as a {count}-register degenerate " +
+                "matrix, but only a TEXCOORD vecN of that width can be split over its registers.");
+        }
+        int baseIndex = int.Parse(key["TEXCOORD".Length..], System.Globalization.CultureInfo.InvariantCulture);
+        var names = Enumerable.Range(0, count).Select(k => $"vTexCoord{baseIndex + k}").ToList();
+        string? temp = null;
+        if (isVertex)
+        {
+            temp = $"vs_oT{baseIndex}_vec";
+            if (Regex.IsMatch(sourceGlsl, $@"\b{Regex.Escape(temp)}\b"))
+            {
+                throw new MonoGameGlslRewriteException(
+                    $"GLSL rewrite collision: source already contains identifier '{temp}', which " +
+                    "clashes with the split-interpolant temporary. Cannot safely rewrite.");
+            }
+        }
+        return new SplitVarying(identifier, type, names, temp);
     }
 
     private static string SemanticToVaryingName(string identifier)

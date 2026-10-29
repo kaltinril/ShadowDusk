@@ -92,7 +92,8 @@ public sealed class GlVertexSemanticTests
         "packing/PragmaRowMajorMatToVec33", "packing/DuplicatePosition",
         "packing/RetValRowMatToVec33", "packing/CommaDeclRowMat", "packing/LeadingZeroRowMatToVec33",
         "packing/RowMatToColMat33", "packing/NestedStructRowMatToVec33", "packing/UnusedDegenerateStruct",
-        "packing/TwoTechniques",
+        "packing/TwoTechniques", "packing/Split1x4Both", "packing/Split1x4ToVec", "packing/SplitRow4x1Both",
+        "packing/VecToSplit1x3", "packing/LocalStructShadow", "packing/LocalTypedefShadow",
     };
 
     private static readonly HashSet<string> NonSquare = new(StringComparer.Ordinal)
@@ -109,8 +110,13 @@ public sealed class GlVertexSemanticTests
         MgfxBlobReader golden = Golden(shape);
 
         Records(subject).ShouldBe(Records(golden));
-        foreach (bool vertex in new[] { true, false })
-            Varyings(subject, vertex).ShouldBe(Varyings(golden, vertex));
+        // The VS writes exactly mgfxc's varyings. mgfxc's PS declares only the registers it reads
+        // (a PS reading m[1] of a row_major matrix declares just that one); ours rebuilds the whole
+        // matrix, so its PS may declare more, but every one must be written by the VS and every
+        // one mgfxc's PS reads must be there.
+        Varyings(subject, vertex: true).ShouldBe(Varyings(golden, vertex: true));
+        Varyings(golden, vertex: false).Except(Varyings(subject, vertex: false)).ShouldBeEmpty();
+        Varyings(subject, vertex: false).Except(Varyings(subject, vertex: true)).ShouldBeEmpty();
     }
 
     [Fact]
@@ -138,6 +144,17 @@ public sealed class GlVertexSemanticTests
             .ShouldContain("mat3(vec3(vTexCoord2.x, vTexCoord3.x, vTexCoord4.x)", Case.Sensitive);
     }
 
+    [Fact]
+    public async Task DegenerateInterpolant_IsSplitOverOneComponentRegisters()
+    {
+        var r = MgfxBlobReader.Parse(await CompileAsync("packing/Split1x4Both"));
+        string vs = Encoding.ASCII.GetString(r.Shaders.Single(s => s.IsVertex).Bytecode);
+        string ps = Encoding.ASCII.GetString(r.Shaders.Single(s => !s.IsVertex).Bytecode);
+
+        vs.ShouldContain("vTexCoord4.x = vs_oT1_vec.w;", Case.Sensitive);
+        ps.ShouldContain("vec4(vTexCoord1.x, vTexCoord2.x, vTexCoord3.x, vTexCoord4.x)", Case.Sensitive);
+    }
+
     [Theory]
     // A semantic on a struct-typed member whose struct holds a matrix: the matrix's registers
     // come from the outer semantic, a shape the declaration scan does not model (mgfxc compiles it).
@@ -147,13 +164,8 @@ public sealed class GlVertexSemanticTests
         VSOut VS(float4 p : POSITION0) { VSOut o; o.Position = p; o.I.M = float3x3(p.xyz, p.yzx, p.zxy); return o; }
         float4 PS(float4 a : TEXCOORD2) : COLOR0 { return a; }
         """, "Inner")]
-    // fxc spreads a float1x3 over three registers of one component; DXC hands the rewrite a vec3.
-    [InlineData("""
-        struct VSOut { float4 Position : POSITION0; float1x3 A : TEXCOORD2; };
-        VSOut VS(float4 p : POSITION0) { VSOut o; o.Position = p; o.A = (float1x3)p.xyz; return o; }
-        float4 PS(VSOut i) : COLOR0 { return float4((float3)i.A, 1); }
-        """, "1x3")]
-    // The same as a VERTEX INPUT: mgfxc emits four attributes (TEXCOORD2..5), one register each.
+    // A float1x4 VERTEX INPUT: mgfxc emits four attributes (TEXCOORD2..5), one register each.
+    // (As an interpolant the same shape is split like fxc: packing/Split1x4Both.)
     [InlineData("""
         struct VSIn { float4 Position : POSITION0; float1x4 W : TEXCOORD2; };
         float4 VS(VSIn i) : POSITION0 { return i.Position + float4(i.W[0][0], i.W[0][1], i.W[0][2], i.W[0][3]); }

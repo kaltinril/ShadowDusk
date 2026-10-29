@@ -149,6 +149,74 @@ public sealed class GlMatrixInterpolantScanTests
         found["Twice"].Unmodelled.Single().ShouldContain("overloads", Case.Sensitive);
     }
 
+    [Fact]
+    public void LocalStructsAndTypedefs_DoNotReplaceTheFileScopeOnes()
+    {
+        // A struct or typedef declared inside a function body is that function's own (mgfxc
+        // accepts the shadowing); the entry point's signature uses the file-scope definition.
+        var found = Scan("""
+            struct VSOut { float4 Position : POSITION0; row_major float3x3 M : TEXCOORD1; };
+            typedef row_major float3x3 M33;
+            float3 Helper(float3 v)
+            {
+                struct VSOut { float4 Position : POSITION0; float3x3 M : TEXCOORD1; };
+                typedef float3x3 M33;
+                VSOut t = (VSOut)0; M33 u = (M33)0; return t.M[0] + u[0];
+            }
+            VSOut VS() { return (VSOut)0; }
+            float4 PS(M33 m : TEXCOORD1) : COLOR0 { return 1; }
+            """);
+
+        found["VS"].Outputs.Single().RowMajor.ShouldBeTrue();
+        found["PS"].Inputs.Single().RowMajor.ShouldBeTrue();
+    }
+
+    [Fact]
+    public void ATypeNameDefinedTwiceAtFileScope_IsUnmodelled()
+    {
+        var vs = Scan("""
+            typedef row_major float3x3 M33;
+            typedef float3x3 M33;
+            void VS(out float4 p : POSITION0, out M33 m : TEXCOORD1) { p = 0; m = (float3x3)0; }
+            """)["VS"];
+
+        vs.Outputs.ShouldBeEmpty();
+        vs.Unmodelled.Single().ShouldContain("'M33'", Case.Sensitive);
+    }
+
+    [Fact]
+    public void AStructTypedef_IsTheStruct()
+    {
+        Scan("""
+            struct VSOut { float4 Position : POSITION0; row_major float3x3 M : TEXCOORD1; };
+            typedef VSOut PSIn;
+            float4 PS(PSIn i) : COLOR0 { return 1; }
+            """)["PS"].Inputs.Single().ShouldBe(new MatrixInterpolantDeclaration("TEXCOORD1", "M", 3, 3, true));
+    }
+
+    [Fact]
+    public void DeepWideStructNests_AreBounded_NotExponential()
+    {
+        // Ten struct-typed members per level, many levels deep, each leaf a matrix with a semantic:
+        // naive expansion is 10^levels; the memoized, bounded scan reports it unmodelled at once.
+        var sb = new System.Text.StringBuilder("struct S0 { float3x3 M : TEXCOORD0; };\n");
+        for (int level = 1; level <= 12; level++)
+        {
+            sb.Append($"struct S{level} {{ ");
+            for (int m = 0; m < 10; m++) sb.Append($"S{level - 1} m{m}; ");
+            sb.Append("};\n");
+        }
+        sb.Append("S12 VS() { return (S12)0; }\n");
+
+        var watch = System.Diagnostics.Stopwatch.StartNew();
+        var vs = Scan(sb.ToString())["VS"];
+        watch.Stop();
+
+        vs.Outputs.Count.ShouldBeLessThanOrEqualTo(GlEntryPointInterpolantScanner.MaxFlattened);
+        vs.Unmodelled.ShouldContain(u => u.Contains("flattens to more than", StringComparison.Ordinal));
+        watch.Elapsed.ShouldBeLessThan(TimeSpan.FromSeconds(5));
+    }
+
     [Theory]
     [InlineData("float1x3", false, true)]
     [InlineData("float3x1", false, false)]

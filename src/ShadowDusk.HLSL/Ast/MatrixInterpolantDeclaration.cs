@@ -14,9 +14,9 @@ namespace ShadowDusk.HLSL.Ast;
 /// explicit <c>row_major</c>. The rewriter must reproduce that layout, or a stage that declares the
 /// interpolant as separate vectors reads the wrong data. A <c>float1xN</c> (column_major) or
 /// <c>row_major floatNx1</c> spreads over N registers in fxc but reaches the rewriter as a plain
-/// vector, so it is recorded too, to be refused.</para>
+/// vector, so it is recorded too: the rewrite splits it over N one-component registers as fxc does (and refuses it as a vertex input).</para>
 /// </summary>
-/// <param name="Semantic">The semantic, normalized (<see cref="ShadowDusk.Core.Reflection.SemanticName.Normalize"/>).</param>
+/// <param name="Semantic">The semantic, normalized (uppercased, index by value: <c>TEXCOORD00</c> is <c>TEXCOORD0</c>).</param>
 /// <param name="Name">The declared member, parameter or function name.</param>
 /// <param name="Rows">HLSL rows (<c>float4x3</c> is 4 rows of 3 columns).</param>
 /// <param name="Columns">HLSL columns.</param>
@@ -37,7 +37,7 @@ public sealed record MatrixInterpolantDeclaration(
 /// reads (parameters without <c>out</c>) and what it writes (its return value and its
 /// <c>out</c> parameters; an <c>inout</c> one is both). <see cref="Unmodelled"/> names the
 /// signature shapes whose register layout is not modelled (a semantic on a struct-typed
-/// declaration whose struct holds a matrix, an overloaded entry-point name): a compile of that
+/// declaration whose struct holds a matrix, a type name defined twice at file scope, an overloaded name): a compile of that
 /// entry point that meets a matrix interpolant is refused.
 /// </summary>
 public sealed record EntryPointMatrixInterpolants(

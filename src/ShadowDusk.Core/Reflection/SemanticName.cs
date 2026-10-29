@@ -10,7 +10,7 @@ namespace ShadowDusk.Core.Reflection;
 /// uppercased (semantics are case-insensitive) and with the index taken by VALUE, so
 /// <c>texcoord</c>, <c>TEXCOORD0</c> and <c>TEXCOORD00</c> are all <c>TEXCOORD0</c>, as fxc reads them.
 /// </summary>
-public static class SemanticName
+internal static class SemanticName
 {
     /// <summary>Normalizes <paramref name="semantic"/>; a trailing index too long to parse is kept as written.</summary>
     public static string Normalize(string semantic)

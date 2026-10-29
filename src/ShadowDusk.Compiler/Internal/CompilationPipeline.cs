@@ -2468,9 +2468,10 @@ internal sealed class CompilationPipeline
     /// reads; each stage is laid out as fxc lays out its own declaration, so two techniques, or a
     /// VS and a PS, may declare one semantic differently. Every matrix semantic the signature
     /// declares is listed, so the rewrite can refuse a matrix interpolant it has no declaration
-    /// for instead of guessing column packing. Refused when met: a degenerate <c>float1xN</c> /
-    /// <c>row_major floatNx1</c> (fxc spreads it over N registers), as an interpolant or a vertex
-    /// input; two declarations of one semantic with different majorness in one signature.
+    /// for instead of guessing column packing. A degenerate <c>float1xN</c> / <c>row_major
+    /// floatNx1</c> interpolant is split over N one-component registers, as fxc lays it out; as a
+    /// vertex INPUT (fxc: N attributes) it is refused, as is one semantic declared twice in one
+    /// signature.
     /// </summary>
     private static MonoGameGlslInterpolantPacking GlInterpolantPacking(
         IReadOnlyDictionary<string, EntryPointMatrixInterpolants>? entryPoints, string? entryPoint, ShaderStage stage)
@@ -2486,25 +2487,28 @@ internal sealed class CompilationPipeline
         static string Degenerate(MatrixInterpolantDeclaration d) =>
             $"'{d.Name}' is a {(d.RowMajor ? "row_major " : "")}{d.Rows}x{d.Columns} matrix, which fxc spreads over " +
             $"{Math.Max(d.Rows, d.Columns)} registers of one component each, but which reaches the OpenGL rewrite as " +
-            "a single vector; declare it as a vector instead.";
+            "a single vector attribute; declare it as a vector instead.";
 
         bool vertex = stage == ShaderStage.Vertex;
         IReadOnlyList<MatrixInterpolantDeclaration> interpolants = vertex ? found.Outputs : found.Inputs;
+        var split = new Dictionary<string, int>(StringComparer.Ordinal);
         foreach (IGrouping<string, MatrixInterpolantDeclaration> group in interpolants.GroupBy(d => d.Semantic))
         {
-            MatrixInterpolantDeclaration? degenerate = group.FirstOrDefault(d => d.IsDegenerate);
-            if (degenerate is not null)
+            if (group.Count() > 1)
             {
-                refused[group.Key] = Degenerate(degenerate);
+                refused[group.Key] = $"'{entryPoint}' declares it more than once.";
                 continue;
             }
-            if (group.Any(d => d.RowMajor) && group.Any(d => !d.RowMajor))
+            MatrixInterpolantDeclaration only = group.Single();
+            if (only.IsDegenerate)
             {
-                refused[group.Key] = $"'{entryPoint}' declares it both as a row_major matrix and as a column_major one.";
+                // fxc gives a float1xN (column_major) / row_major floatNx1 N registers of one
+                // component; DXC hands the rewrite one vecN, so the rewrite splits it the same way.
+                split[group.Key] = Math.Max(only.Rows, only.Columns);
                 continue;
             }
             declared.Add(group.Key);
-            if (group.Any(d => d.RowMajor))
+            if (only.RowMajor)
                 rowMajor.Add(group.Key);
         }
         if (vertex)
@@ -2516,6 +2520,7 @@ internal sealed class CompilationPipeline
         return new MonoGameGlslInterpolantPacking(rowMajor, refused)
         {
             Declared = declared,
+            Split = split,
             RefusedVertexInputs = refusedInputs,
             Unmodelled = unmodelled,
         };

@@ -13,17 +13,29 @@ namespace ShadowDusk.HLSL;
 /// interpolant out the way fxc does for THAT entry point: DXC's GLSL does not say whether a matrix
 /// is <c>row_major</c>, and two techniques may declare the same semantic differently.
 ///
-/// <para>Modelled: struct definitions (members with comma declarators, arrays, nested struct
-/// members with their own semantics, at any depth), function definitions at file scope with their
-/// return type and return semantic and their parameters (<c>in</c>/<c>out</c>/<c>inout</c>,
-/// <c>uniform</c> skipped), <c>typedef</c>s of matrix types, and the matrix types themselves
-/// (<c>floatRxC</c> and the other scalar families, <c>matrix</c>, <c>matrix&lt;T, R, C&gt;</c>). The
-/// lexer drops <c>:</c> and <c>[ ]</c>, so a declarator is <c>NAME [count] [SEMANTIC]</c>. A
-/// shape outside that is never guessed at: the rewriter refuses a matrix interpolant it has no
-/// declaration for.</para>
+/// <para>Modelled: FILE-SCOPE struct definitions (members with comma declarators, arrays, nested
+/// struct members with their own semantics, at any depth), file-scope <c>typedef</c>s of matrix
+/// and struct types, function definitions at file scope with their return type and return
+/// semantic and their parameters (<c>in</c>/<c>out</c>/<c>inout</c>, <c>uniform</c> skipped), and
+/// the matrix types themselves (<c>floatRxC</c> and the other scalar families, <c>matrix</c>,
+/// <c>matrix&lt;T, R, C&gt;</c>). A struct or typedef declared inside a function body is local to
+/// it and never replaces the file-scope one; a type name defined twice at file scope is reported
+/// unmodelled. The lexer drops <c>:</c> and <c>[ ]</c>, so a declarator is
+/// <c>NAME [count] [SEMANTIC]</c>. A shape outside that is never guessed at: the rewriter refuses a
+/// matrix interpolant it has no declaration for.</para>
+///
+/// <para>Expansion is memoized per struct and bounded (<see cref="MaxFlattened"/> declarations per
+/// struct, <see cref="MaxDepth"/> levels), so a hostile nest of structs cannot make it exponential
+/// (the browser fiddle compiles untrusted input).</para>
 /// </summary>
 internal static class GlEntryPointInterpolantScanner
 {
+    /// <summary>The deepest struct nesting expanded.</summary>
+    internal const int MaxDepth = 16;
+
+    /// <summary>The most matrix declarations one struct may flatten to.</summary>
+    internal const int MaxFlattened = 1024;
+
     private static readonly Regex MatrixTypeName = new(
         @"^(?:float|half|double|min16float|min10float|int|uint|bool|dword|min16int|min16uint)([1-4])x([1-4])$",
         RegexOptions.Compiled);
@@ -44,12 +56,16 @@ internal static class GlEntryPointInterpolantScanner
 
     private sealed record StructDef(List<Declarator> Members);
 
+    /// <summary>A struct flattened: its matrix declarations with semantics, and what was not modelled.</summary>
+    private sealed record Flattened(List<MatrixInterpolantDeclaration> Matrices, List<string> Unmodelled, bool HasMatrix);
+
     public static IReadOnlyDictionary<string, EntryPointMatrixInterpolants> Scan(IReadOnlyList<Token> tokens)
     {
         var code = tokens.Where(t => t.Kind is not (TokenKind.LineComment or TokenKind.BlockComment or TokenKind.Preprocessor))
                          .ToList();
         var typedefs = new Dictionary<string, TypeRef>(StringComparer.Ordinal);
         var structs = new Dictionary<string, StructDef>(StringComparer.Ordinal);
+        var ambiguous = new HashSet<string>(StringComparer.Ordinal);    // defined twice at file scope
         var functions = new Dictionary<string, List<(TypeRef Ret, bool? RetMajor, string? RetSemantic, List<Declarator> Params)>>(StringComparer.Ordinal);
 
         bool TryType(int i, out TypeRef type, out int next)
@@ -123,26 +139,52 @@ internal static class GlEntryPointInterpolantScanner
             return -1;
         }
 
-        // Pass 1: typedefs and struct definitions, in source order (a typedef is visible after it).
+        void Define(string name, Action define)
+        {
+            if (ambiguous.Contains(name)) return;
+            if (structs.ContainsKey(name) || typedefs.ContainsKey(name))
+            {
+                structs.Remove(name);
+                typedefs.Remove(name);
+                ambiguous.Add(name);
+                return;
+            }
+            define();
+        }
+
+        // Pass 1: FILE-SCOPE typedefs and struct definitions, in source order (a typedef is
+        // visible after it). Anything inside braces (a function body, a technique) is skipped: a
+        // local struct or typedef there is the function's own and must not replace a file-scope one.
+        int depth = 0;
         for (int i = 0; i < code.Count; i++)
         {
-            if (code[i].Kind != TokenKind.Identifier) continue;
-            if (code[i].Text == "typedef")
+            Token tok = code[i];
+            if (tok.Kind == TokenKind.LBrace) { depth++; continue; }
+            if (tok.Kind == TokenKind.RBrace) { depth = Math.Max(0, depth - 1); continue; }
+            if (depth != 0 || tok.Kind != TokenKind.Identifier) continue;
+            if (tok.Text == "typedef")
             {
                 int k = ReadModifiers(i + 1, code.Count, out bool? major, out _, out _);
-                if (TryType(k, out TypeRef t, out int after) && t.IsMatrix
-                    && after < code.Count && code[after].Kind == TokenKind.Identifier)
+                if (TryType(k, out TypeRef t, out int after) && after < code.Count && code[after].Kind == TokenKind.Identifier)
                 {
-                    typedefs[code[after].Text] = t with { RowMajor = major ?? t.RowMajor };
+                    string alias = code[after].Text;
+                    if (t.IsMatrix)
+                        Define(alias, () => typedefs[alias] = t with { RowMajor = major ?? t.RowMajor });
+                    else if (structs.TryGetValue(t.Name, out StructDef? aliased))
+                        Define(alias, () => structs[alias] = aliased);
+                    else if (ambiguous.Contains(t.Name))
+                        ambiguous.Add(alias);
                 }
                 continue;
             }
-            if (code[i].Text == "struct" && i + 2 < code.Count && code[i + 1].Kind == TokenKind.Identifier
+            if (tok.Text == "struct" && i + 2 < code.Count && code[i + 1].Kind == TokenKind.Identifier
                 && code[i + 2].Kind == TokenKind.LBrace)
             {
                 int close = MatchClose(i + 2, TokenKind.LBrace, TokenKind.RBrace);
                 if (close < 0) break;
-                structs[code[i + 1].Text] = new StructDef(ReadDeclarations(i + 3, close, members: true));
+                string name = code[i + 1].Text;
+                var members = ReadDeclarations(i + 3, close, members: true);
+                Define(name, () => structs[name] = new StructDef(members));
                 i = close;
             }
         }
@@ -193,6 +235,9 @@ internal static class GlEntryPointInterpolantScanner
             i = close;
         }
 
+        var memo = new Dictionary<string, Flattened>(StringComparer.Ordinal);
+        var inProgress = new HashSet<string>(StringComparer.Ordinal);
+
         var result = new Dictionary<string, EntryPointMatrixInterpolants>(StringComparer.Ordinal);
         foreach ((string name, var definitions) in functions)
         {
@@ -203,9 +248,9 @@ internal static class GlEntryPointInterpolantScanner
                 unmodelled.Add($"'{name}' is defined {definitions.Count} times (overloads), so which signature an entry point uses is not modelled");
             foreach (var (ret, retMajor, retSemantic, parameters) in definitions)
             {
-                Expand(new Declarator(ret, name, retSemantic, retMajor, "out"), outputs, inputs, unmodelled, 0);
+                AddTop(new Declarator(ret, name, retSemantic, retMajor, "out"), outputs, inputs, unmodelled);
                 foreach (Declarator p in parameters)
-                    Expand(p, outputs, inputs, unmodelled, 0);
+                    AddTop(p, outputs, inputs, unmodelled);
             }
             result[name] = new EntryPointMatrixInterpolants(inputs, outputs, unmodelled);
         }
@@ -260,41 +305,71 @@ internal static class GlEntryPointInterpolantScanner
             return k + 1;
         }
 
-        void Expand(Declarator decl, List<MatrixInterpolantDeclaration> outputs, List<MatrixInterpolantDeclaration> inputs,
-                    List<string> unmodelled, int depth)
+        void AddTop(Declarator decl, List<MatrixInterpolantDeclaration> outputs, List<MatrixInterpolantDeclaration> inputs,
+                    List<string> unmodelled)
         {
-            bool writes = decl.Direction is "out" or "inout";
-            bool reads = decl.Direction is "in" or "inout";
+            var matrices = new List<MatrixInterpolantDeclaration>();
+            Collect(decl, matrices, unmodelled, 0);
+            if (decl.Direction is "out" or "inout") outputs.AddRange(matrices);
+            if (decl.Direction is "in" or "inout") inputs.AddRange(matrices);
+        }
+
+        // A declaration's matrix declarations with semantics, flattened through structs.
+        void Collect(Declarator decl, List<MatrixInterpolantDeclaration> into, List<string> unmodelled, int level)
+        {
             if (decl.Type.IsMatrix)
             {
                 if (decl.Semantic is null) return;
-                var m = new MatrixInterpolantDeclaration(SemanticName.Normalize(decl.Semantic), decl.Name,
-                    decl.Type.Rows, decl.Type.Cols, decl.RowMajor ?? decl.Type.RowMajor ?? false);
-                if (writes) outputs.Add(m);
-                if (reads) inputs.Add(m);
+                into.Add(new MatrixInterpolantDeclaration(SemanticName.Normalize(decl.Semantic), decl.Name,
+                    decl.Type.Rows, decl.Type.Cols, decl.RowMajor ?? decl.Type.RowMajor ?? false));
                 return;
             }
-            if (!structs.TryGetValue(decl.Type.Name, out StructDef? s)) return;
-            if (depth > 8)
+            if (ambiguous.Contains(decl.Type.Name))
             {
-                unmodelled.Add($"struct '{decl.Type.Name}' nests more than 8 levels deep");
+                unmodelled.Add($"the type '{decl.Type.Name}' of '{decl.Name}' is defined more than once at file scope");
                 return;
             }
+            if (!structs.ContainsKey(decl.Type.Name)) return;
+            Flattened f = Flatten(decl.Type.Name, level);
             if (decl.Semantic is not null)
             {
-                if (ContainsMatrix(s, 0))
+                if (f.HasMatrix)
                 {
                     unmodelled.Add($"'{decl.Name}' carries the semantic {decl.Semantic} on a struct type ('{decl.Type.Name}') " +
                                    "that holds a matrix, so the matrix's registers come from the outer semantic");
                 }
                 return;
             }
-            foreach (Declarator member in s.Members)
-                Expand(member with { Direction = decl.Direction }, outputs, inputs, unmodelled, depth + 1);
+            into.AddRange(f.Matrices);
+            unmodelled.AddRange(f.Unmodelled);
         }
 
-        bool ContainsMatrix(StructDef s, int depth) =>
-            depth <= 8 && s.Members.Any(m => m.Type.IsMatrix
-                || (structs.TryGetValue(m.Type.Name, out StructDef? inner) && ContainsMatrix(inner, depth + 1)));
+        Flattened Flatten(string structName, int level)
+        {
+            if (memo.TryGetValue(structName, out Flattened? done)) return done;
+            if (level > MaxDepth || !inProgress.Add(structName))
+                return new Flattened([], [$"struct '{structName}' nests deeper than {MaxDepth} levels or contains itself"], false);
+            var matrices = new List<MatrixInterpolantDeclaration>();
+            var unmodelled = new List<string>();
+            bool hasMatrix = false;
+            foreach (Declarator member in structs[structName].Members)
+            {
+                if (member.Type.IsMatrix)
+                    hasMatrix = true;
+                else if (structs.ContainsKey(member.Type.Name) && Flatten(member.Type.Name, level + 1).HasMatrix)
+                    hasMatrix = true;
+                Collect(member, matrices, unmodelled, level + 1);
+                if (matrices.Count > MaxFlattened)
+                {
+                    matrices.Clear();
+                    unmodelled.Add($"struct '{structName}' flattens to more than {MaxFlattened} matrix declarations");
+                    break;
+                }
+            }
+            inProgress.Remove(structName);
+            var flattened = new Flattened(matrices, unmodelled.Distinct().ToList(), hasMatrix);
+            memo[structName] = flattened;
+            return flattened;
+        }
     }
 }

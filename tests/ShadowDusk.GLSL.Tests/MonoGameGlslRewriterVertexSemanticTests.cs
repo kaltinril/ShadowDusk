@@ -143,7 +143,7 @@ void main()
     [Fact]
     public void MatrixInterpolant_VertexStage_SplitsIntoOneTexCoordPerColumn_LikeFxc()
     {
-        var result = MonoGameGlslRewriter.Rewrite(MatrixVs, ShaderStage.Vertex);
+        var result = MonoGameGlslRewriter.Rewrite(MatrixVs, ShaderStage.Vertex, null, ColumnMajor("TEXCOORD2"));
         string glsl = result.Glsl;
 
         // TEXCOORD2..4: three registers, then TEXCOORD5 is a separate interpolant.
@@ -170,7 +170,7 @@ void main()
     [Fact]
     public void MatrixInterpolant_PixelStage_RebuildsTheMatrixFromItsRegisters()
     {
-        var result = MonoGameGlslRewriter.Rewrite(MatrixPs, ShaderStage.Pixel);
+        var result = MonoGameGlslRewriter.Rewrite(MatrixPs, ShaderStage.Pixel, null, ColumnMajor("TEXCOORD2"));
         string glsl = result.Glsl;
 
         glsl.ShouldContain("varying vec4 vTexCoord2;\nvarying vec4 vTexCoord3;\nvarying vec4 vTexCoord4;\n", Case.Sensitive);
@@ -198,7 +198,7 @@ void main()
     gl_Position.z = 2.0 * gl_Position.z - gl_Position.w;
 }
 """;
-        string glsl = MonoGameGlslRewriter.Rewrite(vs, ShaderStage.Vertex).Glsl;
+        string glsl = MonoGameGlslRewriter.Rewrite(vs, ShaderStage.Vertex, null, ColumnMajor("TEXCOORD1")).Glsl;
 
         glsl.ShouldContain("mat2x4 vs_oT1_mat;", Case.Sensitive);
         glsl.ShouldContain("vTexCoord1.xy = vec2(vs_oT1_mat[0][0], vs_oT1_mat[1][0]);", Case.Sensitive);
@@ -240,7 +240,7 @@ void main()
     gl_Position.z = 2.0 * gl_Position.z - gl_Position.w;
 }
 """;
-        var act = () => MonoGameGlslRewriter.Rewrite(vs, ShaderStage.Vertex);
+        var act = () => MonoGameGlslRewriter.Rewrite(vs, ShaderStage.Vertex, null, ColumnMajor("TEXCOORD2"));
         Should.Throw<MonoGameGlslRewriteException>(act).Message.ShouldContain("vTexCoord3", Case.Sensitive);
     }
 
@@ -262,7 +262,7 @@ void main()
     gl_Position.z = 2.0 * gl_Position.z - gl_Position.w;
 }
 """;
-        var act = () => MonoGameGlslRewriter.Rewrite(vs, ShaderStage.Vertex);
+        var act = () => MonoGameGlslRewriter.Rewrite(vs, ShaderStage.Vertex, null, ColumnMajor("TEXCOORD0"));
         Should.Throw<MonoGameGlslRewriteException>(act).Message.ShouldContain("'return'", Case.Sensitive);
     }
 
@@ -281,7 +281,7 @@ void main()
     gl_Position.z = 2.0 * gl_Position.z - gl_Position.w;
 }
 """;
-        var act = () => MonoGameGlslRewriter.Rewrite(vs, ShaderStage.Vertex);
+        var act = () => MonoGameGlslRewriter.Rewrite(vs, ShaderStage.Vertex, null, ColumnMajor("TEXCOORD2"));
         Should.Throw<MonoGameGlslRewriteException>(act).Message.ShouldContain("vs_oT2_mat", Case.Sensitive);
     }
 
@@ -291,6 +291,67 @@ void main()
         {
             Declared = new HashSet<string>(["TEXCOORD1", "TEXCOORD2"], StringComparer.Ordinal),
         };
+
+    // The entry point declares `semantics` as column_major matrix interpolants.
+    private static MonoGameGlslInterpolantPacking ColumnMajor(params string[] semantics) =>
+        new(new HashSet<string>(StringComparer.Ordinal), new Dictionary<string, string>(StringComparer.Ordinal))
+        {
+            Declared = new HashSet<string>(semantics, StringComparer.Ordinal),
+        };
+
+    [Fact]
+    public void MatrixInterpolant_WithoutAPacking_IsRefused()
+    {
+        // The three-parameter overload carries no declarations, so the layout is unknown.
+        var act = () => MonoGameGlslRewriter.Rewrite(MatrixVs, ShaderStage.Vertex);
+        Should.Throw<MonoGameGlslRewriteException>(act).Message.ShouldContain("no interpolant packing was supplied", Case.Sensitive);
+    }
+
+    private static MonoGameGlslInterpolantPacking SplitAt(string semantic, int count) =>
+        new(new HashSet<string>(), new Dictionary<string, string>())
+        {
+            Split = new Dictionary<string, int> { [semantic] = count },
+        };
+
+    [Fact]
+    public void DegenerateInterpolant_VertexStage_IsSplitOverOneComponentRegisters_LikeFxc()
+    {
+        // float1x4 W : TEXCOORD1 reaches the rewrite as a vec4; fxc writes o1.x .. o4.x.
+        const string vs = """
+#version 140
+in vec4 in_var_POSITION0;
+out vec4 out_var_TEXCOORD1;
+void main()
+{
+    gl_Position = in_var_POSITION0;
+    out_var_TEXCOORD1 = in_var_POSITION0.wzyx;
+    gl_Position.z = 2.0 * gl_Position.z - gl_Position.w;
+}
+""";
+        string glsl = MonoGameGlslRewriter.Rewrite(vs, ShaderStage.Vertex, null, SplitAt("TEXCOORD1", 4)).Glsl;
+
+        glsl.ShouldContain("varying vec4 vTexCoord1;\nvarying vec4 vTexCoord2;\nvarying vec4 vTexCoord3;\nvarying vec4 vTexCoord4;\nvec4 vs_oT1_vec;", Case.Sensitive);
+        glsl.ShouldContain("vs_oT1_vec = vs_v0.wzyx;", Case.Sensitive);
+        glsl.ShouldContain("vTexCoord1.x = vs_oT1_vec.x;", Case.Sensitive);
+        glsl.ShouldContain("vTexCoord4.x = vs_oT1_vec.w;", Case.Sensitive);
+    }
+
+    [Fact]
+    public void DegenerateInterpolant_PixelStage_IsReadBackFromOneComponentRegisters()
+    {
+        const string ps = """
+#version 140
+in vec3 in_var_TEXCOORD0;
+out vec4 out_var_SV_Target;
+void main()
+{
+    out_var_SV_Target = vec4(in_var_TEXCOORD0, 1.0);
+}
+""";
+        string glsl = MonoGameGlslRewriter.Rewrite(ps, ShaderStage.Pixel, null, SplitAt("TEXCOORD0", 3)).Glsl;
+
+        glsl.ShouldContain("vec4(vec3(vTexCoord0.x, vTexCoord1.x, vTexCoord2.x), 1.0)", Case.Sensitive);
+    }
 
     [Fact]
     public void MatrixInterpolant_WithNoScannedDeclaration_IsRefused_NotGuessed()

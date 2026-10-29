@@ -21,7 +21,7 @@ link by.
   `SV_POSITION`. The entry-point attribution shapes: a row_major return value
   (`RetValRowMatToVec33`), comma declarators, `TEXCOORD00`, a row_major VS output read as a
   column_major PS input, a nested struct, an unused struct holding a `float1x3`, and two
-  techniques declaring one semantic differently. Goldens are `packing/<Shape>.OpenGL.mgfx`.
+  techniques crossing a row_major VS with a column_major PS (`TwoTechniques`), local structs and typedefs shadowing file-scope ones, and degenerate `float1x4` / `row_major float4x1` / `float1x3` interpolants (`Split*`, `VecToSplit1x3`). Goldens are `packing/<Shape>.OpenGL.mgfx`.
 
 Consumers:
 
