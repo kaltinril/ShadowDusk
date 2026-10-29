@@ -657,17 +657,14 @@ internal sealed class CompilationPipeline
                 // texture, around every explicit texture register; the backend numbers the SM4
                 // rewrite in declaration order. Each DX11 shader whose slots differ is recompiled
                 // with them pinned. Left null on every other target and for an effect with no
-                // legacy sampler, so those bytes cannot move.
-                // The evaluation order is always read from a vkd3d compile: the d3dcompiler_47
-                // oracle schedules its reads. An injected backend (the browser's vkd3d) is used as is.
+                // legacy sampler, so those bytes cannot move. The evaluation order is read from
+                // the source (HlslReadOrder), the same on every backend and host.
                 if (directX && view.Value.LegacySamplerTextures.Count > 0)
                 {
                     dxTextureSlots = new DxTextureSlotInputs(
                         new HashSet<string>(view.Value.LegacySamplerTextures.Values, StringComparer.Ordinal),
-                        view.Value.ExplicitTextureRegisters,
-                        _dxbcCompilerFactory is null && options.DxbcBackend == DxbcBackend.D3DCompiler
-                            ? WithDxbcMemo(new Vkd3dShaderCompiler(), options)
-                            : null);
+                        view.Value.LegacySamplerTextures,
+                        view.Value.ExplicitTextureRegisters);
                 }
             }
             else if (directX && fxParsed.LegacySamplerTextures.Count > 0)
@@ -3021,15 +3018,51 @@ internal sealed class CompilationPipeline
     }
 
     /// <summary>
-    /// What the DirectX 11 texture slot re-assignment (<see cref="DxTextureSlotOrder"/>) needs: the
-    /// textures legacy samplers sample through and every explicit <c>t</c> register (both from the
-    /// preprocessed view), and the vkd3d compiler that supplies the evaluation order when the
-    /// shipping backend is not vkd3d (<c>null</c>: the shipping compile is vkd3d's own).
+    /// What the DirectX 11 texture slot re-assignment (<see cref="DxTextureSlotOrder"/>) needs from
+    /// the preprocessed view: the textures legacy samplers sample through, each legacy sampler's
+    /// texture (to join a natively compiled sampler's RDEF name), and every explicit <c>t</c>
+    /// register. The compiled source's own preprocessed text is cached per text, since every entry
+    /// point of an effect compiles the same text.
     /// </summary>
     private sealed record DxTextureSlotInputs(
         IReadOnlySet<string> LegacyTextures,
-        IReadOnlyList<ExplicitTextureRegister> ExplicitRegisters,
-        IDxbcShaderCompiler? OrderCompiler);
+        IReadOnlyDictionary<string, string> LegacySamplerTextures,
+        IReadOnlyList<ExplicitTextureRegister> ExplicitRegisters)
+    {
+        private string? _cachedText;
+        private Result<string, ShaderError>? _cachedView;
+
+        public Result<string, ShaderError> Preprocessed(string text, string sourceFile)
+        {
+            if (_cachedView is null || !ReferenceEquals(_cachedText, text))
+            {
+                _cachedText = text;
+                _cachedView = ShadowDusk.HLSL.Preprocessing.FxMacroPreprocessor.Process(text, sourceFile);
+            }
+            return _cachedView.Value;
+        }
+
+        private string? _nativeText;
+        private IReadOnlySet<string>? _native;
+
+        /// <summary>
+        /// Samplers still read with a legacy intrinsic (<c>tex2D(S, …)</c>) in the preprocessed
+        /// compiled text: legacy samplers the rewrite did not reach, which the backend compiles
+        /// natively under the sampler's own name.
+        /// </summary>
+        public IReadOnlySet<string> NativeLegacySamplers(string preprocessed)
+        {
+            if (_native is null || !ReferenceEquals(_nativeText, preprocessed))
+            {
+                _nativeText = preprocessed;
+                _native = System.Text.RegularExpressions.Regex
+                    .Matches(preprocessed, @"(?<![A-Za-z0-9_.])tex(?:1D|2D|3D|CUBE)(?:bias|grad|lod|proj)?\s*\(\s*([A-Za-z_]\w*)")
+                    .Select(m => m.Groups[1].Value)
+                    .ToHashSet(StringComparer.Ordinal);
+            }
+            return _native;
+        }
+    }
 
     /// <summary>
     /// DirectX 11: when the shipped compile's <c>t</c> slots differ from fxc's
@@ -3060,27 +3093,47 @@ internal sealed class CompilationPipeline
                      "mgfxc's build; setting each texture through its effect parameter is unaffected.",
             Severity: ShaderErrorSeverity.Warning);
 
-        IReadOnlyList<DxbcResourceUseOrder.TRegisterBinding>? bindings = DxbcResourceUseOrder.TRegisterBindings(dxbc.Span);
+        IReadOnlyList<DxbcTRegisterBindings.Binding>? bindings = DxbcTRegisterBindings.Read(dxbc.Span);
         if (bindings is null)
             return (null, Unplaced("the compiled shader's resource table could not be read"));
-        if (!bindings.Any(b => inputs.LegacyTextures.Contains(b.Name)))
+
+        // The evaluation order comes from the source (HlslReadOrder): no compiled instruction stream
+        // carries it (d3dcompiler_47 schedules its reads; vkd3d swaps the operands of '>' and '<=').
+        Result<string, ShaderError> view = inputs.Preprocessed(request.HlslSource, request.SourceFileName);
+        if (view.IsFailure)
+            return (null, Unplaced($"the compiled source could not be preprocessed ({view.Error.Code}: {view.Error.Message})"));
+
+        // A legacy texture's RDEF name is the rewritten texture's, or, for a legacy sampler the
+        // rewrite did not reach (declared in an #include, compiled natively by the backend), the
+        // sampler's own: such a sampler is still read with a legacy intrinsic in the compiled text.
+        IReadOnlySet<string> nativeSamplers = inputs.NativeLegacySamplers(view.Value);
+        string? LegacyKey(string rdefName) =>
+            inputs.LegacyTextures.Contains(rdefName) ? rdefName
+            : inputs.LegacySamplerTextures.TryGetValue(rdefName, out string? texture) ? texture
+            : nativeSamplers.Contains(rdefName) ? rdefName
+            : null;
+        var legacyNames = new HashSet<string>(
+            bindings.Where(b => LegacyKey(b.Name) is not null).Select(b => b.Name), StringComparer.Ordinal);
+        if (legacyNames.Count == 0)
             return null;
         if (bindings.Any(b => b.Count != 1 || b.Name.Contains('[', StringComparison.Ordinal)))
             return (null, Unplaced("the shader also declares an array of resources, whose slots this check does not model"));
 
-        // The evaluation order always comes from vkd3d (see DxTextureSlotOrder): d3dcompiler_47
-        // schedules its reads, so its own instruction stream does not carry fxc's numbering order.
-        ReadOnlyMemory<byte> orderDxbc = dxbc;
-        if (inputs.OrderCompiler is { } orderCompiler)
+        var present = new HashSet<string>(
+            bindings.Select(b => LegacyKey(b.Name)).OfType<string>(), StringComparer.Ordinal);
+        IReadOnlyList<string>? reads = HlslReadOrder.FirstReads(
+            view.Value, request.EntryPoint, inputs.LegacyTextures, inputs.LegacySamplerTextures, present, out string? refusal);
+        if (reads is null)
+            return (null, Unplaced($"the evaluation order of the reads is not certain ({refusal})"));
+        var readOrder = new List<string>();
+        foreach (string texture in reads)
         {
-            var orderCompile = orderCompiler.Compile(request, ct);
-            if (orderCompile.IsFailure)
-                return (null, Unplaced($"the vkd3d compile that supplies the read order failed ({orderCompile.Error.Code}: {orderCompile.Error.Message})"));
-            orderDxbc = orderCompile.Value.Bytes;
+            foreach (var b in bindings)
+            {
+                if (string.Equals(LegacyKey(b.Name), texture, StringComparison.Ordinal) && !readOrder.Contains(b.Name))
+                    readOrder.Add(b.Name);
+            }
         }
-        IReadOnlyList<string>? readOrder = DxbcResourceUseOrder.NamesInFirstReadOrder(orderDxbc.Span);
-        if (readOrder is null)
-            return (null, Unplaced("the compiled shader's instruction stream could not be walked"));
 
         string stage = request.Stage == ShaderStage.Vertex ? "vs" : "ps";
         var registers = inputs.ExplicitRegisters
@@ -3088,14 +3141,14 @@ internal sealed class CompilationPipeline
             .Select(r => (r.Name, r.Slot))
             .ToList();
         var resources = bindings.Select(b => (b.Name, b.Slot)).ToList();
-        IReadOnlyDictionary<string, int>? plan = DxTextureSlotOrder.Plan(resources, readOrder, inputs.LegacyTextures, registers);
+        IReadOnlyDictionary<string, int>? plan = DxTextureSlotOrder.Plan(resources, readOrder, legacyNames, registers);
         if (plan is null)
             return null;
 
         described = " (" + string.Join(", ", plan.OrderBy(p => p.Value).Select(p => $"{p.Key} t{p.Value}")) + ")";
         string? pinnedText = DxTextureSlotOrder.Pin(request.HlslSource, plan);
         if (pinnedText is null)
-            return (null, Unplaced("a declaration could not be given an explicit register (declared through a macro, in a declarator list, as an array, or with an annotation)"));
+            return (null, Unplaced("a declaration could not be given an explicit register (declared through a macro or in an #include, in a declarator list, as an array, or with an annotation)"));
 
         var pinnedRequest = new D3DCompileRequest
         {
@@ -3110,7 +3163,7 @@ internal sealed class CompilationPipeline
         var pinned = dxbcCompiler.Compile(pinnedRequest, ct);
         if (pinned.IsFailure)
             return (null, Unplaced($"the pinned compile failed ({pinned.Error.Code}: {pinned.Error.Message})"));
-        var pinnedBindings = DxbcResourceUseOrder.TRegisterBindings(pinned.Value.Bytes.Span);
+        var pinnedBindings = DxbcTRegisterBindings.Read(pinned.Value.Bytes.Span);
         if (pinnedBindings is null || !DxTextureSlotOrder.Matches(pinnedBindings.Select(b => (b.Name, b.Slot)).ToList(), plan))
             return (null, Unplaced("the pinned compile did not land on those slots"));
         return (pinned.Value.Bytes, null);

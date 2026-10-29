@@ -1979,11 +1979,14 @@ public sealed class FxPreParser
 
             int r = k + 3;
             string? stage = null;
+            // A stage qualifier: `ps`/`vs`, or a profile such as `ps_4_0`.
             if (r + 1 < code.Count && code[r].Kind == TokenKind.Identifier && code[r + 1].Kind == TokenKind.Comma
-                && (string.Equals(code[r].Text, "ps", StringComparison.OrdinalIgnoreCase)
-                    || string.Equals(code[r].Text, "vs", StringComparison.OrdinalIgnoreCase)))
+                && code[r].Text.Length >= 2
+                && (code[r].Text.StartsWith("ps", StringComparison.OrdinalIgnoreCase)
+                    || code[r].Text.StartsWith("vs", StringComparison.OrdinalIgnoreCase))
+                && (code[r].Text.Length == 2 || code[r].Text[2] == '_'))
             {
-                stage = code[r].Text.ToLowerInvariant();
+                stage = code[r].Text[..2].ToLowerInvariant();
                 r += 2;
             }
             if (r >= code.Count) continue;

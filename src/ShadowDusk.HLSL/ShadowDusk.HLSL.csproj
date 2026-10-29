@@ -38,9 +38,11 @@
          call and the result accessors one step at a time, to prove which ones reach DXC's
          setlocale and so must sit inside DxcForkGate. -->
     <InternalsVisibleTo Include="ShadowDusk.Integration.Tests" />
-    <!-- The DirectX 11 texture slot check (DxTextureSlotOrder) warns SD0230 when the preprocessed
-         view it needs cannot be built, which only matters when the raw pre-parse found a legacy
-         sampler (FxParseResult.LegacySamplerTextures). -->
+    <!-- The DirectX 11 texture slot check (DxTextureSlotOrder, HlslReadOrder) reads the explicit
+         t registers (GlSamplerSlots.ExplicitTextureRegisters), preprocesses the compiled text
+         (FxMacroPreprocessor), and warns SD0230 when the view cannot be built, which only matters
+         when the raw pre-parse found a legacy sampler (FxParseResult.LegacySamplerTextures). All
+         internal, so none of it is public API of the shipped ShadowDusk.HLSL package. -->
     <InternalsVisibleTo Include="ShadowDusk.Compiler" />
   </ItemGroup>
 

@@ -21,12 +21,11 @@ namespace ShadowDusk.Integration.Tests.Reflection;
 /// undeclared state texture took <c>t0</c>, where SpriteBatch binds the sprite (maxd 188 in real
 /// KNI WinForms.DX11).</para>
 ///
-/// <para><b>The evaluation order is read from a vkd3d compile, whichever backend ships the
-/// bytes</b>: <c>d3dcompiler_47</c> schedules its reads (it hoists those feeding a <c>clip</c> and
-/// reorders independent ones), vkd3d keeps evaluation order. The <c>d3dcompiler</c> rows are the
-/// guard on that assumption: shapes such as <c>S10_ClipFirst</c> and <c>D14_PrecedenceMulLeft</c>
-/// get a different table from the d3dcompiler instruction stream, and a vkd3d bump that changes
-/// its emission order changes the vkd3d rows.</para>
+/// <para><b>The evaluation order is read from the source</b> (<c>HlslReadOrder</c>), on both
+/// backends: no compiled instruction stream carries it. <c>d3dcompiler_47</c> schedules its reads
+/// (<c>S10_ClipFirst</c>, <c>D14_PrecedenceMulLeft</c>), and vkd3d swaps the operands of
+/// <c>&gt;</c> and <c>&lt;=</c> (<c>G01_Gt</c>, <c>G04_Le</c>, <c>ZZ_GreaterThanReview</c>); the
+/// rows for those shapes turn red if the order is ever taken from a compiled shader again.</para>
 /// </summary>
 [Trait("Category", "Integration")]
 [Trait("Platform", "DirectX")]
@@ -46,11 +45,18 @@ public sealed class DirectX11TextureSlotOrderTests
     /// another order (texture slots match; same on <c>main</c> before this change).</item>
     /// <item><c>A01_TexArrayPlusLegacy</c>: a texture array beside a legacy sampler is not modelled;
     /// the compile warns <c>SD0230</c>.</item>
+    /// <item><c>D12_UnrollLoopIndex</c>: reads under a branch on an <c>[unroll]</c> loop's counter
+    /// come in iteration order in fxc; the source walk does not unroll, so it refuses with
+    /// <c>SD0230</c> instead of guessing.</item>
+    /// <item><c>B02_MacroTexture</c>: legacy samplers a macro declares are compiled natively by the
+    /// backend (the raw pre-parse cannot see them), which names the parameter after the sampler
+    /// and ignores the sampler order; the TEXTURE slots match (pre-existing, <c>project_facts.md</c>).</item>
     /// </list>
     /// </summary>
     private static readonly HashSet<string> KnownDivergence = new(StringComparer.Ordinal)
     {
         "TwoSamplersShareOneTexture", "S13_ModernSampledAndStateNamed", "A02_DeclListLegacyReverse", "A01_TexArrayPlusLegacy",
+        "D12_UnrollLoopIndex", "B02_MacroTexture",
     };
 
     /// <summary>
@@ -64,7 +70,7 @@ public sealed class DirectX11TextureSlotOrderTests
     };
 
     /// <summary>Shapes whose compile is expected to warn SD0230 (the slots could not be checked).</summary>
-    private static readonly HashSet<string> ExpectedSD0230 = new(StringComparer.Ordinal) { "A01_TexArrayPlusLegacy" };
+    private static readonly HashSet<string> ExpectedSD0230 = new(StringComparer.Ordinal) { "A01_TexArrayPlusLegacy", "D12_UnrollLoopIndex" };
 
     public static TheoryData<string> AllShapes()
     {
@@ -81,7 +87,7 @@ public sealed class DirectX11TextureSlotOrderTests
     public void TheGoldenFolder_HoldsEveryShape()
     {
         // MemberData over a folder would silently pass with zero rows if the fixtures were not copied.
-        AllShapes().Count.ShouldBeGreaterThanOrEqualTo(78);
+        AllShapes().Count.ShouldBeGreaterThanOrEqualTo(144);
     }
 
     [Theory]
@@ -134,12 +140,27 @@ public sealed class DirectX11TextureSlotOrderTests
         Tables(Golden("ExplicitTextureRegistersReversed")).ShouldHaveSingleItem().ShouldBe("ps: Diffuse@t2s0 Spec@t3s1");
     }
 
+    [Theory]
+    [InlineData("G01_Gt", "SC@t0")]
+    [InlineData("G04_Le", "SC@t0")]
+    [InlineData("ZZ_GreaterThanReview", "A@t0")]
+    public async Task EvaluationOrder_IsTheSources_NotVkd3dsSwappedComparisonOperands(string shape, string onT0)
+    {
+        // vkd3d 2.1 lowers `a > b` to LESS(b, a) and `a <= b` to GEQUAL(b, a) and emits the right
+        // operand's read first; fxc numbers the left one first.
+        (MgfxBlobReader subject, _) = await CompileAsync(shape, DxbcBackend.Vkd3d);
+        Tables(subject).ShouldHaveSingleItem().ShouldBe(Tables(Golden(shape)).Single());
+        Tables(subject).Single().ShouldContain(onT0, Case.Sensitive);
+    }
+
     [WindowsFact]
-    public async Task EvaluationOrder_ComesFromVkd3d_UnderTheD3DCompilerBackend()
+    public async Task EvaluationOrder_IsTheSources_UnderTheD3DCompilerBackend()
     {
         // d3dcompiler_47 emits C first for `tex2D(A) * tex2D(B) + tex2D(C) * 2` and B first when B
         // feeds a clip; fxc's slots follow evaluation order. Read off d3dcompiler's own stream the
         // tables below would be C/A/B and B/A.
+        // (A dead store, E05_DeadFirstOverwritten, is the other direction: fxc numbers the read it
+        // later drops; its row is in the golden theory.)
         (MgfxBlobReader mul, _) = await CompileAsync("D14_PrecedenceMulLeft", DxbcBackend.D3DCompiler);
         Tables(mul).ShouldHaveSingleItem().ShouldBe(Tables(Golden("D14_PrecedenceMulLeft")).Single());
         Tables(mul).Single().ShouldContain("A@t0", Case.Sensitive);
@@ -147,6 +168,42 @@ public sealed class DirectX11TextureSlotOrderTests
         (MgfxBlobReader clip, _) = await CompileAsync("S10_ClipFirst", DxbcBackend.D3DCompiler);
         Tables(clip).ShouldHaveSingleItem().ShouldBe(Tables(Golden("S10_ClipFirst")).Single());
         Tables(clip).Single().ShouldContain("A@t0", Case.Sensitive);
+    }
+
+    [Theory]
+    [InlineData(DxbcBackend.Vkd3d)]
+    [InlineData(DxbcBackend.D3DCompiler)]
+    public async Task ALegacySamplerInAnInclude_JoinsUnderTheSamplersName_WithoutAFalseSD0230(DxbcBackend backend)
+    {
+        if (backend == DxbcBackend.D3DCompiler && !OperatingSystem.IsWindows())
+            return; // the d3dcompiler_47 oracle is Windows-only
+        // `sampler SB = sampler_state { Texture = <TexB>; }` lives in a header the raw pre-parse does
+        // not rewrite; the backend compiles it natively and its RDEF texture is named `SB`, while the
+        // preprocessed view knows the texture as `TexB`. mgfxc 3.8.4.1: TexB@t0s1 SA@t1s0 (the
+        // sampler slot and the parameter name are a separate, pre-existing native-path gap).
+        const string main = """
+            sampler2D SA;
+            #include "inc_hdr.fxh"
+            float4 P(float2 uv : TEXCOORD0) : COLOR0 { return tex2D(SB, uv) * 0.5 + tex2D(SA, uv); }
+            technique T { pass P0 { PixelShader = compile ps_4_0_level_9_1 P(); } }
+            """;
+        const string header = "texture2D TexB;\nsampler SB = sampler_state { Texture = <TexB>; };\n";
+        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(120));
+        var result = await new EffectCompiler().CompileAsync(main, new CompilerOptions
+        {
+            Target = PlatformTarget.DirectX,
+            DxbcBackend = backend,
+            SourceFileName = "B01.fx",
+            IncludeResolver = new ShadowDusk.Core.Preprocessor.InMemoryIncludeResolver(
+                new Dictionary<string, string> { ["inc_hdr.fxh"] = header }),
+        }, cts.Token);
+
+        result.IsSuccess.ShouldBeTrue(result.IsFailure ? string.Join(" | ", result.Error.Select(e => e.FxcFormattedMessage)) : "");
+        result.Value.Warnings.ShouldNotContain(w => w.Code == "SD0230");
+        MgfxBlobReader r = MgfxBlobReader.Parse(result.Value.Data);
+        var slots = r.Samplers.ToDictionary(x => r.Parameters[x.Parameter].Name, x => (int)x.TextureSlot);
+        slots.Values.Order().ShouldBe([0, 1]);
+        slots["SA"].ShouldBe(1, "the header's SB is read first, so it takes t0 as in mgfxc");
     }
 
     [Fact]

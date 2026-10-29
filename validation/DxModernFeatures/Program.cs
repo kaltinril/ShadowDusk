@@ -32,7 +32,8 @@
 // swapped draws) and must differ. Every texture is distinct, so any layout difference shows. Each
 // shape is compiled with BOTH DXBC backends (vkd3d and the public d3dcompiler_47 option, whose
 // scheduled instruction stream does not carry fxc's evaluation order; S10_ClipFirst and
-// D14_PrecedenceMulLeft are the shapes where it differs) and must not warn SD0230.
+// D14_PrecedenceMulLeft are the shapes where it differs, and ZZ_GreaterThanReview and G04_Le the
+// ones where vkd3d's operand-swapped comparisons would) and must not warn SD0230.
 
 using System;
 using System.Linq;
@@ -150,6 +151,9 @@ var slotCases = new TextureSlotCase[]
     // and `tex2D(A) * tex2D(B) + tex2D(C) * 2` emitted C first.
     new("S10_ClipFirst", new() { ["B"] = TextureSlotHarness.Green }, ControlParameter: "B"),
     new("D14_PrecedenceMulLeft", new() { ["B"] = TextureSlotHarness.White, ["C"] = TextureSlotHarness.Blue }, ControlParameter: "C"),
+    // Evaluation order where vkd3d swaps the operands of '>' and '<=' (LESS(b, a), GEQUAL(b, a)).
+    new("ZZ_GreaterThanReview", new() { ["B"] = TextureSlotHarness.Green }, ControlParameter: "B"),
+    new("G04_Le", new() { ["SB"] = TextureSlotHarness.Blue }, ControlParameter: "SB"),
 };
 // Each shape through BOTH DXBC backends: the default vkd3d and the public d3dcompiler_47 oracle
 // option (whose own instruction stream is scheduled, so the slot check reads vkd3d's order).

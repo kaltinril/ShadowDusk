@@ -30,15 +30,12 @@ namespace ShadowDusk.Compiler.Internal;
 /// declaration order, which the backend already gives, so nothing is touched.</para>
 ///
 /// <para><b>Where the evaluation order comes from.</b> fxc numbers the slots in evaluation order
-/// before it schedules, so the order is not in fxc's own output: <c>d3dcompiler_47</c> hoists the
-/// reads feeding a <c>clip</c>/<c>discard</c> and reorders independent reads
-/// (<c>tex2D(A) * tex2D(B) + tex2D(C) * 2</c> is emitted C first). vkd3d-shader does not schedule:
-/// its instruction stream keeps evaluation order. So the order is ALWAYS read from a vkd3d
-/// compile of the same source (<see cref="DxbcResourceUseOrder.NamesInFirstReadOrder"/>), whichever
-/// backend produced the shipped bytes, and the set of resources that survived optimisation from
-/// the shipped bytes' own RDEF. That vkd3d keeps evaluation order is an assumption about a pinned
-/// native; <c>DirectX11TextureSlotOrderTests</c> and its <c>EvaluationOrder</c> facts turn red if a
-/// vkd3d bump changes it.</para>
+/// before it optimises or schedules, so no compiled instruction stream carries the order:
+/// <c>d3dcompiler_47</c> hoists the reads feeding a <c>clip</c>/<c>discard</c> and reorders
+/// independent reads (<c>tex2D(A) * tex2D(B) + tex2D(C) * 2</c> is emitted C first), and
+/// vkd3d-shader's parser swaps the operands of <c>&gt;</c> and <c>&lt;=</c>. The order is read
+/// from the SOURCE (<see cref="HlslReadOrder"/>), identically on every backend and host, and the set
+/// of resources that survived optimisation from the shipped bytes' own RDEF.</para>
 ///
 /// <para>When the plan differs from what the backend chose, the caller recompiles with each
 /// resource's declaration pinned by an explicit <c>register(tN)</c> (<see cref="Pin"/>).</para>
@@ -112,7 +109,7 @@ internal static class DxTextureSlotOrder
     }
 
     private const string ResourceType =
-        @"(?:[Tt]exture\w*|Buffer|StructuredBuffer|ByteAddressBuffer)(?:\s*<[^<>;]*>)?";
+        @"(?:[Tt]exture\w*|Buffer|StructuredBuffer|ByteAddressBuffer|tbuffer)(?:\s*<[^<>;]*>)?";
 
     /// <summary>
     /// <paramref name="text"/> with every top-level declaration of each planned resource carrying
@@ -132,7 +129,7 @@ internal static class DxTextureSlotOrder
             var any = new Regex(@"(?<![A-Za-z0-9_])" + ResourceType + @"\s+" + n + "(?![A-Za-z0-9_])");
             var pinnable = new Regex(
                 @"(?<![A-Za-z0-9_])(" + ResourceType + @"\s+" + n + @")\s*" +
-                @"(?::\s*register\s*\(\s*(?:[vp]s\s*,\s*)?[tT]\d+\s*(?:,\s*space\d+\s*)?\)\s*)?;");
+                @"(?::\s*register\s*\(\s*(?:[vp]s\w*\s*,\s*)?[tT]\d+\s*(?:,\s*space\d+\s*)?\)\s*)?(?<end>[;{])");
 
             var anyMatches = any.Matches(text).Where(m => topLevel[m.Index]).ToList();
             if (anyMatches.Count == 0)
@@ -144,7 +141,9 @@ internal static class DxTextureSlotOrder
             for (int i = pinMatches.Count - 1; i >= 0; i--)
             {
                 Match m = pinMatches[i];
-                string replacement = $"{m.Groups[1].Value} : register(t{slot});";
+                // A tbuffer block keeps its `{`; every other declaration ends at its `;`.
+                string end = m.Groups["end"].Value == "{" ? " {" : ";";
+                string replacement = $"{m.Groups[1].Value} : register(t{slot}){end}";
                 text = text[..m.Index] + replacement + text[(m.Index + m.Length)..];
             }
             topLevel = TopLevelCode(text);

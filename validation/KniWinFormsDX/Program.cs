@@ -118,7 +118,8 @@ internal static class Program
         // slot of its first read (ahead of unregistered modern textures, around explicit texture
         // registers); ShadowDusk used to number the SM4 rewrite in declaration order, and in the
         // BloomCombine shape SpriteBatch's scene (t0) reached the wrong sampler (maxd 188 here).
-        // Each shape is compiled into BOTH containers KNI loads (MGFX v10 and KNIFX), drawn through
+        // Each shape is compiled with BOTH DXBC backends (vkd3d and the d3dcompiler_47 option) into
+        // BOTH containers KNI loads (MGFX v10 and KNIFX), drawn through
         // SpriteBatch with the sprite on t0 and the other textures (all distinct) set through their
         // parameters, and must match the mgfxc 3.8.4.1 golden exactly; the positive control redraws
         // the golden with the sprite's texture and one parameter's exchanged. These rows run on a
@@ -132,14 +133,16 @@ internal static class Program
             string src = File.ReadAllText(Path.Combine(slotsDir, shape + ".fx"));
             byte[] golden = File.ReadAllBytes(Path.Combine(slotsDir, shape + ".DirectX_11.mgfx"));
             foreach (EffectContainer container in new[] { EffectContainer.Mgfx, EffectContainer.Knifx })
+            foreach (DxbcBackend backend in new[] { DxbcBackend.Vkd3d, DxbcBackend.D3DCompiler })
             {
                 var result = compiler.Compile(src, new CompilerOptions
                 {
                     Target = PlatformTarget.DirectX,
                     Container = container,
+                    DxbcBackend = backend,
                     SourceFileName = shape + ".fx",
                 });
-                slotRows.Add(new SlotRow($"{shape} ({container})", result.IsSuccess ? result.Value.Data : null,
+                slotRows.Add(new SlotRow($"{shape} ({container}, {backend})", result.IsSuccess ? result.Value.Data : null,
                     result.IsSuccess ? null : string.Join(" | ", result.Error.Select(e => $"{e.Code}: {e.Message}")),
                     golden, parameters, control));
             }
@@ -193,6 +196,9 @@ internal sealed record SlotRow(
         // Evaluation-order shapes d3dcompiler_47 would schedule differently.
         ("S10_ClipFirst", new() { ["B"] = Green }, "B"),
         ("D14_PrecedenceMulLeft", new() { ["B"] = White, ["C"] = Blue }, "C"),
+        // vkd3d swaps the operands of '>' and '<=' in its instruction stream.
+        ("ZZ_GreaterThanReview", new() { ["B"] = Green }, "B"),
+        ("G04_Le", new() { ["SB"] = Blue }, "SB"),
     };
 }
 

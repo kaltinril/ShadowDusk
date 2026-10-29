@@ -110,6 +110,14 @@ public sealed class DxTextureSlotOrderTests
     }
 
     [Fact]
+    public void Pin_HandlesATbufferBlock_AndAProfileQualifiedRegister()
+    {
+        const string text = "tbuffer TB : register(t0) { float4 x; };\nTexture2D T : register(ps_4_0, t2);\n";
+        DxTextureSlotOrder.Pin(text, new Dictionary<string, int> { ["TB"] = 1, ["T"] = 0 })
+            .ShouldBe("tbuffer TB : register(t1) { float4 x; };\nTexture2D T : register(t0);\n");
+    }
+
+    [Fact]
     public void Pin_IgnoresComments_FunctionParameters_AndBodies()
     {
         const string text =

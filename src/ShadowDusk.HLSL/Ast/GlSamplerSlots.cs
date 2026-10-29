@@ -55,9 +55,9 @@ public sealed record GlSamplerSlots(
     /// these registers out of circulation, and keeps a directly read resource on its register; the
     /// DirectX 11 texture slot assignment allocates legacy samplers' textures around them.
     /// </summary>
-    public IReadOnlyList<ExplicitTextureRegister> ExplicitTextureRegisters { get; init; } = [];
+    internal IReadOnlyList<ExplicitTextureRegister> ExplicitTextureRegisters { get; init; } = [];
 }
 
 /// <summary>An explicit <c>t</c> register on a declaration: name, register, and the stage
 /// (<c>"vs"</c>/<c>"ps"</c>) when the clause is stage-qualified, else <c>null</c>.</summary>
-public sealed record ExplicitTextureRegister(string Name, int Slot, string? Stage);
+internal sealed record ExplicitTextureRegister(string Name, int Slot, string? Stage);
