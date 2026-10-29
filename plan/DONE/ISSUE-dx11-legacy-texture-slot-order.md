@@ -33,7 +33,7 @@ real MonoGame WindowsDX and real KNI WinForms.DX11, maxd 0 after.
 
 ## 2. The rule fxc follows (measured, `mgfxc` 3.8.4.1 `/Profile:DirectX_11`)
 
-On the 240 shapes of `tests/fixtures/golden/dx11-texture-slots/` (sources and goldens beside each
+On the 304 shapes of `tests/fixtures/golden/dx11-texture-slots/` (sources and goldens beside each
 other) plus the 27 of `legacy-sampler-units/`, per compiled shader:
 
 1. Every explicit `register(tN)` on a `t`-register declaration (any texture, `Buffer`,
@@ -150,7 +150,7 @@ list changed: the real Apos.Shapes shader (`tests/fixtures/issues/202/apos-shape
 - **An order a condition could change**: fxc folds what it can and the walk refuses with
   `SD0230`. **Known false refusals**, loud, never silent: when fxc does NOT fold the condition (a
   uniform, an input, `k * 0 > 1`, a `static` from a uniform), the warning fires and the slots stay
-  in declaration order, which is not `mgfxc`'s when the conditional read came first: 26 of the 240
+  in declaration order, which is not `mgfxc`'s when the conditional read came first: 26 of the 304
   shapes (`K16`, `K17`, `K28`, `K33`, `K38`, `P01`..`P04`, `Q08`, ...), listed in
   `DirectX11TextureSlotOrderTests.FalseSD0230`. The class needs a texture whose first read is
   under a guard, read again later, with another texture's first read in between. The real
@@ -159,7 +159,21 @@ list changed: the real Apos.Shapes shader (`tests/fixtures/issues/202/apos-shape
   declaration order is `mgfxc`'s table, so its slots are right (asserted by
   `AposShapes_KeepsMgfxcsTable_AndWarnsTheFalseSD0230`). Any refusal, correct ones included,
   falls back to declaration order, so it differs from `mgfxc` whenever `mgfxc`'s order is not
-  declaration order (`K20`, a folded `return`; `D12`, iteration order).- **A legacy sampler passed as a function argument** (`K13_SamplerParam`) compiles natively: its
+  declaration order (`K20`, a folded `return`; `D12`, iteration order).
+- **Shapes the walk does not model, each once numbered silently wrong** (the `U*` shapes, final
+  review, measured): fxc DROPS a bare read or constructor statement before it numbers
+  (`tex2D(B, uv);`, in parentheses, a block, a loop, a void helper, a `for` init,
+  `float4(tex2D(B, uv));`, `Tb.Sample(SB, uv);`) but keeps `.r`, `* 2`, a cast, `max(...)`,
+  `clip(...)`, `sincos(...)` and a user function's call; the walk refuses every bare call statement
+  that reads other than `clip`, `sincos` and a user function's (`U50`..`U56` are false
+  refusals). A read or user-function call in a global initializer is numbered before the entry
+  point's, even for an unused global (`U70`..`U74`), and a function defined in a struct or
+  namespace is never walked (`U80`..`U83`, d3dcompiler only: vkd3d rejects the syntax): both
+  refuse. A legacy sampler's texture the shader also uses through a method of its own
+  (`GetDimensions`, `Load`, even `Sample`) gets a second `mgfxc` record (`A@t0 Tb@t1 Tb@t2`,
+  the `S13` class) and refuses, read off the original source (`GlSamplerSlots.ModernMethodTextures`)
+  since the rewrite's `Tb.Sample(SB, uv)` looks the same as the author's (`U60`..`U67`).
+- **A legacy sampler passed as a function argument** (`K13_SamplerParam`) compiles natively: its
   sampler slot is `s0` where `mgfxc` has `s1` (pre-existing), and its texture slots warn
   `SD0230`. Passed AND read directly (`F(B, uv) + tex2D(B, uv)`) it does not compile on vkd3d
   (`E5005`) and gets two texture records under d3dcompiler (pre-existing rewrite gap, not pinned).

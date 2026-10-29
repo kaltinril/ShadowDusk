@@ -830,7 +830,8 @@ internal sealed class CompilationPipeline
                     dxTextureSlots = new DxTextureSlotInputs(
                         new HashSet<string>(view.Value.LegacySamplerTextures.Values, StringComparer.Ordinal),
                         view.Value.LegacySamplerTextures,
-                        view.Value.ExplicitTextureRegisters);
+                        view.Value.ExplicitTextureRegisters,
+                        view.Value.ModernMethodTextures);
                 }
             }
             else if (directX && fxParsed.LegacySamplerTextures.Count > 0)
@@ -3485,14 +3486,16 @@ internal sealed class CompilationPipeline
     /// <summary>
     /// What the DirectX 11 texture slot re-assignment (<see cref="DxTextureSlotOrder"/>) needs from
     /// the preprocessed view: the textures legacy samplers sample through, each legacy sampler's
-    /// texture (to join a natively compiled sampler's RDEF name), and every explicit <c>t</c>
-    /// register. The compiled source's own preprocessed text is cached per text, since every entry
+    /// texture (to join a natively compiled sampler's RDEF name), every explicit <c>t</c>
+    /// register, and the legacy textures the source also calls a method on (refused, see
+    /// <c>GlSamplerSlots.ModernMethodTextures</c>). The compiled source's own preprocessed text is cached per text, since every entry
     /// point of an effect compiles the same text.
     /// </summary>
     private sealed record DxTextureSlotInputs(
         IReadOnlySet<string> LegacyTextures,
         IReadOnlyDictionary<string, string> LegacySamplerTextures,
-        IReadOnlyList<ExplicitTextureRegister> ExplicitRegisters)
+        IReadOnlyList<ExplicitTextureRegister> ExplicitRegisters,
+        IReadOnlySet<string> ModernMethodTextures)
     {
         private string? _cachedText;
         private Result<string, ShaderError>? _cachedView;
@@ -3586,6 +3589,18 @@ internal sealed class CompilationPipeline
 
         var present = new HashSet<string>(
             bindings.Select(b => LegacyKey(b.Name)).OfType<string>(), StringComparer.Ordinal);
+
+        // A legacy sampler's texture the source also uses through a method of its own
+        // (`Tb.GetDimensions`, `Tb.Load`, even `Tb.Sample`): fxc gives that use a texture record of
+        // its own, numbered apart (mgfxc A@t0 Tb@t1 Tb@t2, measured), and in the compiled text the
+        // rewrite's `Tb.Sample(SB, uv)` reads look the same as the author's.
+        string? modern = present.Where(inputs.ModernMethodTextures.Contains).Order(StringComparer.Ordinal).FirstOrDefault();
+        if (modern is not null)
+        {
+            return (null, Unplaced($"the legacy sampler's texture '{modern}' is also used through a method call of its own " +
+                                   "(GetDimensions, Load, Sample, ...), which fxc gives a texture record of its own"));
+        }
+
         IReadOnlyList<string>? reads = HlslReadOrder.FirstReads(
             view.Value, request.EntryPoint, inputs.LegacyTextures, inputs.LegacySamplerTextures, present, out string? refusal);
         if (reads is null)

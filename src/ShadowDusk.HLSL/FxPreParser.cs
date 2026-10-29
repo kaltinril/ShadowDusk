@@ -2060,7 +2060,35 @@ public sealed class FxPreParser
                 LegacySamplerTextures = legacySamplerTextures,
                 EntryPointInterpolants = GlEntryPointInterpolantScanner.Scan(tokens),
                 ExplicitTextureRegisters = CollectTextureRegisters(tokens),
+                ModernMethodTextures = CollectMethodObjects(tokens, legacyTextures),
             });
+    }
+
+    /// <summary>
+    /// The names in <paramref name="textures"/> that the source uses as the object of a method call
+    /// (<c>T.Method(</c>, not itself a member <c>x.T.Method(</c>). See
+    /// <see cref="GlSamplerSlots.ModernMethodTextures"/>.
+    /// </summary>
+    private static HashSet<string> CollectMethodObjects(IReadOnlyList<Token> tokens, IReadOnlySet<string> textures)
+    {
+        var found = new HashSet<string>(StringComparer.Ordinal);
+        var code = new List<Token>(tokens.Count);
+        foreach (Token t in tokens)
+        {
+            if (t.Kind is not (TokenKind.LineComment or TokenKind.BlockComment or TokenKind.Preprocessor))
+                code.Add(t);
+        }
+        for (int i = 0; i + 3 < code.Count; i++)
+        {
+            if (code[i].Kind == TokenKind.Identifier && textures.Contains(code[i].Text)
+                && (i == 0 || code[i - 1].Kind != TokenKind.Dot)
+                && code[i + 1].Kind == TokenKind.Dot && code[i + 2].Kind == TokenKind.Identifier
+                && code[i + 3].Kind == TokenKind.LParen)
+            {
+                found.Add(code[i].Text);
+            }
+        }
+        return found;
     }
 
     /// <summary>

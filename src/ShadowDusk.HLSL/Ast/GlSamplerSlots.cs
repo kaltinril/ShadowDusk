@@ -66,6 +66,16 @@ public sealed record GlSamplerSlots(
     /// DirectX 11 texture slot assignment allocates legacy samplers' textures around them.
     /// </summary>
     internal IReadOnlyList<ExplicitTextureRegister> ExplicitTextureRegisters { get; init; } = [];
+
+    /// <summary>
+    /// The <see cref="LegacyTextures"/> the source ALSO uses through a method call of its own
+    /// (<c>T.GetDimensions(…)</c>, <c>T.Load(…)</c>, <c>T.Sample(…)</c>, …), as the preprocessed
+    /// view spells them. fxc gives such a use a texture record of its own, numbered apart from the
+    /// legacy sampler's (measured, <c>mgfxc</c> 3.8.4.1 DirectX_11: <c>A@t0 Tb@t1 Tb@t2</c>), and the
+    /// SM4 rewrite's own <c>T.Sample(S, …)</c> reads cannot be told from an author's in the compiled
+    /// text, so the DirectX 11 texture slot assignment refuses (<c>SD0230</c>) for these.
+    /// </summary>
+    internal IReadOnlySet<string> ModernMethodTextures { get; init; } = new HashSet<string>(StringComparer.Ordinal);
 }
 
 /// <summary>An explicit <c>t</c> register on a declaration: name, register, and the stage
