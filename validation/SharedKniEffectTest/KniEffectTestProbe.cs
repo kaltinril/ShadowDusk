@@ -137,7 +137,7 @@ public static class KniEffectTestProbe
 
     // A known gap, not a bug fixed elsewhere: on a strict GL driver the row must still fail, as above.
     private const string KfStrictGlNonSquare =
-        "known gap (SD0403, docs/validation-matrix.md section 7): ShadowDusk's GLSL for DeferredBasicEffect's VS declares a non-square `mat3x4` (the (float3x3)World cast), which the versionless MonoGame/KNI GL dialect cannot; a strict GL front end (Mesa, Apple, ANGLE) refuses it when KNI compiles the shaders at Effect load, a lenient one accepts it; mgfxc's build loads on both (the compile warns SD0403)";
+        "known gap (SD0403, issue #453, docs/validation-matrix.md section 7): ShadowDusk's GLSL for DeferredBasicEffect's VS declares a non-square `mat3x4` (the (float3x3)World cast), which the versionless MonoGame/KNI GL dialect cannot; a strict GL front end (Mesa, Apple, ANGLE) refuses it when KNI compiles the shaders at Effect load, a lenient one accepts it; mgfxc's build loads on both (the compile warns SD0403)";
 
     // Informational reasons.
     private const string InfoRuntimeOnly =
