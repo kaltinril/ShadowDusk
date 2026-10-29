@@ -16,6 +16,14 @@
 //
 // Exit 0 iff every row passes: candidate loads, golden loads (the control), and the
 // two renders differ by at most --tolerance (default 4, the Phase 18 DX bar) per channel.
+//
+// Row "HalfGlobals" (driver-local, not in the shared DX corpus list): XNA-era `half` uniforms
+// (tests/fixtures/shaders/HalfGlobals.fx), which mgfxc's DirectX_11 build compiles as float and
+// ShadowDusk's DirectX target refused with vkd3d's E5002 until it passed ALLOW_HALF_GLOBALS.
+// MGFX container on purpose: KNIFX-on-DirectX at HiDef is a separate open issue. Its
+// ColorMatrix/Weights default blobs are the documented #422 deviation from mgfxc, so both
+// arms get the same explicit values through the typed SetValue overloads (outside the
+// swallowed shared SetParams call, so a mistyped parameter fails the row).
 
 using System;
 using System.Collections.Generic;
@@ -76,7 +84,7 @@ internal static class Program
         // STA Main stays synchronous (no async-over-[STAThread] dance).
         var compiler = new EffectCompiler();
         var rows = new List<DxRow>();
-        foreach (string name in DxShaderInputs.ShaderNames)
+        foreach (string name in DxShaderInputs.ShaderNames.Append("HalfGlobals"))
         {
             string fxPath = Path.Combine(shaderDir, name + ".fx");
             string? compileError = null;
@@ -271,6 +279,15 @@ internal sealed class KniDxCompareGame : Game
 
             try { DxShaderInputs.SetParams(effect, _cat); }
             catch { /* a missing/typed param on one side must not abort the row */ }
+
+            // HalfGlobals row: the #422 default deviation, neutralized identically on both arms.
+            // NOT swallowed: a half global that is not a Single Matrix / array parameter throws here.
+            effect.Parameters["ColorMatrix"]?.SetValue(new Matrix(
+                0.75f, 0.25f, 0f, 0f,
+                0f, 1f, 0f, 0f,
+                0.5f, 0f, 0.5f, 0f,
+                0f, 0f, 0f, 1f));
+            effect.Parameters["Weights"]?.SetValue(new[] { 0.25f, 0.5f });
 
             _sb.Begin(SpriteSortMode.Immediate, BlendState.Opaque,
                 SamplerState.LinearClamp, null, null, effect);

@@ -350,7 +350,8 @@ They feed the byte-identity manifests under `tests/fixtures/golden/byte-identity
   vkd3d does only with the `ALLOW_HALF_GLOBALS` compile option and refuses the file with `E5002`
   without it, so a host that drops that bit fails the browser vkd3d gates. Pinned by
   `HalfGlobalsTests` (against its `float` twin on every target and against the golden) and
-  rendered by `validation/DxModernFeatures` (arm "half-globals"). Golden on `DirectX_11` only:
+  rendered by `validation/DxModernFeatures` (arm "half-globals") and `validation/KniWinFormsDX`
+  (row "HalfGlobals"). Golden on `DirectX_11` only:
   `mgfxc` OpenGL refuses a `half` global (`X3650`), and so does FNA's reference `fxc /T fx_2_0`,
   which is why it is in the DirectX and OpenGL byte-identity arms but not the FNA one.
 

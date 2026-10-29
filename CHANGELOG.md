@@ -20,8 +20,9 @@ that loads and renders identically to `mgfxc`'s in the real MonoGame/KNI runtime
 
 - **`half` globals compile on DirectX 11, as they do with `mgfxc`.** An XNA-era uniform declared
   with a `half` type (`half4 Tint = half4(1, 0.5, 0, 1);`, and every `half`/`halfN`/`halfNxM`
-  global or cbuffer member) failed on the DirectX target with vkd3d's `E5002 The half type is not
-  allowed for global variables.`, while `mgfxc` 3.8.4.1 compiles it: its DirectX_11 build passes
+  global or cbuffer member, `static` ones included) failed on the DirectX target, in both the MGFX
+  and the KNIFX container, with vkd3d's `E5002 The half type is not allowed for global variables.`,
+  while `mgfxc` 3.8.4.1 compiles it: its DirectX_11 build passes
   fxc the backwards-compatibility flag, under which a `half` global is a `float`. ShadowDusk now
   passes vkd3d 2.1's matching option (`BACKCOMPAT_ALLOW_HALF_GLOBALS`, which vkd3d's own
   `D3DCompile` sets for that same fxc flag) on the SM4+ target, on the desktop and in the browser.
@@ -29,8 +30,10 @@ that loads and renders identically to `mgfxc`'s in the real MonoGame/KNI runtime
   the same effect written with `float`; only the reflection chunk's type-name string keeps the
   author's `half4`, exactly as fxc's own blob does. No other output byte changes (the byte-identity
   manifests only gained the new fixture). Rendered in real MonoGame WindowsDX against `mgfxc`'s
-  build at maxd 0 (`validation/DxModernFeatures`, arm "half-globals"). DirectX 12, Vulkan, OpenGL
-  and KNIFX already compiled `half` as `float` and are byte-identical to the `float` twin. FNA
+  build at maxd 0 (`validation/DxModernFeatures`, arm "half-globals") and in real KNI
+  WinForms.DX11 (`validation/KniWinFormsDX`, row "HalfGlobals", MGFX container). DirectX 12,
+  Vulkan, OpenGL and KNIFX on OpenGL (all DXC) already compiled `half` as `float` and are
+  byte-identical to the `float` twin. FNA
   still refuses a `half` global (`E5002` at the declaration), as its reference `fxc /T fx_2_0`
   does (`X3650`).
 - **Techniques are read from the preprocessed source, like `mgfxc` (issue #407).** A technique

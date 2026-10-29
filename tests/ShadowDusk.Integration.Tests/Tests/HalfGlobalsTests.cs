@@ -33,9 +33,10 @@ namespace ShadowDusk.Integration.Tests.Tests;
 /// unstripped blob says <c>half4</c> too); <c>mgfxc</c> strips RDEF from what it saves, a known
 /// inert difference. The reflected TYPE (<c>D3D_SVT_FLOAT</c>), class, rows, columns, offsets and
 /// initializer defaults are the twin's, so the MGFX parameter table equals the twin's and the
-/// committed <c>mgfxc</c> golden's. The DXC targets (DirectX 12, Vulkan, OpenGL, KNIFX) treat
-/// <c>half</c> as <c>float</c> already (no <c>-enable-16bit-types</c>) and are byte-identical to
-/// the twin. FNA is the exception by design: the FNA reference, <c>fxc /T fx_2_0</c> with default
+/// committed <c>mgfxc</c> golden's. That holds for both containers on DirectX: a KNIFX build for
+/// DirectX goes through vkd3d too and had the same E5002. The DXC targets (DirectX 12, Vulkan,
+/// OpenGL, and KNIFX on OpenGL) treat <c>half</c> as <c>float</c> already (no
+/// <c>-enable-16bit-types</c>) and are byte-identical to the twin. FNA is the exception by design: the FNA reference, <c>fxc /T fx_2_0</c> with default
 /// flags (d3dcompiler_43 and _47 alike), refuses a <c>half</c> global with X3650, so ShadowDusk's
 /// E5002 there is reference parity and the SM1-3 target gets no option.</para>
 /// </summary>
@@ -91,6 +92,47 @@ public sealed class HalfGlobalsTests
         }
         technique T { pass P { PixelShader = compile ps_4_0 MainPS(); } }
         """;
+
+    /// <summary>A <c>static</c> (non-uniform) <c>half4</c> global: vkd3d's check is on scope, so it needed the option too.</summary>
+    private const string StaticHalf = """
+        static half4 Scale = half4(0.5, 0.25, 1, 1);
+        half4 Tint = half4(1, 0.5, 0, 1);
+        float4 MainPS(float4 pos : SV_Position, float2 uv : TEXCOORD0) : SV_Target0 { return Tint * Scale; }
+        technique T { pass P { PixelShader = compile ps_4_0 MainPS(); } }
+        """;
+
+    /// <summary>A <c>half4x4</c> read by a VERTEX shader (the XNA-era <c>half4x4 WorldViewProjection</c>).</summary>
+    private const string VsMatrix = """
+        half4x4 WorldViewProjection;
+        half4 Tint = half4(1, 0.5, 0, 1);
+        struct VSOut { float4 Pos : SV_Position; float4 Color : COLOR0; };
+        VSOut MainVS(float4 pos : POSITION0, float4 color : COLOR0)
+        {
+            VSOut o;
+            o.Pos = mul(pos, WorldViewProjection);
+            o.Color = color * Tint;
+            return o;
+        }
+        float4 MainPS(VSOut i) : SV_Target0 { return i.Color; }
+        technique T { pass P { VertexShader = compile vs_4_0 MainVS(); PixelShader = compile ps_4_0 MainPS(); } }
+        """;
+
+    /// <summary>The reported shape: a <c>half4</c> global at <c>ps_4_0_level_9_1</c>, the MonoGame template profile.</summary>
+    private const string Level91 = """
+        half4 Tintz = half4(0.25, 0.5, 1, 1);
+        float4 P(float2 uv : TEXCOORD0) : COLOR0 { return Tintz; }
+        technique T { pass P0 { PixelShader = compile ps_4_0_level_9_1 P(); } }
+        """;
+
+    private static string Shape(string name) => name switch
+    {
+        nameof(AllShapes) => AllShapes,
+        nameof(GlobalShapes) => GlobalShapes,
+        nameof(StaticHalf) => StaticHalf,
+        nameof(VsMatrix) => VsMatrix,
+        nameof(Level91) => Level91,
+        _ => Load(name),
+    };
 
     /// <summary>
     /// The <c>float</c> twin: every <c>half</c> TYPE keyword (<c>half</c>, <c>halfN</c>,
@@ -162,6 +204,50 @@ public sealed class HalfGlobalsTests
         CompiledShader twin = await CompileOkAsync(FloatTwin(source), PlatformTarget.DirectX, Fixture);
 
         AssertDxbcEffectEqualsTwinExceptRdefTypeNames(half, twin);
+    }
+
+    public static TheoryData<EffectContainer, string> DirectXTwinCases()
+    {
+        var data = new TheoryData<EffectContainer, string>();
+        foreach (EffectContainer container in new[] { EffectContainer.Mgfx, EffectContainer.Knifx })
+        foreach (string shape in new[] { nameof(AllShapes), nameof(StaticHalf), nameof(VsMatrix), nameof(Level91), Fixture })
+            data.Add(container, shape);
+        return data;
+    }
+
+    /// <summary>
+    /// Both containers MonoGame and KNI load on DirectX go through vkd3d, so both had the gap:
+    /// a KNIFX build for DirectX (<c>Container = Knifx</c>, KNI's WinForms.DX11) failed with the
+    /// same E5002 before the fix. Every shape, in both containers, equals its float twin except
+    /// the RDEF type names.
+    /// </summary>
+    [FnaTheory]
+    [MemberData(nameof(DirectXTwinCases))]
+    public async Task DirectX11_EveryContainerAndShape_EqualsItsFloatTwin_ExceptTheRdefTypeNames(EffectContainer container, string shape)
+    {
+        string source = Shape(shape);
+        CompiledShader half = await CompileOkAsync(source, PlatformTarget.DirectX, "Shape.fx", container: container);
+        CompiledShader twin = await CompileOkAsync(FloatTwin(source), PlatformTarget.DirectX, "Shape.fx", container: container);
+
+        if (container == EffectContainer.Mgfx)
+            AssertDxbcEffectEqualsTwinExceptRdefTypeNames(half, twin);
+        else
+            AssertKnifxDxEffectEqualsTwinExceptRdefTypeNames(half, twin);
+    }
+
+    /// <summary>
+    /// KNIFX on DirectX reflects the same parameter list as the MGFX build of the same fixture
+    /// (which equals the mgfxc golden's table, test below), defaults included.
+    /// </summary>
+    [FnaFact]
+    public async Task DirectX11_Knifx_ReflectsTheMgfxParameterTable()
+    {
+        string source = Load(Fixture);
+        CompiledShader mgfx = await CompileOkAsync(source, PlatformTarget.DirectX, Fixture);
+        CompiledShader knifx = await CompileOkAsync(source, PlatformTarget.DirectX, Fixture, container: EffectContainer.Knifx);
+
+        DescribeReflection(knifx).ShouldBe(DescribeReflection(mgfx));
+        ParameterReflectionShouldBeFloat4(knifx, "Tint", [1f, 0.5f, 0.25f, 1f]);
     }
 
     /// <summary>
@@ -294,12 +380,7 @@ public sealed class HalfGlobalsTests
     [Trait("Platform", "OpenGL")]
     public async Task DxcTargets_HalfEffect_IsByteIdenticalToItsFloatTwin(PlatformTarget target, EffectContainer container, string shape)
     {
-        string source = shape switch
-        {
-            nameof(AllShapes) => AllShapes,
-            nameof(GlobalShapes) => GlobalShapes,
-            _ => Load(shape),
-        };
+        string source = Shape(shape);
 
         CompiledShader half = await CompileOkAsync(source, target, "Shape.fx", container: container);
         CompiledShader twin = await CompileOkAsync(FloatTwin(source), target, "Shape.fx", container: container);
@@ -391,14 +472,62 @@ public sealed class HalfGlobalsTests
         h.Samplers.Count.ShouldBe(t.Samplers.Count);
         h.Shaders.Count.ShouldBe(t.Shaders.Count);
 
-        bool sawHalfName = false;
         for (int i = 0; i < h.Shaders.Count; i++)
         {
             h.Shaders[i].IsVertex.ShouldBe(t.Shaders[i].IsVertex);
             h.Shaders[i].ConstantBufferIndices.ShouldBe(t.Shaders[i].ConstantBufferIndices);
+        }
 
-            Dictionary<string, byte[]> hc = DxbcChunks(h.Shaders[i].Bytecode);
-            Dictionary<string, byte[]> tc = DxbcChunks(t.Shaders[i].Bytecode);
+        AssertDxbcBlobsEqualExceptRdefTypeNames(
+            h.Shaders.Select(x => x.Bytecode).ToList(), t.Shaders.Select(x => x.Bytecode).ToList());
+    }
+
+    /// <summary>
+    /// The KNIFX container (KNI's v11 format) carries the same DXBC on DirectX, in its own
+    /// framing. No KNIFX reader exists in the tests, so the DXBC modules are found by their
+    /// self-describing container header (magic, total size at offset 24) and compared the same
+    /// way; the parameter list the library reflects must be the twin's too.
+    /// </summary>
+    private static void AssertKnifxDxEffectEqualsTwinExceptRdefTypeNames(CompiledShader half, CompiledShader twin)
+    {
+        DescribeReflection(half).ShouldBe(DescribeReflection(twin));
+        List<byte[]> h = ScanDxbcModules(half.Data);
+        List<byte[]> t = ScanDxbcModules(twin.Data);
+        h.Count.ShouldBeGreaterThan(0, "a DirectX KNIFX effect carries DXBC modules");
+        AssertDxbcBlobsEqualExceptRdefTypeNames(h, t);
+    }
+
+    private static List<byte[]> ScanDxbcModules(byte[] data)
+    {
+        var modules = new List<byte[]>();
+        byte[] magic = "DXBC"u8.ToArray();
+        int at = 0;
+        while (at < data.Length)
+        {
+            int rel = data.AsSpan(at).IndexOf(magic);
+            if (rel < 0)
+                break;
+            at += rel;
+            int size = BinaryPrimitives.ReadInt32LittleEndian(data.AsSpan(at + 24));
+            modules.Add(data.AsSpan(at, size).ToArray());
+            at += size;
+        }
+        return modules;
+    }
+
+    /// <summary>
+    /// Inside each DXBC module every chunk but RDEF is byte-identical to the twin's, and RDEF
+    /// differs in nothing but the type-name strings, which spell <c>half…</c> where the twin
+    /// spells <c>float…</c>.
+    /// </summary>
+    private static void AssertDxbcBlobsEqualExceptRdefTypeNames(IReadOnlyList<byte[]> half, IReadOnlyList<byte[]> twin)
+    {
+        half.Count.ShouldBe(twin.Count);
+        bool sawHalfName = false;
+        for (int i = 0; i < half.Count; i++)
+        {
+            Dictionary<string, byte[]> hc = DxbcChunks(half[i]);
+            Dictionary<string, byte[]> tc = DxbcChunks(twin[i]);
             hc.Keys.ShouldBe(tc.Keys);
             foreach (string tag in hc.Keys.Where(k => k != "RDEF"))
                 hc[tag].ShouldBe(tc[tag], $"shader {i} chunk {tag} must be byte-identical to the float twin's");
