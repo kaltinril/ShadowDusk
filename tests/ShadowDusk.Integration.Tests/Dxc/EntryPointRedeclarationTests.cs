@@ -46,7 +46,9 @@ public sealed class EntryPointRedeclarationTests
         ["ps-proto-return-type-differs"] = DxcError,  // "differ only in their return type" (fxc: X3068)
         ["ps-called-between-proto-and-def"] = Refused,
         ["ps-overload-proto-of-called-entry"] = Refused,
-        ["ps-proto-from-macro"] = Refused,
+        // A macro call that writes the prototype and nothing else is removed whole (proven by
+        // re-preprocessing the edited source).
+        ["ps-proto-from-macro"] = Same,
         // Review of 2026-10-28: the blanked range keeps a macro call before the prototype, and
         // shapes that used to reach DXC (and crash it) are blanked to the no-prototype bytes.
         ["macro-call-before-proto"] = Same,
@@ -56,7 +58,20 @@ public sealed class EntryPointRedeclarationTests
         ["comment-in-proto"] = Same,
         ["conditional-semantic-proto"] = Same,
         ["const-param-proto-called"] = Same,
-        ["macro-named-entry-proto"] = Refused,        // the raw text cannot be matched to the expansion
+        ["macro-named-entry-proto"] = Same,
+        // Re-review of 2026-10-29.
+        ["macro-call-on-proto-line"] = Same,          // the BLOCKER: the call (and `Unused`) survives
+        ["macro-proto-plus-code"] = Refused,          // no edit takes the prototype alone
+        ["proto-in-macro-argument"] = Same,
+        ["multi-line-proto"] = Same,
+        ["inline-proto"] = Refused,                   // DXC itself refuses an inline entry (DirectX 12)
+        ["static-proto-and-def"] = Ok,                // on both: the prototype adds nothing; DXC judges the definition
+        ["proto-in-active-if"] = Same,
+        ["attribute-only-on-proto"] = Refused,
+        ["nointerpolation-only-on-proto"] = Refused,
+        ["semantic-only-on-proto"] = DxcError,        // DXC ignores a prototype's semantics and reports the gap itself
+        ["second-declarator-proto"] = Refused,
+        ["proto-and-defined-overloads"] = DxcError,   // DXC's front end reports the ambiguity before its back end runs
     };
 
     /// <summary>
@@ -65,18 +80,27 @@ public sealed class EntryPointRedeclarationTests
     /// </summary>
     private static Dictionary<string, string> Expected(string target) => target switch
     {
-        "OpenGL" or "raylib" or "sksl" => Spirv,
-        // Vulkan compiles every entry point as `main` (mgfxc's rename), which leaves the
+        "raylib" or "sksl" => Spirv,
+        // The OpenGL target's DXIL reflection companion refuses a `static` entry ("cannot find
+        // entry function"), with or without a prototype; the SPIR-V-only routes compile it.
+        "OpenGL" => new(Spirv, StringComparer.Ordinal) { ["static-proto-and-def"] = DxcError },
+        // Vulkan compiles every entry point as `main` (mgfxc's rename), which leaves a
         // macro-produced `PS` prototype an unrelated, unused declaration: nothing to refuse.
-        "Vulkan" => new(Spirv, StringComparer.Ordinal) { ["ps-proto-from-macro"] = Ok },
+        "Vulkan" => new(Spirv, StringComparer.Ordinal) { ["macro-proto-plus-code"] = Ok },
         "DirectX" or "Fna" => new(Spirv, StringComparer.Ordinal)
         {
             ["ps-proto-without-definition"] = DxcError,         // vkd3d E5005, relabelled
             ["ps-proto-return-type-differs"] = "DIAG E5006",
             ["ps-called-between-proto-and-def"] = Ok,
             ["ps-overload-proto-of-called-entry"] = Ok,
-            ["ps-proto-from-macro"] = Ok,
-            ["macro-named-entry-proto"] = Ok,
+            ["macro-proto-plus-code"] = Ok,
+            ["inline-proto"] = Ok,
+            ["static-proto-and-def"] = DxcError,                // vkd3d E5005, relabelled
+            ["attribute-only-on-proto"] = Ok,
+            ["nointerpolation-only-on-proto"] = Ok,
+            ["semantic-only-on-proto"] = "DIAG E5004",
+            ["second-declarator-proto"] = "DIAG E5000",
+            ["proto-and-defined-overloads"] = "DIAG E5017",
         },
         // DXC's DXIL front end calls an overload prototype without a definition ambiguous, as
         // it always has here (fxc compiles it); unchanged by this fix, which never touches
@@ -86,8 +110,12 @@ public sealed class EntryPointRedeclarationTests
             ["ps-unused-overload-proto"] = DxcError,
             ["ps-called-between-proto-and-def"] = Ok,
             ["ps-overload-proto-of-called-entry"] = DxcError,
-            ["ps-proto-from-macro"] = Ok,
-            ["macro-named-entry-proto"] = Ok,
+            ["macro-proto-plus-code"] = Ok,
+            ["inline-proto"] = DxcError,
+            ["static-proto-and-def"] = DxcError,
+            ["attribute-only-on-proto"] = Ok,
+            ["nointerpolation-only-on-proto"] = Ok,
+            ["second-declarator-proto"] = Ok,
         },
         _ => throw new ArgumentOutOfRangeException(nameof(target), target, null),
     };

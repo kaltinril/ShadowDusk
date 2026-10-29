@@ -85,7 +85,8 @@ public static class EntryPointRedeclarationProbe
         // Shapes SPIR-V cannot be given safely: refused with SD0236 instead of crashing.
         new("ps-called-between-proto-and-def", Fx(PsProto, Half, TechPs, PsDef), null, true),
         new("ps-overload-proto-of-called-entry", Fx(Overload, PsDef, Half, TechPs), null, true),
-        new("ps-proto-from-macro", Fx("#define DECLARE(name) float4 name(float4 c : COLOR0) : COLOR0;", "DECLARE(PS)", TechPs, PsDef), null, true),
+        new("ps-proto-from-macro", Fx("#define DECLARE(name) float4 name(float4 c : COLOR0) : COLOR0;", "DECLARE(PS)", TechPs, PsDef),
+            Fx("#define DECLARE(name) float4 name(float4 c : COLOR0) : COLOR0;", "", TechPs, PsDef), true),
 
         // Review of 2026-10-28. A macro call without a `;` of its own right before the prototype
         // must survive the blanking (it was wiped with it: a parameter silently lost on GL/VK).
@@ -101,7 +102,32 @@ public static class EntryPointRedeclarationProbe
             Fx("", "", "", "", "", "", "", TechPs, PsDef), true),
         new("const-param-proto-called", Fx("float4 PS(const float4 c : COLOR0) : COLOR0;", TechPs, PsDef, Half), Fx("", TechPs, PsDef, Half), true),
         new("macro-named-entry-proto", Fx("#define PF PSX", "float4 PF(float4 c : COLOR0) : COLOR0;",
-            "technique T { pass { PixelShader = compile PS_SM PF(); } }", "float4 PF(float4 c : COLOR0) : COLOR0 { return c; }"), null, true),
+            "technique T { pass { PixelShader = compile PS_SM PF(); } }", "float4 PF(float4 c : COLOR0) : COLOR0 { return c; }"),
+            Fx("#define PF PSX", "", "technique T { pass { PixelShader = compile PS_SM PF(); } }", "float4 PF(float4 c : COLOR0) : COLOR0 { return c; }"), true),
+
+        // Re-review of 2026-10-29. The BLOCKER shape on one line: the call must survive, only the
+        // prototype goes (the twin keeps the call and the parameter it declares).
+        new("macro-call-on-proto-line", Fx("#define DECL_PARAM(n) float4 n;", "DECL_PARAM(Unused) " + PsProto, TechPs, PsDefUnused),
+            Fx("#define DECL_PARAM(n) float4 n;", "DECL_PARAM(Unused)", TechPs, PsDefUnused), true),
+        // A macro call that writes the prototype and other code: no edit takes only the prototype.
+        new("macro-proto-plus-code", Fx("#define DECLARE2(name) float4 Unused; float4 name(float4 c : COLOR0) : COLOR0;",
+            "DECLARE2(PS)", TechPs, PsDefUnused), null, true),
+        new("proto-in-macro-argument", Fx("#define ID(x) x", "ID(" + PsProto + ")", TechPs, PsDef), Fx("#define ID(x) x", "ID()", TechPs, PsDef), true),
+        new("multi-line-proto", Fx("float4 PS(float4 c", "    : COLOR0)", "    : COLOR0;", TechPs, PsDef), Fx("", "", "", TechPs, PsDef), true),
+        // DXC's own front end answers an `inline` / `static` entry with "cannot find entry function"
+        // (DirectX 12): a prototype carrying one is refused, one on both is left to DXC.
+        new("inline-proto", Fx("inline " + PsProto, TechPs, PsDef), null, true),
+        new("static-proto-and-def", Fx("static " + PsProto, TechPs, "static " + PsDef), null, true),
+        new("proto-in-active-if", Fx("#if 1", PsProto, "#endif", TechPs, PsDef), Fx("#if 1", "", "#endif", TechPs, PsDef), true),
+        // What a prototype says beyond its definition could be merged into the definition by
+        // DXC's front end, so removing it is refused rather than risking a silent change.
+        new("attribute-only-on-proto", Fx("[earlydepthstencil] " + PsProto, TechPs, PsDef), null, true),
+        new("nointerpolation-only-on-proto", Fx("float4 PS(nointerpolation float4 c : COLOR0) : COLOR0;", TechPs, PsDef), null, true),
+        new("semantic-only-on-proto", Fx(PsProto, TechPs, "float4 PS(float4 c) : COLOR0 { return c; }"), null, true),
+        // Shapes the declaration reading does not model are refused, never handed to DXC.
+        new("second-declarator-proto", Fx("float4 Other(float x), PS(float4 c : COLOR0) : COLOR0;", TechPs, PsDef), null, true),
+        // A prototype beside two definitions (overloads): DXC's front end reports the ambiguity.
+        new("proto-and-defined-overloads", Fx(PsProto, TechPs, PsDef, "float4 PS(float2 uv : TEXCOORD0) : COLOR0 { return uv.xyxy; }"), null, true),
     ];
 
     private const string PsDefUnused = "float4 PS(float4 c : COLOR0) : COLOR0 { return c * Unused; }";
