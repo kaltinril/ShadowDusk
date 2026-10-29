@@ -294,13 +294,15 @@ set on the Stage 3c target, where those are the native semantics.
 
 **Legacy samplers' texture slots are fxc's, not the backend's.** The backend numbers the
 rewritten `Texture2D` declarations in declaration order; fxc gives a LEGACY sampler's texture the
-slot of the shader's first read of it (evaluation order), ahead of every modern texture without a
-register, around every explicit texture register. SpriteBatch binds the sprite to `t0`, so the
-difference picks which sampler reads the sprite. After each DX11 compile of an effect with a
-legacy sampler, `DxTextureSlotOrder` reads the first-read order off the compiled DXBC's own
-instruction stream and the surviving textures off its RDEF, and when the slots differ recompiles
-with every texture pinned by an explicit `register(tN)`; a shader whose slots already agree is
-not recompiled. A texture it cannot pin keeps the old slots and warns `SD0230`.
+slot of the shader's first read of it (evaluation order), ahead of every modern resource without a
+register, around every explicit `t` register (a register on the texture a `sampler_state` names
+only reserves). SpriteBatch binds the sprite to `t0`, so the difference picks which sampler reads
+the sprite. After each DX11 compile of an effect with a legacy sampler, `DxTextureSlotOrder` reads
+the evaluation order off a vkd3d compile's instruction stream (the shipped compile itself, or an
+extra vkd3d compile under the `d3dcompiler_47` option, whose own stream is scheduled) and the
+surviving resources off the shipped compile's RDEF, and when the slots differ recompiles with every
+resource pinned by an explicit `register(tN)`; a shader whose slots already agree is not
+recompiled. What it cannot check or pin keeps the old slots and warns `SD0230`.
 
 **Every host passes the same list.** The options are chosen in one place
 (`Vkd3dCompileContract.ResolveCompileOptions`): the desktop backend marshals the list into the

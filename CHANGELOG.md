@@ -22,34 +22,39 @@ that loads and renders identically to `mgfxc`'s in the real MonoGame/KNI runtime
   SpriteBatch's sprite reaches the right sampler.** fxc (and so `mgfxc` and KNI's pipeline) gives
   a LEGACY sampler's texture (`sampler2D A;`, a `sampler_state` block, read with `tex2D`) the
   `tN` slot of the shader's FIRST READ of it, in evaluation order (an argument before the call
-  that takes it, an inner read before the dependent read around it; a read the compiler drops
-  takes no slot), ahead of every modern `Texture2D` without a register (those keep declaration
-  order), around every explicit texture register (read or not). ShadowDusk numbered the SM4
-  rewrite in declaration order, which put a texture `sampler_state` names, or one declared above
-  the sprite sampler, on `t0` where SpriteBatch binds the sprite: the XNA/MonoGame
-  `BloomCombine.fx` shape (`sampler BloomSampler : register(s0); sampler BaseSampler :
-  register(s1) = sampler_state { Texture = (BaseTexture); };`) swapped the bloom and the base
-  (maxd 188 in real KNI WinForms.DX11, maxd 200 in real MonoGame WindowsDX against `mgfxc`
-  3.8.4.1's build). Each DirectX 11 shader with a legacy sampler is now checked after its compile
-  (the order is read from the compiled DXBC's own instruction stream, the surviving textures from
-  its RDEF) and, when the slots differ, recompiled with each texture pinned by an explicit
-  `register(tN)`. Measured on 39 new shapes (`tests/fixtures/golden/dx11-texture-slots/`) and the
-  27 legacy-sampler goldens, all now `mgfxc`'s table (the 11 listed as divergent before included)
-  except two recorded cases: an explicit `register(tN)` on a `texture2D T` a `sampler_state`
-  names is honoured, as in XNA and KNI's own effect tests, where `mgfxc` reserves `tN` and moves
-  the sampler's texture to the next free slot; and two legacy samplers sharing one texture keep
-  one record (`mgfxc` has two), still open. If a texture cannot be pinned (declared through a
-  macro or in a declarator list) the effect compiles as before and warns `SD0230`. **DirectX 11
-  and KNIFX DirectX output changes** only for shaders whose legacy-sampler texture slots were not
-  fxc's: in the corpus, `ForwardLighting.fx`, `SamplerPairMirror.fx` and
-  `SamplerRegisterOrder.fx` (now `mgfxc`'s table exactly), and none of the byte-identity
-  manifests' fixtures; OpenGL, DirectX 12, Vulkan, FNA and KNIFX OpenGL bytes are unchanged for
-  every `.fx` under `tests/fixtures` (DirectX 12 keeps declaration order, no reference table
-  for these shapes was established; FNA already matches `fxc`'s declaration-order sampler
-  registers). Rung 4: `validation/DxModernFeatures` arm
-  "texture-slots" (real MonoGame WindowsDX, GPU and WARP) and the texture-slot rows of
-  `validation/KniWinFormsDX` (real KNI 4.2.9001 WinForms.DX11), maxd 0 against the `mgfxc`
-  golden (maxd 200 in MonoGame with the previous compiler).
+  that takes it, an inner read before the dependent read around it), ahead of every modern
+  resource without a register (those keep declaration order), around every explicit `t`
+  register (read or not, on any texture, buffer or `tbuffer`; a register on the `texture2D` a
+  `sampler_state` names only reserves it, the sampler's own texture takes the next free slot).
+  ShadowDusk numbered the SM4 rewrite in declaration order, which put a texture `sampler_state`
+  names, or one declared above the sprite sampler, on `t0` where SpriteBatch binds the sprite:
+  the XNA/MonoGame `BloomCombine.fx` shape (`sampler BloomSampler : register(s0); sampler
+  BaseSampler : register(s1) = sampler_state { Texture = (BaseTexture); };`) swapped the bloom and
+  the base (maxd 188 in real KNI WinForms.DX11, maxd 200 in real MonoGame WindowsDX against
+  `mgfxc` 3.8.4.1's build). Each DirectX 11 shader with a legacy sampler is now checked after its
+  compile and, when the slots differ, recompiled with each resource pinned by an explicit
+  `register(tN)`. The evaluation order is always read from a vkd3d compile's instruction stream,
+  also under the `DxbcBackend.D3DCompiler` option, because `d3dcompiler_47` schedules its reads
+  (it emits a read feeding `clip` first, and `tex2D(A) * tex2D(B) + tex2D(C) * 2` C first); the
+  surviving resources come from the shipped compile's own RDEF. Measured on 78 shapes
+  (`tests/fixtures/golden/dx11-texture-slots/`) and the 27 legacy-sampler goldens, on both
+  backends: `mgfxc`'s table (the 11 listed as divergent before included), except one texture
+  behind two legacy samplers, or behind a legacy sampler and a direct read (one record, `mgfxc`
+  has two), and, on vkd3d only, reads vkd3d's optimiser keeps where fxc folds them (`x * 0`,
+  `lerp(a, b, 1)`, `a - a`): the dead texture keeps a record and a slot. Anything the check cannot
+  model or apply (a texture declared through a macro or in a declarator list, a resource array, an
+  unreadable preprocessed view, a failed vkd3d order compile) keeps the old slots and warns
+  `SD0230`. **DirectX 11 and KNIFX DirectX output changes** only for shaders whose legacy-sampler
+  texture slots were not fxc's: in the corpus, `ForwardLighting.fx`, `SamplerPairMirror.fx` and
+  `SamplerRegisterOrder.fx` (now `mgfxc`'s table exactly; the same three under the d3dcompiler
+  backend), and none of the byte-identity manifests' fixtures; OpenGL, DirectX 12, Vulkan, FNA and
+  KNIFX OpenGL bytes are unchanged for every `.fx` under `tests/fixtures` (DirectX 12 keeps
+  declaration order, no reference table for these shapes was established; FNA already matches
+  `fxc`'s declaration-order sampler registers). Rung 4, both backends: `validation/DxModernFeatures`
+  arm "texture-slots" (real MonoGame WindowsDX, GPU and WARP), the texture-slot rows of
+  `validation/KniWinFormsDX` (real KNI 4.2.9001 WinForms.DX11, MGFX and KNIFX at FL10_0) and the
+  DX corpus through `CandidateDx -- d3dcompiler`, all maxd 0 against the `mgfxc` golden (maxd 200
+  in MonoGame with the previous compiler).
 - **Techniques are read from the preprocessed source, like `mgfxc` (issue #407).** A technique
   inside a false `#if` (or behind an unset `/Defines` value) was still compiled, a technique in an
   `#include`d file was not found (`SD0010`, or dropped beside the main file's own), and a macro
