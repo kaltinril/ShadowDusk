@@ -770,6 +770,29 @@ public sealed class VulkanTextureSamplerBindingRewriterTests
         aliases.ShouldBeEmpty();
     }
 
+    [Theory]
+    [InlineData("\r")]
+    [InlineData("\r\n")]
+    public void Rewrite_SkippedLines_AreNumberedAsThePreprocessorNumbersThem(string newline)
+    {
+        // FxMacroPreprocessor ends a line at a lone '\r' too, so its skipped line 4 is the '#if 0'
+        // call here whatever the line breaks are.
+        string hlsl = string.Join(newline,
+            "Texture2D SpriteTexture; SamplerState S; SamplerState U;",
+            "float4 MainPS(float2 uv : TEXCOORD0) : SV_Target0 {",
+            "#if 0",
+            "  return SpriteTexture.Sample(U, uv);",
+            "#endif",
+            "  return SpriteTexture.Sample(S, uv);",
+            "}");
+
+        string result = RewriteFor(hlsl, "MainPS", out var aliases, 4);
+
+        result.ShouldContain("SamplerState S : register(s0);", Case.Sensitive);
+        result.ShouldNotContain("_SDVkAlias", Case.Sensitive);
+        aliases.ShouldBeEmpty();
+    }
+
     [Fact]
     public void Rewrite_ASecondTextureOnASkippedLinesSampler_IsNotSD0028()
     {
