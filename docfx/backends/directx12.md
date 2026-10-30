@@ -35,6 +35,10 @@ An **array of textures** (`Texture2D Tex[N]`) compiles, and the parameter table 
 
 An **array of samplers** (`SamplerState S[N]`) is refused by `mgfxc` on every profile in its own effect parser (`Unexpected token '[' found. Expected Semicolon, Comma, or CloseParenthesis.`), so no reference output exists for it. ShadowDusk used to compile it on DirectX 11 and 12; it now refuses it with the error **`SD0224`** at the declaration on both (issue #340). Declare each sampler separately and sample through each by name. Vulkan refuses the same shape as `SD0221`.
 
+## Write the vertex position as `SV_POSITION`
+
+A vertex shader that writes its clip-space position to a legacy **`: POSITION0`** output (`struct VOut { float4 Pos : POSITION0; ... };`) compiles but does not draw on this target: DXC's SM6 path does not map `POSITION[n]` to `SV_Position`, so the compiled shader has no system position and **MonoGame throws `SEHException` (HRESULT 80070057) at draw time**. `mgfxc` 3.8.5's own DirectX 12 build of such a file throws the same way. Declare the output **`: SV_POSITION`** (the cross-platform header's `#define SV_POSITION POSITION` keeps it `POSITION` on OpenGL). DirectX 11 is unaffected (vkd3d maps the name), and Vulkan silently draws nothing. Tracked as [issue #446](https://github.com/kaltinril/ShadowDusk/issues/446), which will map the semantic or refuse it with a diagnostic.
+
 ## Additive by policy
 
 Like all backends, targeting DirectX 12 is **opt-in per compile** (`PlatformTarget.DirectX12`) and does not change OpenGL/DX11/v10 output for consumers who don't ask for it.

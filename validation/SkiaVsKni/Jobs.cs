@@ -6,7 +6,11 @@ namespace ShadowDusk.Validation.SkiaVsKni;
 /// <param name="Name">Output stem, <c>{shader}-{tint}</c>.</param>
 /// <param name="Mgfx">The MGFX v10 bytes.</param>
 /// <param name="Tint">RGBA8 SpriteBatch color (COLOR0).</param>
-/// <param name="Uniforms">Free uniforms set by name (1-4 floats); absent parameters are skipped.</param>
+/// <param name="Uniforms">
+/// Free uniforms set by name (1-4 floats, an array's elements, or a float4x4's 16 values in HLSL
+/// row-major order); absent parameters are skipped, and a parameter left out keeps the
+/// <c>.mgfx</c>'s own default.
+/// </param>
 internal sealed record KniJob(string Name, byte[] Mgfx, byte[] Tint, IReadOnlyDictionary<string, float[]> Uniforms);
 
 /// <summary>One Skia render: the converter's SkSL as an <c>SKRuntimeEffect</c> shader.</summary>

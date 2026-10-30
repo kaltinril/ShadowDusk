@@ -10,7 +10,7 @@
   <a href="https://www.nuget.org/packages/ShadowDusk.Wasm"><img src="https://img.shields.io/nuget/v/ShadowDusk.Wasm?label=ShadowDusk.Wasm" alt="ShadowDusk.Wasm on NuGet" /></a>
 </p>
 
-A cross-platform HLSL shader compiler for [MonoGame](https://monogame.net/), [KNI](https://github.com/kniEngine/kni), and [FNA](https://fna-xna.github.io/). Compile `.fx` shaders on Linux, macOS, or Windows — no Wine, no Windows SDK, no DirectX install required.
+A cross-platform HLSL shader compiler for [MonoGame](https://monogame.net/), [KNI](https://github.com/kniEngine/kni), and [FNA](https://fna-xna.github.io/), with source-text output for [SkiaSharp](https://github.com/mono/SkiaSharp) (SkSL) and [Raylib-cs](https://github.com/raylib-cs/raylib-cs) (`glsl330`). Compile `.fx` shaders on Linux, macOS, or Windows — no Wine, no Windows SDK, no DirectX install required.
 
 ## What it is
 
@@ -67,7 +67,7 @@ Same rejection discipline as the built-in subset: a construct real slangc accept
 
 ## Supported targets
 
-ShadowDusk works with **MonoGame, KNI, and FNA** across these graphics backends. Pick your framework and backend; ShadowDusk emits the right output.
+ShadowDusk works with **MonoGame, KNI, and FNA** across these graphics backends. Pick your framework and backend; ShadowDusk emits the right output. SkiaSharp and Raylib-cs are covered separately below the table.
 
 | Backend             | Output         | Status       |
 |---------------------|----------------|--------------|

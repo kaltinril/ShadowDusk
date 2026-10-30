@@ -398,8 +398,9 @@ public sealed class FxPreParserTests
     // -------------------------------------------------------------------------
 
     [Fact]
-    public void Parse_DuplicateTechniqueName_ReturnsFX0005()
+    public void ParseTechniquesPreprocessed_DuplicateTechniqueName_ReturnsFX0005()
     {
+        // A duplicate is decided on the preprocessed text (issue #407), where it is real.
         const string source = """
             technique Foo
             {
@@ -411,10 +412,30 @@ public sealed class FxPreParserTests
             }
             """;
 
-        var result = FxPreParser.Parse(source, sourceFile: "test.fx");
+        var result = FxPreParser.ParseTechniquesPreprocessed(source, sourceFile: "test.fx");
 
         result.IsFailure.ShouldBeTrue();
-        result.Error.Code.ShouldBe(FxParseErrorCode.DuplicateTechniqueName);
+        result.Error.Code.ShouldBe("FX0005");
+    }
+
+    [Fact]
+    public void Parse_SameTechniqueNameInEachIfBranch_IsNotAnError()
+    {
+        // On raw text one name per #if branch is legal; only the preprocessed text says which
+        // one exists (issue #407).
+        const string source = """
+            #if SM4
+            technique Foo { pass { PixelShader = compile ps_4_0 PS(); } }
+            #else
+            technique Foo { pass { PixelShader = compile ps_3_0 PS(); } }
+            #endif
+            """;
+
+        FxPreParser.Parse(source, sourceFile: "test.fx").IsSuccess.ShouldBeTrue();
+
+        var techniques = FxPreParser.ParseTechniquesPreprocessed("#define SM4 1\n" + source, "test.fx");
+        techniques.IsSuccess.ShouldBeTrue();
+        techniques.Value.Techniques.ShouldHaveSingleItem().Passes[0].PixelProfile.ShouldBe("ps_4_0");
     }
 
     // -------------------------------------------------------------------------
@@ -429,6 +450,95 @@ public sealed class FxPreParserTests
             {
                 pass Pass1 { VertexShader = compile vs_3_0 VS(); PixelShader = compile ps_3_0 PS(); }
                 pass Pass1 { VertexShader = compile vs_3_0 VS(); PixelShader = compile ps_3_0 PS(); }
+            }
+            """;
+
+        var result = FxPreParser.Parse(source, sourceFile: "test.fx");
+
+        result.IsFailure.ShouldBeTrue();
+        result.Error.Code.ShouldBe(FxParseErrorCode.DuplicatePassName);
+    }
+
+    // An anonymous pass carries an EMPTY name, as mgfxc (MGFX), KNI's pipeline (KNIFX) and
+    // fxc fx_2_0 all write it; ShadowDusk used to synthesize "P<index>". Several anonymous
+    // passes in one technique are legal (mgfxc 3.8.4.1 compiles them) and are not duplicates.
+    [Fact]
+    public void Parse_AnonymousPasses_HaveEmptyNames_AndAreNotDuplicates()
+    {
+        const string source = """
+            technique
+            {
+                pass { PixelShader = compile ps_3_0 PS(); }
+                pass { PixelShader = compile ps_3_0 PS2(); }
+            }
+            technique Named
+            {
+                pass First { PixelShader = compile ps_3_0 PS(); }
+                pass { PixelShader = compile ps_3_0 PS2(); }
+            }
+            """;
+
+        var result = FxPreParser.Parse(source, sourceFile: "test.fx");
+
+        result.IsSuccess.ShouldBeTrue();
+        result.Value.Techniques.Count.ShouldBe(2);
+        result.Value.Techniques[0].Name.ShouldBe("");
+        result.Value.Techniques[0].Passes.Select(p => p.Name).ShouldBe(["", ""]);
+        result.Value.Techniques[0].Passes.Select(p => p.PixelEntryPoint).ShouldBe(["PS", "PS2"]);
+        result.Value.Techniques[1].Name.ShouldBe("Named");
+        result.Value.Techniques[1].Passes.Select(p => p.Name).ShouldBe(["First", ""]);
+    }
+
+    // New with the "" name: an anonymous pass beside a pass NAMED P0 (or P1, ...). The synthesized
+    // P0 collided with it, so `pass { } pass P0 { }` was FX0006 before; mgfxc compiles it.
+    [Fact]
+    public void Parse_AnonymousPassBesideAPassNamedP0_IsNotADuplicate()
+    {
+        const string source = """
+            technique T
+            {
+                pass { PixelShader = compile ps_3_0 PS(); }
+                pass P0 { PixelShader = compile ps_3_0 PS2(); }
+                pass P1 { PixelShader = compile ps_3_0 PS(); }
+            }
+            """;
+
+        var result = FxPreParser.Parse(source, sourceFile: "test.fx");
+
+        result.IsSuccess.ShouldBeTrue(result.IsFailure ? result.Error.Message : "");
+        result.Value.Techniques[0].Passes.Select(p => p.Name).ShouldBe(["", "P0", "P1"]);
+    }
+
+    // Two anonymous techniques both carry "" and are not duplicates (mgfxc 3.8.4.1 OpenGL and
+    // DirectX_11, KNI's pipeline 4.3.9001 and fxc fx_2_0 compile them, measured 2026-10-28), on
+    // the raw and on the preprocessed parse; a NAMED duplicate is still FX0005.
+    [Fact]
+    public void ParseTechniquesPreprocessed_TwoAnonymousTechniques_AreNotDuplicates()
+    {
+        const string source = """
+            technique { pass { PixelShader = compile ps_3_0 PS(); } }
+            technique { pass { PixelShader = compile ps_3_0 PS2(); } }
+            technique T { pass { PixelShader = compile ps_3_0 PS(); } }
+            """;
+
+        var raw = FxPreParser.Parse(source, sourceFile: "test.fx");
+        raw.IsSuccess.ShouldBeTrue(raw.IsFailure ? raw.Error.Message : "");
+        raw.Value.Techniques.Select(t => t.Name).ShouldBe(["", "", "T"]);
+
+        var preprocessed = FxPreParser.ParseTechniquesPreprocessed(source, sourceFile: "test.fx");
+        preprocessed.IsSuccess.ShouldBeTrue(preprocessed.IsFailure ? preprocessed.Error.Message : "");
+        preprocessed.Value.Techniques.Select(t => t.Name).ShouldBe(["", "", "T"]);
+    }
+
+    [Fact]
+    public void Parse_NamedDuplicateBesideAnonymousPass_StillReturnsFX0006()
+    {
+        const string source = """
+            technique T
+            {
+                pass { PixelShader = compile ps_3_0 PS(); }
+                pass A { PixelShader = compile ps_3_0 PS(); }
+                pass A { PixelShader = compile ps_3_0 PS(); }
             }
             """;
 
@@ -1794,9 +1904,12 @@ public sealed class FxPreParserTests
     }
 
     // -------------------------------------------------------------------------
-    // Legacy sampling intrinsics: tex2Dgrad forwards (1:1 args); tex2Dlod and the
-    // other restructuring variants fail loudly with FX0012 (naming the intrinsic)
-    // instead of dying inside DXC with a misleading diagnostic.
+    // Legacy sampling intrinsics: tex2Dgrad forwards (1:1 args); the 1D/3D/CUBE
+    // families fail loudly with FX0012 (naming the intrinsic) instead of dying inside
+    // DXC with a misleading diagnostic. tex2Dlod / tex2Dbias / tex2Dproj used to be
+    // rows of the FX0012 theory below; they are rewritten since 2026-10-28 and pinned
+    // by FxPreParserRestructuredIntrinsicTests (same sampler_state shape, asserted
+    // positively).
     // -------------------------------------------------------------------------
 
     [Fact]
@@ -1823,9 +1936,9 @@ public sealed class FxPreParserTests
     }
 
     [Theory]
-    [InlineData("tex2Dlod")]
-    [InlineData("tex2Dproj")]
-    [InlineData("tex2Dbias")]
+    [InlineData("tex1Dlod")]
+    [InlineData("tex3Dlod")]
+    [InlineData("texCUBElod")]
     [InlineData("texCUBE")]
     [InlineData("tex3D")]
     public void Parse_UnsupportedLegacyIntrinsic_FailsWithFX0012_NamingTheIntrinsic(string intrinsic)
@@ -1850,12 +1963,15 @@ public sealed class FxPreParserTests
         result.Error.Message.ShouldContain($"'{intrinsic}'", Case.Sensitive);
     }
 
-    [Fact]
-    public void Parse_IdentifierNamedLikeIntrinsic_ButNotACall_DoesNotFail()
+    [Theory]
+    [InlineData("texCUBE")]   // still refused when CALLED: the case that exercises the guard
+    [InlineData("tex3D")]
+    [InlineData("tex2Dlod")]  // rewritten when called since 2026-10-28; kept: a variable is left alone too
+    public void Parse_IdentifierNamedLikeIntrinsic_ButNotACall_DoesNotFail(string intrinsic)
     {
-        // Only a CALL trips FX0012; a variable merely named tex2Dlod does not.
-        const string source = """
-            float tex2Dlod;
+        // Only a CALL trips FX0012; a variable merely named like the intrinsic does not.
+        string source = $$"""
+            float {{intrinsic}};
             technique T
             {
                 pass P { PixelShader = compile ps_3_0 PSMain(); }
@@ -1865,6 +1981,7 @@ public sealed class FxPreParserTests
         var result = FxPreParser.Parse(source, sourceFile: "test.fx");
 
         result.IsSuccess.ShouldBeTrue();
+        result.Value.StrippedHlsl.ShouldContain($"float {intrinsic};", Case.Sensitive);
     }
 
     // =========================================================================

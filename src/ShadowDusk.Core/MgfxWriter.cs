@@ -39,6 +39,9 @@ public sealed class MgfxWriter
                     File: "", Line: 0, Column: 0, Code: "SD0020",
                     Message: $"Constant buffer '{cb.Name}' size {cb.SizeInBytes} exceeds MGFX int16 maximum ({short.MaxValue})"));
         }
+        if (DefaultBlobLengthError(ir.Parameters) is { } defaultError)
+            return Result<byte[], ShaderError>.Fail(defaultError);
+
         // Guard every count/index serialized as a single byte (SD0022) so an oversized
         // effect fails loudly instead of silently truncating into a corrupt .mgfx —
         // the same policy as the SD0020/SD0021 int16 guards above.
@@ -249,19 +252,67 @@ public sealed class MgfxWriter
         WriteParameterList(bw, p.Elements);
         WriteParameterList(bw, p.Members);
 
-        // MonoGame reads a raw default-value blob for value-typed params
-        // (Scalar/Vector/Matrix) that are neither structs nor arrays:
-        // rows*cols*4 bytes, NO length prefix — so for an ARRAY the parent
-        // carries no data and each element leaf carries its own blob (exactly
-        // mgfxc: GetParameterFromSymbol gives each element rows*cols*4 zero
-        // bytes). We emit zeros — the runtime sets values by name.
+        WriteDefaultBlob(bw, p);
+    }
+
+    /// <summary>
+    /// MonoGame reads a raw default-value blob for value-typed params (Scalar/Vector/Matrix)
+    /// that are neither structs nor arrays: rows*cols*4 bytes, NO length prefix, so for an
+    /// ARRAY the parent carries no data and each element leaf carries its own blob (mgfxc's
+    /// shape: GetParameterFromSymbol gives each element rows*cols*4 bytes).
+    ///
+    /// <para>The bytes are the parameter's <see cref="EffectParameterInfo.DefaultValue"/>, read
+    /// off its HLSL initializer (<c>float R = 1;</c>), and zeros when it has none. This is the
+    /// DELIBERATE deviation from <c>mgfxc</c> recorded in <c>project_decisions.md</c>: mgfxc's
+    /// OpenGL build writes zeros whatever the initializer says (MonoGame's own source: "We don't
+    /// have real default parameters from mojoshader!"), and its DirectX build loses arrays and
+    /// half of a <c>float2x2</c>. Every ShadowDusk MGFX/KNIFX target keeps the value instead,
+    /// so a shader that declares a default has it before any <c>Set</c> call.</para>
+    /// </summary>
+    // internal: the KNIFX writer's parameter record ends with the very same blob.
+    internal static void WriteDefaultBlob(BinaryWriter bw, EffectParameterInfo p)
+    {
         bool isValueType = p.Class <= 2; // Scalar=0, Vector=1, Matrix=2
-        if (isValueType && p.Members.Count == 0 && p.Elements.Count == 0)
+        if (!isValueType || p.Members.Count != 0 || p.Elements.Count != 0)
+            return;
+
+        int dataLen = p.RowCount * p.ColumnCount * 4;
+        if (p.DefaultValue is { } blob)
         {
-            int dataLen = p.RowCount * p.ColumnCount * 4;
-            for (int b = 0; b < dataLen; b++)
-                bw.Write((byte)0);
+            bw.Write(blob, 0, dataLen);   // length is checked up front by DefaultBlobLengthError
+            return;
         }
+        for (int b = 0; b < dataLen; b++)
+            bw.Write((byte)0);
+    }
+
+    /// <summary>
+    /// The first parameter whose <see cref="EffectParameterInfo.DefaultValue"/> is not exactly the
+    /// <c>rows*cols*4</c> bytes the format reads (or sits on a record that carries no blob), as an
+    /// <c>SD0012</c> error; null when every default is well formed. A short blob would desync the
+    /// reader, so it must never reach the file.
+    /// </summary>
+    internal static ShaderError? DefaultBlobLengthError(IReadOnlyList<EffectParameterInfo> parameters)
+    {
+        foreach (EffectParameterInfo p in parameters)
+        {
+            if (p.DefaultValue is { } blob)
+            {
+                bool carriesBlob = p.Class <= 2 && p.Members.Count == 0 && p.Elements.Count == 0;
+                int expected = p.RowCount * p.ColumnCount * 4;
+                if (!carriesBlob || blob.Length != expected)
+                    return new ShaderError(
+                        File: "", Line: 0, Column: 0, Code: "SD0012",
+                        Message: $"internal: the default value of parameter '{p.Name}' is {blob.Length} byte(s), " +
+                                 (carriesBlob
+                                     ? $"but a {p.RowCount}x{p.ColumnCount} value-typed parameter carries exactly {expected}"
+                                     : "but this parameter record carries no default blob (an array parent, struct, or object)"));
+            }
+
+            if (DefaultBlobLengthError(p.Elements) is { } inner) return inner;
+            if (DefaultBlobLengthError(p.Members) is { } innerMember) return innerMember;
+        }
+        return null;
     }
 
     private static void WriteTechniques(BinaryWriter bw, ShaderIR ir)

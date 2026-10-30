@@ -22,6 +22,12 @@
 //   * and the CRT's curvature uniform nudged by 0.01 on the raylib arm only (a ~1 px shift),
 // so a comparator that cannot see a real converter bug turns this gate red.
 //
+// Issue #435, declared defaults: UnsetDefaults (scalar, float2, float4 and float-array
+// initializers) renders on MonoGame with NONE of its uniforms set (the .mgfx default applies) and
+// on raylib with each uniform set from RaylibUniform.DefaultValue; the two must match.
+// Defaults-zeros (every uniform zero on both arms, what an unset raylib uniform reads) must match
+// too, and control-unset-defaults (raylib's zeros against MonoGame's defaults) must diverge.
+//
 // .slang arms (issue #253): the Slang twin of six cases (one samples its second-declared texture
 // first, so a wrong texture0 shows) converts through the built-in subset
 // frontend AND real slangc, and each raylib render must match the .fx case's MonoGame image; a
@@ -182,6 +188,65 @@ foreach ((string name, string path) in cases)
             .Select(s => new ExtraTexture(s.HlslTextureName, s.UniformName, s.HlslSamplerName)).ToArray()));
 }
 
+// Issue #435: declared defaults. The MonoGame arm sets NONE of UnsetDefaults' uniforms (the .mgfx
+// carries each HLSL initializer as the parameter's default, issue #422); the raylib arm sets each
+// one from RaylibUniform.DefaultValue through a generic loop (no value is written by hand here),
+// typed as the converter declared it, arrays whole. Defaults-zeros sets everything to zero on both
+// arms (what an unset uniform reads in raylib); control-unset-defaults below is raylib's zeros
+// against MonoGame's defaults, and must diverge.
+RaylibUniformValue[]? defaultsUnset = null;
+{
+    string path = Path.Combine(outDir, "UnsetDefaults.fx");
+    File.WriteAllText(path, UnsetDefaultsFx());
+    var mgfx = await new EffectCompiler().CompileAsync(UnsetDefaultsFx(), new CompilerOptions
+    {
+        Target = PlatformTarget.OpenGL,
+        SourceFileName = path,
+    });
+    var converted = RaylibConverter.Convert(UnsetDefaultsFx(), new RaylibConvertOptions { SourceName = path });
+    if (mgfx.IsFailure)
+        setupErrors.Add($"UnsetDefaults: OpenGL compile failed: {string.Join(" | ", mgfx.Error.Select(e => $"{e.Code}: {e.Message}"))}");
+    else if (converted.IsFailure)
+        setupErrors.Add($"UnsetDefaults: raylib conversion refused: {string.Join(" | ", converted.Error.Select(e => $"{e.Code}: {e.Message}"))}");
+    else
+    {
+        RaylibShader shader = converted.Value;
+        string mgfxPath = Path.Combine(outDir, "UnsetDefaults.mgfx");
+        await File.WriteAllBytesAsync(mgfxPath, mgfx.Value.Data);
+        string fsPath = Path.Combine(outDir, "UnsetDefaults.fs");
+        await File.WriteAllTextAsync(fsPath, shader.FragmentShader);
+        if (shader.FragmentShader.Split('\n').Any(l => l.TrimStart().StartsWith("uniform ", StringComparison.Ordinal) && l.Contains('=')))
+            setupErrors.Add("UnsetDefaults: the fragment shader declares a uniform WITH a value; the defaults must be reflection only");
+
+        var fromDefaults = new List<RaylibUniformValue>();
+        var zeros = new List<RaylibUniformValue>();
+        foreach (RaylibUniform u in shader.Uniforms)
+        {
+            if (u.DefaultValue is null)
+            {
+                setupErrors.Add($"UnsetDefaults: uniform '{u.Name}' reports no default, so this case cannot prove it");
+                continue;
+            }
+            fromDefaults.Add(new RaylibUniformValue(u.Name, u.GlslType, u.ArrayLength, u.DefaultValue.ToArray()));
+            zeros.Add(new RaylibUniformValue(u.Name, u.GlslType, u.ArrayLength, new float[u.DefaultValue.Count]));
+        }
+        foreach (string expected in new[] { "Thickness", "Center", "OutlineColor", "Weights" })
+            if (!fromDefaults.Any(u => u.Name == expected))
+                setupErrors.Add($"UnsetDefaults: the conversion reports no default for '{expected}'");
+        defaultsUnset = [.. zeros];
+
+        Console.WriteLine($"[route] UnsetDefaults: reported defaults " +
+                          string.Join(", ", fromDefaults.Select(u => $"{u.Name}=[{string.Join(",", u.Value)}]")));
+
+        ExtraTexture[] draw = shader.Samplers.Where(s => s.BoundByDrawCall)
+            .Select(s => new ExtraTexture(s.HlslTextureName, s.UniformName, s.HlslSamplerName)).ToArray();
+        jobs.Add(new RenderJob("Defaults", mgfxPath, fsPath, new Dictionary<string, float[]>(StringComparer.Ordinal),
+            draw, [], [.. fromDefaults]));
+        jobs.Add(new RenderJob("Defaults-zeros", mgfxPath, fsPath,
+            zeros.ToDictionary(u => u.Name, u => u.Value, StringComparer.Ordinal), draw, [], [.. zeros]));
+    }
+}
+
 // Issue #253: .slang input. The Slang twin (tests/fixtures/shaders/slang-sksl, same math in
 // Slang spelling) of each case above converts through BOTH Slang routes, the built-in subset
 // frontend (RaylibConverter.ConvertSlang) and real slangc (SlangCompiler.ConvertToRaylib). Each
@@ -292,6 +357,13 @@ if (jobs.FirstOrDefault(j => j.Name == "CrtFilter") is { } crt)
     controls.Add(("control-curvature-nudge", "CrtFilter"));
 }
 
+// Issue #435: the caller does NOT set the reported defaults, so raylib reads them as zero.
+if (jobs.FirstOrDefault(j => j.Name == "Defaults") is { } defaultsJob && defaultsUnset is not null)
+{
+    jobs.Add(defaultsJob with { Name = "control-unset-defaults", MgfxPath = null, RaylibUniforms = defaultsUnset });
+    controls.Add(("control-unset-defaults", "Defaults"));
+}
+
 if (setupErrors.Count > 0)
 {
     Console.Error.WriteLine("\n[route] SETUP FAILED:");
@@ -364,6 +436,45 @@ Console.WriteLine($"\n[route] {(ok ? "PASS" : "FAIL")}: raylib route, rendered-i
 return ok ? 0 : 1;
 
 // -----------------------------------------------------------------------------
+
+// Issue #435: a Gum-Outline-style sprite shader whose picture depends on four declared defaults of
+// different shapes raylib converts and MonoGame's OpenGL target models (a scalar, a float2, a
+// float4 and a float array). Unset, every one reads zero: Thickness 0 removes the outline band.
+// Written by this driver, not under tests/fixtures/shaders, so it does not join the fixture corpus.
+static string UnsetDefaultsFx() => """
+    #if OPENGL
+    #define SV_POSITION POSITION
+    #define PS_SHADERMODEL ps_3_0
+    #else
+    #define PS_SHADERMODEL ps_4_0_level_9_1
+    #endif
+
+    Texture2D SpriteTexture;
+    sampler2D SpriteTextureSampler = sampler_state { Texture = <SpriteTexture>; };
+
+    // Ordered so the HLSL packing is std140-compatible (a float2 at offset 4 is not), which the
+    // OpenGL target's SPIRV-Cross step needs.
+    float2 Center = float2(0.5, 0.4);
+    float4 OutlineColor = float4(1.0, 0.25, 0.0, 1.0);
+    float Thickness = 1.0;
+    float Weights[3] = { 0.5, 0.3, 0.2 };
+
+    float4 MainPS(float4 pos : SV_POSITION, float4 color : COLOR0, float2 uv : TEXCOORD0) : COLOR0
+    {
+        float4 c = tex2D(SpriteTextureSampler, uv) * color;
+        float luma = dot(c.rgb, float3(Weights[0], Weights[1], Weights[2]));
+        float edge = saturate(Thickness * length(uv - Center) * 2.0);
+        return float4(lerp(c.rgb, OutlineColor.rgb * luma, edge * 0.75), 1.0);
+    }
+
+    technique SpriteDrawing
+    {
+        pass P0
+        {
+            PixelShader = compile PS_SHADERMODEL MainPS();
+        }
+    };
+    """;
 
 static string ReplaceBody(string fs, string word, string replacement)
 {

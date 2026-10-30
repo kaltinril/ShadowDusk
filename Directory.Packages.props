@@ -27,17 +27,16 @@
   </ItemGroup>
 
   <!--
-    ImageSharp is deliberately capped at the 3.1.x line. 4.0.0 is not a technical upgrade
-    problem, it is a LICENCE gate: its build targets hard-fail with "No Six Labors license
-    found ... obtain a license from https://sixlabors.com/pricing/" unless a paid licence key
-    or `sixlabors.lic` is present. 3.1.12 is the newest release that builds without one, and
-    it is the current tip of 3.1.x. Same class of problem as the FluentAssertions relicensing
-    that drove the Shouldly migration below - a licence gate, not a technical one.
+    SixLabors.ImageSharp is GONE and must not come back (project_decisions.md, "Own PNG code
+    instead of ImageSharp"). Every release that fixes its October 2026 security advisories
+    (3.2.0, 4.1.2+) refuses to build without a paid Six Labors licence, and every release that
+    builds without one carries those advisories. PNG read/write for the tests and validation
+    tooling is tests/ShadowDusk.TestPng instead. Same class of problem as the FluentAssertions
+    relicensing that drove the Shouldly migration below - a licence gate, not a technical one.
   -->
   <ItemGroup Label="Rendering">
     <PackageVersion Include="Silk.NET.OpenGL"          Version="2.23.0" />
     <PackageVersion Include="Silk.NET.Windowing.Glfw"  Version="2.23.0" />
-    <PackageVersion Include="SixLabors.ImageSharp"     Version="3.1.12" />
     <!-- Phase 62 (issue #197): TEST-ONLY dependency, never a product one - the SkSL converter's
          evidence bar is "Skia's own compiler accepts the emission and it renders right", and
          SKRuntimeEffect is how a test asks Skia. The Linux native package keeps the CI ubuntu
@@ -49,6 +48,32 @@
   <ItemGroup Label="MonoGame runtime validation (Phase 17 / Phase 18)">
     <PackageVersion Include="MonoGame.Framework.DesktopGL" Version="3.8.2.1105" />
     <PackageVersion Include="MonoGame.Framework.WindowsDX" Version="3.8.2.1105" />
+  </ItemGroup>
+
+  <!-- Validation-only, never a product dependency: the KNI EffectTest gate
+       (validation/KniEffectTest{KniGl,KniDx}). 4.2.9001 is the KNI line every other KNI harness
+       pins; the drivers also build against 4.3.9001 with -p:KniVersion=4.3.9001 (a VersionOverride,
+       with its own lock file). Older KNI harnesses keep their local pins (they opt out of central
+       management); these entries only apply to projects that reference them without a version. -->
+  <ItemGroup Label="KNI runtime validation (KniEffectTest gate)">
+    <PackageVersion Include="nkast.Xna.Framework"              Version="4.2.9001" />
+    <PackageVersion Include="nkast.Xna.Framework.Content"      Version="4.2.9001" />
+    <PackageVersion Include="nkast.Xna.Framework.Graphics"     Version="4.2.9001" />
+    <PackageVersion Include="nkast.Xna.Framework.Audio"        Version="4.2.9001" />
+    <PackageVersion Include="nkast.Xna.Framework.Media"        Version="4.2.9001" />
+    <PackageVersion Include="nkast.Xna.Framework.Input"        Version="4.2.9001" />
+    <PackageVersion Include="nkast.Xna.Framework.Game"         Version="4.2.9001" />
+    <PackageVersion Include="nkast.Kni.Platform.SDL2.GL"       Version="4.2.9001" />
+    <PackageVersion Include="nkast.Kni.Platform.WinForms.DX11" Version="4.2.9001" />
+  </ItemGroup>
+
+  <!-- Validation-only: MonoGame 3.8.5's native-runtime packages (WindowsDX12, DesktopVK), for the
+       KNI EffectTest gate's DX12 and Vulkan drivers. The older 3.8.5 harnesses keep local pins. -->
+  <ItemGroup Label="MonoGame 3.8.5 native runtimes (KniEffectTest gate)">
+    <PackageVersion Include="MonoGame.Framework.Native"       Version="3.8.5" />
+    <PackageVersion Include="MonoGame.Runtime.Windows.DX12"   Version="3.8.5" />
+    <PackageVersion Include="MonoGame.Runtime.Windows.Vulkan" Version="3.8.5" />
+    <PackageVersion Include="MonoGame.Runtime.Linux.Vulkan"   Version="3.8.5" />
   </ItemGroup>
 
   <!-- Phase 59: validation-only, never a product dependency. validation/RaylibRoute renders the

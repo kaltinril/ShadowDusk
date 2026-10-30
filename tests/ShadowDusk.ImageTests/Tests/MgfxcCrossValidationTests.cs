@@ -7,8 +7,7 @@ using ShadowDusk.Core;
 using ShadowDusk.Core.Preprocessor;
 using ShadowDusk.ImageTests.GlContext;
 using ShadowDusk.ImageTests.Rendering;
-using SixLabors.ImageSharp;
-using SixLabors.ImageSharp.PixelFormats;
+using ShadowDusk.TestPng;
 using Xunit;
 using Xunit.Abstractions;
 
@@ -380,7 +379,6 @@ public sealed class MgfxcCrossValidationTests
 
     private static void SavePng(byte[] rgba, string path)
     {
-        using var image = Image.LoadPixelData<Rgba32>(rgba, OffscreenRenderer.Width, OffscreenRenderer.Height);
-        image.SaveAsPng(path);
+        PngEncoder.Save(path, rgba, OffscreenRenderer.Width, OffscreenRenderer.Height);
     }
 }

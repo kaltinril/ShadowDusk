@@ -56,7 +56,8 @@ INPUT  shader.fx  (HLSL + FX9 effect blocks)
         │                          │                                  │                     │
         │                          ▼                                  │                     ▼
         │                  MonoGameGlslRewriter                       │              SpirvReflector
-        │                  (MojoShader-dialect GLSL)                  │               (reflection)
+        │                  (MojoShader-dialect GLSL)                  │               (reflection;
+        │                          │                                  │          slot = binding - 32)
         │                          │                                  │                     │
         └────────────┬─────────────┘                                  │                     ▼
                      ▼                                                 ▼         VulkanShaderCodeWrapper
@@ -161,7 +162,11 @@ they only affect the scanner's own pattern matching.
 
 It runs in one of two modes. `RewriteToSm4` (MonoGame/KNI, the default) rewrites legacy D3D9
 forms forward for DXC/vkd3d: legacy `texture`/`sampler` declarations to `Texture2D`/`SamplerState`,
-`tex2D(s, uv)` to `s.Sample(...)`, and a `: COLOR` pixel return semantic to `: SV_Target`.
+`tex2D(s, uv)` to `T.Sample(s, uv)` (`tex2Dgrad` to `T.SampleGrad`), `tex2Dlod` / `tex2Dbias` /
+`tex2Dproj` to a call of a helper defined before the calling declaration (returning
+`T.SampleLevel(s, t.xy, t.w)` / `T.SampleBias(s, t.xy, t.w)` / `T.Sample(s, t.xy / t.w)`, so the
+coordinate is evaluated once), and a `: COLOR` pixel return semantic to `: SV_Target`. The 1D, 3D and
+cube intrinsic families are refused with `FX0012`.
 `PreserveSm3` (FNA) leaves all of that **verbatim** so vkd3d compiles the D3D9 source natively.
 
 **Why.** Stripping FX syntax up front means every downstream compiler sees plain HLSL, and
@@ -245,8 +250,12 @@ GL); it never produces the DX11 shader payload.
 
 **How it works.** Each entry point is compiled with `-T <profile>` and `-E <entry>` (the
 `.fx`-declared name flows straight through, no mangling). For OpenGL the profile is `ps_5_0` /
-`vs_5_0` with `-spirv -fvk-use-dx-layout` (and `-auto-binding-space 1` for the pixel stage),
-so SPIR-V carries D3D constant-buffer offsets and clip-space conventions. On the **OpenGL** path
+`vs_5_0` with `-spirv -fvk-use-gl-layout` (and `-auto-binding-space 1` for the pixel stage):
+the uniform block is laid out **std140**, the only layout SPIRV-Cross's `#version 140` GLSL can
+express (issue #425: HLSL cbuffer packing put a `float3` declared after a `float` at byte 4, and
+SPIRV-Cross refused the block with `SD0100`). Those byte offsets never reach the GL output, which
+gives every uniform its own `{vs,ps}_uniforms_vec4[]` register (see the GLSL rewrite below). The
+**Vulkan** path ships its SPIR-V, so it keeps the HLSL packing (`-fvk-use-dx-layout`). On the **OpenGL** path
 matrices are packed **row-major** (`-Zpr`), which is what the GL rewriter's uniform upload assumes.
 The **Vulkan** path deliberately omits `-Zpr`, keeping HLSL's column-major default: that is what
 `mgfxc` emits and what MonoGame's runtime uploads a `Matrix` parameter for, so forcing row-major
@@ -261,6 +270,39 @@ skipping validation on a blob that is never loaded cannot ship an invalid one. E
 compile (OpenGL SPIR-V, DirectX DXBC, DirectX 12 DXIL) still validates fully. DXC
 is constructed lazily and invoked through a per-platform raw vtable call rather than Vortice's
 string wrapper, which is what makes it run on Linux and macOS at all.
+
+**Before DXC compiles: two guards against crashes in the pinned DXC.** Both exist because
+the pinned DXC (Vortice.Dxc 3.3.4's `dxcompiler`) can end the host process, which for a library
+compiled into a game is never acceptable.
+
+- **Entry-point prototypes are blanked, proven by DXC's own preprocessor**
+  (`src/ShadowDusk.HLSL/Dxc/DxcSpirvEntryRedeclarations.cs`). DXC's SPIR-V back end faults with an
+  access violation whenever the ENTRY function is declared more than once (a prototype before or
+  after its definition). So for every SPIR-V compile (OpenGL, Vulkan, the raylib and SkSL
+  converters) and the OpenGL target's `-Vd` DXIL reflection companion, `DxcShaderCompiler` first
+  runs DXC with `-P` (preprocess only, which never reaches a back end) and the compile's own
+  `-D` macros, profile and `-spirv`, so every macro DXC predefines takes the value the compile
+  sees. When that text declares the entry once, the source goes to DXC unchanged. When it
+  declares it more than once, each redundant prototype whose types match the single definition
+  is replaced by spaces in the raw source (every line break kept, so no diagnostic moves), and
+  each blanked range is accepted only when a second `-P` run produces exactly the original token
+  stream minus the prototype's tokens. A prototype that says more than its definition (an
+  attribute, a modifier, a default value), a call to the entry between prototype and definition,
+  or a shape no proven range removes is refused with **`SD0236`**. DirectX 12's validated DXIL
+  and the DXBC backends never had the fault and keep their input. **The browser** has no
+  preprocess-only DXC export, so it cannot prove the edit: it compiles the source as written,
+  and the browser DXC's own "entry points cannot share the same name" error is reported as
+  `SD0236` with DXC's text kept.
+- **`__TIMESTAMP__` is always defined** (`src/ShadowDusk.HLSL/Dxc/DxcFlagBuilder.cs`, issue #444).
+  The pinned DXC fail-fasts (`0xC0000409`) whenever its preprocessor expands the built-in
+  `__TIMESTAMP__` (it cannot stat the in-memory input), in a `-P` run as in a compile, also when
+  the name is pasted together (`__TIME ## STAMP__`), so no reading of the source can find every
+  use. Every DXC call, compile and `-P` alike, on every target and on the desktop and in the
+  browser, therefore passes `-Wno-builtin-macro-redefined -D__TIMESTAMP__="??? ??? ?? ??:??:?? ????"`
+  (clang's own text for an unknown file time; the `-W` flag keeps `-WX` from failing on the
+  redefinition). A used `__TIMESTAMP__` is then an ordinary string literal. Release bytes do not
+  change; DirectX 12 `Debug` bytes do, because DXC records its arguments in the DXIL debug
+  information.
 
 **Why.** DXC is the canonical, cross-platform HLSL compiler, the whole "no Wine, no Windows
 SDK" promise rests on it running natively everywhere. The DX-layout flags keep reflection and
@@ -281,8 +323,12 @@ StrippedHlsl to DXBC on every OS; the same DXBC bytes are **also** the reflectio
 **column-major** (matching `fxc`, the runtime, and vkd3d), while the DXC/GL path uses
 row-major, this is intentional and the two paths are validated independently.
 
-**One compile option is set here, and only here:** vkd3d's
-`BACKWARD_COMPATIBILITY`/`MAP_SEMANTIC_NAMES`, which maps the SM1-3 semantics to their System
+**One compile option is set here, and only here:** vkd3d's `BACKWARD_COMPATIBILITY`, with two
+bits, the vkd3d halves of the fxc `D3DCOMPILE_ENABLE_BACKWARDS_COMPATIBILITY` flag `mgfxc`'s
+DirectX_11 build always sets. `ALLOW_HALF_GLOBALS` makes a `half`/`halfN`/`halfNxM` global or
+cbuffer member a `float` (XNA-era `half4 Tint = ...;`), where vkd3d would otherwise refuse it with
+`E5002`; the reflected type, defaults and code are the `float` declaration's, and only the RDEF
+type-name string keeps `half4`, as in fxc's blob. `MAP_SEMANTIC_NAMES` maps the SM1-3 semantics to their System
 Value equivalents (`COLOR`*n* to `SV_Target`*n* on pixel-shader outputs, `POSITION` to
 `SV_Position`, `DEPTH`, `VFACE`, `VPOS`) when compiling for an SM4+ target. `fxc` accepts those
 semantics at `ps_4_0`, which is how MonoGame `.fx` files written against SM3 still build;
@@ -290,7 +336,25 @@ vkd3d rejects them outright without the option. Stage 1's `RewriteToSm4` already
 `) : COLOR<n>` **return** semantic, but by design it cannot touch the same semantic on a struct
 **field** (the struct may be a vertex-shader output, where `COLOR` is legal), so the option is
 what covers a pixel shader returning `struct { float4 c : COLOR0; }`. It is deliberately NOT
-set on the Stage 3c target, where those are the native semantics.
+set on the Stage 3c target, where those are the native semantics and where the FNA reference
+(`fxc /T fx_2_0`, default flags) refuses a `half` global itself (`X3650`), so vkd3d's `E5002`
+there is parity.
+
+**Legacy samplers' texture slots are fxc's, not the backend's.** The backend numbers the
+rewritten `Texture2D` declarations in declaration order; fxc gives a LEGACY sampler's texture the
+slot of the shader's first read of it (evaluation order), ahead of every modern resource without a
+register, around every explicit `t` register (a register on the texture a `sampler_state` names
+only reserves). SpriteBatch binds the sprite to `t0`, so the difference picks which sampler reads
+the sprite. After each DX11 compile of an effect with a legacy sampler, `DxTextureSlotOrder` reads
+the evaluation order from the preprocessed source (`HlslReadOrder`; no compiled stream carries
+it: `d3dcompiler_47` schedules its reads and vkd3d swaps the operands of `>` and `<=`) and the
+surviving resources off the shipped compile's RDEF, and when the slots differ recompiles with every
+resource pinned by an explicit `register(tN)`; a shader whose slots already agree is not
+recompiled. The walk follows straight-line evaluation order (a `switch`'s `default` arm last, a read
+after an unconditional `return`/`break`/`continue` removed, as fxc does) and never evaluates a
+condition: when a read fxc might fold away (under an `if`, a `switch` arm, a loop that may not run,
+a later iteration, after a `return` that may not run) could change the order, it warns `SD0230`.
+What it cannot check or pin keeps the old slots and warns `SD0230`.
 
 **Every host passes the same list.** The options are chosen in one place
 (`Vkd3dCompileContract.ResolveCompileOptions`): the desktop backend marshals the list into the
@@ -355,11 +419,26 @@ into the **same** `ReflectedEffect` shape (constant buffers, textures, samplers,
 `VariableReflection` records its `StartOffset` (byte offset within the buffer), size, and type
 shape. A shared `ParameterListBuilder` flattens those cbuffer variables into the user-settable
 `ParameterReflection` list (merging the FX annotations from Stage 1) and appends the texture
-(and, on GL, sampler) object parameters. Because the SPIR-V was emitted with `-fvk-use-dx-layout`,
-the managed SPIR-V reflector reads byte offsets directly from the SPIR-V `Offset` decorations,
-so all three reflectors report the same layout. (SPIR-V discards HLSL semantic strings, so its
+(and, on GL, sampler) object parameters. The managed SPIR-V reflector reads byte offsets
+directly from the SPIR-V `Offset` decorations. Vulkan's SPIR-V is emitted with
+`-fvk-use-dx-layout`, so there all three reflectors report the same HLSL layout. OpenGL's is
+std140 (`-fvk-use-gl-layout`, issue #425): the same layout for every std140-legal block, with a
+member HLSL would pack mid-register moved to its own register. The GL cbuffer records come from
+the GLSL rewriter's register layout, and the one GL step that reads reflected variables for them
+(the bridge for a uniform SPIRV-Cross renamed off a GLSL reserved word, `noise` to `_noise`)
+matches by declaration order, never by byte offset, so the browser host's `.mgfx` stays
+byte-identical to the desktop's. (SPIR-V discards HLSL semantic strings, so its
 input/output signatures are intentionally empty, which is why it only serves the PS-only browser
 corpus.)
+
+**Parameter defaults (issue #413).** None of the three reflectors carries a global's initializer
+(`float Scale = 2.0;`): DXC's DXIL reflection reports a null default value and DXC drops the
+initializer from the SPIR-V. `GlobalInitializerReader` evaluates it from the preprocessed source
+and the pipeline writes it into each parameter's default blob (see below). The same blobs are then
+read back into `ParameterReflection.DefaultValue` (logical row-major; `null` where the blob is
+zeros the author did not write) and returned as `CompiledShader.Parameters`, so the reflection
+result equals the bytes written. On FNA the list is projected from the fx_2_0 parameters, with
+the value from the same reader and a scalar or vector default falling back to the CTAB.
 
 **Why pure-managed reflectors matter.** Removing the Windows-only `D3DReflect` dependency lets
 DirectX `.mgfx` compiles run on Linux, macOS, and in the browser. Only the *source* of the
@@ -551,19 +630,27 @@ D3D9 register index and never emits named uniforms at all.
 
 The fix is to **fall back to binding by location** the moment the name match misses — never for
 a shader that already resolves by name, so existing output is byte-identical. The data is
-already in the reflection: a `ConstantBufferReflection` lists its members in offset order with
-both the original name and the byte `StartOffset`, and the GL uniform layout carries each
-member's base register. `CompilationPipeline.IndexOfParamByRegister` correlates the GL uniform's
-`BaseRegister × 16` to the cbuffer member's `StartOffset` and takes that member's original
-name — recovering the parameter without ever trusting the SPIRV-Cross-emitted spelling. The
+already in the reflection: a `ConstantBufferReflection` lists its members with their original
+names, in declaration order (sorted by `StartOffset`, a stable sort), and the GL uniform layout
+lists the GLSL members in the same declaration order. `CompilationPipeline.IndexOfParamByDeclarationOrder`
+pairs the two lists POSITION by position and takes the original name at the renamed uniform's
+position — recovering the parameter without ever trusting the SPIRV-Cross-emitted spelling. The
 parameter stays exposed under its original name in the `.mgfx`, so
 `effect.Parameters["noise"].SetValue(...)` binds.
 
-The bridge is restricted to the single-`$Globals` case (the reserved-word case is always a free
-global, where a variable's effective offset is exactly its `StartOffset`). A multi-cbuffer
-shape — where the rewriter's GLSL-declaration merge order is not guaranteed to match the
-reflection's cbuffer order — falls through and keeps the loud `SD0012` rather than risk
-mis-mapping: correctness over coverage.
+It never matches by byte offset (issue #425): the earlier bridge compared the GL uniform's
+`BaseRegister × 16` with the member's `StartOffset`, which holds only when no member is packed
+mid-register. After `float g;` a renamed `float3 noise` sits at byte 4 in the DXIL reflection
+(HLSL packing) and byte 16 in the SPIR-V one (std140), so the desktop mapped it onto the next
+variable and the browser did not; position is the same on every reflection source.
+
+The pairing has to be proven, not assumed: one reflected cbuffer (the reserved-word case is
+always a free global in `$Globals`; with several cbuffers the rewriter's merge order is not
+reconstructed), the same member count on both sides, and every position agreeing by name, either
+exactly or, at a renamed position, with a GLSL spelling that is not itself a parameter and an
+original name that appears nowhere else in the layout. SPIRV-Cross's rename rules (a reserved-word
+prefix, collapsed underscore runs, collision suffixes) are deliberately not modelled. Anything else
+falls through and keeps the loud `SD0012` rather than risk mis-mapping: correctness over coverage.
 
 **The join also runs in the reverse direction (issue #187, synthesized backing).** The
 layout→parameter join above can only bind uniforms the GLSL *declares* — but DXC's `-spirv`

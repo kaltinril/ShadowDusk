@@ -6,6 +6,29 @@ namespace ShadowDusk.HLSL.Dxc;
 
 internal static class DxcFlagBuilder
 {
+    /// <summary>
+    /// The value every DXC call gives <c>__TIMESTAMP__</c>: clang's own text for a file whose
+    /// modification time it cannot read, a string literal.
+    /// </summary>
+    /// <remarks>
+    /// The pinned DXC (Vortice.Dxc 3.3.4's <c>dxcompiler</c>) ends the process with a fail-fast
+    /// (<c>0xC0000409</c>) whenever its preprocessor EXPANDS the built-in <c>__TIMESTAMP__</c>
+    /// (the modification time of the in-memory input, which it cannot stat): in a preprocess-only
+    /// run as in a compile, on every target, also when the name is assembled by token pasting
+    /// (<c>__TIME ## STAMP__</c>), so no reading of the source can find every use (issue #444).
+    /// Defining the macro on the command line replaces the built-in, so the faulting code never
+    /// runs, and the value is the one clang itself substitutes when the time is unknown
+    /// (measured 2026-10-29: <c>-P</c> expands it to this string, a full compile reaches its front
+    /// end like any other source). Redefining a built-in macro is a warning
+    /// (<c>-Wbuiltin-macro-redefined</c>) that <c>-WX</c> makes an error, so every call that
+    /// defines it also passes <see cref="NoBuiltinMacroRedefinedWarning"/>. Nothing in a shader can
+    /// depend on an effect's build time, and <c>mgfxc</c>'s fxc gives no time either.
+    /// </remarks>
+    internal const string TimestampDefine = "-D__TIMESTAMP__=\"??? ??? ?? ??:??:?? ????\"";
+
+    /// <summary>Silences the warning (an error under <c>-WX</c>) <see cref="TimestampDefine"/> raises.</summary>
+    internal const string NoBuiltinMacroRedefinedWarning = "-Wno-builtin-macro-redefined";
+
     public static IReadOnlyList<string> Build(
         PlatformTarget platform,
         ShaderStage stage,
@@ -25,14 +48,32 @@ internal static class DxcFlagBuilder
 
         switch ((platform, stage))
         {
+            // OpenGL lays the uniform block out std140 (-fvk-use-gl-layout), NOT with the HLSL
+            // cbuffer packing (-fvk-use-dx-layout) the SPIR-V-shipping Vulkan target needs
+            // (issue #425). The SPIR-V here only feeds SPIRV-Cross's #version 140 GLSL, which can
+            // express nothing but std140. An HLSL-packed block whose offsets break a std140 rule
+            // failed: a float/float2/float3 packed behind a float at byte 4 made SPIRV-Cross
+            // refuse the whole block with SD0100 ("cannot be expressed as any of std430, std140,
+            // scalar"), and a member packed into an array's last register came out as an
+            // enhanced-layouts `layout(offset = N)` member the rewriter refuses with SD0210.
+            // The GL output does not depend on these offsets: MonoGameGlslRewriter replaces the
+            // block with MojoShader's {vs,ps}_uniforms_vec4[] (one register per member, in
+            // declaration order, the allocation mgfxc's D3D9 constant table gives), the GL
+            // cbuffer record is built from that register layout, and a uniform SPIRV-Cross
+            // renamed off a GLSL reserved word is matched to its parameter by declaration order
+            // (CompilationPipeline.IndexOfParamByDeclarationOrder), never by offset, because the
+            // browser's SPIR-V reflection now sees std140 where the desktop's DXIL sees HLSL
+            // packing. Every block that compiled before was already exact std140 (SPIRV-Cross
+            // emits a plain std140 block only when every offset equals the std140 one), so its
+            // SPIR-V offsets and GLSL are unchanged.
             case (PlatformTarget.OpenGL, ShaderStage.Vertex):
                 profile = ShaderProfiles.Sm5Vertex;
-                platformFlags = new[] { "-spirv", "-fvk-use-dx-layout", "-fvk-use-dx-position-w" };
+                platformFlags = new[] { "-spirv", "-fvk-use-gl-layout", "-fvk-use-dx-position-w" };
                 break;
 
             case (PlatformTarget.OpenGL, ShaderStage.Pixel):
                 profile = ShaderProfiles.Sm5Pixel;
-                platformFlags = new[] { "-spirv", "-fvk-use-dx-layout", "-auto-binding-space", "1" };
+                platformFlags = new[] { "-spirv", "-fvk-use-gl-layout", "-auto-binding-space", "1" };
                 break;
 
             // -fvk-bind-globals pins the implicit "$Globals" cbuffer (DXC's auto-generated
@@ -109,7 +150,9 @@ internal static class DxcFlagBuilder
                 platformFlags = Array.Empty<string>();
                 break;
 
-            // Metal goes through SPIR-V so use the same profile/flags as OpenGL
+            // Metal goes through SPIR-V with the OpenGL profiles, but keeps the HLSL packing
+            // (-fvk-use-dx-layout): Metal is parked, and SPIRV-Cross's MSL is not limited to
+            // std140, so the OpenGL layout change (issue #425) was not applied to it.
             case (PlatformTarget.Metal, ShaderStage.Vertex):
                 profile = ShaderProfiles.Sm5Vertex;
                 platformFlags = new[] { "-spirv", "-fvk-use-dx-layout", "-fvk-use-dx-position-w" };
@@ -174,6 +217,10 @@ internal static class DxcFlagBuilder
                 args.Add(DxcDebugSpirvSource.InputName);
         }
 
+        // Issue #444: __TIMESTAMP__ is defined, never DXC's built-in (which crashes the process).
+        args.Add(NoBuiltinMacroRedefinedWarning);
+        args.Add(TimestampDefine);
+
         foreach ((string name, string? value) in macros)
         {
             if (value is null)
@@ -190,12 +237,14 @@ internal static class DxcFlagBuilder
     /// includes/macros/conditionals and emit the flat HLSL text. Deliberately carries NO
     /// <c>-E</c>/<c>-T</c> (no entry/profile — preprocessing is stage-agnostic) and NO
     /// <c>-WX</c> (warnings-as-errors must not fail a pure expansion). Only the macro
-    /// defines are forwarded so the right <c>#if</c> branch (e.g. <c>SM4</c>) is taken.
+    /// defines are forwarded so the right <c>#if</c> branch (e.g. <c>SM4</c>) is taken, after
+    /// <see cref="TimestampDefine"/> (issue #444: DXC's built-in <c>__TIMESTAMP__</c> crashes the
+    /// process even in a preprocess-only run).
     /// </summary>
     public static IReadOnlyList<string> BuildPreprocess(
         IReadOnlyList<(string Name, string? Value)> macros)
     {
-        var args = new List<string> { "-P" };
+        var args = new List<string> { "-P", NoBuiltinMacroRedefinedWarning, TimestampDefine };
 
         foreach ((string name, string? value) in macros)
         {

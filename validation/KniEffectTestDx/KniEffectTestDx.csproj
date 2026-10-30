@@ -1,0 +1,29 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- KNI EffectTest gate on real MonoGame WindowsDX (MGFX v10), vs the committed mgfxc 3.8.4.1 DirectX_11 builds. Windows only.
+       Not in ShadowDusk.slnx. See validation/SharedKniEffectTest and docs/validation-matrix.md section 6. -->
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net8.0-windows</TargetFramework>
+    <RollForward>Major</RollForward>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <IsPackable>false</IsPackable>
+    <TreatWarningsAsErrors>false</TreatWarningsAsErrors>
+    <RootNamespace>ShadowDusk.Validation.KniEffectTest.Dx</RootNamespace>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="MonoGame.Framework.WindowsDX" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\ShadowDusk.Compiler\ShadowDusk.Compiler.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Compile Include="..\SharedKniEffectTest\*.cs" />
+    <Compile Include="..\SharedDx\DxHeadlessRasterizer.cs" />
+  </ItemGroup>
+
+</Project>

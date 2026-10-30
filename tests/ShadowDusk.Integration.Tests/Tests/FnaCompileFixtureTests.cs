@@ -314,6 +314,62 @@ public sealed class FnaCompileFixtureTests
     }
 
     /// <summary>
+    /// Initializer defaults must survive to the FNA runtime: every numeric parameter's value blob in
+    /// ShadowDusk's <c>.fxb</c> must equal, byte for byte, the blob <c>D3DCompile fx_2_0</c> (fxc)
+    /// writes for the same source.
+    ///
+    /// <para>Before this fix the writer emitted zeros for every matrix and array default (only
+    /// scalars and vectors were propagated), so <c>float2x2 M = 0.5 * I</c> read as zero in real FNA
+    /// and <c>float4 Colors[2] = {red, green}</c> read as two zero vectors, where fxc's build reads
+    /// the initializers. The fixtures in <c>fixtures/golden/FNA/defaults</c> cover every matrix shape
+    /// (2x2, 3x3, 4x4, row_major), arrays of scalars, vectors, int, bool and matrices; the goldens
+    /// are the <c>d3dcompiler_47</c> fx_2_0 oracle's output (the path proven byte-identical to
+    /// <c>fxc.exe</c>) of the same <c>.fx</c> files with <c>#define OPENGL 1</c> prepended, as the
+    /// <c>validation/FnaValidation</c> reference arm does. Real-engine proof: the
+    /// <c>FnaValidation -- defaults</c> gate.</para>
+    /// </summary>
+    [FnaTheory]
+    [InlineData("DefaultsTint")]
+    [InlineData("DefaultsScale")]
+    [InlineData("DefaultsVec2Mat2")]
+    [InlineData("DefaultsIntBool")]
+    [InlineData("DefaultsArray")]
+    [InlineData("DefaultsMatrices")]
+    [InlineData("DefaultsArrays")]
+    [InlineData("DefaultsNoInit")]
+    public async Task Golden_Fna_InitializerDefaultBlobsEqualFxcByteForByte(string name)
+    {
+        using var cts = new CancellationTokenSource(CompileTimeout);
+
+        var result = await CompileFnaFileAsync(GoldenPath($"defaults/{name}.fx"), cts.Token);
+        result.IsSuccess.ShouldBeTrue($"fixture '{name}.fx' must compile for FNA; errors: {DescribeErrors(result)}");
+
+        Fx2ParsedEffect ours = Fx2BinaryValidator.Parse(result.Value.Data);
+        Fx2ParsedEffect golden = Fx2BinaryValidator.Parse(
+            await File.ReadAllBytesAsync(GoldenPath($"defaults/{name}.fxb"), cts.Token));
+
+        var goldenNumeric = golden.Parameters.Where(p => p.NumericBytes is not null).ToList();
+        goldenNumeric.ShouldNotBeEmpty("the fixture must declare numeric parameters");
+
+        foreach (Fx2ParsedParameter expected in goldenNumeric)
+        {
+            Fx2ParsedParameter actual = ours.Parameters.Single(p => p.Name == expected.Name);
+
+            actual.NumericBytes.ShouldBe(expected.NumericBytes,
+                $"parameter '{expected.Name}' default value blob must equal fxc's, byte for byte");
+            (actual.Type, actual.Rows, actual.Columns, actual.Elements).ShouldBe(
+                (expected.Type, expected.Rows, expected.Columns, expected.Elements),
+                $"parameter '{expected.Name}' shape must match fxc's (type, rows, columns, elements)");
+        }
+
+        // Non-vacuous: apart from the no-initializer control, fxc's blobs carry real data, so the
+        // byte comparison above cannot pass on two all-zero blobs.
+        if (name != "DefaultsNoInit")
+            goldenNumeric.ShouldContain(p => p.NumericBytes!.Any(b => b != 0),
+                "the oracle's blobs must be non-zero or this test proves nothing");
+    }
+
+    /// <summary>
     /// A sampler parameter's <c>D3DXPARAMETER_TYPE</c> comes from what the source DECLARED, which
     /// is `fxc`'s rule and what FNA binds against.
     ///

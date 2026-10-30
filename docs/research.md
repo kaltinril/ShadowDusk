@@ -593,6 +593,8 @@ All SPIRV-Cross options below are expressed in both C++ API and **C API** form. 
 
 **cbuffer to GLSL std140 layout mismatch.** HLSL cbuffer packing and GLSL `std140` differ: in std140, a `vec3` occupies 16 bytes (padded to `vec4` size), while HLSL packs a `float3` in 12 bytes. If the SPIR-V path uses SPIRV-Cross without DXC's `-fvk-use-dx-layout`, the GLSL uniform block uses std140 rules and the C# game's constant data (laid out for HLSL rules) is misinterpreted. Always compile with `-fvk-use-dx-layout` and ensure SPIRV-Cross emits a matching layout.
 
+> **Superseded for OpenGL (issue #425, 2026-10-28):** the shipped GL path never uploads a UBO, so no game data is laid out against these offsets. The rewriter replaces the block with MojoShader's `{vs,ps}_uniforms_vec4[]`, one register per uniform, and SPIRV-Cross's `#version 140` output can express only std140, which HLSL packing breaks (a `float3` after a `float` failed with `SD0100`). OpenGL therefore compiles with `-fvk-use-gl-layout`. Vulkan, which ships the SPIR-V, keeps `-fvk-use-dx-layout`.
+
 ### Preprocessor and #include Handling
 
 MonoGame's `Preprocessor.cs` flattens all `#include` directives before passing to FXC because FXC requires Windows file system access. ShadowDusk must implement a platform-independent include resolver.
@@ -743,7 +745,7 @@ KNI uses the same `.mgfx` binary format as MonoGame. For the browser/WebGL targe
 
 WebGL 1.0 requires GLSL ES 1.00 (`#version 100`); WebGL 2.0 requires GLSL ES 3.00 (`#version 300 es`). KNI maps its two graphics profiles onto these: **`GraphicsProfile.Reach` → WebGL1 / ES-1.00** and **`GraphicsProfile.HiDef` → WebGL2 / ES-3.00**.
 
-**As built (do NOT configure SPIRV-Cross for `300 es`):** ShadowDusk does *not* emit native ES-3.00. It emits the **legacy MojoShader GLSL dialect** (the same `mgfxc` produces — `#define ps_oC0 gl_FragColor`, `varying`, `texture2D`, `precision mediump`), valid under WebGL1/Reach *and* desktop GL. For **HiDef/WebGL2**, KNI's runtime converter (`ConvertGLSLToGLSL300es`, present since KNI **v3.14.9001**) rewrites that dialect to ES 3.00 at load time — so **one `.mgfx` serves both profiles** with no per-profile output and no SPIRV-Cross `300 es` configuration. The earlier guidance here (set `GLSL_VERSION=300, GLSL_ES=true`) was a greenfield assumption and is **not** what ships.
+**As built (do NOT configure SPIRV-Cross for `300 es`):** ShadowDusk does *not* emit native ES-3.00. It emits the **legacy MojoShader GLSL dialect** (the same `mgfxc` produces — `#define ps_oC0 gl_FragColor`, `varying`, `texture2D`, an `#ifdef GL_ES` precision block; ShadowDusk's pixel stage asks for `highp` under `GL_FRAGMENT_PRECISION_HIGH` where `mgfxc` writes `mediump`, issue #406), valid under WebGL1/Reach *and* desktop GL. For **HiDef/WebGL2**, KNI's runtime converter (`ConvertGLSLToGLSL300es`, present since KNI **v3.14.9001**) rewrites that dialect to ES 3.00 at load time — so **one `.mgfx` serves both profiles** with no per-profile output and no SPIRV-Cross `300 es` configuration. The earlier guidance here (set `GLSL_VERSION=300, GLSL_ES=true`) was a greenfield assumption and is **not** what ships.
 
 The load-bearing requirement: the fragment colour output must be emitted as a `#define`-aliased form (`#define ps_oC0 gl_FragColor`), because KNI's converter rewrites *only* that form — a raw `gl_FragColor` write survives untouched into ES 3.00 and fails to compile (GitHub issue #7). See [`plan/DONE/PHASE-33-webgl2-es300-hidef-output.md`](../plan/DONE/PHASE-33-webgl2-es300-hidef-output.md).
 

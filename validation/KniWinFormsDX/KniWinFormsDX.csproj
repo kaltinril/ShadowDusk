@@ -61,6 +61,9 @@
        DX harnesses. The comparing Game itself is defined inline in Program.cs. -->
   <ItemGroup>
     <Compile Include="..\SharedDx\DxShaderInputs.cs" />
+    <!-- The BCL-only .mgfx reader: the texture-slot rows read a texture-less legacy sampler's
+         slot off the mgfxc golden, to bind it on the device for the KNIFX candidate. -->
+    <Compile Include="..\..\tests\ShadowDusk.Integration.Tests\MgfxBlobReader.cs" Link="MgfxBlobReader.cs" />
   </ItemGroup>
 
 </Project>

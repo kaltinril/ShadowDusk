@@ -32,7 +32,9 @@ public sealed class Fx2ValidationException : Exception
 public sealed record Fx2ParsedSamplerState(int Operation, int? ObjectIndex, uint? DwordValue);
 
 /// <summary>One effect parameter. <see cref="Rows"/>/<see cref="Columns"/> are MojoShader's
-/// view of typedef dwords 6/5 (numeric classes only; 0 for object classes).</summary>
+/// view of typedef dwords 6/5 (numeric classes only; 0 for object classes).
+/// <see cref="NumericBytes"/> is the raw value blob (the parameter's default value) of a
+/// numeric-class parameter, <see langword="null"/> for every other class.</summary>
 public sealed record Fx2ParsedParameter(
     string Name,
     int Class,
@@ -40,15 +42,20 @@ public sealed record Fx2ParsedParameter(
     int Rows,
     int Columns,
     int Elements,
-    IReadOnlyList<Fx2ParsedSamplerState> SamplerStates);
+    IReadOnlyList<Fx2ParsedSamplerState> SamplerStates,
+    byte[]? NumericBytes = null);
 
 /// <summary>One pass state. Shader states (ops 146/147) carry <see cref="ObjectIndex"/>;
 /// FNA-honored render states carry the raw <see cref="DwordValue"/>.</summary>
 public sealed record Fx2ParsedState(int Operation, int? ObjectIndex, uint? DwordValue);
 
-public sealed record Fx2ParsedPass(string Name, IReadOnlyList<Fx2ParsedState> States);
+/// <summary>One pass. <see cref="NameIsNull"/> is true when the name is a zero-length pool
+/// string (MojoShader hands FNA a NULL name, so <c>EffectPass.Name</c> is null); an empty but
+/// present name (fxc's anonymous-pass encoding) reads as <c>""</c> with it false.</summary>
+public sealed record Fx2ParsedPass(string Name, IReadOnlyList<Fx2ParsedState> States, bool NameIsNull = false);
 
-public sealed record Fx2ParsedTechnique(string Name, IReadOnlyList<Fx2ParsedPass> Passes);
+/// <summary>One technique; <see cref="NameIsNull"/> as on <see cref="Fx2ParsedPass"/>.</summary>
+public sealed record Fx2ParsedTechnique(string Name, IReadOnlyList<Fx2ParsedPass> Passes, bool NameIsNull = false);
 
 /// <summary>One embedded SM1–3 shader blob, in object-record order (small section first).
 /// <see cref="Stage"/> derives from the resolved object type (15 = pixel, 16 = vertex),
@@ -245,7 +252,8 @@ public static class Fx2BinaryValidator
 
             _parameters.Add(new Fx2ParsedParameter(
                 td.Name, td.Class, td.Type, td.Rows, td.Columns, td.Elements,
-                value.SamplerStates ?? Array.Empty<Fx2ParsedSamplerState>()));
+                value.SamplerStates ?? Array.Empty<Fx2ParsedSamplerState>(),
+                value.NumericBytes));
         }
 
         private void ReadAnnotations(uint count, string owner)
@@ -354,7 +362,8 @@ public static class Fx2BinaryValidator
         private sealed record ParsedValue(
             IReadOnlyList<Fx2ParsedSamplerState>? SamplerStates,
             IReadOnlyList<int>? ObjectIndices,
-            uint? FirstDword);
+            uint? FirstDword,
+            byte[]? NumericBytes = null);
 
         private ParsedValue ParseValue(TypeDef td, uint valueOffset, int? samplerOwnerParam, string ctx)
         {
@@ -362,7 +371,8 @@ public static class Fx2BinaryValidator
             {
                 long size = 4L * td.Columns * td.Rows * Math.Max(1, td.Elements);
                 CheckPoolRange(valueOffset, size, $"{ctx} numeric value blob");
-                return new ParsedValue(null, null, PoolU32(valueOffset, ctx));
+                return new ParsedValue(null, null, PoolU32(valueOffset, ctx),
+                    _f.AsSpan((int)(Base + valueOffset), (int)size).ToArray());
             }
 
             if (td.Class == ClassStruct) // §7.4 — emitted zero-filled, sized, never interpreted
@@ -463,12 +473,12 @@ public static class Fx2BinaryValidator
             ReadAnnotations(annotationCount, ctx);
             uint passCount = StreamU32($"{ctx} pass count");
 
-            string name = ReadPoolString(nameOffset, $"{ctx} name") ?? string.Empty;
+            string? name = ReadPoolString(nameOffset, $"{ctx} name");
             var passes = new List<Fx2ParsedPass>((int)Math.Min(passCount, 1024));
             for (uint p = 0; p < passCount; p++)
                 passes.Add(ReadPass($"{ctx} pass #{p}"));
 
-            _techniques.Add(new Fx2ParsedTechnique(name, passes));
+            _techniques.Add(new Fx2ParsedTechnique(name ?? string.Empty, passes, NameIsNull: name is null));
         }
 
         private Fx2ParsedPass ReadPass(string ctx)
@@ -478,12 +488,12 @@ public static class Fx2BinaryValidator
             ReadAnnotations(annotationCount, ctx);
             uint stateCount = StreamU32($"{ctx} state count");
 
-            string name = ReadPoolString(nameOffset, $"{ctx} name") ?? string.Empty;
+            string? name = ReadPoolString(nameOffset, $"{ctx} name");
             var states = new List<Fx2ParsedState>((int)Math.Min(stateCount, 1024));
             for (uint s = 0; s < stateCount; s++)
                 states.Add(ReadPassState($"{ctx} state #{s}"));
 
-            return new Fx2ParsedPass(name, states);
+            return new Fx2ParsedPass(name ?? string.Empty, states, NameIsNull: name is null);
         }
 
         private Fx2ParsedState ReadPassState(string ctx)

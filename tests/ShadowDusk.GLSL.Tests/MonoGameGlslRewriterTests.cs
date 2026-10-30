@@ -160,6 +160,27 @@ void main()
         result.Glsl.ShouldContain("precision mediump int;", Case.Sensitive);
     }
 
+    // Issue #406: real mobile GPUs run mediump as fp16, so the pixel stage asks for
+    // highp when GL_FRAGMENT_PRECISION_HIGH is defined, keeping mediump only as the
+    // GLES2 fallback. Desktop GL skips the whole block (no GL_ES).
+    [Fact]
+    public void PixelPrecisionHeaderPrefersHighpWithMediumpFallback()
+    {
+        var result = MonoGameGlslRewriter.Rewrite(ExampleA, ShaderStage.Pixel);
+
+        result.Glsl.ShouldStartWith(
+            "#ifdef GL_ES\n" +
+            "#ifdef GL_FRAGMENT_PRECISION_HIGH\n" +
+            "precision highp float;\n" +
+            "precision highp int;\n" +
+            "#else\n" +
+            "precision mediump float;\n" +
+            "precision mediump int;\n" +
+            "#endif\n" +
+            "#endif\n",
+            Case.Sensitive);
+    }
+
     // ---- roundEven/round → floor(x+0.5) lowering (WebGL1 reach fix). ----
     // SPIRV-Cross emits roundEven() for HLSL `round` (DXC maps it to OpRoundEven),
     // a GLSL ES 3.00 / GL 1.30 builtin WebGL1 (GLSL ES 1.00) lacks. The rewriter
@@ -1302,16 +1323,20 @@ void main()
     [Fact]
     public void VertexStage_UnknownSemantic_ThrowsLoudly()
     {
+        // This used to use BLENDWEIGHT0, which the GL table did not model then; it is a real
+        // HLSL semantic that mgfxc compiles (usage 7), so the unknown semantic here is one no
+        // table has and mgfxc's fxc vs_3_0 refuses (X4502, measured). BLENDWEIGHT0's mapping
+        // is pinned in MonoGameGlslRewriterVertexSemanticTests.
         const string src = """
 #version 140
-in vec4 in_var_BLENDWEIGHT0;
+in vec4 in_var_MYSEM0;
 void main()
 {
-    gl_Position = in_var_BLENDWEIGHT0;
+    gl_Position = in_var_MYSEM0;
 }
 """;
         var act = () => MonoGameGlslRewriter.Rewrite(src, ShaderStage.Vertex);
-        Should.Throw<MonoGameGlslRewriteException>(act).Message.ShouldContain("BLENDWEIGHT0", Case.Sensitive);
+        Should.Throw<MonoGameGlslRewriteException>(act).Message.ShouldContain("MYSEM0", Case.Sensitive);
     }
 
     // ---- Phase 43 F4/F5/F6: the GL cbuffer/array model. ----

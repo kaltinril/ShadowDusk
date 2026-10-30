@@ -15,20 +15,21 @@
 //
 // The incoming `args` are the EXACT DXC argument list ShadowDusk's DxcFlagBuilder
 // produced for the OpenGL/SPIR-V target, e.g.:
-//     -E MainPS -T ps_5_0 -spirv -fvk-use-dx-layout -auto-binding-space 1 -Zpr -WX
+//     -E MainPS -T ps_5_0 -spirv -fvk-use-gl-layout -auto-binding-space 1 -Zpr
 // We translate the parts that have a Slang equivalent and ignore DXC-only flags:
 //   -E <entry>            -> entry-point name passed to findAndCheckEntryPoint
 //   -T ps_5_0 / vs_ / cs_ -> Slang stage (pixel=FRAGMENT / vertex / compute)
 //   -spirv                -> implied (we always target SPIRV)
 //   -Zpr                  -> row-major matrices: ALREADY Slang's default, so a no-op
 //   -fvk-use-entrypoint-name -> see note below
-//   -fvk-use-dx-layout    -> see note below
+//   -fvk-use-gl-layout    -> see note below (-fvk-use-dx-layout before issue #425)
 //   -auto-binding-space N -> DXC-only flat binding allocation; not needed (the
 //                            reflector buckets resources per-class itself)
 //   -WX                   -> warnings-as-errors; the playground embind surface has
 //                            no equivalent; Slang still throws on hard errors
 //
-// NOTE on -fvk-use-dx-layout / -fvk-use-entrypoint-name:
+// NOTE on the cbuffer layout flag (-fvk-use-gl-layout, -fvk-use-dx-layout before issue #425) /
+// -fvk-use-entrypoint-name:
 //   The slang-wasm *embind* surface only exposes `globalSession.createSession(targetEnum)`
 //   — it constructs a SessionDesc with DEFAULT compiler options and gives no way to
 //   pass CompilerOptionEntry flags from JS. So those two DXC flags cannot be forwarded.

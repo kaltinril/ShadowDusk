@@ -24,8 +24,9 @@ public sealed class FxPreParserPreserveSm3Tests
     [Fact]
     public void Parse_PreserveSm3_Tex2DlodCall_SurvivesVerbatim_NoFx0012()
     {
-        // The RewriteToSm4 mode fails loudly (FX0012) on tex2Dlod; PreserveSm3 must
-        // NOT — vkd3d compiles the legacy intrinsic natively for the FNA target.
+        // The RewriteToSm4 mode rewrites tex2Dlod to a SampleLevel helper (it failed with
+        // FX0012 before 2026-10-28); PreserveSm3 must do neither: vkd3d compiles the legacy
+        // intrinsic natively for the FNA target.
         const string source = """
             texture t;
             sampler s = sampler_state { Texture = <t>; };

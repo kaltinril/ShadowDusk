@@ -1,5 +1,7 @@
 #nullable enable
 
+using ShadowDusk.Core.Reflection;
+
 namespace ShadowDusk.Core;
 
 /// <summary>
@@ -31,6 +33,23 @@ public sealed record CompiledShader(
     /// valid regardless — warnings never gate output.
     /// </summary>
     public IReadOnlyList<ShaderError> Warnings { get; init; } = [];
+
+    /// <summary>
+    /// The effect's parameters as the compiled file exposes them to the runtime
+    /// (<c>Effect.Parameters</c>), in file order: name, shape, type, annotations (MGFX and KNIFX; FNA lists none), and the default
+    /// value the HLSL declares (<see cref="ParameterReflection.DefaultValue"/>, null when
+    /// unknown), so a tool can show <c>float Scale = 2.0;</c> without loading the effect into a
+    /// runtime.
+    /// </summary>
+    /// <remarks>
+    /// Reflection only. On MGFX and KNIFX the defaults are exactly what the effect bytes in
+    /// <see cref="Data"/> carry. On FNA the reported default can be larger than what the
+    /// <c>.fxb</c> file carries: the compiler trims the file's constant table to the registers the
+    /// shader reads, while the reflection value is read from the source (a <c>float Weights[3]</c>
+    /// the shader reads only as <c>Weights[1]</c> reflects as 0.75, 1.75, 2.75; the file holds
+    /// 0.75, 1.75, 0). The list and each default are read-only.
+    /// </remarks>
+    public IReadOnlyList<ParameterReflection> Parameters { get; init; } = [];
 
     /// <summary>
     /// Returns <see cref="Data"/> wrapped in an XNB content container, ready to drop into a

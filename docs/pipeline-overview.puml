@@ -47,7 +47,7 @@ package "2 - FRONTEND  (shared, runs for every target)" {
   rectangle "**Slang frontend**  (ShadowDusk.Compiler.Slang)\n[shader(\"vertex\"/\"fragment\")] -> entry points;\ntechnique synthesized; body compiles as HLSL" as SLANGFE #E7DFC9
   rectangle "**slangc**  (bundled native: win-x64, linux-x64,\nosx-x64, osx-arm64; browser: the same slangc\nas WebAssembly, in-process, ShadowDusk.Slang.Wasm)\nreal Slang compiler: .slang -> HLSL" as SLANGCNATIVE #BFD2E8
   rectangle "**SlangCompiler**  (ShadowDusk.Slang)\nentry scan reused from Slang frontend;\n.fx wrapper assembled (technique/pass)" as SLANGFULLFE #E7DFC9
-  rectangle "**FxPreParser** (FX9 pre-parse)\nfind technique/pass/sampler blocks;\nrecover macro-defined TECHNIQUE();\nFxSourceMode = RewriteToSm4 | PreserveSm3" as PRE #E7DFC9
+  rectangle "**FxPreParser** (FX9 pre-parse)\nfind technique/pass/sampler blocks;\nrecover macro-defined TECHNIQUE();\ntex2Dlod / tex2Dbias / tex2Dproj -> helper\n(SampleLevel / SampleBias / Sample);\nFxSourceMode = RewriteToSm4 | PreserveSm3" as PRE #E7DFC9
   rectangle "**PlatformMacros**  (inject per-target #defines)\nGL:{MGFX,GLSL,OPENGL}  DX11:{MGFX,HLSL,SM4}\nDX12:{MGFX,HLSL,SM6}  VK:{MGFX,HLSL,VULKAN,SM6}\nFNA:{FNA,HLSL,SM3}   +__KNIFX__ when KNIFX" as MAC #E7DFC9
   rectangle "**Preprocess** (DXC -P)\nflatten #include, expand macros" as PP #E7DFC9
   rectangle "**ShaderIR**\ninternal representation" as IR #DCE6DC
@@ -57,11 +57,11 @@ package "2 - FRONTEND  (shared, runs for every target)" {
 package "3 - TRANSLATION LAYERS  (target selects the branch)" {
 
   package "OpenGL branch" {
-    rectangle "**DXC**\nHLSL -> SPIR-V" as GL_DXC #BFD2E8
+    rectangle "**DXC**\nHLSL -> SPIR-V\n(entry prototypes blanked, proven by DXC -P;\n-D__TIMESTAMP__ on every DXC call)" as GL_DXC #BFD2E8
     rectangle "SPIR-V" as GL_SPV #DCE6DC
     rectangle "**SPIRV-Cross**\nSPIR-V -> GLSL" as GL_SPVC #BFD2E8
     rectangle "GLSL 1.10\n(MojoShader dialect)" as GL_GLSL #DCE6DC
-    rectangle "**MonoGameGlslRewriter**\nps_oC0 -> gl_FragColor / gl_FragData[n];\nunwrap one-shot do-while (#136), else -> for (#107);\nroundEven -> floor+0.5; derivatives #extension (#139);\nsin/cos/tan args range-reduced to -pi..pi (#215);\nstruct :COLOR -> :SV_Target (MRT, GAP-2)" as GL_RW #E7DFC9
+    rectangle "**MonoGameGlslRewriter**\nps_oC0 -> gl_FragColor / gl_FragData[n];\nunwrap one-shot do-while (#136), else -> for (#107);\nroundEven -> floor+0.5; derivatives #extension (#139);\nsin/cos/tan args range-reduced to -pi..pi (#215);\nstruct :COLOR -> :SV_Target (MRT, GAP-2);\nvertex inputs: shared VertexSemanticMapper table;\nmatrix interpolant split: one vTexCoordN per register" as GL_RW #E7DFC9
     rectangle "**SkslConverter**  (ShadowDusk.Compiler.Sksl)\nmodern GLSL -> SkSL text (fragment-only,\ncoordinate-driven; no varyings, no vertex stage)" as SKSLCONV #E7DFC9
     rectangle "**RaylibConverter**  (ShadowDusk.Compiler.Raylib)\nmodern GLSL -> raylib glsl330 fragment shader\n(fragTexCoord / fragColor / texture0 / finalColor;\nsingle pass, no vertex stage, no render state)" as RAYLIBCONV #E7DFC9
     GL_DXC -down-> GL_SPV
@@ -74,12 +74,14 @@ package "3 - TRANSLATION LAYERS  (target selects the branch)" {
 
   package "DirectX branch" {
     rectangle "**vkd3d-shader**\nHLSL -> DXBC" as DX_VKD #BFD2E8
+    rectangle "**DX11 texture-slot check**\nlegacy samplers' textures vs fxc's first-read tN;\ndiffer -> recompile with pinned register(tN);\nunprovable -> keep slots, warn SD0230" as DX_SLOT #E7DFC9
     rectangle "DXBC (SM5 / SM4)" as DX_DXBC #DCE6DC
-    DX_VKD -down-> DX_DXBC
+    DX_VKD -down-> DX_SLOT : "DXBC + RDEF"
+    DX_SLOT -down-> DX_DXBC
   }
 
   package "DirectX12 branch" {
-    rectangle "**DXC**\nHLSL -> DXIL (SM6)" as DX12_DXC #BFD2E8
+    rectangle "**DXC**\nHLSL -> DXIL (SM6)\n(-D__TIMESTAMP__ on every DXC call)" as DX12_DXC #BFD2E8
     rectangle "DXIL (SM6)\n(carried as-is, no DXBC step)" as DX12_DXIL #DCE6DC
     DX12_DXC -down-> DX12_DXIL
   }
@@ -91,8 +93,10 @@ package "3 - TRANSLATION LAYERS  (target selects the branch)" {
   }
 
   package "Vulkan branch" {
-    rectangle "**DXC**\nHLSL -> SPIR-V" as VK_DXC #BFD2E8
+    rectangle "**Vulkan binding rewrite**\nexplicit register(tN) kept: slot = binding - 32;\nper-shader texture/sampler pairing" as VK_BIND #E7DFC9
+    rectangle "**DXC**\nHLSL -> SPIR-V\n(entry prototypes blanked, proven by DXC -P;\n-D__TIMESTAMP__ on every DXC call)" as VK_DXC #BFD2E8
     rectangle "SPIR-V\n(carried as-is)" as VK_SPV #DCE6DC
+    VK_BIND -down-> VK_DXC
     VK_DXC -down-> VK_SPV
   }
 }
@@ -148,7 +152,7 @@ IR --> GL_DXC : "GL"
 IR --> DX_VKD : "DX"
 IR --> DX12_DXC : "DX12"
 IR --> FNA_VKD : "FNA"
-IR --> VK_DXC : "Vulkan"
+IR --> VK_BIND : "Vulkan"
 
 GL_RW --> MGW : "OpenGL profile"
 GL_RW --> KNW : "KNI target"

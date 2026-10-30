@@ -45,4 +45,39 @@ public sealed record GlSamplerSlots(
     /// </summary>
     public IReadOnlyDictionary<string, string> LegacySamplerTextures { get; init; } =
         new Dictionary<string, string>(StringComparer.Ordinal);
+
+    /// <summary>
+    /// Function name -> the matrix declarations its signature carries, for every function
+    /// DEFINED in the preprocessed source (the compile looks up the entry points its passes name).
+    /// Not a sampler fact: it rides on the same view because the OpenGL rewriter cannot see
+    /// majorness in DXC's output, and fxc packs a <c>row_major</c> matrix interpolant by rows
+    /// (see <see cref="MatrixInterpolantDeclaration"/>).
+    /// </summary>
+    public IReadOnlyDictionary<string, EntryPointMatrixInterpolants> EntryPointInterpolants { get; init; } =
+        new Dictionary<string, EntryPointMatrixInterpolants>(StringComparer.Ordinal);
+
+    /// <summary>
+    /// Every declaration (as the preprocessed view spells it) of a resource that lives in a
+    /// <c>t</c> register and carries an explicit <c>register(tN)</c>, read or not: any
+    /// <c>texture*</c> type (legacy <c>texture</c>/<c>texture2D</c> and modern <c>Texture2D</c>
+    /// alike), <c>Buffer</c>, <c>StructuredBuffer</c>, <c>ByteAddressBuffer</c>, <c>tbuffer</c>; a
+    /// stage-qualified <c>register(ps, tN)</c> applies to that stage only. fxc takes every one of
+    /// these registers out of circulation, and keeps a directly read resource on its register; the
+    /// DirectX 11 texture slot assignment allocates legacy samplers' textures around them.
+    /// </summary>
+    internal IReadOnlyList<ExplicitTextureRegister> ExplicitTextureRegisters { get; init; } = [];
+
+    /// <summary>
+    /// The <see cref="LegacyTextures"/> the source ALSO uses through a method call of its own
+    /// (<c>T.GetDimensions(…)</c>, <c>T.Load(…)</c>, <c>T.Sample(…)</c>, …), as the preprocessed
+    /// view spells them. fxc gives such a use a texture record of its own, numbered apart from the
+    /// legacy sampler's (measured, <c>mgfxc</c> 3.8.4.1 DirectX_11: <c>A@t0 Tb@t1 Tb@t2</c>), and the
+    /// SM4 rewrite's own <c>T.Sample(S, …)</c> reads cannot be told from an author's in the compiled
+    /// text, so the DirectX 11 texture slot assignment refuses (<c>SD0230</c>) for these.
+    /// </summary>
+    internal IReadOnlySet<string> ModernMethodTextures { get; init; } = new HashSet<string>(StringComparer.Ordinal);
 }
+
+/// <summary>An explicit <c>t</c> register on a declaration: name, register, and the stage
+/// (<c>"vs"</c>/<c>"ps"</c>) when the clause is stage-qualified, else <c>null</c>.</summary>
+internal sealed record ExplicitTextureRegister(string Name, int Slot, string? Stage);

@@ -13,6 +13,13 @@ using ShadowDusk.Validation.Dx;
 
 DxHeadlessRasterizer.PinIfRequested();
 
+// `-- d3dcompiler` compiles with the Windows-only d3dcompiler_47 oracle backend
+// (CompilerOptions.DxbcBackend) instead of the default vkd3d. The DirectX 11 texture slot
+// check reads its evaluation order from vkd3d even then (d3dcompiler_47 schedules its reads),
+// and this run proves that public option still renders like mgfxc's goldens.
+DxbcBackend backend = args.Contains("d3dcompiler") ? DxbcBackend.D3DCompiler : DxbcBackend.Vkd3d;
+Console.WriteLine($"[candidate-dx] DXBC backend: {backend}");
+
 string repoRoot = DxShaderInputs.FindRepoRoot();
 string shaderDir = Path.Combine(repoRoot, "tests", "fixtures", "shaders");
 string catPath = DxShaderInputs.CatPath(repoRoot);
@@ -38,6 +45,7 @@ foreach (var name in DxShaderInputs.ShaderNames)
     var result = await compiler.CompileAsync(src, new CompilerOptions
     {
         Target = PlatformTarget.DirectX,
+        DxbcBackend = backend,
         IncludeResolver = new FileSystemIncludeResolver(),
         SourceFileName = fx,
     });

@@ -48,6 +48,28 @@ public sealed record PassInfo
     /// </summary>
     public SourceSpan? PixelProfileSpan { get; init; }
 
+    /// <summary>
+    /// True when <see cref="VertexProfile"/> came out of a macro expansion rather than being
+    /// written in the <c>compile</c> statement (<c>compile VS_SHADERMODEL V()</c> with
+    /// <c>#define VS_SHADERMODEL vs_3_0</c>). Only set by
+    /// <see cref="FxPreParser.ParseTechniquesPreprocessed(string, string)"/> (issue #407); the
+    /// raw pre-parse records the macro name itself as the profile and leaves this false.
+    /// </summary>
+    public bool VertexProfileFromMacro { get; init; }
+
+    /// <summary>The pixel counterpart of <see cref="VertexProfileFromMacro"/>.</summary>
+    public bool PixelProfileFromMacro { get; init; }
+
+    /// <summary>
+    /// The macro name written in the <c>compile</c> statement when <see cref="VertexProfileFromMacro"/>
+    /// (<c>VS_SHADERMODEL</c>), else null. The compile validates a macro-produced profile through
+    /// this name so DXC expands it with <c>-P</c>, the call pattern before issue #407.
+    /// </summary>
+    public string? VertexProfileMacroName { get; init; }
+
+    /// <summary>The pixel counterpart of <see cref="VertexProfileMacroName"/>.</summary>
+    public string? PixelProfileMacroName { get; init; }
+
     /// <summary>All non-shader render-state assignments in this pass.</summary>
     public required IReadOnlyList<RenderStateEntry> RenderStates { get; init; }
 

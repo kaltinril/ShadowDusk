@@ -1,0 +1,20 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!-- Rung-4 vertex-semantic + matrix-interpolant proof on real MonoGame DesktopGL. See SharedVertexSemantics. -->
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <IsPackable>false</IsPackable>
+    <TreatWarningsAsErrors>false</TreatWarningsAsErrors>
+    <RootNamespace>ShadowDusk.Validation.VertexSemantics.Gl</RootNamespace>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="MonoGame.Framework.DesktopGL" />
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\ShadowDusk.Compiler\ShadowDusk.Compiler.csproj" />
+  </ItemGroup>
+  <ItemGroup>
+    <Compile Include="..\SharedVertexSemantics\*.cs" />
+  </ItemGroup>
+</Project>

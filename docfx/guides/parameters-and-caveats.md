@@ -13,7 +13,7 @@ This bites people, so it's first:
 
 Always set the target explicitly. The CLI default matches `mgfxc` (`DirectX_11`); the library default favors the cross-platform OpenGL path.
 
-## Global parameter initializers are not baked in
+## Global parameter initializers become the parameter's default
 
 A global with an initializer, e.g.:
 
@@ -21,12 +21,11 @@ A global with an initializer, e.g.:
 float FishEyeAmount = 0.35;
 ```
 
-…does **not** carry `0.35` into the `.mgfx`. DXC (unlike `fxc`/`mgfxc`) drops global cbuffer initializers, so the stored default is `0`. The effect renders as identity until you either:
+…carries `0.35` into the `.mgfx` (and `.knifx`) as the parameter's default value, on every target. The effect has that value the moment you load it, before any `SetValue`. DXC drops the initializer, so ShadowDusk reads it from your source (after macros, `#if` and any defines are applied) and writes it into the file itself.
 
-- `SetValue` the parameter from code after loading the `Effect`, or
-- inline the value as a literal in the shader instead of a named global.
+This is deliberately **better than `mgfxc`**, not the same: `mgfxc`'s OpenGL build stores zero for every initializer, and its DirectX 11 build loses array elements and half of a `float2x2`. ShadowDusk keeps scalars, vectors, matrices, `int`, `bool` and every element of an array.
 
-This is a known fidelity gap versus `mgfxc` for the *initializer* specifically (it did not affect the validated SM3 corpus). Setting parameters by name at runtime is the recommended pattern regardless.
+ShadowDusk evaluates literals, arithmetic, casts, constructors such as `float4(1, 0, 0, 1)`, brace lists, arrays, earlier `const` values and a few math functions. If an initializer is something else (a call to your own function, say), the compile still succeeds and warns with `SD0017` naming the variable; its default is then zero until you `SetValue` it. Setting parameters by name at runtime always works.
 
 ## Advanced texture intrinsics compile on Windows only (for now)
 
@@ -40,7 +39,7 @@ Unlike the intrinsics gap above, this one does **not** fail at compile time — 
 
 ## Vertex-stage texture fetch is rejected on the OpenGL target
 
-Sampling a texture **in a vertex shader** (e.g. displacement mapping via `SampleLevel`/`tex2Dlod` in the VS) fails loudly with **`SD0210`** for `Target = OpenGL`. This is deliberate: MonoGame 3.8.2's OpenGL runtime cannot bind vertex textures at all — its GL program link assigns texture units only for the *pixel* shader's sampler records, and there is no GL `VertexTextures` apply path — so any compiled output would silently sample whatever happens to sit on texture unit 0 (typically rendering black). A loud compile error is the only honest result. Move the fetch to the pixel stage, or pass the data through a uniform/vertex stream. The DirectX and FNA targets are unaffected by this MonoGame-GL-runtime limitation.
+Sampling a texture **in a vertex shader** (e.g. displacement mapping via `SampleLevel`/`tex2Dlod` in the VS) fails loudly with **`SD0210`** for `Target = OpenGL`. This is deliberate: neither MonoGame's nor KNI's OpenGL runtime can bind vertex textures — MonoGame's GL program link assigns texture units only for the *pixel* shader's sampler records (there is no GL `VertexTextures` apply path), and KNI's GL backend likewise sets only the pixel shader's sampler uniforms — so any compiled output would silently sample whatever happens to sit on texture unit 0 (typically rendering black). `mgfxc`'s own OpenGL build of such a shader fails too. A loud compile error is the only honest result. Move the fetch to the pixel stage, or pass the data through a uniform/vertex stream. The DirectX (11 and 12), Vulkan and FNA targets are unaffected by this GL-runtime limitation; vertex texture fetch is render-proven on DirectX 11, DirectX 12 and Vulkan.
 
 ## The `compile <target>` profile and the `#if OPENGL` header
 
@@ -91,6 +90,17 @@ This is the shape you hit when a shader written for DesktopGL or FNA — `PixelS
 
 The floor is **per target**, and only the DirectX one is enforced today: OpenGL caps at SM 3.0 and Vulkan requires exactly `*_6_0`, so a profile that is wrong for DirectX is often exactly right for another target. Do not "fix" an `SD0015` by raising the profile for every backend.
 
+**KNIFX on DirectX follows KNI, not `mgfxc`.** KNI's own DirectX pipeline also accepts `vs_2_0`, `ps_2_0`, `vs_3_0` and `ps_3_0`: it compiles them as `*_4_0_level_9_1` and `*_4_0_level_9_3`. A KNIFX DirectX compile does the same, so an XNA-era `compile ps_2_0` effect builds for KNI WinForms.DX11 with no header change. `ps_3_0` records shader model 3.0, so it loads on HiDef but not on Reach, exactly as KNI's own build. The profiles KNI refuses (`ps_2_a`, `ps_2_b`, the `*_sw` profiles, SM1, `*_4_0_level_9_0`, SM6) are still `SD0015`. Two DirectX gaps that affected these effects are fixed as of 0.23.0:
+
+- **Legacy samplers' textures take `mgfxc`'s texture slots on DirectX 11.** fxc (and so `mgfxc` and KNI's pipeline) gives a legacy sampler's texture (`sampler2D A;`, a `sampler_state` block, read with `tex2D`) the `tN` slot of the shader's first read of it, so a `texture` declared above the `sampler … : register(s0)` SpriteBatch's sprite reaches no longer lands on `t0`. ShadowDusk checks each such shader after its compile and, when the slots differ, recompiles it with each texture pinned to `mgfxc`'s slot. When it cannot prove the order (a read under a condition fxc might fold away, a texture declared through a macro, a legacy sampler passed to a function, and the other shapes listed under `SD0230` in the [diagnostic codes](../diagnostics.md)), it keeps the declaration-order slots earlier releases used and warns **`SD0230`**; declaring samplers and their textures in slot order (`s0` first) keeps such a shader correct.
+- **`half` globals compile on DirectX** as the `float` declaration, as `mgfxc` builds them (see [`half` uniforms are `float` uniforms](#half-uniforms-are-float-uniforms) below).
+
+ShadowDusk compiles every DirectX 11 shader at SM5, so it is more lenient than KNI's fxc compile at `*_4_0_level_9_1` / `_9_3`: an effect that builds here can still fail in KNI's own content pipeline if it exceeds the feature-level-9 instruction or dependent-read limits, reads `VPOS` or `VFACE`, uses `ddx`/`ddy` at `ps_2_0`, or writes the profile in upper case (`PS_2_0`, which KNI's case-sensitive check refuses).
+
+### KNIFX: the shader model KNI checks
+
+A `.knifx` container records each shader's model, and KNI's runtime refuses a shader whose model is above the graphics profile's ceiling (Reach 2.0, HiDef 3.0, FL10_0 4.0, FL11_0 5.0). ShadowDusk records the model the way KNI's own content pipeline does for the feature-level-9 profiles: `*_4_0_level_9_1` is **2.0** and `*_4_0_level_9_3` is **3.0**, so the standard MonoGame header (`#define PS_SHADERMODEL ps_4_0_level_9_1`) loads on Reach and HiDef. Writing `ps_4_0` (no feature level) records 4.0, which KNI only accepts from `FL10_0` up, exactly as it does for its own build. `ps_2_0` and `ps_3_0` record 2.0 and 3.0 on both targets. A few profiles KNI's own pipeline refuses outright (`*_4_0_level_9_0`, SM6 such as `ps_6_0`, `ps_2_a`, the `*_sw` profiles, SM1) still compile on the OpenGL KNIFX target and record 4.0, 6.0, 3.0 or 1.x (on DirectX they are `SD0015`); an SM6 shader on the OpenGL KNIFX target then fails to load on desktop KNI SDL2.GL at every profile measured (Reach to FL11_0), so name `ps_3_0` (or the `*_4_0_level_9_1` pair) for KNIFX ([issue #439](https://github.com/kaltinril/ShadowDusk/issues/439)).
+
 ## Uniform types on the OpenGL target (cbuffers, arrays, staged limits)
 
 Free uniforms, named `cbuffer`s (including one shared by both shader stages, or several in one stage), and **array uniforms** (`float4 Colors[4]`, `float4x4 Bones[N]`, `float`/`float2`/`float3` arrays) are fully modelled: array parameters expose their elements in `Effect.Parameters` — `Parameters["Colors"].SetValue(Vector4[])` and `Parameters["Colors"].Elements[i]` work exactly as with `mgfxc` output, on every target.
@@ -101,6 +111,12 @@ Two uniform shapes are **rejected loudly** (`SD0210`) on the OpenGL target rathe
 - **Non-`float4x4` matrices (`float3x3`, `float2x2`, …) and `struct` uniforms** — pad the matrix to `float4x4` or split it into vectors.
 
 The loud error is the honest result until these shapes are modelled — far better than the silent broken GLSL they would otherwise produce (which fails only at `Effect`-load time inside the game).
+
+## `half` uniforms are `float` uniforms
+
+An XNA-era uniform declared with a `half` type (`half4 Tint = half4(1, 0.5, 0, 1);`, or any `half`, `halfN`, `halfNxM` global or cbuffer member) compiles as the `float` declaration on DirectX 11, DirectX 12, Vulkan, OpenGL and KNIFX: a `Single` parameter of the same shape, with the same default, set with the same `SetValue` overload. That is what `mgfxc`'s DirectX 11 build does (fxc's backwards-compatibility flag). `half` locals and function parameters compile everywhere.
+
+The one exception is **FNA**: its reference compiler, `fxc /T fx_2_0`, refuses a `half` global (`X3650 ... global variables cannot use the 'half' type`), so ShadowDusk refuses it too, with vkd3d's `E5002` at the declaration. Declare the uniform as `float`.
 
 ## DirectX uses `vkd3d-shader`, not DXC
 
@@ -114,10 +130,15 @@ Two **opt-in, experimental** newer containers are available for consumers target
 
 - **MGFX v11** — set <xref:ShadowDusk.Core.CompilerOptions.MgfxVersion> `= 11` (CLI `--mgfx-version 11`). A faithful MonoGame v11 container for **MonoGame 3.8.5+**. v11 adds two per-shader diagnostic strings (the source file + entry point, used only in shader error messages, MonoGame PR #8813); it renders identically to v10. The source-file string is <xref:ShadowDusk.Core.CompilerOptions.SourceFileName> exactly as you pass it (what `mgfxc` does with its own argument), so an absolute path ends up in the effect; set <xref:ShadowDusk.Core.CompilerOptions.EmbeddedSourceFileName> to store a different string while diagnostics keep the real path. ShadowDusk's MGCB plugin and Content Builder processor store `<unknown>`, as MonoGame's stock processor does. DirectX 12 and Vulkan are always v11, so this applies to them without any opt-in. Render-proven in real MonoGame 3.8.5. *(v11 stays opt-in: v10 loads in every MonoGame from 3.8.1.263 onward and in KNI, whereas v11 requires 3.8.5+.)*
 - **KNIFX v11** — set <xref:ShadowDusk.Core.CompilerOptions.Container> `= EffectContainer.Knifx`. KNI's newer KNIFX container for **KNI v4.02+**, render-proven in real KNI v4.2.9001. `MgfxVersion` is ignored when `Container == Knifx`; `Container` is ignored for the `Fna` target (always D3D9 fx_2_0).
+  One parameter difference follows KNI's own pipeline: in `.knifx` a legacy sampler that binds no texture (`sampler s0;`, `sampler2D S : register(s0);`, or a `sampler_state` without `Texture =`) is **no effect parameter**, so `effect.Parameters["s0"]` is `null`. Bind the texture through the device (`GraphicsDevice.Textures[n] = texture`; SpriteBatch already binds unit 0), or declare the texture in the `.fx` (`Texture2D Tex; sampler2D s0 = sampler_state { Texture = (Tex); };`) and set `Parameters["Tex"]`, which works in both containers. The default MGFX v10 container keeps `mgfxc`'s parameter named after the sampler.
 
 To pick a whole target (backend + container) with one value instead of setting these separately, set `CompilerOptions.Profile` to a `CapabilityProfile` (e.g. `CapabilityProfile.KniGL_4_02`), or use the CLI `--target-runtime` flag — a profile overrides `Target` / `Container` / `MgfxVersion`. See [Choosing a Target](choosing-a-target.md).
 
 > **Important:** `--mgfx-version 11` writes a correct, full v11 body (not merely a bumped header byte over a v10 body). Still, **leave the default (v10) unless you specifically target a newer runtime and want its container** — v10 loads everywhere.
+
+## Anonymous passes and techniques are named `""`
+
+A `pass { ... }` or `technique { ... }` written without a name is named with the empty string, as `mgfxc`, KNI's pipeline and `fxc` name it, in every container (MGFX, KNIFX, FNA's fx_2_0): `EffectPass.Name` and `EffectTechnique.Name` read `""`. Look an anonymous pass up by index (`technique.Passes[0]`, or iterate `technique.Passes`), or give it a name in the `.fx`. Releases before 0.23.0 synthesized `P0`, `P1`, ... for anonymous passes (FNA reported an anonymous technique's name as `null`), so `technique.Passes["P0"]` now returns `null`. Two anonymous techniques in one effect, and an anonymous pass beside a pass named `P0`, compile, as they do with `mgfxc`.
 
 ## `.mgfx` vs `.xnb`
 

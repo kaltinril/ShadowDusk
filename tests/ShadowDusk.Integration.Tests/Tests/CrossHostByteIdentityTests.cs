@@ -95,6 +95,12 @@ public sealed class CrossHostByteIdentityTests
         "MultiCbufferVs.fx",
         "ArrayUniform.fx",
         "ArrayUniformVs.fx",
+        // XNA-era `half` globals: with ImplicitTruncationWarning/Sm3SemanticStructs, the
+        // corpus case whose DirectX compile depends on the vkd3d compile options
+        // (BACKWARD_COMPATIBILITY = ALLOW_HALF_GLOBALS; without it vkd3d refuses the file
+        // with E5002), so browser-vkd3d-gate.mjs sees a host that drops that bit. GL + DX
+        // only: FNA refuses a half global, as its reference fxc /T fx_2_0 does.
+        "HalfGlobals.fx",
     ];
 
     /// <summary>
@@ -140,8 +146,9 @@ public sealed class CrossHostByteIdentityTests
         // on all three targets, so DX/FNA are pinned too).
         "examples/ExReservedWordUniform.fx",
         // Issue #295: SM1-3 semantics on struct FIELDS (POSITION0 vertex output / pixel
-        // input, COLOR0 pixel output). The one corpus fixture whose DirectX bytes depend
-        // on the vkd3d compile options (BACKWARD_COMPATIBILITY = MAP_SEMANTIC_NAMES), so
+        // input, COLOR0 pixel output). A corpus fixture whose DirectX bytes depend on the
+        // vkd3d compile options (BACKWARD_COMPATIBILITY = MAP_SEMANTIC_NAMES; HalfGlobals.fx
+        // above is the other, ALLOW_HALF_GLOBALS), so
         // a host that passes vkd3d a different option list than the desktop cannot match
         // this entry: browser-vkd3d-gate.mjs compiles it through the real browser host
         // against this manifest. Do not drop it from the DirectX arm.

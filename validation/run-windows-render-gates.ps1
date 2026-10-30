@@ -24,8 +24,15 @@
   Gates (all default ON except FNA). Each entry below is only the what-and-versus; per-gate
   history and evidence detail lives in docs/validation-matrix.md section 6.
     * MonoGame WindowsDX corpus  - validation/BaselineDx + CandidateDx + compare_dx.py
-                                   (ShadowDusk DX vs mgfxc DX golden, real MonoGame WindowsDX).
-    * DX modern features (VTF)   - validation/DxModernFeatures (vkd3d vs fxc oracle, maxd 0).
+                                   (ShadowDusk DX vs mgfxc DX golden, real MonoGame WindowsDX),
+                                   once on the default vkd3d backend and once with
+                                   `CandidateDx -- d3dcompiler` (the d3dcompiler_47 option).
+    * DX modern features (VTF)   - validation/DxModernFeatures (vkd3d vs fxc oracle, maxd 0), plus
+                                   its legacy-register, half-globals and legacy texture-slot arms
+                                   (vs the committed mgfxc DirectX_11 goldens, maxd 0), and arm
+                                   "legacy-lod": tex2Dlod (VS and PS), tex2Dbias and tex2Dproj in
+                                   legacy sampler syntax vs the mgfxc 3.8.4.1 DirectX_11 golden,
+                                   four positive controls (maxd 0).
     * DX Apos.Shapes gallery     - validation/VsDrivenDx -- apos: the full 30-cell Apos.Shapes
                                    ShapeBatch gallery through the real NuGet package; d3dcompiler_47
                                    arm vs the real mgfxc DirectX_11 golden, vkd3d arm vs the
@@ -59,8 +66,10 @@
                                    Plus `-- texarr` (issue #324): Texture2D Tex[2] vs the real
                                    mgfxc 3.8.5 golden - same parameter table (one `Tex` bound to
                                    slot 0), same picture, element [1] really read.
+                                   Plus `-- legacy-lod`: tex2Dlod (VS and PS), tex2Dbias, tex2Dproj
+                                   vs mgfxc 3.8.5's DirectX_12 build of the modern twin (maxd 0).
     * KNI DirectX                - validation/KniWinFormsDX (ShadowDusk DX vs mgfxc, real KNI
-                                   WinForms.DX11).
+                                   WinForms.DX11), plus the legacy texture-slot rows.
     * KNI OpenGL desktop         - validation/Baseline + Candidate + KniDesktopGL + compare_kni.py
                                    (ShadowDusk v10 vs mgfxc + MonoGame, real KNI SDL2.GL - the
                                    real-KNI-runtime GL proof CI's llvmpipe lane does not cover).
@@ -72,6 +81,42 @@
                                    tol 2/255, three positive controls. Image fidelity, not an
                                    mgfxc diff (Skia has no reference compiler). CI runs it on
                                    llvmpipe too; this run is its GPU-GL-driver KNI arm.
+    * Initializer defaults       - validation/InitializerDefaults{Gl,Dx,KniGl,KniDx,Dx12,Vulkan}
+                                   (owner directive 2026-10-28): `float R = 1;` (and a float4, a
+                                   float4x4, a float4[2], plus float2x2 / int / bool off GL) is the
+                                   default in the real engine with NO Set call, for every MGFX and
+                                   KNIFX output. Each driver has a no-initializer control that must
+                                   render black, and the GL ones render the real mgfxc OpenGL build
+                                   (zeros) as a second control. Dx12 and Vulkan are MonoGame 3.8.5.
+                                   KniDx and KniGl also open a Reach device: KNIFX ps/vs_4_0_level_9_1
+                                   must load (recorded SM 2.0); 9_3, 4_0 (and 3_0 on GL) refused.
+    * GL vertex semantics        - validation/VertexSemantics{Gl,KniGl}: a custom VertexDeclaration
+                                   with BINORMAL / TANGENT / BLENDINDICES (Byte4) / BLENDWEIGHT 0+1 /
+                                   PSIZE / FOG / DEPTH / TEXCOORD3 / COLOR, each element shown alone
+                                   through the effect's `Pick`, plus a float3x3 TEXCOORD2
+                                   interpolant; vs the mgfxc OpenGL build (maxd <= 1) and the
+                                   element's CPU value, MGFX v10 on MonoGame, v10 + KNIFX on KNI;
+                                   plus 30 matrix-interpolant packing fixtures whose stages declare
+                                   the interpolant differently (column_major and row_major, 3x3 /
+                                   4x3 / 3x4 / 2x2). Controls that must diverge: a relabelled
+                                   BINORMAL0 record, two row_major fixtures packed by columns, a split float1x4 in one register.
+                                   The non-square packing cases are an explicit list a strict GL
+                                   driver (Mesa/Apple/ANGLE, from GL_RENDERER) must refuse
+                                   (EXPECTED-REFUSED, SD0403); on a desktop GPU driver they must
+                                   render and match like the rest, so this run is where they do.
+    * KNI EffectTest             - validation/KniEffectTest{KniGl,KniDx,Gl,Dx,Dx12,Vulkan}: every test
+                                   of KNI's own Tests/Framework.Graphics/EffectTest.cs (checked against
+                                   XNA by KNI's author) in the real engine, on KNI's vendored test
+                                   shaders plus five companions. GATE rows must pass, KNOWN-FAIL rows
+                                   (listed ShadowDusk bugs) must still fail, INFO rows are printed with
+                                   their reason, up to three positive controls must be caught (a
+                                   render control runs only where that render is gated). The KNI ones
+                                   run against nkast 4.2.9001 AND 4.3.9001; Vulkan is in that block.
+    * Non-square matrix Set      - validation/NonSquareMatrix{Dx,Vulkan} (issue #423): float4x3,
+                                   float3x2, float4x3[2] and trailing-matrix parameters Set from C#
+                                   land in the right registers, vs MonoGame's own DirectX semantics
+                                   (the committed real mgfxc 3.8.5 builds render alongside). The
+                                   Vulkan one is in the Vulkan block.
     * Apos.Shapes GL render-proof - validation/VsDriven -- apos: a single shape plus a needle-thin
                                    ellipse vs the mgfxc OpenGL golden, tol 2/255. Uses the older
                                    apos-shapes.fx pin - the current revision's mgfxc GL compile is
@@ -89,6 +134,10 @@
                                    because its restore-fna.ps1 clones the FNA source tree (heavy) and
                                    needs an authenticated gh for the fnalibs natives. Run it for any
                                    release that could affect the FNA target or the .xnb writer.
+    * FNA initializer defaults   - FnaValidation -- defaults D3D11 / OpenGL (-IncludeFna), owner
+                                   directive 2026-10-28: matrix and array initializer defaults
+                                   survive to real FNA (getters + unset render equal fxc fx_2_0),
+                                   on both FNA3D drivers, with stripped-initializer controls.
     * Slang DX12 / Vulkan / FNA  - validation/SlangFullCorpusDx12, validation/SlangFullCorpusVulkan
                                    (Vulkan block) and FnaValidation -- slang (-IncludeFna), issue
                                    #230: the 21-shader real-slangc corpus through SlangCompiler vs
@@ -117,7 +166,15 @@
                                    (maxd 0), plus the 30-cell ShapeBatch gallery (maxd 0), plus
                                    `-- texarr` (issue #324, expect-diagnostic, no device): a
                                    texture array must be refused with SD0221, since mgfxc 3.8.5's
-                                   own Vulkan output for it binds nothing.
+                                   own Vulkan output for it binds nothing, plus `-- legacy-lod`
+                                   (tex2Dlod/tex2Dbias/tex2Dproj vs mgfxc 3.8.5's Vulkan build of
+                                   the modern twin, maxd 0, four positive controls).
+                                   Plus `-- regslots`: explicit register slots (a lone
+                                   register(t1), a t0+t2 gap, a Texture2DArray on t1, register spaces,
+                                   dead samplers, Load-only, helper/macro pairings, one texture through
+                                   two samplers, and one texture through a different sampler per
+                                   technique or per stage) vs their mgfxc 3.8.5 goldens through
+                                   SpriteBatch, maxd 0 + a known colour.
     * XNB direct writer          - validation/XnbContentLoad: a ShadowDusk-written .xnb through a
                                    real MonoGame WindowsDX Content.Load<Effect> vs stock mgcb's
                                    (pixel-identical), plus the envelope assertions (Phase 60).
@@ -154,10 +211,12 @@
                                    requires pixel-identical renders. Also the only run of the
                                    Builder's unguarded GetTypes() scan over our real graph.
 
-  Both Vulkan gates are DEFAULT-ON (issue #145: a Vulkan-affecting change must not depend on
-  someone remembering a switch). Pass -SkipVulkan only on a box with no Vulkan-capable GPU.
-  CI also runs both (validation-render.yml, Mesa lavapipe + the Khronos validation layer), but
-  that is a CPU driver; this local run is still the only GPU-driver Vulkan render.
+  The Vulkan block (CandidateVulkan, InitializerDefaultsVulkan, NonSquareMatrixVulkan,
+  KniEffectTestVulkan, VsDrivenVulkan in every mode, SlangFullCorpusVulkan) is DEFAULT-ON
+  (issue #145: a Vulkan-affecting change must not depend on someone remembering a switch). Pass
+  -SkipVulkan only on a box with no Vulkan-capable GPU. CI also runs all of it but
+  SlangFullCorpusVulkan (validation-render.yml, Mesa lavapipe + the Khronos validation layer),
+  but that is a CPU driver; this local run is still the only GPU-driver Vulkan render.
 
   The in-process MonoGame OpenGL render gates (StateFidelity / CbufferModel /
   TextureBreadthValidation / ReservedWordGl / SamplerPairsGl / SamplerRegisterOrderGl /
@@ -173,7 +232,7 @@
   switch changes nothing; passing it is harmless.
 
 .PARAMETER SkipVulkan
-  Skip both Vulkan gates. Use ONLY on a machine with no Vulkan-capable GPU - a
+  Skip the Vulkan block. Use ONLY on a machine with no Vulkan-capable GPU - a
   Vulkan-affecting change is not validated without them.
 
 .PARAMETER SkipRestore
@@ -228,10 +287,14 @@ $gates.Add(@{
         Invoke-Checked 'dotnet' @('run', '--project', 'validation/BaselineDx', '-c', 'Release')
         Invoke-Checked 'dotnet' @('run', '--project', 'validation/CandidateDx', '-c', 'Release')
         Invoke-Checked 'python' @('validation/compare_dx.py')
+        # The same corpus through the public d3dcompiler_47 oracle backend (CompilerOptions.DxbcBackend),
+        # whose scheduled instruction stream must not drive the DirectX 11 texture slots.
+        Invoke-Checked 'dotnet' @('run', '--project', 'validation/CandidateDx', '-c', 'Release', '--', 'd3dcompiler')
+        Invoke-Checked 'python' @('validation/compare_dx.py')
     }
 })
 $gates.Add(@{
-    Name   = 'DX modern features / vertex texture fetch (vkd3d vs fxc oracle)'
+    Name   = 'DX modern features / vertex texture fetch (vkd3d vs fxc oracle) + legacy sampler register and texture-slot arms vs mgfxc'
     Action = { Invoke-Checked 'dotnet' @('run', '--project', 'validation/DxModernFeatures', '-c', 'Release') }
 })
 $gates.Add(@{
@@ -272,10 +335,14 @@ $gates.Add(@{
         # load and draw the same picture, and element [1], reachable only through
         # GraphicsDevice.Textures[1], must really be read (CPU expectation (cat + green) / 2).
         Invoke-Checked 'dotnet' @('run', '--project', 'validation/VsDrivenDx12', '-c', 'Release', '--', 'texarr')
+        # tex2Dlod (vertex AND pixel stage), tex2Dbias, tex2Dproj in legacy sampler syntax vs
+        # mgfxc 3.8.5's DirectX_12 build of the modern twin (mgfxc 3.8.5 has no DX12 reference
+        # for the legacy spelling), maxd 0, four positive controls.
+        Invoke-Checked 'dotnet' @('run', '--project', 'validation/VsDrivenDx12', '-c', 'Release', '--', 'legacy-lod')
     }
 })
 $gates.Add(@{
-    Name   = 'KNI DirectX (ShadowDusk DX vs mgfxc, real KNI WinForms.DX11)'
+    Name   = 'KNI DirectX (ShadowDusk DX vs mgfxc, real KNI WinForms.DX11, incl. legacy texture slots)'
     Action = { Invoke-Checked 'dotnet' @('run', '--project', 'validation/KniWinFormsDX', '-c', 'Release') }
 })
 # KNI OpenGL gates: CI's llvmpipe lane covers the in-process MonoGame GL gates, but the
@@ -307,6 +374,62 @@ $gates.Add(@{
         finally { Remove-Item Env:SHADOWDUSK_REQUIRE_GL -ErrorAction SilentlyContinue }
     }
 })
+# Global-initializer defaults (`float R = 1;`), owner directive 2026-10-28: the value is the default
+# in EVERY MGFX/KNIFX output, proven in the real engine with no Set call. Five runtimes here (the
+# Vulkan one is in the Vulkan block); each has a no-initializer control and the GL ones also render
+# the real mgfxc OpenGL build, which stores zeros.
+foreach ($drv in @(
+    @('InitializerDefaultsGl',    'MonoGame DesktopGL'),
+    @('InitializerDefaultsDx',    'MonoGame WindowsDX'),
+    @('InitializerDefaultsKniGl', 'KNI SDL2.GL, MGFX v10 and KNIFX, plus the KNIFX shader model (incl. SM 2.0/3.0) on a Reach device'),
+    @('InitializerDefaultsKniDx', 'KNI WinForms.DX11, MGFX v10 and KNIFX, plus the KNIFX shader model on a Reach device and KNIFX SM 2.0/3.0 vs KNI''s own build'),
+    @('InitializerDefaultsDx12',  'MonoGame 3.8.5 WindowsDX12'))) {
+    $project = "validation/$($drv[0])"
+    $gates.Add(@{
+        Name   = "Initializer defaults ($($drv[1]): a global initializer is the parameter's default with no Set call, vs no-initializer and mgfxc-GL controls)"
+        # [scriptblock]::Create, not GetNewClosure(): a closure runs in a module scope that cannot see Invoke-Checked.
+        Action = [scriptblock]::Create("Invoke-Checked 'dotnet' @('run', '--project', '$project', '-c', 'Release')")
+    })
+}
+# Issue #423: non-square matrix parameters Set from C# (float4x3, float3x2, float4x3[2], trailing
+# matrices) land in the right registers in real MonoGame WindowsDX; the expectation is MonoGame's own
+# DirectX semantics, confirmed by the committed real mgfxc 3.8.5 DirectX_11 builds rendered alongside.
+$gates.Add(@{
+    Name   = 'Non-square matrix Set (issue #423, real MonoGame WindowsDX vs MonoGame DX semantics + mgfxc DirectX_11 builds)'
+    Action = { Invoke-Checked 'dotnet' @('run', '--project', 'validation/NonSquareMatrixDx', '-c', 'Release') }
+})
+# GL vertex-input semantics beyond POSITION/COLOR/TEXCOORD/NORMAL (BINORMAL, TANGENT,
+# BLENDINDICES, BLENDWEIGHT, PSIZE, FOG, DEPTH, non-zero indices) and float3x3 interpolants:
+# each element of a custom VertexDeclaration drives the colour, vs the mgfxc OpenGL build in the
+# same process AND the CPU-known element value, with a relabelled-record control that must diverge.
+foreach ($drv in @(
+    @('VertexSemanticsGl',    'MonoGame DesktopGL'),
+    @('VertexSemanticsKniGl', 'KNI SDL2.GL, MGFX v10 and KNIFX'))) {
+    $project = "validation/$($drv[0])"
+    $gates.Add(@{
+        Name   = "GL vertex semantics + matrix interpolants ($($drv[1]): every VertexElementUsage binds, vs mgfxc OpenGL build, relabelled-record control)"
+        Action = [scriptblock]::Create("Invoke-Checked 'dotnet' @('run', '--project', '$project', '-c', 'Release')")
+    })
+}
+# KNI's own effect test suite (EffectTest.cs, checked against XNA by KNI's author) as a gate: each
+# driver prints a GATE / KNOWN-FAIL / INFO table and exits non-zero on a gated regression, a
+# known-failing row that unexpectedly passes (the fixing PR must flip it), or a missed positive
+# control. The Vulkan driver is in the Vulkan block below.
+foreach ($drv in @(
+    @('KniEffectTestKniGl', 'KNI 4.2.9001 SDL2.GL, MGFX v10 and KNIFX', @()),
+    @('KniEffectTestKniGl', 'KNI 4.3.9001 SDL2.GL, MGFX v10 and KNIFX', @('-p:KniVersion=4.3.9001')),
+    @('KniEffectTestKniDx', 'KNI 4.2.9001 WinForms.DX11, MGFX v10 and KNIFX', @()),
+    @('KniEffectTestKniDx', 'KNI 4.3.9001 WinForms.DX11, MGFX v10 and KNIFX', @('-p:KniVersion=4.3.9001')),
+    @('KniEffectTestGl',    'MonoGame DesktopGL', @()),
+    @('KniEffectTestDx',    'MonoGame WindowsDX', @()),
+    @('KniEffectTestDx12',  'MonoGame 3.8.5 WindowsDX12', @()))) {
+    $runArgs = (@('run', '--project', "validation/$($drv[0])", '-c', 'Release') + $drv[2] | ForEach-Object { "'$_'" }) -join ', '
+    $gates.Add(@{
+        Name   = "KNI EffectTest ($($drv[1]): KNI's own effect tests in the real engine, gated / known-failing / informational rows, up to three positive controls)"
+        # [scriptblock]::Create, not GetNewClosure(): a closure runs in a module scope that cannot see Invoke-Checked.
+        Action = [scriptblock]::Create("Invoke-Checked 'dotnet' @($runArgs)")
+    })
+}
 $gates.Add(@{
     Name   = 'Apos.Shapes GL render-proof (Phase 51 A3, real MonoGame DesktopGL vs mgfxc OpenGL golden)'
     Action = { Invoke-Checked 'dotnet' @('run', '--project', 'validation/VsDriven', '-c', 'Release', '--', 'apos') }
@@ -463,6 +586,18 @@ if ($IncludeFna) {
         Name   = 'Slang FNA (issue #230: real-slangc route vs fxc /T fx_2_0, 21 shaders, real FNA Effect + .xnb arm)'
         Action = { Invoke-Checked 'dotnet' @('run', '--project', 'validation/FnaValidation', '-c', 'Release', '--', 'slang') }
     })
+    # Owner directive 2026-10-28: initializer defaults (matrix and array included) survive to the
+    # FNA runtime. Every numeric parameter read back before any Set, and the unset render, must
+    # equal fxc /T fx_2_0's build, on BOTH FNA3D drivers (one process per driver: FNA allows one
+    # Game per process). Four stripped-initializer positive controls must diverge.
+    $gates.Add(@{
+        Name   = 'FNA initializer defaults, D3D11 driver (8 fixtures incl. float2x2/3x3/4x4/row_major and float/vector/int/bool/matrix arrays, vs fxc /T fx_2_0, real FNA getters + unset render, 4 positive controls)'
+        Action = { Invoke-Checked 'dotnet' @('run', '--project', 'validation/FnaValidation', '-c', 'Release', '--', 'defaults', 'D3D11') }
+    })
+    $gates.Add(@{
+        Name   = 'FNA initializer defaults, OpenGL driver (same fixtures and controls as the D3D11 run)'
+        Action = { Invoke-Checked 'dotnet' @('run', '--project', 'validation/FnaValidation', '-c', 'Release', '--', 'defaults', 'OpenGL') }
+    })
 } else {
     Write-Host "NOTE: FNA gate not run (pass -IncludeFna). Required before an FNA-affecting release.`n" -ForegroundColor Yellow
 }
@@ -481,7 +616,22 @@ if (-not $SkipVulkan) {
         }
     })
     $gates.Add(@{
-        Name   = 'Vulkan VS-driven + Apos.Shapes #145 reproducer (ShadowDusk vs mgfxc 3.8.5 goldens, real MonoGame DesktopVK)'
+        Name   = 'Initializer defaults (MonoGame 3.8.5 DesktopVK: a global initializer is the parameter default with no Set call, vs no-initializer control)'
+        Action = { Invoke-Checked 'dotnet' @('run', '--project', 'validation/InitializerDefaultsVulkan', '-c', 'Release') }
+    })
+    $gates.Add(@{
+        # Issue #423: the same non-square Set cases on DesktopVK, against MonoGame's DirectX semantics.
+        # Real mgfxc 3.8.5's Vulkan builds render alongside, reported only (its transposed header drops
+        # a float4x3's translation row, zeroes a float3x2 and throws on float4x3[2]).
+        Name   = 'Non-square matrix Set (issue #423, real MonoGame 3.8.5 DesktopVK vs MonoGame DX semantics)'
+        Action = { Invoke-Checked 'dotnet' @('run', '--project', 'validation/NonSquareMatrixVulkan', '-c', 'Release') }
+    })
+    $gates.Add(@{
+        Name   = 'KNI EffectTest (MonoGame 3.8.5 DesktopVK: KNI''s own effect tests in the real engine, gated / known-failing / informational rows, positive controls)'
+        Action = { Invoke-Checked 'dotnet' @('run', '--project', 'validation/KniEffectTestVulkan', '-c', 'Release') }
+    })
+    $gates.Add(@{
+        Name   = 'Vulkan VS-driven + Apos.Shapes #145 reproducer + explicit register slots (ShadowDusk vs mgfxc 3.8.5 goldens, real MonoGame DesktopVK)'
         Action = {
             # Issue #145: the PS-only corpus above could not see a vertex shader OR a matrix, which
             # is why row-major matrix packing shipped and every VS-driven Vulkan effect rendered
@@ -497,6 +647,15 @@ if (-not $SkipVulkan) {
             # no parameter, no sampler record and no descriptor binding (the committed golden is
             # decoded to pin that). `-- texarr-reference` draws mgfxc's effect itself, as evidence.
             Invoke-Checked 'dotnet' @('run', '--project', 'validation/VsDrivenVulkan', '-c', 'Release', '--', 'texarr')
+            # tex2Dlod (vertex AND pixel stage), tex2Dbias, tex2Dproj in legacy sampler syntax vs
+            # mgfxc 3.8.5's Vulkan build of the modern twin, maxd 0, four positive controls. Its
+            # own process (one device per process on DesktopVK).
+            Invoke-Checked 'dotnet' @('run', '--project', 'validation/VsDrivenVulkan', '-c', 'Release', '--', 'legacy-lod')
+            # Explicit register slots: a texture's Vulkan slot is its SPIR-V binding minus 32, as mgfxc
+            # 3.8.5 writes it and DesktopVK reads it. A lone register(t1), a t0+t2 gap and a Texture2DArray
+            # on t1 vs their mgfxc goldens, each through SpriteBatch with a known-colour check (before
+            # the fix ShadowDusk wrote the ordinal slot and the lone t1 and the array drew (0,0,0,0)).
+            Invoke-Checked 'dotnet' @('run', '--project', 'validation/VsDrivenVulkan', '-c', 'Release', '--', 'regslots')
         }
     })
     $gates.Add(@{

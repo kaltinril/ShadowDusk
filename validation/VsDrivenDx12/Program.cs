@@ -15,6 +15,7 @@
 //
 // dotnet run --project validation/VsDrivenDx12            -> the VS rig
 // dotnet run --project validation/VsDrivenDx12 -- apos     -> the Apos.Shapes DX12 render-proof
+// dotnet run --project validation/VsDrivenDx12 -- legacy-lod -> tex2Dlod/tex2Dbias/tex2Dproj vs mgfxc 3.8.5 (modern twin)
 
 using System;
 using System.Collections.Generic;
@@ -28,9 +29,9 @@ using ShadowDusk.Core.Preprocessor;
 using ShadowDusk.Validation.Dx;
 
 string mode = args.Length > 0 ? args[0].Trim().ToLowerInvariant() : "vs";
-if (mode is not ("vs" or "apos" or "texarr" or "samparr"))
+if (mode is not ("vs" or "apos" or "texarr" or "samparr" or "legacy-lod"))
 {
-    Console.Error.WriteLine($"unknown mode '{mode}' — expected 'vs', 'apos', 'texarr' or 'samparr'");
+    Console.Error.WriteLine($"unknown mode '{mode}' — expected 'vs', 'apos', 'texarr', 'samparr' or 'legacy-lod'");
     return 2;
 }
 
@@ -38,6 +39,21 @@ string repoRoot = FindRepoRoot();
 
 if (mode == "vs")
     return await RunVsPhase();
+if (mode == "legacy-lod")
+{
+    // tex2Dlod (vertex AND pixel stage), tex2Dbias, tex2Dproj in legacy sampler syntax
+    // (tests/fixtures/golden/legacy-lod-intrinsics/Tex2DLodRender.fx), ShadowDusk's DirectX12
+    // build vs the real mgfxc 3.8.5 /Profile:DirectX_12 build of the MODERN twin
+    // (Tex2DLodRenderModern.fx): mgfxc 3.8.5 has no DX12 reference for the legacy spelling (it
+    // compiles it to an effect with no texture parameter), and the twin's equivalence is
+    // measured on mgfxc's own DirectX_11 builds by validation/DxModernFeatures. Same scene and
+    // positive controls as the DX11 and Vulkan arms (validation/SharedLegacyLod).
+    bool lodOk = await ShadowDusk.Validation.LegacyLod.LegacyLodArm.RunAsync(
+        PlatformTarget.DirectX12, repoRoot, "legacy-lod-dx12", "legacy-lod-dx12", tolerance: 0, "VertexTextureEffect.DirectX_12.mgfx",
+        ("mgfxc-modern-twin", "Tex2DLodRenderModern.DirectX_12.mgfx"));
+    Console.WriteLine($"[legacy-lod-dx12] verdict: {(lodOk ? "PASS" : "FAIL")}");
+    return lodOk ? 0 : 1;
+}
 if (mode == "texarr")
     return await RunTextureArrayPhase();
 if (mode == "samparr")

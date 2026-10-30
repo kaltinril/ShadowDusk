@@ -43,8 +43,8 @@ history, not just SemVer's letter):
    divergence.
 
    ```powershell
-   ./validation/run-windows-render-gates.ps1              # DX corpus + DX-modern (VTF) + DX Apos gallery + DX resource arrays (issues #339/#340: texture-array table + render, sampler-array SD0224 refusal) + DX ShaderToy route + DX12 corpus + DX12 VS-driven/Apos gallery + DX12 texture-array row (issue #324) + KNI-DX + KNI-GL desktop + KNI-GL VS-driven + Skia vs KNI (SkSL, issue #369) + GL Apos + GL Apos gallery + ANGLE-D3D11 derivative probe (issue #136) + MGCB plugin (real dotnet mgcb 3.8.4.1 AND 3.8.5, decoy-PATH DXC guard) + XNB direct writer Content.Load on MonoGame WindowsDX, MonoGame DesktopGL and KNI 4.2.9001+4.3.9001 + MonoGame 3.8.5 Content Builder (ShadowDusk.ContentPipeline, real ContentBuilder + Content.Load<Effect>) + Slang corpus + Slang full corpus (ShadowDusk.Slang real-slangc route; DX11, DX12 and Vulkan real-Effect arms, issue #230) + Slang textured GL (issue #252) + BOTH Vulkan gates (incl. the texture-array SD0221 row), vs mgfxc/fxc
-   ./validation/run-windows-render-gates.ps1 -IncludeFna  # add FNA fx_2_0 + its Slang arm; include it when in doubt
+   ./validation/run-windows-render-gates.ps1              # DX corpus (vkd3d + d3dcompiler arms) + DX-modern (VTF, legacy-register, half-globals, legacy texture-slot and legacy-lod arms) + DX Apos gallery + DX resource arrays (issues #339/#340: texture-array table + render, sampler-array SD0224 refusal) + DX ShaderToy route + DX12 corpus + DX12 VS-driven/Apos gallery + DX12 texture-array row (issue #324) + DX12 legacy-lod + KNI-DX (incl. legacy texture slots) + KNI-GL desktop + KNI-GL VS-driven + Skia vs KNI (SkSL, issue #369) + non-square matrix Set on WindowsDX and DesktopVK (issue #423) + GL vertex semantics + matrix interpolants (VertexSemanticsGl, VertexSemanticsKniGl) + GL Apos + GL Apos gallery + ANGLE-D3D11 derivative probe (issue #136) + MGCB plugin (real dotnet mgcb 3.8.4.1 AND 3.8.5, decoy-PATH DXC guard) + XNB direct writer Content.Load on MonoGame WindowsDX, MonoGame DesktopGL and KNI 4.2.9001+4.3.9001 + MonoGame 3.8.5 Content Builder (ShadowDusk.ContentPipeline, real ContentBuilder + Content.Load<Effect>) + Slang corpus + Slang full corpus (ShadowDusk.Slang real-slangc route; DX11, DX12 and Vulkan real-Effect arms, issue #230) + Slang textured GL (issue #252) + the Vulkan block (CandidateVulkan, InitializerDefaultsVulkan, NonSquareMatrixVulkan, KniEffectTestVulkan, VsDrivenVulkan vs/apos/texarr/legacy-lod/regslots, SlangFullCorpusVulkan) + the six InitializerDefaults drivers (global initializer = default with no Set, every MGFX/KNIFX runtime) + the KNI EffectTest drivers (KNI's own EffectTest.cs on KNI 4.2.9001+4.3.9001 GL/DX and MonoGame GL/DX/DX12/Vulkan; gated + known-failing rows), vs mgfxc/fxc
+   ./validation/run-windows-render-gates.ps1 -IncludeFna  # add FNA fx_2_0 + its Slang arm + initializer defaults on D3D11 and OpenGL; include it when in doubt
    ./validation/run-windows-render-gates.ps1 -SkipVulkan  # ONLY on a box with no Vulkan-capable GPU
    ```
 
@@ -62,7 +62,7 @@ history, not just SemVer's letter):
      the evidence CI structurally cannot produce.
 3. **Branch.** `git checkout -b version/<version>` (main is already current from step 1).
 4. **Bump version.** Edit `Directory.Build.props` `<Version>` only — the single source of
-   truth. Do **NOT** touch the six `src/ShadowDusk.*/*.csproj` files; they no longer carry a
+   truth. Do **NOT** touch the ten `src/ShadowDusk.*/*.csproj` files; they no longer carry a
    version (the `<Version>` flows to all of them). Do **NOT** touch the
    `<PackageVersion Include=… />` items in `Directory.Packages.props` — those are unrelated
    Central Package Management dependency pins.
@@ -76,8 +76,11 @@ history, not just SemVer's letter):
    If Unreleased is empty, add "- Version bump and documentation updates". Update the
    bottom-of-file compare/release link references.
 6. **Update RELEASING.md** version examples to `<version>`.
-7. **Docs audit (Explore agent, report-only — do NOT auto-fix).** Audit against the actual
-   code, in two parts:
+7. **Docs audit, then FIX every finding before the release commit (owner directive,
+   2026-10-29: "Always fix doc issues before the release.").** The audit itself can stay a
+   separate read-only agent (Explore), auditing against the actual code, in the parts below;
+   its findings are then fixed on the release branch, each claim verified against the code or
+   CI, before step 8. The release does not proceed with known doc drift:
    - **The support-surface checklist (CLAUDE.md → "Support-surface docs are part of the
      change") — check EVERY item by name; this is the backstop for the same-PR rule:**
      `docs/pipeline-overview.puml` **+ whether `docfx/images/pipeline-overview.svg` was
@@ -108,8 +111,11 @@ history, not just SemVer's letter):
      presence gates), `Brand/README.md`, and every "nine packages" / package-count mention in
      `CLAUDE.md` and `RELEASING.md` — these encode a specific count and silently go stale
      otherwise.
-   Report gaps; ask whether to fix now or defer. Do not block the release on doc drift
-   unless the user says so.
+   Fix every gap before step 8 (re-run the build if an XML doc comment or csproj changed) and
+   list the fixes in the PR body. Deferring a finding is not an option the release offers: if a
+   fix truly cannot land now (it needs a measurement no one can run yet), stop and ask the user,
+   and record the open item where the next person will find it (a `docs/validation-matrix.md`
+   §7 row or an issue) rather than shipping the stale text.
 8. **Build + test.**
    `dotnet build ShadowDusk.slnx -c Release` then
    `dotnet test ShadowDusk.slnx -c Release --no-build --settings ShadowDusk.runsettings`
@@ -120,8 +126,8 @@ history, not just SemVer's letter):
    `project_rules.md` says, review the diff, and carry it into step 9. The appendix no longer
    stamps the version, so a bump alone never changes it.
 9. **Commit.** Stage the release files (`Directory.Build.props`, `CHANGELOG.md`,
-   `RELEASING.md`, `structural-divergence-matrix.md` if step 8 had to regenerate it, and any doc
-   fixes the user approved). Use a conventional message such as `chore(release): <version>`.
+   `RELEASING.md`, `structural-divergence-matrix.md` if step 8 had to regenerate it, and the step 7
+   doc fixes). Use a conventional message such as `chore(release): <version>`.
    Per CLAUDE.md Git Commit Conventions, the commit carries **NO `Co-Authored-By` trailer of
    any kind** (not Claude/Anthropic/Opus, not the user) and **no "Generated with Claude Code" /
    tool-attribution line**. There is no `/commit` skill here — commit directly with

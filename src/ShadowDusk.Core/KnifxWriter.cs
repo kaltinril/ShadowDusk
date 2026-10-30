@@ -89,6 +89,25 @@ public sealed class KnifxWriter
                 Message: $"KNIFX version {options.Version} is not supported (valid: {KnifxVersion}, {KnifxVersionNewest})."));
         short version = options.Version;
 
+        if (MgfxWriter.DefaultBlobLengthError(ir.Parameters) is { } defaultError)
+            return Result<byte[], ShaderError>.Fail(defaultError);
+
+        // A sampler record binds an effect parameter by index, or -1 for none (KNI's own pipeline
+        // writes -1 for a texture-less legacy sampler). Anything else would ship a record KNI
+        // resolves to the wrong parameter or out of range; refuse it (SD0018), as MgfxWriter's
+        // SD0022 does for MGFX.
+        for (int i = 0; i < ir.Shaders.Count; i++)
+        {
+            foreach (var s in ir.Shaders[i].Samplers)
+            {
+                if (s.Parameter < -1 || s.Parameter >= ir.Parameters.Count)
+                    return Result<byte[], ShaderError>.Fail(new ShaderError(
+                        File: "", Line: 0, Column: 0, Code: "SD0018",
+                        Message: $"Shader #{i} sampler '{s.Name}' references parameter index {s.Parameter}, " +
+                                 $"which is neither -1 (no parameter) nor one of the effect's {ir.Parameters.Count} parameters."));
+            }
+        }
+
         // KNIFX writes a leading bool the runtime uses to decode integer-typed parameter
         // defaults as floats; KNI sets it true for the OpenGL (MojoShader) profile.
         bool integersAsFloats = options.Backend is
@@ -385,14 +404,8 @@ public sealed class KnifxWriter
         WriteParameterList(bw, p.Members);
 
         // A value-typed leaf carries a raw default-value blob of rows*cols*4 bytes (no
-        // length prefix). ShadowDusk has no defaults; emit zeros (runtime sets by name).
-        bool isValueType = p.Class <= 2;                      // Scalar=0, Vector=1, Matrix=2
-        if (isValueType && p.Members.Count == 0 && p.Elements.Count == 0)
-        {
-            int dataLen = p.RowCount * p.ColumnCount * 4;
-            for (int b = 0; b < dataLen; b++)
-                bw.Write((byte)0);
-        }
+        // length prefix): the HLSL initializer's value, or zeros (see MgfxWriter.WriteDefaultBlob).
+        MgfxWriter.WriteDefaultBlob(bw, p);
     }
 
     private static void WriteTechniques(BinaryWriter bw, ShaderIR ir)

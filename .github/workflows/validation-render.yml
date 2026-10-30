@@ -52,6 +52,22 @@
 #                              SDL2.GL, untinted and tinted, tol 2/255, three positive controls
 #                              that must diverge. Single process; the KNI arm needs the GL context.
 #                              With RaylibRoute, the only gates that drive a non-MonoGame runtime.
+#   * VertexSemanticsGl / VertexSemanticsKniGl — vertex inputs beyond POSITION/COLOR/
+#                              TEXCOORD/NORMAL (BINORMAL, TANGENT, BLENDINDICES as Byte4,
+#                              BLENDWEIGHT 0+1, PSIZE, FOG, DEPTH, TEXCOORD3) and a float3x3
+#                              interpolant, through a custom VertexDeclaration in REAL MonoGame
+#                              DesktopGL and REAL KNI SDL2.GL (MGFX v10 + KNIFX): each element's
+#                              render vs the committed mgfxc OpenGL build in the same process
+#                              (maxd <= 1) AND the element's CPU-known value; 30 matrix-
+#                              interpolant packing fixtures whose stages declare it differently
+#                              (column_major / row_major, square and non-square) vs mgfxc; four
+#                              positive controls that must diverge (a relabelled BINORMAL0
+#                              record, two row_major fixtures packed by columns, a split float1x4 in one register). The driver is
+#                              classified from GL_RENDERER: on a strict one (llvmpipe here) the
+#                              listed non-square cases must be refused with the runtime's
+#                              "Shader Compilation Failed" (EXPECTED-REFUSED, SD0403), any other
+#                              refusal or a listed case that loads is a FAIL, and the run fails if
+#                              no square layout case was rendered.
 #   * Baseline+Candidate+compare.py — the 10-shader GL corpus, ShadowDusk vs the
 #                              committed mgfxc OpenGL goldens, real MonoGame DesktopGL. The
 #                              GL twin of the DX job's BaselineDx pair. Its distinct value is a
@@ -67,7 +83,12 @@
 #   * DxModernFeatures       — DX11 vertex-texture-fetch: vkd3d (shipping) vs
 #                              d3dcompiler/fxc oracle, real MonoGame WindowsDX. The
 #                              flagship gate here: single process, self-asserting exit
-#                              code, no Python, no external mgfxc invocation.
+#                              code, no Python, no external mgfxc invocation. Its
+#                              "legacy-register", "half-globals" and "texture-slots" arms
+#                              render SpriteBatch scenes vs committed mgfxc goldens in the
+#                              same process (the texture-slots rows run in KniWinFormsDX
+#                              too), and "legacy-lod" (tex2Dlod/tex2Dbias/tex2Dproj vs the
+#                              committed mgfxc DirectX_11 golden).
 #   * KniWinFormsDX          — DX11 ShadowDusk vs the committed mgfxc goldens, real KNI
 #                              WinForms.DX11 (proves WARP extends to KNI's DX backend,
 #                              which carries the pin on PresentationParameters rather
@@ -134,12 +155,19 @@
 # measured run and needs only apt (an elevated Windows runner ignores VK_ICD_FILENAMES, so a
 # non-SDK ICD there needs registry writes).
 #   * VsDrivenVulkan         — VS-driven fixture vs the mgfxc 3.8.5 Vulkan golden (maxd 0),
-#                              then `-- apos`, the Apos.Shapes gallery (maxd 0).
+#                              then `-- apos`, the Apos.Shapes gallery (maxd 0), then
+#                              `-- legacy-lod` (tex2Dlod/tex2Dbias/tex2Dproj, maxd 0).
 #   * CandidateVulkan        — the 10-shader PS corpus, own-output only (mgfxc's Vulkan output
 #                              is unloadable for it, upstream SlotOffset bug).
-#   * Two POSITIVE CONTROLS  — a wrong shader must fail the pixel diff, and SPIR-V stamped 1.3
+#   * KniEffectTestVulkan    — KNI's own effect test suite in real DesktopVK (measured with zero
+#                              layer errors locally under the same Khronos validation layer).
+#   * InitializerDefaultsVulkan, NonSquareMatrixVulkan (2026-10-28) and the VsDrivenVulkan
+#     wave / texarr refusal rows, legacy-lod and regslots modes.
+#   * Six POSITIVE CONTROLS  — a wrong shader must fail the pixel diff; SPIR-V stamped 1.3
 #                              on MonoGame's Vulkan 1.0 instance must trip the layer (lavapipe
-#                              renders it at maxd 0, which is exactly why the layer is here).
+#                              renders it at maxd 0, which is exactly why the layer is here);
+#                              and four defects planted in the regslots candidate (ordinal-slots,
+#                              keep-space, reserve-dead, whole-file-pairing) must turn that row red.
 #
 # NOT here (issue #204 follow-ups, still manual-only via run-windows-render-gates.ps1):
 #   * VsDrivenDx12 — the DX12 twin of VsDrivenDx (which now runs above); the issue #209 SwiftShader fix should
@@ -194,7 +222,7 @@ jobs:
     if: |
       github.event_name != 'pull_request' ||
       contains(github.event.pull_request.labels.*.name, 'run-validation-render')
-    timeout-minutes: 20
+    timeout-minutes: 30  # +KNI EffectTest (three driver builds + runs)
     steps:
       - name: Checkout
         uses: actions/checkout@v6
@@ -252,6 +280,10 @@ jobs:
           dotnet build validation/ShaderToyRouteGl/ShaderToyRouteGl.csproj -c Release
           dotnet build validation/RaylibRoute/RaylibRoute.csproj -c Release
           dotnet build validation/SkiaVsKni/SkiaVsKni.csproj -c Release
+          dotnet build validation/InitializerDefaultsGl/InitializerDefaultsGl.csproj -c Release
+          dotnet build validation/InitializerDefaultsKniGl/InitializerDefaultsKniGl.csproj -c Release
+          dotnet build validation/VertexSemanticsGl/VertexSemanticsGl.csproj -c Release
+          dotnet build validation/VertexSemanticsKniGl/VertexSemanticsKniGl.csproj -c Release
 
       # Each driver self-asserts (exit 0 iff every row loaded + matched its reference
       # within tolerance). Run all of them even if an earlier one fails, then fail the job
@@ -269,7 +301,7 @@ jobs:
         run: |
           set +e
           rc=0
-          for proj in StateFidelity CbufferModel TextureBreadthValidation ReservedWordGl SamplerPairsGl SamplerRegisterOrderGl DeferredSpriteMrtGl ShaderToyRouteGl RaylibRoute SkiaVsKni; do
+          for proj in StateFidelity CbufferModel TextureBreadthValidation ReservedWordGl SamplerPairsGl SamplerRegisterOrderGl DeferredSpriteMrtGl ShaderToyRouteGl RaylibRoute SkiaVsKni InitializerDefaultsGl InitializerDefaultsKniGl VertexSemanticsGl VertexSemanticsKniGl; do
             echo "::group::$proj"
             xvfb-run -a dotnet run --project "validation/$proj" -c Release --no-build
             this=$?
@@ -307,6 +339,32 @@ jobs:
         run: |
           dotnet build validation/SlangTexturedGl/SlangTexturedGl.csproj -c Release
           xvfb-run -a dotnet run --project validation/SlangTexturedGl -c Release --no-build
+
+      # KNI's own effect test suite (Tests/Framework.Graphics/EffectTest.cs, checked against XNA by
+      # KNI's author) on KNI's vendored test shaders: real KNI SDL2.GL on BOTH KNI lines (4.2.9001,
+      # 4.3.9001; each its own lock file) and real MonoGame DesktopGL. Each driver exits non-zero on a
+      # gated regression, on a known-failing row that unexpectedly passes (the fixing PR must flip it)
+      # and on a missed positive control. No GL context is a hard failure (device creation throws).
+      # All three run even if one fails; the step fails if any did.
+      - name: KNI EffectTest gate (real KNI SDL2.GL 4.2.9001 + 4.3.9001, real MonoGame DesktopGL)
+        if: ${{ !cancelled() }}
+        env:
+          LIBGL_ALWAYS_SOFTWARE: "1"
+        run: |
+          set +e
+          rc=0
+          for args in "validation/KniEffectTestKniGl" "validation/KniEffectTestKniGl -p:KniVersion=4.3.9001" "validation/KniEffectTestGl"; do
+            echo "::group::$args"
+            # shellcheck disable=SC2086 # word-splitting $args into project + property is intended
+            xvfb-run -a dotnet run -c Release --project $args
+            this=$?
+            echo "::endgroup::"
+            if [ "$this" -ne 0 ]; then
+              echo "::error::KNI EffectTest $args FAILED (exit $this)"
+              rc=1
+            fi
+          done
+          exit $rc
 
       # The GL corpus is the two-process orchestration the in-process gates above avoid:
       # Baseline renders the committed mgfxc goldens, Candidate renders ShadowDusk's own
@@ -365,7 +423,7 @@ jobs:
     if: |
       github.event_name != 'pull_request' ||
       contains(github.event.pull_request.labels.*.name, 'run-validation-render')
-    timeout-minutes: 20
+    timeout-minutes: 35  # +KNI EffectTest (four driver builds + runs on WARP)
     steps:
       - name: Checkout
         uses: actions/checkout@v6
@@ -417,26 +475,45 @@ jobs:
       - name: Add SwiftShader's vulkan-1.dll loader to PATH
         run: Add-Content -Path $env:GITHUB_PATH -Value 'C:\Swiftshader'
 
+      # This job's `run:` blocks are pwsh, whose step result is the LAST native command's exit
+      # code only: a failing command followed by a passing one leaves the step green (that is how
+      # a 9/18 InitializerDefaultsKniDx run passed CI on PR #409). So every native command in a
+      # multi-command step is followed by an exit-code check.
       - name: Build the DX render gates
         run: |
           dotnet build validation/DxModernFeatures/DxModernFeatures.csproj -c Release
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
           dotnet build validation/KniWinFormsDX/KniWinFormsDX.csproj -c Release
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
           dotnet build validation/BaselineDx/BaselineDx.csproj -c Release
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
           dotnet build validation/CandidateDx/CandidateDx.csproj -c Release
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
           dotnet build validation/BaselineDx12/BaselineDx12.csproj -c Release
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
           dotnet build validation/CandidateDx12/CandidateDx12.csproj -c Release
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
+          dotnet build validation/InitializerDefaultsDx/InitializerDefaultsDx.csproj -c Release
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
+          dotnet build validation/InitializerDefaultsKniDx/InitializerDefaultsKniDx.csproj -c Release
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
+          dotnet build validation/InitializerDefaultsDx12/InitializerDefaultsDx12.csproj -c Release
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
+          dotnet build validation/NonSquareMatrixDx/NonSquareMatrixDx.csproj -c Release
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
           dotnet build validation/SlangFullCorpus/SlangFullCorpus.csproj -c Release -f net8.0-windows
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
 
       # Issue #204: pin every gate to WARP (Windows' bundled software D3D rasterizer)
       # instead of a hardware adapter — windows-latest has no GPU. SHADOWDUSK_DX_WARP is
       # opt-in (see validation/SharedDx/DxHeadlessRasterizer.cs), so a developer's local
       # `dotnet run` still renders on their real GPU; only this job's env sets it.
-      - name: Run DX11 modern-features gate (vkd3d vs fxc oracle, real MonoGame WindowsDX)
+      - name: Run DX11 modern-features gate (vkd3d vs fxc oracle; legacy sampler register + texture-slot arms vs mgfxc; real MonoGame WindowsDX)
         env:
           SHADOWDUSK_DX_WARP: "1"
         run: dotnet run --project validation/DxModernFeatures -c Release --no-build
 
-      - name: Run KNI DirectX gate (ShadowDusk vs mgfxc, real KNI WinForms.DX11)
+      - name: Run KNI DirectX gate (ShadowDusk vs mgfxc incl. legacy texture slots, real KNI WinForms.DX11)
         env:
           SHADOWDUSK_DX_WARP: "1"
         run: dotnet run --project validation/KniWinFormsDX -c Release --no-build
@@ -446,16 +523,95 @@ jobs:
           SHADOWDUSK_DX_WARP: "1"
         run: |
           dotnet run --project validation/BaselineDx -c Release --no-build
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
           dotnet run --project validation/CandidateDx -c Release --no-build
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
           python validation/compare_dx.py
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
+
+      # The same corpus through the public d3dcompiler_47 oracle backend (CompilerOptions.DxbcBackend):
+      # its scheduled instruction stream must not drive the DirectX 11 texture slots. A step of its
+      # own so the compare's exit code is the step's (pwsh reports only the last command's).
+      - name: Run MonoGame WindowsDX corpus, d3dcompiler backend (ShadowDusk vs mgfxc DirectX_11 golden)
+        env:
+          SHADOWDUSK_DX_WARP: "1"
+        run: |
+          dotnet run --project validation/CandidateDx -c Release --no-build -- d3dcompiler
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          python validation/compare_dx.py
+
+      # Global-initializer defaults (owner directive 2026-10-28): `float R = 1;` is the default in the
+      # real engine with no Set call, for MonoGame WindowsDX, KNI WinForms.DX11 (MGFX and KNIFX) and
+      # MonoGame WindowsDX12, each with a no-initializer control that must render black. The KNI
+      # driver also pins the KNIFX shader model on a Reach device (ps_4_0_level_9_1 loads, 9_3 and
+      # 4_0 refused) and SM 2.0/3.0 on KNIFX (ps_2_0/vs_2_0 load on HiDef and Reach, the _3_0 ones on
+      # HiDef only, pixel-identical to KNI's own MGCB build). All three run even if one fails; the
+      # step fails if any did.
+      - name: Run initializer-default gates (real MonoGame WindowsDX, KNI DX11, MonoGame DX12 on WARP)
+        if: ${{ !cancelled() }}
+        env:
+          SHADOWDUSK_DX_WARP: "1"
+        run: |
+          $failed = @()
+          foreach ($driver in 'InitializerDefaultsDx', 'InitializerDefaultsKniDx', 'InitializerDefaultsDx12') {
+            Write-Host "::group::$driver"
+            dotnet run --project validation/$driver -c Release --no-build
+            $rc = $LASTEXITCODE
+            Write-Host "::endgroup::"
+            if ($rc -ne 0) {
+              Write-Host "::error::validation/$driver FAILED (exit $rc)"
+              $failed += $driver
+            }
+          }
+          if ($failed.Count -gt 0) { Write-Host "Initializer-default gates failed: $($failed -join ', ')"; exit 1 }
+          Write-Host "Initializer-default gates: all 3 passed."
+
+      # Issue #423: non-square matrix parameters Set from C# land in MonoGame's DirectX registers,
+      # with the committed real mgfxc 3.8.5 DirectX_11 builds rendered alongside as the reference.
+      - name: Run non-square matrix Set gate (real MonoGame WindowsDX on WARP)
+        if: ${{ !cancelled() }}
+        env:
+          SHADOWDUSK_DX_WARP: "1"
+        run: dotnet run --project validation/NonSquareMatrixDx -c Release --no-build
+
+      # KNI's own effect test suite (EffectTest.cs) on WARP: real KNI WinForms.DX11 on both KNI lines,
+      # real MonoGame WindowsDX and real MonoGame 3.8.5 WindowsDX12 (the latter needs the SwiftShader
+      # loader above for SDL's window). Each driver exits non-zero on a gated regression, a
+      # known-failing row that unexpectedly passes, or a missed positive control. All four run; the
+      # step fails if any did. Runs even if an earlier DX gate failed.
+      - name: Run KNI EffectTest gates (real KNI WinForms.DX11 4.2.9001 + 4.3.9001, MonoGame WindowsDX, MonoGame WindowsDX12 on WARP)
+        if: ${{ !cancelled() }}
+        env:
+          SHADOWDUSK_DX_WARP: "1"
+        run: |
+          $failed = @()
+          foreach ($run in @(
+              'validation/KniEffectTestKniDx',
+              'validation/KniEffectTestKniDx -p:KniVersion=4.3.9001',
+              'validation/KniEffectTestDx',
+              'validation/KniEffectTestDx12')) {
+            $parts = $run -split ' '
+            Write-Host "::group::$run"
+            dotnet run -c Release --project $parts[0] @($parts | Select-Object -Skip 1)
+            $rc = $LASTEXITCODE
+            Write-Host "::endgroup::"
+            if ($rc -ne 0) {
+              Write-Host "::error::KNI EffectTest $run FAILED (exit $rc)"
+              $failed += $run
+            }
+          }
+          if ($failed.Count -gt 0) { Write-Host "KNI EffectTest failed: $($failed -join '; ')"; exit 1 }
 
       - name: Run MonoGame WindowsDX12 corpus (ShadowDusk vs mgfxc DirectX_12 golden)
         env:
           SHADOWDUSK_DX_WARP: "1"
         run: |
           dotnet run --project validation/BaselineDx12 -c Release --no-build
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
           dotnet run --project validation/CandidateDx12 -c Release --no-build
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
           python validation/compare_dx12.py
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
 
       # Issue #254: the real-slangc ShadowDusk.Slang route, gate 3 (the last unverified piece
       # of that package outside a dev box): every corpus shader's DirectX_11 output loads into a
@@ -552,6 +708,7 @@ jobs:
             validation/output/candidate-dx12/**
             validation/output/diff-dx12/**
             validation/output-slang-full-corpus/**
+            validation/output/nonsquare-matrix/**
           if-no-files-found: ignore
           retention-days: 7
 
@@ -562,7 +719,7 @@ jobs:
     if: |
       github.event_name != 'pull_request' ||
       contains(github.event.pull_request.labels.*.name, 'run-validation-render')
-    timeout-minutes: 25
+    timeout-minutes: 30
     steps:
       - name: Checkout
         uses: actions/checkout@v6
@@ -605,6 +762,16 @@ jobs:
       # Pin Mesa's lavapipe (CPU Vulkan) as the only ICD, so a runner image that ever grows
       # another driver cannot change what judged the pixels. The manifest's file name varies
       # across Mesa packagings, so it is located rather than hard-coded; none found = red.
+      # Measured 2026-10-28 (PR #434): MonoGame 3.8.5 DesktopVK's MGG_Shader_Create allocates ~13,500
+      # descriptor sets per shader and never frees them, and lavapipe backs each set with its own buffer
+      # mapping. At vm.max_map_count (262144 on this image, ~19 shaders) lavapipe's descriptor-set create
+      # memsets a failed map and the driver segfaults (exit 139) minutes in. A GPU driver does not map per
+      # set. Raising the per-process mapping limit runs every case; nothing is skipped.
+      - name: Raise vm.max_map_count for lavapipe (MonoGame maps ~13.5k descriptor sets per shader)
+        run: |
+          sudo sysctl -w vm.max_map_count=2097152
+          cat /proc/sys/vm/max_map_count
+
       - name: Pin lavapipe as the only Vulkan ICD
         run: |
           ls -l /usr/share/vulkan/icd.d/ /usr/share/vulkan/explicit_layer.d/
@@ -621,6 +788,9 @@ jobs:
           dotnet build validation/VsDrivenVulkan/VsDrivenVulkan.csproj -c Release
           dotnet build validation/CandidateVulkan/CandidateVulkan.csproj -c Release
           dotnet build validation/BaselineVulkan/BaselineVulkan.csproj -c Release
+          dotnet build validation/InitializerDefaultsVulkan/InitializerDefaultsVulkan.csproj -c Release
+          dotnet build validation/NonSquareMatrixVulkan/NonSquareMatrixVulkan.csproj -c Release
+          dotnet build validation/KniEffectTestVulkan/KniEffectTestVulkan.csproj -c Release
 
       # Every gate runs under validation/run-with-vk-validation.sh: the Khronos validation
       # layer is forced on, and any layer ERROR fails the step even when the pixels match.
@@ -649,6 +819,23 @@ jobs:
         if: ${{ !cancelled() }}
         run: dotnet run --project validation/VsDrivenVulkan -c Release --no-build -- texarr
 
+      # tex2Dlod (vertex AND pixel stage), tex2Dbias and tex2Dproj in legacy sampler syntax,
+      # ShadowDusk's Vulkan build vs mgfxc 3.8.5's Vulkan build of the modern twin (mgfxc 3.8.5
+      # refuses the legacy spelling on Vulkan), maxd 0, with four built-in positive controls that
+      # must each move exactly their own column. The run that found the Vulkan pairing gap (the
+      # helper call hid the pair from the binding rewriter: wrong mip, then a native fault).
+      - name: Vulkan legacy LOD intrinsics (tex2Dlod/tex2Dbias/tex2Dproj vs mgfxc, real DesktopVK)
+        if: ${{ !cancelled() }}
+        run: validation/run-with-vk-validation.sh legacy-lod -- xvfb-run -a dotnet run --project validation/VsDrivenVulkan -c Release --no-build -- legacy-lod
+
+      # Explicit register slots: a Vulkan texture's slot is its SPIR-V binding minus 32, as mgfxc
+      # 3.8.5 writes it and DesktopVK reads it. A lone register(t1), a t0+t2 gap and a
+      # Texture2DArray on t1 (slice 1) vs their mgfxc goldens through SpriteBatch, each with a
+      # known-colour check. Before the fix ShadowDusk wrote the ordinal slot and drew (0,0,0,0).
+      - name: Vulkan explicit register slots (lone t1, t0+t2 gap, Texture2DArray) vs mgfxc 3.8.5
+        if: ${{ !cancelled() }}
+        run: validation/run-with-vk-validation.sh regslots -- xvfb-run -a dotnet run --project validation/VsDrivenVulkan -c Release --no-build -- regslots
+
       # Own-output proof: mgfxc's Vulkan output for this corpus is unloadable (upstream
       # SlotOffset bug, see compare_vulkan.py), so BaselineVulkan is best-effort and
       # compare_vulkan.py fails only on a CANDIDATE problem. The validation layer is what
@@ -659,6 +846,27 @@ jobs:
           validation/run-with-vk-validation.sh candidate -- xvfb-run -a dotnet run --project validation/CandidateVulkan -c Release --no-build
           xvfb-run -a dotnet run --project validation/BaselineVulkan -c Release --no-build || echo "BaselineVulkan best-effort (upstream mgfxc bug), not scored"
           python validation/compare_vulkan.py
+
+      # Global-initializer defaults (owner directive 2026-10-28) on real DesktopVK, with the
+      # no-initializer control; under the validation layer like every gate here.
+      - name: Vulkan initializer defaults (real DesktopVK)
+        if: ${{ !cancelled() }}
+        run: validation/run-with-vk-validation.sh initializer-defaults -- xvfb-run -a dotnet run --project validation/InitializerDefaultsVulkan -c Release --no-build
+
+      # Issue #423: non-square matrix parameters Set from C# on real DesktopVK, against MonoGame's
+      # DirectX semantics. The real mgfxc 3.8.5 Vulkan builds and the stock SkinnedEffect render
+      # alongside and are reported only (both are known to be wrong or throw on DesktopVK).
+      - name: Vulkan non-square matrix Set (real DesktopVK)
+        if: ${{ !cancelled() }}
+        run: validation/run-with-vk-validation.sh nonsquare-matrix -- xvfb-run -a dotnet run --project validation/NonSquareMatrixVulkan -c Release --no-build
+
+      # KNI's own effect test suite (EffectTest.cs) on real DesktopVK, under the validation layer like
+      # every gate here (measured locally under the same layer: zero errors; the test's
+      # BasicEffect-VS + KNI-PS draw is invalid Vulkan and is deliberately not issued). Exits non-zero
+      # on a gated regression, an unexpectedly passing known-failing row, or a missed positive control.
+      - name: Vulkan KNI EffectTest gate (real DesktopVK)
+        if: ${{ !cancelled() }}
+        run: validation/run-with-vk-validation.sh kni-effecttest -- xvfb-run -a dotnet run --project validation/KniEffectTestVulkan -c Release --no-build
 
       # POSITIVE CONTROLS: each plants a known defect in the candidate and the step passes
       # only if the gate turned RED for that reason. Without these, a lane that silently
@@ -675,6 +883,42 @@ jobs:
           SHADOWDUSK_VK_CONTROL: spirv-1.3-header
         run: validation/run-with-vk-validation.sh control-spirv-version --expect-red '(VkShaderModuleCreateInfo|vkCreateShaderModule|spirv-val)' -- xvfb-run -a dotnet run --project validation/VsDrivenVulkan -c Release --no-build
 
+      # The candidate's slot records and header masks rewritten to ordinal numbering (the
+      # pre-fix bytes, measured equal apart from the content hash): the regslots row must go red.
+      - name: Positive control, ordinal texture slots must fail the register-slot row
+        if: ${{ !cancelled() }}
+        env:
+          SHADOWDUSK_VK_CONTROL: ordinal-slots
+        run: validation/run-with-vk-validation.sh control-ordinal-slots --expect-red 'CONTROL-DETECTED' -- xvfb-run -a dotnet run --project validation/VsDrivenVulkan -c Release --no-build -- regslots
+
+      # RegisterSpace0's SPIR-V DescriptorSet decorations set back to 0 (what an explicit space0
+      # gave before it was dropped). The layer reports the shader using a set the pipeline layout
+      # lacks (VUID ...-layout-07988) and the draw may then fault before the pixel verdict prints,
+      # so either marker proves the planted defect turned the lane red.
+      - name: Positive control, a kept register space must fail the register-slot row
+        if: ${{ !cancelled() }}
+        env:
+          SHADOWDUSK_VK_CONTROL: keep-space
+        run: validation/run-with-vk-validation.sh control-keep-space --expect-red '(CONTROL-DETECTED|layout-07988)' -- xvfb-run -a dotnet run --project validation/VsDrivenVulkan -c Release --no-build -- regslots
+
+      # RegisterDeadSampler compiled with its texture on t1, the layout a reserved dead sampler
+      # register used to force: a SpriteBatch-only draw then reads an empty slot.
+      - name: Positive control, a reserved dead sampler register must fail the register-slot row
+        if: ${{ !cancelled() }}
+        env:
+          SHADOWDUSK_VK_CONTROL: reserve-dead
+        run: validation/run-with-vk-validation.sh control-reserve-dead --expect-red 'CONTROL-DETECTED' -- xvfb-run -a dotnet run --project validation/VsDrivenVulkan -c Release --no-build -- regslots
+
+      # RegisterSamplerPerPass and RegisterSamplerPerStage compiled with their second sampler's texture
+      # on its own t1 declaration, the alias layout the whole-file pairing produced: the second
+      # technique's SpriteBatch-only draw reads an empty slot, and the per-stage row draws the
+      # parameter's colour where the sprite belongs.
+      - name: Positive control, whole-file sampler pairing must fail the per-shader rows
+        if: ${{ !cancelled() }}
+        env:
+          SHADOWDUSK_VK_CONTROL: whole-file-pairing
+        run: validation/run-with-vk-validation.sh control-whole-file-pairing --expect-red 'CONTROL-DETECTED' -- xvfb-run -a dotnet run --project validation/VsDrivenVulkan -c Release --no-build -- regslots
+
       - name: Upload render outputs + validation-layer logs (debug)
         if: always()
         uses: actions/upload-artifact@v7
@@ -688,5 +932,6 @@ jobs:
             validation/output/baseline-vulkan/**
             validation/output/diff-vulkan/**
             validation/output/vk-validation/**
+            validation/output/nonsquare-matrix/**
           if-no-files-found: ignore
           retention-days: 7

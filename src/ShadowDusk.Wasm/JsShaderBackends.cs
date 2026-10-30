@@ -72,6 +72,13 @@ internal sealed class JsDxcShaderCompiler : IDxcShaderCompiler
             request.Macros,
             request.Options);
 
+        // An entry function declared more than once crashes the desktop DXC's SPIR-V back end, so
+        // the desktop host blanks its redundant prototypes, proven by DXC's own preprocessor (-P;
+        // DxcSpirvEntryRedeclarations). The browser's DXC module exports no preprocess-only entry
+        // point (compileToSpirv returns the object blob only), so it cannot prove that edit and
+        // does not make it: the source is compiled exactly as written. Its DXC build does not crash
+        // on a redeclared entry; it fails the compile ("generated SPIR-V is invalid: 2 Entry points
+        // cannot share the same name"), which is relabelled SD0236 below with DXC's text kept.
         try
         {
             byte[] spirv = DxcInterop.CompileToSpirv(request.HlslSource, arguments.ToArray());
@@ -97,9 +104,28 @@ internal sealed class JsDxcShaderCompiler : IDxcShaderCompiler
         }
         catch (JSException ex)
         {
-            return Result<PlatformBlob, ShaderError>.Fail(MapJsException(ex, request.SourceFileName));
+            ShaderError error = MapJsException(ex, request.SourceFileName);
+            return Result<PlatformBlob, ShaderError>.Fail(
+                ex.Message.Contains(SharedEntryPointName, StringComparison.Ordinal) ? EntryRedeclared(error, request.EntryPoint) : error);
         }
     }
+
+    /// <summary>The browser DXC's wording for a SPIR-V module with the entry point declared twice.</summary>
+    private const string SharedEntryPointName = "Entry points cannot share the same name";
+
+    /// <summary>
+    /// The browser's <c>SD0236</c>: DXC's own failure for an entry point declared more than once,
+    /// with its file, line, column and text kept, and why the desktop host compiles the same
+    /// effect (it blanks the prototype, proven by DXC's preprocessor) and the browser cannot.
+    /// </summary>
+    private static ShaderError EntryRedeclared(ShaderError dxc, string entryPoint) => dxc with
+    {
+        Code = DxcSpirvEntryRedeclarations.ErrorCode,
+        Message = $"entry point '{entryPoint}' is declared more than once (a prototype and its definition). The desktop " +
+                  "compiler removes the redundant prototype, proving the edit with DXC's own preprocessor; the browser's " +
+                  "DXC module has no preprocess-only entry point to prove it with, so the effect is compiled as written " +
+                  $"and DXC rejects it. Remove the prototype of '{entryPoint}'. DXC: {dxc.Message}",
+    };
 
     /// <summary>
     /// Preprocess-only is not wired through the WASM DXC shim (it exports

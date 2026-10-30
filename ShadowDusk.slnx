@@ -22,5 +22,7 @@
     <Project Path="tests/ShadowDusk.Integration.Tests/ShadowDusk.Integration.Tests.csproj" />
     <Project Path="tests/ShadowDusk.ShaderToy.Tests/ShadowDusk.ShaderToy.Tests.csproj" />
     <Project Path="tests/ShadowDusk.Slang.Tests/ShadowDusk.Slang.Tests.csproj" />
+    <Project Path="tests/ShadowDusk.TestPng.Tests/ShadowDusk.TestPng.Tests.csproj" />
+    <Project Path="tests/ShadowDusk.TestPng/ShadowDusk.TestPng.csproj" />
   </Folder>
 </Solution>

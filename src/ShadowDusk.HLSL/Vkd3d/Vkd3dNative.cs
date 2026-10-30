@@ -92,6 +92,16 @@ internal enum Vkd3dBackwardCompatibility : uint
     /// shader outputs, DEPTH → SV_Depth, VFACE → SV_IsFrontFace, VPOS → SV_Position.
     /// </summary>
     MapSemanticNames = 0x00000001,
+
+    /// <summary>
+    /// VKD3D_SHADER_COMPILE_OPTION_BACKCOMPAT_ALLOW_HALF_GLOBALS (vkd3d 2.1): a
+    /// <c>half</c>/<c>halfN</c>/<c>halfNxM</c> global (a cbuffer member included) is
+    /// handled as <c>float</c> on SM1-5 target profiles instead of being rejected with
+    /// <c>E5002 The half type is not allowed for global variables</c>. vkd3d-utils'
+    /// <c>D3DCompile</c> sets it exactly when <c>D3DCOMPILE_ENABLE_BACKWARDS_COMPATIBILITY</c>
+    /// is set, which is the flag <c>mgfxc</c>'s DirectX_11 compile always passes to fxc.
+    /// </summary>
+    AllowHalfGlobals = 0x00000008,
 }
 
 /// <summary>

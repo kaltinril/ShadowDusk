@@ -68,12 +68,27 @@ jobs:
     name: Build & Test (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
     # Build + unit tests finish in ~1-3 min per OS; the ubuntu lane additionally renders
-    # the ImageTests for real on Mesa llvmpipe (software rasterizer — slower than a GPU),
-    # so 15 gives headroom. This also bounds the macOS `dotnet test` host-exit stall —
-    # now fixed at the source (the GLFW init that left a non-background Cocoa thread is
-    # skipped on macOS, see GlContextFixture), with this as the backstop. fail-fast:false
-    # keeps each OS reporting independently.
-    timeout-minutes: 15
+    # the ImageTests for real on Mesa llvmpipe (software rasterizer — slower than a GPU).
+    # This also bounds the macOS `dotnet test` host-exit stall — now fixed at the source
+    # (the GLFW init that left a non-background Cocoa thread is skipped on macOS, see
+    # GlContextFixture), with this as the backstop. fail-fast:false keeps each OS reporting
+    # independently.
+    #
+    # The integration tests (CLI child-process spawn + native DXC/SPIRV-Cross) run as the LAST
+    # steps of this job, on the build the unit tests just used. They used to be a second job
+    # that restored and built the whole solution again on a fresh runner (about 1 to 2 minutes
+    # of setup and build per OS, plus the wait for a second runner); sharing the build output
+    # through an artifact was rejected because the Release bin directories are about 5 GB (see
+    # project_decisions.md). They run automatically on pushes to main; on PRs only when the
+    # 'run-integration' label is applied (heavyweight + AV-scan-sensitive, see CLAUDE.md
+    # Phase 21). A failing unit step skips them, as the old `needs` did. Their steps are gated on
+    # RUN_INTEGRATION; the cleanup steps also on steps.itest, so they never run (or fail) when
+    # the integration test step did not.
+    # 15 min for build + unit; the integration test step caps itself at 14 and the uploads after
+    # a failure need a few more, so 30.
+    timeout-minutes: 30
+    env:
+      RUN_INTEGRATION: ${{ github.event_name == 'push' || contains(github.event.pull_request.labels.*.name, 'run-integration') }}
     strategy:
       fail-fast: false
       matrix:
@@ -83,7 +98,28 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v6
 
+      # actions/setup-dotnet always downloads and unzips the latest 8.0.x and 10.0.x SDKs, even
+      # when the image has them one patch behind: 62 s on windows-latest and 31 s on macos-latest
+      # (measured on run 40748137079), while the image's own SDKs build and test the same code.
+      # So install only when the image lacks an SDK or a runtime of either major. The runtimes are
+      # checked too because the unit gate runs both TFMs. The versions found go in the log.
+      - name: Check preinstalled .NET 8 + .NET 10
+        id: dotnet
+        shell: bash
+        run: |
+          sdks=$(dotnet --list-sdks 2>/dev/null || true)
+          runtimes=$(dotnet --list-runtimes 2>/dev/null || true)
+          echo "SDKs:"; echo "$sdks"; echo "Runtimes:"; echo "$runtimes"
+          install=false
+          for major in 8 10; do
+            echo "$sdks" | grep -q "^$major\." || install=true
+            echo "$runtimes" | grep -q "^Microsoft.NETCore.App $major\." || install=true
+          done
+          echo "install=$install" >> "$GITHUB_OUTPUT"
+          echo "setup-dotnet needed: $install"
+
       - name: Setup .NET 8 + .NET 10
+        if: steps.dotnet.outputs.install == 'true'
         uses: actions/setup-dotnet@v5
         with:
           dotnet-version: |
@@ -147,6 +183,43 @@ jobs:
         shell: pwsh
         run: ./tools/restore.ps1
 
+      # HARD GATE on the restored natives (the soft-skip-chain fix, 2026-06-12 review):
+      # the restore script's download failures are warnings by design (offline
+      # tolerance), but in CI the pinned assets are hosted — a missing file here means
+      # the restore infrastructure failed, and the job must go red BEFORE the test run
+      # can quietly skip the vkd3d/DXC-gated suites green. All four vkd3d RIDs are
+      # asserted on every OS (every machine must be pack-ready, see tools/restore.*).
+      - name: Verify restored natives present (hard gate)
+        if: env.RUN_INTEGRATION == 'true'
+        shell: bash
+        run: |
+          missing=0
+          for f in \
+            'tools/vkd3d/libvkd3d-shader-1.dll' \
+            'tools/vkd3d/libvkd3d-shader.so.1' \
+            'tools/vkd3d/osx-x64/libvkd3d-shader.1.dylib' \
+            'tools/vkd3d/osx-arm64/libvkd3d-shader.1.dylib' \
+            'tools/dxc/osx-x64/libdxcompiler.dylib' \
+            'tools/dxc/osx-arm64/libdxcompiler.dylib' \
+            'tools/dxc/android-arm64/libdxcompiler.so' \
+            'tools/dxc/android-x64/libdxcompiler.so' \
+            'tools/spirv-cross/android-arm64/libspirv-cross.so' \
+            'tools/spirv-cross/android-x64/libspirv-cross.so' \
+            'tools/slang/win-x64/slangc.exe' \
+            'tools/slang/win-x64/slang-compiler.dll' \
+            'tools/slang/linux-x64/slangc' \
+            'tools/slang/linux-x64/libslang-compiler.so.0.2026.14.1' \
+            'tools/slang/osx-x64/slangc' \
+            'tools/slang/osx-x64/libslang-compiler.0.2026.14.1.dylib' \
+            'tools/slang/osx-arm64/slangc' \
+            'tools/slang/osx-arm64/libslang-compiler.0.2026.14.1.dylib' ; do
+              if [ ! -f "$f" ]; then
+                echo "::error::restored native missing: $f — tools/restore.* failed to provision a hosted, pinned asset (download/cache failure). The vkd3d/DXC/slangc integration tests would fail or skip; failing the job here with the real cause instead."
+                missing=1
+              fi
+          done
+          exit $missing
+
       - name: dotnet restore
         run: dotnet restore ShadowDusk.slnx --locked-mode
 
@@ -189,7 +262,7 @@ jobs:
       # run on Windows only until that discrepancy is investigated. Everything else —
       # including the same-machine MgfxcCrossValidation cross-val and the ImageRegression
       # render proxy — runs on every OS, so cross-platform COMPILE reach for the normal
-      # corpus is proven here, with the integration job as the heavier end-to-end check.
+      # corpus is proven here, with the integration steps at the end of this job as the heavier end-to-end check.
       #
       # GL-render coverage per lane (Phase 37 tail items 3+4):
       #   * ubuntu  — RENDERS FOR REAL under xvfb-run + llvmpipe. SHADOWDUSK_REQUIRE_GL=1
@@ -207,7 +280,7 @@ jobs:
       # write ONE file: the logs were full of "WARNING: Overwriting results file", and the
       # uploaded artifact held whichever assembly happened to finish last — 13 results
       # silently lost. LogFilePrefix emits <prefix>_<tfm>_<timestamp>.trx per assembly
-      # (measured: 14 files, zero overwrite warnings). See the integration job below for
+      # (measured: 14 files, zero overwrite warnings). See the integration steps below for
       # why this is more than tidiness.
       - name: dotnet test (unit, Windows — full; GL renders only on GPU-equipped hosts)
         if: runner.os == 'Windows'
@@ -272,131 +345,8 @@ jobs:
         uses: actions/upload-artifact@v7
         with:
           name: test-results-${{ matrix.os }}
-          path: TestResults/*.trx
+          path: TestResults/unit-*.trx
           retention-days: 7
-
-  # Slow path: integration tests (CLI child-process spawn + native DXC/SPIRV-Cross).
-  # Runs automatically on pushes to main; on PRs only when the 'run-integration'
-  # label is applied (heavyweight + AV-scan-sensitive, see CLAUDE.md Phase 21).
-  integration-tests:
-    name: Integration Tests (${{ matrix.os }})
-    runs-on: ${{ matrix.os }}
-    needs: build-and-test
-    # Heavier than the unit gate (CLI child-process spawn + native DXC/SPIRV-Cross). The test
-    # step caps each assembly's session at 11 min and itself at 14 (see the step); 20 leaves
-    # room for setup, restore, build (about 3 min) and the artifact uploads after a failure.
-    timeout-minutes: 20
-    if: |
-      github.event_name == 'push' ||
-      contains(github.event.pull_request.labels.*.name, 'run-integration')
-    strategy:
-      fail-fast: false
-      matrix:
-        os: [ ubuntu-latest, macos-latest, windows-latest ]
-
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v6
-
-      - name: Setup .NET 8 + .NET 10
-        uses: actions/setup-dotnet@v5
-        with:
-          dotnet-version: |
-            8.0.x
-            10.0.x
-
-      - name: Cache NuGet
-        uses: actions/cache@v5
-        with:
-          path: ~/.nuget/packages
-          key: nuget-${{ runner.os }}-${{ hashFiles('**/packages.lock.json', '**/Directory.Packages.props') }}
-          restore-keys: |
-            nuget-${{ runner.os }}-
-
-      - name: Cache vkd3d natives
-        uses: actions/cache@v5
-        with:
-          path: tools/vkd3d
-          key: vkd3d-2.1-${{ runner.os }}
-
-      - name: Cache DXC macOS natives
-        uses: actions/cache@v5
-        with:
-          path: tools/dxc
-          key: dxc-${{ runner.os }}-${{ hashFiles('tools/restore.sh', 'tools/restore.ps1') }}
-
-      # The Android SPIRV-Cross natives (android-arm64 packed, android-x64 for the emulator lane;
-      # ~80 MB together), keyed on restore.sh so a re-pin invalidates it. restore.* re-verifies
-      # the SHA-256 of a cached file and re-downloads on a mismatch.
-      - name: Cache Android SPIRV-Cross natives
-        uses: actions/cache@v5
-        with:
-          path: |
-            tools/spirv-cross/android-arm64
-            tools/spirv-cross/android-x64
-          key: spirv-cross-android-${{ runner.os }}-${{ hashFiles('tools/restore.sh', 'tools/restore.ps1') }}
-
-      # slangc for all four RIDs (ShadowDusk.Slang, issue #227): ~170 MB of release zips to
-      # download otherwise. The restore scripts hash-verify every file, so a stale or corrupt
-      # cache entry self-heals.
-      - name: Cache slangc natives
-        uses: actions/cache@v5
-        with:
-          path: tools/slang
-          key: slang-2026.14.1-${{ runner.os }}
-
-      - name: Restore native tools (Linux / macOS)
-        if: runner.os != 'Windows'
-        run: |
-          chmod +x tools/restore.sh
-          ./tools/restore.sh
-
-      - name: Restore native tools (Windows)
-        if: runner.os == 'Windows'
-        shell: pwsh
-        run: ./tools/restore.ps1
-
-      # HARD GATE on the restored natives (the soft-skip-chain fix, 2026-06-12 review):
-      # the restore script's download failures are warnings by design (offline
-      # tolerance), but in CI the pinned assets are hosted — a missing file here means
-      # the restore infrastructure failed, and the job must go red BEFORE the test run
-      # can quietly skip the vkd3d/DXC-gated suites green. All four vkd3d RIDs are
-      # asserted on every OS (every machine must be pack-ready, see tools/restore.*).
-      - name: Verify restored natives present (hard gate)
-        shell: bash
-        run: |
-          missing=0
-          for f in \
-            'tools/vkd3d/libvkd3d-shader-1.dll' \
-            'tools/vkd3d/libvkd3d-shader.so.1' \
-            'tools/vkd3d/osx-x64/libvkd3d-shader.1.dylib' \
-            'tools/vkd3d/osx-arm64/libvkd3d-shader.1.dylib' \
-            'tools/dxc/osx-x64/libdxcompiler.dylib' \
-            'tools/dxc/osx-arm64/libdxcompiler.dylib' \
-            'tools/dxc/android-arm64/libdxcompiler.so' \
-            'tools/dxc/android-x64/libdxcompiler.so' \
-            'tools/spirv-cross/android-arm64/libspirv-cross.so' \
-            'tools/spirv-cross/android-x64/libspirv-cross.so' \
-            'tools/slang/win-x64/slangc.exe' \
-            'tools/slang/win-x64/slang-compiler.dll' \
-            'tools/slang/linux-x64/slangc' \
-            'tools/slang/linux-x64/libslang-compiler.so.0.2026.14.1' \
-            'tools/slang/osx-x64/slangc' \
-            'tools/slang/osx-x64/libslang-compiler.0.2026.14.1.dylib' \
-            'tools/slang/osx-arm64/slangc' \
-            'tools/slang/osx-arm64/libslang-compiler.0.2026.14.1.dylib' ; do
-              if [ ! -f "$f" ]; then
-                echo "::error::restored native missing: $f — tools/restore.* failed to provision a hosted, pinned asset (download/cache failure). The vkd3d/DXC/slangc integration tests would fail or skip; failing the job here with the real cause instead."
-                missing=1
-              fi
-          done
-          exit $missing
-
-      - name: dotnet restore
-        run: dotnet restore ShadowDusk.slnx --locked-mode
-
-      - name: dotnet build
-        run: dotnet build ShadowDusk.slnx --no-restore -c Release
 
       # The suite-level TestSessionTimeout guardrail (Phase 21) backstops the per-test
       # CancellationToken timeouts so a cold-AV-scan hang fails in bounded time instead of
@@ -455,7 +405,7 @@ jobs:
       # watchdog kills it; --blame-hang only ever dumps the host. Attaching to a sibling needs
       # ptrace_scope 0, and gdb is installed best-effort (createdump alone still gives a core).
       - name: Allow hang-probe native stack capture (Linux)
-        if: runner.os == 'Linux'
+        if: env.RUN_INTEGRATION == 'true' && runner.os == 'Linux'
         run: |
           sudo sysctl -w kernel.yama.ptrace_scope=0
           command -v gdb >/dev/null || sudo apt-get install -y --no-install-recommends gdb \
@@ -473,7 +423,7 @@ jobs:
       # running, then a second stack snapshot, into TestResults/hang-dumps/. On a healthy run
       # it finds nothing and exits 0; it can never fail the step. tools/ci/hang-watchdog.sh.
       - name: Start the stall watchdog (sidecar, issue #312)
-        if: runner.os != 'Windows'
+        if: env.RUN_INTEGRATION == 'true' && runner.os != 'Windows'
         shell: bash
         run: |
           mkdir -p TestResults/hang-dumps
@@ -495,7 +445,11 @@ jobs:
       # bound either way) and, measured on 4 pinned cores, cut the slowest test from 95 s to 34 s
       # and the longest no-progress gap to 16 s. Do not raise it without re-measuring the gaps
       # (project_rules.md, "Integration lane load").
+      # One TFM only: the integration tests drive native compilers and compare committed
+      # manifests, so a second TFM repeats the same native work. The unit gate above still runs both.
       - name: dotnet test (integration)
+        id: itest
+        if: env.RUN_INTEGRATION == 'true'
         timeout-minutes: 14
         env:
           SHADOWDUSK_REQUIRE_VKD3D: "1"
@@ -507,6 +461,7 @@ jobs:
           SHADOWDUSK_BYTE_IDENTITY_DUMP: ${{ github.workspace }}/TestResults/dxc-identity
         run: >
           dotnet test ShadowDusk.slnx --no-build -c Release -m:2
+          --framework net10.0
           --filter "Category=Integration"
           --settings ShadowDusk.runsettings
           --blame-hang-timeout 3m --blame-hang-dump-type full
@@ -518,7 +473,7 @@ jobs:
       # capture" and a stalled one shows what was captured. A watchdog still sleeping (the tests
       # finished first) is stopped here. Never fails.
       - name: Stop the stall watchdog and show what it captured
-        if: always() && runner.os != 'Windows'
+        if: always() && steps.itest.outcome != 'skipped' && runner.os != 'Windows'
         shell: bash
         run: |
           if [ -f TestResults/hang-dumps/watchdog.pid ]; then
@@ -561,7 +516,7 @@ jobs:
       # as text. This is how the #373 stall was read: the frozen host's thread was in
       # Thread.StartCore. Never fails.
       - name: Analyze blame-hang dumps (Windows)
-        if: always() && runner.os == 'Windows'
+        if: always() && steps.itest.outcome != 'skipped' && runner.os == 'Windows'
         shell: pwsh
         run: |
           $dumps = Get-ChildItem TestResults -Recurse -Filter *.dmp -ErrorAction SilentlyContinue
@@ -582,12 +537,12 @@ jobs:
       # one test assembly, so "exactly one .trx" can only mean they collided. `always()` so
       # this also runs after the crash it exists to make diagnosable.
       - name: Assert per-assembly test results were kept
-        if: always()
+        if: always() && steps.itest.outcome != 'skipped'
         # This job's matrix includes windows-latest, where `run:` would otherwise be pwsh.
         shell: bash
         run: |
           shopt -s nullglob
-          files=(TestResults/*.trx)
+          files=(TestResults/integration-*.trx)
           n=${#files[@]}
           echo "trx files: $n"
           if [ "$n" -le 1 ]; then
@@ -595,16 +550,16 @@ jobs:
             exit 1
           fi
 
-      - name: Upload test results
-        if: always()
+      - name: Upload integration test results
+        if: always() && steps.itest.outcome != 'skipped'
         uses: actions/upload-artifact@v7
         with:
           name: integration-results-${{ matrix.os }}
-          path: TestResults/*.trx
+          path: TestResults/integration-*.trx
           retention-days: 14
 
       - name: Upload DXC cross-host identity dumps
-        if: failure()
+        if: failure() && steps.itest.outcome != 'skipped'
         uses: actions/upload-artifact@v7
         with:
           name: dxc-identity-dumps-${{ matrix.os }}
@@ -616,7 +571,7 @@ jobs:
       # TestResults/hang-dumps is the sidecar's output (stacks, sample, createdump, its log);
       # TestResults/probe-hangs holds the probe-child evidence and the test host's own stall hint.
       - name: Upload hang dumps
-        if: failure() || cancelled()
+        if: (failure() || cancelled()) && steps.itest.outcome != 'skipped'
         uses: actions/upload-artifact@v7
         with:
           name: integration-hang-dumps-${{ matrix.os }}

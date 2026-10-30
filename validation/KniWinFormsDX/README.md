@@ -23,6 +23,14 @@ Same backend (DX11 <-> DX11), same scene, only the compiler that produced the by
 | Grayscale, Invert, TintShader, Sepia, Saturate, Pixelated, Scanlines, Fading, Dissolve | PASS | **0** |
 | Dots | PASS | **1** (384 px, driver rounding, well inside the 4/255 bar) |
 
+**Row "HalfGlobals" (2026-10-28):** `tests/fixtures/shaders/HalfGlobals.fx`, XNA-era `half` uniforms that
+mgfxc's DirectX_11 build compiles as float and ShadowDusk's DirectX target refused (`E5002`) until it passed
+vkd3d `ALLOW_HALF_GLOBALS`. Driver-local (not in the shared `DxShaderInputs.ShaderNames` corpus), MGFX
+container (KNIFX-on-DirectX at HiDef is a separate open issue). Its `ColorMatrix`/`Weights` defaults are the
+documented #422 deviation from mgfxc, so both arms get the same explicit values through the typed `SetValue`
+overloads, outside the swallowed shared parameter call. **Measured 2026-10-28: maxDelta 0 on the RTX 3080 and
+on WARP, 11/11.**
+
 So ShadowDusk's shipping DirectX output is **render-proven on KNI v4.02**: it loads in a real KNI
 DX11 `Effect` and renders pixel-equivalent to the reference compiler's DX output on the same
 runtime. Matrix §1 KNI/DirectX cell -> ✅.

@@ -28,8 +28,29 @@ public sealed class DxcFlagBuilderTests
     [Fact] public void OpenGL_Vertex_HasProfile_vs5_0()
         => Build(PlatformTarget.OpenGL, ShaderStage.Vertex).ShouldContain("vs_5_0");
 
-    [Fact] public void OpenGL_Vertex_HasDxLayout()
-        => Build(PlatformTarget.OpenGL, ShaderStage.Vertex).ShouldContain("-fvk-use-dx-layout");
+    // Issue #425: OpenGL's SPIR-V only feeds SPIRV-Cross's #version 140 GLSL, which can express
+    // nothing but std140, so the uniform block is laid out std140 (-fvk-use-gl-layout). HLSL
+    // cbuffer packing (-fvk-use-dx-layout) put a float3 behind a float at byte 4 and SPIRV-Cross
+    // refused the block (SD0100). Vulkan ships the SPIR-V and keeps the HLSL packing.
+    [Theory]
+    [InlineData(ShaderStage.Vertex)]
+    [InlineData(ShaderStage.Pixel)]
+    public void OpenGL_UsesStd140Layout_NotHlslPacking(ShaderStage stage)
+    {
+        IReadOnlyList<string> flags = Build(PlatformTarget.OpenGL, stage);
+        flags.ShouldContain("-fvk-use-gl-layout");
+        flags.ShouldNotContain("-fvk-use-dx-layout");
+    }
+
+    [Theory]
+    [InlineData(ShaderStage.Vertex)]
+    [InlineData(ShaderStage.Pixel)]
+    public void Vulkan_KeepsHlslPacking(ShaderStage stage)
+    {
+        IReadOnlyList<string> flags = Build(PlatformTarget.Vulkan, stage);
+        flags.ShouldContain("-fvk-use-dx-layout");
+        flags.ShouldNotContain("-fvk-use-gl-layout");
+    }
 
     [Fact] public void OpenGL_Vertex_HasDxPositionW()
         => Build(PlatformTarget.OpenGL, ShaderStage.Vertex).ShouldContain("-fvk-use-dx-position-w");
@@ -245,5 +266,38 @@ public sealed class DxcFlagBuilderTests
             macros: [("BAR", null)]);
         flags.ShouldContain("-DBAR");
         flags.ShouldNotContain("-DBAR=");
+    }
+
+    // Issue #444: DXC's built-in __TIMESTAMP__ crashes the process whenever it expands, so every
+    // DXC call (compile or -P, every target) defines it to clang's own text for an unknown time,
+    // silencing the redefinition warning -WX would otherwise make an error. A user's own -D comes
+    // after it, so the user's value wins as it would on its own.
+    [Theory]
+    [InlineData(PlatformTarget.OpenGL, ShaderStage.Vertex)]
+    [InlineData(PlatformTarget.OpenGL, ShaderStage.Pixel)]
+    [InlineData(PlatformTarget.Vulkan, ShaderStage.Vertex)]
+    [InlineData(PlatformTarget.Vulkan, ShaderStage.Pixel)]
+    [InlineData(PlatformTarget.DirectX, ShaderStage.Pixel)]
+    [InlineData(PlatformTarget.DirectX12, ShaderStage.Vertex)]
+    [InlineData(PlatformTarget.DirectX12, ShaderStage.Pixel)]
+    [InlineData(PlatformTarget.Metal, ShaderStage.Pixel)]
+    public void EveryCompile_DefinesTimestamp_ToClangsPlaceholder(PlatformTarget platform, ShaderStage stage)
+    {
+        IReadOnlyList<string> flags = Build(platform, stage, macros: [("USER", "1")]);
+
+        flags.ShouldContain("-D__TIMESTAMP__=\"??? ??? ?? ??:??:?? ????\"");
+        flags.ShouldContain("-Wno-builtin-macro-redefined");
+        flags.ToList().IndexOf(DxcFlagBuilder.TimestampDefine).ShouldBeLessThan(flags.ToList().IndexOf("-DUSER=1"));
+    }
+
+    [Fact]
+    public void EveryPreprocessRun_DefinesTimestamp_ToClangsPlaceholder()
+    {
+        IReadOnlyList<string> flags = DxcFlagBuilder.BuildPreprocess([("USER", "1")]);
+
+        flags[0].ShouldBe("-P");
+        flags.ShouldContain(DxcFlagBuilder.TimestampDefine);
+        flags.ShouldContain(DxcFlagBuilder.NoBuiltinMacroRedefinedWarning);
+        flags.ToList().IndexOf(DxcFlagBuilder.TimestampDefine).ShouldBeLessThan(flags.ToList().IndexOf("-DUSER=1"));
     }
 }

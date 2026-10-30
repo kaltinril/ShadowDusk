@@ -43,6 +43,9 @@ public static class VulkanShaderCodeWrapper
             bindings.Add(((uint)constantBuffer.RawBinding, UniformBufferDynamic, stageFlags));
         }
 
+        // The masks and the texture-type table are indexed by slot, and a Vulkan slot is
+        // RawBinding - 32 (the compiler sets BindSlot to that before calling here), which is
+        // mgfxc's indexing: register(t1) sets bit 1, not bit 0.
         foreach (TextureReflection tex in textures)
         {
             if (tex.BindSlot is >= 0 and < 16)

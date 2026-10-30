@@ -7,10 +7,19 @@
 	#define SV_POSITION POSITION
 	#define PS_SHADERMODEL ps_3_0
 #else
-	#define PS_SHADERMODEL ps_4_0_level_9_1
+	#if SM6
+		#define PS_SHADERMODEL ps_6_0
+	#else
+		#define PS_SHADERMODEL ps_4_0_level_9_1
+	#endif
 #endif
 
+#if SM6
+Texture2D s0Texture;
 Texture2D s0_SDTexture; SamplerState s0;
+#else
+Texture2D s0_SDTexture; SamplerState s0;
+#endif
 
 float _attenuation; // 800.0
 float _linesFactor; // 0.04
@@ -22,6 +31,15 @@ struct VertexShaderOutput
 	float2 TexCoord : TEXCOORD0;
 };
 
+#if SM6
+float4 mainPS(VertexShaderOutput input) : SV_Target
+{
+	float4 color = s0Texture.Sample(s0, input.TexCoord);
+	float scanline = sin(input.TexCoord.y * _linesFactor) * _attenuation;
+	color.rgb -= scanline;
+	return color;
+}
+#else
 float4 mainPS(VertexShaderOutput input) : SV_Target
 {
 	float4 color = s0_SDTexture.Sample(s0, input.TexCoord);
@@ -29,6 +47,7 @@ float4 mainPS(VertexShaderOutput input) : SV_Target
 	color.rgb -= scanline;
 	return color;
 }
+#endif
 
                    
  

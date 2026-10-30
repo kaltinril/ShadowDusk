@@ -10,7 +10,8 @@ Consumers:
 
 - `tests/ShadowDusk.Integration.Tests/Reflection/LegacySamplerUnitTests.cs`: OpenGL texture units
   for every shape, DirectX 11 legacy sampler slots for every shape, and the whole DirectX 11
-  sampler table where the texture slots agree.
+  sampler table for every shape (the texture slots too, since the 2026-10-28 DirectX 11 texture
+  slot fix; see `../dx11-texture-slots/`).
 - `validation/SamplerRegisterOrderGl` arms "mixed-legacy-after-modern" and "mixed-two-of-each"
   render `GlMixedLegacyAfterModernRender.fx` and `GlMixedTwoOfEachRender.fx` in real MonoGame
   DesktopGL.

@@ -132,7 +132,8 @@ public sealed record MgfxParameterRecord(
     int    MemberCount,
     int    ElementCount,
     IReadOnlyList<MgfxParameterRecord> Elements,
-    IReadOnlyList<MgfxParameterRecord> Members);
+    IReadOnlyList<MgfxParameterRecord> Members,
+    byte[]? DefaultValue = null);
 
 public sealed class MgfxBlobReader
 {
@@ -509,8 +510,9 @@ public sealed class MgfxBlobReader
             var elements = ReadParameterList(br);
             var members  = ReadParameterList(br);
 
+            byte[]? defaultValue = null;
             if (paramClass <= 2 && elements.Count == 0 && members.Count == 0)
-                br.ReadBytes(rowCount * columnCount * 4);
+                defaultValue = br.ReadBytes(rowCount * columnCount * 4);
 
             list.Add(new MgfxParameterRecord(
                 Name: name,
@@ -522,7 +524,8 @@ public sealed class MgfxBlobReader
                 MemberCount: members.Count,
                 ElementCount: elements.Count,
                 Elements: elements,
-                Members: members));
+                Members: members,
+                DefaultValue: defaultValue));
         }
 
         return list;

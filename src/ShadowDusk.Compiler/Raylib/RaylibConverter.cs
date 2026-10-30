@@ -69,7 +69,8 @@ public sealed class RaylibConvertOptions
 /// <c>fragColor</c>, which is the only interface this slice emits against.
 /// </param>
 /// <param name="Uniforms">Every uniform the shader declares, under the GLSL name to pass to
-/// <c>GetShaderLocation</c>. Each is the HLSL global of the same name.</param>
+/// <c>GetShaderLocation</c>. Each is the HLSL global of the same name, with the default its HLSL
+/// declaration gives it (<see cref="RaylibUniform.DefaultValue"/>).</param>
 /// <param name="Samplers">Every sampler the shader declares (see <see cref="RaylibSampler"/>).</param>
 /// <param name="Warnings">Non-fatal findings, e.g. baked sampler states the consumer must apply (<c>SD0637</c>).</param>
 public sealed record RaylibShader(
@@ -82,7 +83,46 @@ public sealed record RaylibShader(
 /// <param name="Name">The GLSL uniform name (the HLSL global's name).</param>
 /// <param name="GlslType">The GLSL type, e.g. <c>vec4</c>; pick the matching <c>ShaderUniformDataType</c>.</param>
 /// <param name="ArrayLength">Element count for an array uniform, or <c>0</c> for a non-array.</param>
-public sealed record RaylibUniform(string Name, string GlslType, int ArrayLength);
+public sealed record RaylibUniform(string Name, string GlslType, int ArrayLength)
+{
+    /// <summary>
+    /// The default the HLSL declaration gives this uniform (<c>float Thickness = 1.0;</c>), or
+    /// <see langword="null"/> when it is unknown: the same values, in the same layout, as
+    /// <see cref="ParameterReflection.DefaultValue"/> on the MGFX route for the same source
+    /// (issue #435). The fragment shader declares the uniform WITHOUT a value, so raylib reads it
+    /// as zero until the caller sets it; set it to this value to get the effect the <c>.fx</c>
+    /// author declared.
+    /// </summary>
+    /// <remarks>
+    /// <para><b>Layout.</b> <c>max(1, ArrayLength)</c> elements one after another, each the
+    /// uniform's components in order, no padding: exactly the values
+    /// <c>SetShaderValueV(shader, loc, values, type, max(1, ArrayLength))</c> takes. Matrices do
+    /// not occur, because the converter refuses matrix uniforms (<c>SD0636</c>).</para>
+    /// <para><b>Values.</b> <c>int</c> values converted to floats, <c>uint</c> values by their
+    /// unsigned value (one beyond 2^24 is not exact), <c>bool</c> as 0 or 1; the MGFX route's value
+    /// for an OpenGL build (the converter's macro set). A <c>bool</c> global is a <c>uint</c> uniform
+    /// (SPIR-V has no bool in a uniform block). An <c>int</c>/<c>ivecN</c> uniform takes the values as
+    /// <c>int</c> (<c>ShaderUniformDataType.Int</c>...); a <c>uint</c>/<c>uvecN</c> one, a <c>bool</c>'s
+    /// included, as <c>uint</c> (<c>ShaderUniformDataType.UInt</c>...: <c>Int</c> on a <c>uint</c>
+    /// uniform is a GL error).</para>
+    /// <para><b>When it is <see langword="null"/>.</b> The global has no initializer, or the
+    /// initializer could not be evaluated or does not match the uniform's shape (the conversion
+    /// then carries the MGFX route's <c>SD0017</c> warning; so does a global with a default that no
+    /// listed uniform pairs with). Samplers are not uniforms here (see
+    /// <see cref="RaylibShader.Samplers"/>).</para>
+    /// </remarks>
+    public IReadOnlyList<float>? DefaultValue { get; init; }
+
+    /// <summary>Value equality, comparing <see cref="DefaultValue"/> element by element.</summary>
+    /// <param name="other">The uniform to compare with.</param>
+    public bool Equals(RaylibUniform? other) =>
+        other is not null && Name == other.Name && GlslType == other.GlslType && ArrayLength == other.ArrayLength
+        && (DefaultValue is null ? other.DefaultValue is null
+            : other.DefaultValue is not null && DefaultValue.SequenceEqual(other.DefaultValue));
+
+    /// <inheritdoc/>
+    public override int GetHashCode() => HashCode.Combine(Name, GlslType, ArrayLength, DefaultValue?.Count);
+}
 
 /// <summary>One <c>sampler2D</c> of a <see cref="RaylibShader"/>.</summary>
 /// <param name="UniformName">
@@ -157,8 +197,23 @@ public static class RaylibConverter
             ]);
         }
 
+        // Issue #407: the techniques come from the preprocessed translation unit (OpenGL macro
+        // set, the one this converter compiles with), as on every CompilationPipeline target.
+        Result<EffectTechniques.Resolution, ShaderError> techniques = EffectTechniques.Resolve(
+            fxSource,
+            file,
+            PlatformMacros.For(PlatformTarget.OpenGL),
+            options.IncludeResolver ?? new FileSystemIncludeResolver(),
+            options.AdditionalIncludePaths,
+            parse.Value);
+        if (techniques.IsFailure)
+            return Result<RaylibShader, ShaderError[]>.Fail([techniques.Error]);
+        FxParseResult rawParsed = parse.Value with { Techniques = techniques.Value.Techniques };
+
         Result<RaylibShader, ShaderError[]> first = ConvertCore(
-            fxSource, parse.Value, options, recovered: null, out bool shaderCompileFailed, cancellationToken);
+            fxSource, rawParsed, options, recovered: null, out bool shaderCompileFailed, cancellationToken);
+        // A technique view that could not be built leaves the conversion on the raw technique
+        // list (issue #407), as it was before.
         if (first.IsSuccess || !shaderCompileFailed)
             return first;
 
@@ -216,8 +271,8 @@ public static class RaylibConverter
         {
             SourceSpan extra = techniques[0].Passes[1].Span;
             return Fail(file, extra.StartLine, extra.StartColumn, "SD0630",
-                $"technique '{techniques[0].Name}' declares {techniques[0].Passes.Count} passes " +
-                $"('{techniques[0].Passes[1].Name}' is the second). raylib draws with one shader " +
+                $"{TechniqueLabel(techniques[0], 0)} declares {techniques[0].Passes.Count} passes " +
+                $"({PassLabel(techniques[0].Passes[1], 1)} is the second). raylib draws with one shader " +
                 "at a time and has no pass concept, so a multi-pass effect cannot be one raylib " +
                 "shader. Split each pass into its own .fx and chain them through render textures.");
         }
@@ -228,7 +283,7 @@ public static class RaylibConverter
         {
             SourceSpan at = pass.VertexProfileSpan ?? pass.Span;
             return Fail(file, at.StartLine, at.StartColumn, "SD0631",
-                $"pass '{pass.Name}' compiles a vertex shader ('{pass.VertexEntryPoint}'). This " +
+                $"{PassLabel(pass, 0)} compiles a vertex shader ('{pass.VertexEntryPoint}'). This " +
                 "converter emits fragment shaders that run behind raylib's built-in vertex shader " +
                 "(LoadShader(null, fs)); a custom vertex stage needs raylib's vertex conventions " +
                 "(vertexPosition, mvp, ...), which are not mapped. Refusing rather than silently " +
@@ -237,7 +292,7 @@ public static class RaylibConverter
         if (pass.PixelEntryPoint is null)
         {
             return Fail(file, pass.Span.StartLine, pass.Span.StartColumn, "SD0631",
-                $"pass '{pass.Name}' has no pixel shader, so there is no fragment shader to emit.");
+                $"{PassLabel(pass, 0)} has no pixel shader, so there is no fragment shader to emit.");
         }
 
         // MonoGame applies these from the effect on EffectPass.Apply; a raylib shader string has
@@ -247,7 +302,7 @@ public static class RaylibConverter
             RenderStateEntry first = pass.RenderStates[0];
             string names = string.Join(", ", pass.RenderStates.Select(s => $"{s.Key} = {s.Value}"));
             return Fail(file, first.Span.StartLine, first.Span.StartColumn, "SD0632",
-                $"pass '{pass.Name}' sets render state ({names}). A raylib shader is GLSL text only; " +
+                $"{PassLabel(pass, 0)} sets render state ({names}). A raylib shader is GLSL text only; " +
                 "blend, depth, stencil, and rasterizer state are set by the draw code " +
                 "(BeginBlendMode, rlDisableDepthTest, ...), so this state would be silently lost. " +
                 "Remove it from the pass and set the equivalent state around the raylib draw.");
@@ -266,7 +321,9 @@ public static class RaylibConverter
                 parsed.StrippedHlsl, file, options.IncludeResolver, options.AdditionalIncludePaths);
             if (flattened.IsFailure)
                 return Result<RaylibShader, ShaderError[]>.Fail([flattened.Error]);
-            compilerInput = flattened.Value.Text;
+            // An #include'd technique block is effect syntax DXC does not take; its technique
+            // comes from the preprocessed view now (issue #407).
+            compilerInput = FxPreParser.StripTechniqueBlocks(flattened.Value.Text, file);
         }
 
         var seam = ModernGlslSeam.CompilePixel(compilerInput, pass.PixelEntryPoint, file, cancellationToken);
@@ -335,7 +392,29 @@ public static class RaylibConverter
                     : new Dictionary<string, string>()))
             .ToList();
 
-        return RaylibGlslMapper.Map(seam.Value.Glsl, samplerInputs, parsed.StrippedHlsl, file);
+        Result<RaylibShader, ShaderError[]> mapped =
+            RaylibGlslMapper.Map(seam.Value.Glsl, samplerInputs, parsed.StrippedHlsl, file);
+        if (mapped.IsFailure)
+            return mapped;
+
+        // The declared default of each uniform (issue #435), read off the text DXC compiled by
+        // the machinery behind the MGFX route's ParameterReflection.DefaultValue. Reported beside
+        // the fragment shader, never written into it.
+        RaylibShader shader = mapped.Value;
+        var warnings = new List<ShaderError>(shader.Warnings);
+        IReadOnlyList<float>?[] defaults = ConvertedUniformDefaults.Resolve(
+            compilerInput,
+            file,
+            seam.Value.Glsl,
+            seam.Value.Spirv,
+            shader.Uniforms.Select(u => new ConvertedUniformDefaults.Uniform(u.Name, u.GlslType, u.ArrayLength)).ToList(),
+            [],
+            warnings);
+        return Result<RaylibShader, ShaderError[]>.Ok(shader with
+        {
+            Uniforms = shader.Uniforms.Select((u, i) => u with { DefaultValue = defaults[i] }).ToList().AsReadOnly(),
+            Warnings = warnings,
+        });
     }
 
     /// <summary>
@@ -368,6 +447,13 @@ public static class RaylibConverter
             })
             : converted;
     }
+
+    // A diagnostic names an anonymous pass or technique (`pass { ... }`, name "") by its index.
+    private static string PassLabel(PassInfo pass, int index) =>
+        pass.Name.Length > 0 ? $"pass '{pass.Name}'" : $"pass #{index} (anonymous)";
+
+    private static string TechniqueLabel(TechniqueInfo technique, int index) =>
+        technique.Name.Length > 0 ? $"technique '{technique.Name}'" : $"technique #{index} (anonymous)";
 
     private static Result<RaylibShader, ShaderError[]> Fail(
         string file, int line, int column, string code, string message) =>

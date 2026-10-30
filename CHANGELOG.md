@@ -24,6 +24,633 @@ that loads and renders identically to `mgfxc`'s in the real MonoGame/KNI runtime
 
 ### Fixed
 
+## [0.23.0] - 2026-10-29
+
+### Added
+
+- **`vs_2_0`, `ps_2_0`, `vs_3_0` and `ps_3_0` compile for KNIFX on DirectX, as they do in KNI's own
+  pipeline.** XNA-era effects, and every shader in KNI's own EffectTest suite, name SM 2.0 or 3.0;
+  KNI's DirectX pipeline (4.2.9001 and 4.3.9001) builds them by compiling `*_2_0` as
+  `*_4_0_level_9_1` and `*_3_0` as `*_4_0_level_9_3`, recording 2.0 and 3.0. A KNIFX DirectX compile
+  now does the same, and the result is byte-identical to the same effect written at the
+  feature-level-9 profile, as KNI's own `.xnb` is (measured with KNI's MGCB on both versions). In real
+  KNI WinForms.DX11 a `ps_2_0`/`vs_2_0` effect loads and renders on HiDef and Reach, `ps_3_0`/`vs_3_0`
+  on HiDef only (KNI's own shader-model check), each pixel-identical to KNI's own build
+  (`validation/InitializerDefaultsKniDx`). An MGFX DirectX compile keeps `mgfxc`'s `SD0015` for all
+  four, and the profiles KNI's pipeline refuses (`*_2_a`, `ps_2_b`, `*_sw`, SM1, `*_4_0_level_9_0`,
+  SM6) stay `SD0015` on KNIFX, now naming KNI's rule. No output that compiled before changes.
+- **KNI's own effect test suite is now a render gate** (`validation/KniEffectTest{KniGl,KniDx,Gl,Dx,Dx12,Vulkan}`).
+  Every test of KNI's `Tests/Framework.Graphics/EffectTest.cs`, which KNI's author checked against XNA, runs in a
+  real engine on KNI's own test shaders, vendored under `tests/fixtures/shaders/third-party/KNI` (Ms-PL, with the
+  licence and a `NOTICE.md`; shader code unmodified, a provenance comment header prepended), plus five companion shaders for a matrix default, a texture at
+  `register(t1)`, a texture array and vertex texture fetch. Runtimes: KNI 4.2.9001 and 4.3.9001 (SDL2.GL and
+  WinForms.DX11, MGFX and KNIFX), MonoGame DesktopGL, WindowsDX, WindowsDX12 and DesktopVK, with real `mgfxc`
+  builds and KNI's own prebuilt `.xnb` as reference arms (the `.xnb` load only on KNI 4.3.9001; 4.2.9001 refuses
+  them as "for a newer version of KNI"). Each row is gated, a listed known ShadowDusk bug that must
+  keep failing until its fix flips it, or informational with the reason printed; positive controls must be
+  caught. A known-failing row must also fail for its listed reason, or the run is red. It is wired into CI
+  (llvmpipe, WARP, lavapipe with the Vulkan validation layer, the lavapipe job raising `vm.max_map_count` first;
+  green in all three jobs on the merge of PR #450) and into `run-windows-render-gates.ps1`; measured green locally. Test and validation only: no package changes.
+  On a strict GL driver (Mesa, as in CI) two rows change class, measured on Mesa 25.2.8 llvmpipe: the `OldSyntax` render
+  rows are informational (Mesa refuses KNI's PS behind BasicEffect's VS for `mgfxc`'s build too), and KNI GL's
+  `DeferredBasicEffect` is known-failing on the existing `SD0403` gap (issue #453; a `mat3x4` Mesa refuses at `Effect` load, where
+  `mgfxc`'s build loads).
+  The fixes in this release flip the known-failing rows of KNIFX DirectX `ps_2_0`/`ps_3_0`, KNIFX `_level_9_x`,
+  the KNIFX texture-less sampler, OpenGL `BINORMAL`/`TANGENT`, `tex2Dlod` and Vulkan's explicit `register(tN)`
+  to gated. One row is known-failing for a different, pre-existing bug: on DirectX 12 and Vulkan the
+  `VertexTextureTex2Dlod` companion's VS writes `: POSITION0`, which is not mapped to the system position there
+  (issue #446). On DirectX 11, `OldSyntax_t1t0`'s texture binding and
+  `DeferredBasicEffect` are informational: with the texture-slot fix ShadowDusk binds them as `mgfxc` and KNI's
+  own `.xnb` do, not in the XNA layout KNI's test asserts.
+- **`ConstantBufferReflection.RawDescriptorSet`** (`ShadowDusk.Core.Reflection`): the raw SPIR-V
+  `DescriptorSet` decoration of a Vulkan constant buffer, set by the SPIR-V reflection (0 elsewhere).
+  The Vulkan target uses it to refuse a buffer outside its stage's descriptor set (`SD0229`).
+- **`TextureReflection.IsStorage`** (`ShadowDusk.Core.Reflection`): true for a read-write (storage) image, an HLSL `RWTexture*`, set by the SPIR-V reflection from `OpTypeImage`'s Sampled operand; false from DXIL/DXBC. The Vulkan target uses it to refuse such a texture (`SD0233`).
+- **New public members in `ShadowDusk.GLSL` and `ShadowDusk.HLSL`** that carry the OpenGL matrix-interpolant
+  layout and the `tex2Dlod`-family rewrite (see Fixed). `ShadowDusk.GLSL`: the record
+  **`MonoGameGlslInterpolantPacking`** (`RowMajor`, `Refused`, and the init-only `Declared`, `Split`,
+  `RefusedVertexInputs` and `Unmodelled`: what the HLSL source says about a stage's interpolants that
+  DXC's GLSL drops) and the 4-argument **`MonoGameGlslRewriter.Rewrite(string, ShaderStage, IReadOnlyList<int>?,
+  MonoGameGlslInterpolantPacking?)`** overload that takes it (the 3-argument overload is unchanged and passes
+  `null`). `ShadowDusk.HLSL` (`ShadowDusk.HLSL.Ast`): the records **`MatrixInterpolantDeclaration`** (semantic,
+  name, rows, columns, `RowMajor`, `IsDegenerate`) and **`EntryPointMatrixInterpolants`** (an entry point's
+  matrix inputs, outputs and the signature shapes the scan does not model), exposed as
+  **`GlSamplerSlots.EntryPointInterpolants`**; **`FxParseResult.RestructuredHelpers`** with the record
+  **`RestructuredHelperDefinition`** (each helper a `tex2Dlod`/`tex2Dbias`/`tex2Dproj` call was rewritten to,
+  and where its definition sits) and **`FxParseResult.DeferredLegacyIntrinsicCalls`** (the calls a raw-text parse
+  left for the preprocessed re-parse); and, in the `ShadowDusk.HLSL` namespace, **`GlobalInitializerDefault.EndLine` / `EndColumn`** (init-only, where
+  a kept declaration's initializer ends). All additive; no existing signature changes.
+
+### Changed
+
+- **BREAKING (output names): an anonymous pass or technique is named `""`, as `mgfxc`, KNI and
+  `fxc` name it.** For `pass { ... }` with no name, ShadowDusk wrote the synthesized name `P0`
+  (`P1`, ...), so `EffectPass.Name` read `"P0"` in MonoGame, KNI and FNA. `mgfxc` 3.8.4.1 (MGFX,
+  OpenGL and DirectX_11), KNI's own pipeline 4.2.9001/4.3.9001 (KNIFX, DesktopGL and Windows) and
+  `fxc /T fx_2_0` all write an empty name, and every container now does too. On FNA an anonymous
+  technique's name is now the one-byte empty string `fxc` writes, so FNA reports
+  `EffectTechnique.Name == ""` instead of `null`. Two shapes compile that were refused: an anonymous
+  pass beside a pass NAMED `P0`/`P1` (`pass { } pass P0 { }` collided with the synthesized name,
+  `FX0006`), and two anonymous techniques (`FX0005 Duplicate technique name ''`); both compile in
+  `mgfxc`, KNI and `fxc`. Only those names change in the output bytes.
+  **Migration:** `technique.Passes["P0"]` now returns `null` for an anonymous pass. Look the pass up
+  by index (`technique.Passes[0]`, or iterate `technique.Passes`), as code written against `mgfxc`'s
+  output already does, or give the pass a name in the `.fx`.
+- **BREAKING (KNIFX parameters): a legacy sampler that binds no texture is no effect parameter in
+  `.knifx`, as in KNI's own build.** For `sampler s0;`, `sampler2D S : register(s0);` or a
+  `sampler_state` without `Texture =`, the `.knifx` carried a Texture2D parameter named after the
+  sampler (`mgfxc`'s MGFX shape). KNI's pipeline (4.2.9001 and 4.3.9001, DesktopGL and Windows)
+  writes none and binds the sampler to no parameter, and in KNI's runtime the extra parameter made
+  `EffectPass.Apply` replace a texture the game bound through `GraphicsDevice.Textures[n]` with null
+  (KNI's EffectTest `OldSyntax_x`/`OldSyntax_s0s1` failed; they pass now, as with KNI's own `.xnb`).
+  KNIFX only: the default MGFX v10 container, which KNI also loads, keeps `mgfxc`'s parameter and is
+  byte-identical on every MGFX target. A KNIFX sampler record whose texture fails to join an effect
+  parameter for any other reason is now refused (`SD0018`) instead of shipping as "no texture".
+  **Migration:** in `.knifx`, `effect.Parameters["s0"]` is now `null` for such a sampler, so
+  `Parameters["s0"].SetValue(texture)` throws `NullReferenceException`. Bind the texture through the
+  device (`GraphicsDevice.Textures[n] = texture`, which `Apply` now leaves alone; SpriteBatch already
+  binds unit 0), or declare the texture in the `.fx`
+  (`Texture2D Tex; sampler2D s0 = sampler_state { Texture = (Tex); };`) and set `Parameters["Tex"]`,
+  which works in both containers.
+- The `SD0210` message for vertex-stage texture sampling on OpenGL now names KNI too: KNI's GL backend, like
+  MonoGame's, binds only the pixel shader's sampler uniforms.
+
+### Fixed
+
+- **`SD0015` on a KNIFX DirectX compile applies KNI's profile rule, not `mgfxc`'s.** It refused
+  `*_2_0` and `*_3_0`, which KNI's own pipeline builds (see Added); its message now names KNI and
+  lists the profiles KNI's DirectX pipeline accepts. MGFX DirectX keeps `mgfxc`'s rule and message.
+- **`half` globals compile on DirectX 11, as they do with `mgfxc`.** An XNA-era uniform declared
+  with a `half` type (`half4 Tint = half4(1, 0.5, 0, 1);`, and every `half`/`halfN`/`halfNxM`
+  global or cbuffer member, `static` ones included) failed on the DirectX target, in both the MGFX
+  and the KNIFX container, with vkd3d's `E5002 The half type is not allowed for global variables.`,
+  while `mgfxc` 3.8.4.1 compiles it: its DirectX_11 build passes
+  fxc the backwards-compatibility flag, under which a `half` global is a `float`. ShadowDusk now
+  passes vkd3d 2.1's matching option (`BACKCOMPAT_ALLOW_HALF_GLOBALS`, which vkd3d's own
+  `D3DCompile` sets for that same fxc flag) on the SM4+ target, on the desktop and in the browser.
+  The parameter table, initializer defaults, constant-buffer layout and shader code are those of
+  the same effect written with `float`; only the reflection chunk's type-name string keeps the
+  author's `half4`, exactly as fxc's own blob does. No other output byte changes (the byte-identity
+  manifests only gained the new fixture). Rendered in real MonoGame WindowsDX against `mgfxc`'s
+  build at maxd 0 (`validation/DxModernFeatures`, arm "half-globals") and in real KNI
+  WinForms.DX11 (`validation/KniWinFormsDX`, row "HalfGlobals", MGFX container). DirectX 12,
+  Vulkan, OpenGL and KNIFX on OpenGL (all DXC) already compiled `half` as `float` and are
+  byte-identical to the `float` twin. FNA
+  still refuses a `half` global (`E5002` at the declaration), as its reference `fxc /T fx_2_0`
+  does (`X3650`).
+- **`tex2Dlod`, `tex2Dbias` and `tex2Dproj` compile on DirectX 11, DirectX 12, Vulkan and OpenGL.** The XNA spellings of explicit-LOD, biased and projective sampling on a legacy `sampler`/`sampler2D` (vertex texture fetch included) were refused with `FX0012`, while `mgfxc` 3.8.4.1 compiles them at `vs_4_0`/`ps_4_0`. The pre-parser now turns each call into a call of a helper it defines on the line of the calling declaration, returning `T.SampleLevel(s, t.xy, t.w)` / `T.SampleBias(s, t.xy, t.w)` / `T.Sample(s, t.xy / t.w)`: the arguments are copied verbatim and evaluated once, and no line moves. The helper goes on a free (blank or comment) line above the declaration, or after the `;`/`}` that ended the previous one, so the declaration's own columns do not move; it is placed before an `[attribute]` list and never inside a function annotation. A compiler error that names the helper names the intrinsic instead (the compiler's text stays in `RawDiagnostics`). Rendered in real MonoGame WindowsDX against the `mgfxc` golden, and in WindowsDX12 and DesktopVK against `mgfxc` 3.8.5's build of the same shader in `Texture2D` syntax, all pixel-identical, with positive controls (`validation/DxModernFeatures`, `VsDrivenDx12 -- legacy-lod`, `VsDrivenVulkan -- legacy-lod`). MonoGame's own `VertexTextureEffect.fx` now compiles on all three and renders like `mgfxc`'s build. On OpenGL a vertex-stage fetch is still `SD0210`, as `mgfxc` refuses it; in a pixel shader the LOD is honored (`mgfxc`'s MojoShader output drops it). A body under two `#if`-selected headers, or a texture declared with a different type per branch, is rewritten from the preprocessed source (the legacy-sampler recovery; DirectX 11 takes it up front, and falls back to its normal path when that call is compiled out or an include is missing). A call with other than two arguments is `FX0012`; the 1D, 3D and cube intrinsic families (`tex1D…`, `tex3D…`, `texCUBE…`) stay `FX0012` with a message naming the modern form. FNA is unchanged. No previously compiling effect's bytes moved.
+- **The FNA defaults gate failed on devices that round 0.5 down.** `FnaValidation -- defaults`
+  failed `DefaultsScale`, `DefaultsIntBool` and `DefaultsArray` on an RTX 3080 (D3D11 and OpenGL)
+  although ShadowDusk's build matched `fxc`'s exactly: those fixtures put 0.5 in a channel
+  (127.5/255), which the device rendered as 127 against a pin of 128. The reference-centre vs
+  pin sanity check now allows +-1 per channel, as the `InitializerDefaults*` drivers do; the
+  ShadowDusk vs `fxc` comparison (parameters and every pixel) is still exact. Validation only,
+  no output change.
+- **OpenGL vertex inputs with `BINORMAL`, `TANGENT`, `BLENDINDICES`, `BLENDWEIGHT`, `PSIZE`,
+  `FOG` or `DEPTH` semantics compile, and a matrix interpolant (`float3x3 TangentToWorld :
+  TEXCOORD2`) reaches the pixel shader.** Both were refused with `SD0210` while `mgfxc` compiles
+  them, which blocked normal-mapped shaders on OpenGL (KNI EffectTest's `DeferredBasicEffect` hit
+  it at `BINORMAL0`, then at its `float3x3` interpolant). The GL attribute table is now the shared
+  `VertexSemanticMapper` the Vulkan and DirectX 12 tables already used, so each record carries
+  the usage and index `mgfxc` 3.8.4.1 writes (measured per semantic, including non-zero indices
+  such as `TEXCOORD3` and `BLENDWEIGHT1`); a semantic `mgfxc` itself refuses on OpenGL (`MYSEM0`)
+  is still `SD0210`, and so is `SAMPLE`. A matrix interpolant is split into one `vTexCoord{n}`
+  varying per register, laid out as fxc lays it out: one HLSL column per register, or one row per
+  register for an explicit `row_major` (read from the HLSL declaration, since DXC's output is
+  identical for the two), so a stage that reads the interpolant as separate vectors gets
+  `mgfxc`'s data, with each stage laid out from the signature of the entry point it compiles (so
+  a `row_major` VS output read as a column_major PS input, or two techniques declaring one semantic
+  differently, also match `mgfxc`). A degenerate `float1xN` interpolant is split over N
+  one-component registers as fxc lays it out. A matrix interpolant the scanned signature does not
+  declare (a semantic on a struct-typed member holding a matrix, a type defined twice at file
+  scope), a `float1xN` vertex input, and `PSIZE0` beside `POINTSIZE0` are refused with `SD0210`
+  rather than laid out by guess. `TEXCOORD00` is `TEXCOORD0`, as in fxc. Two vertex
+  inputs naming one element (`POSITION0` beside `SV_POSITION` or `Position0`) now share one
+  attribute record, as in `mgfxc`; before, the second read zero. Rendered in real MonoGame
+  DesktopGL and real KNI SDL2.GL (MGFX v10 and KNIFX) through a custom `VertexDeclaration`, every
+  element and every mixed-declaration packing case matches the `mgfxc` build at maxd 0
+  (`validation/VertexSemanticsGl`, `validation/VertexSemanticsKniGl`). Every corpus shader that
+  compiled before compiles to the same bytes. Still open on OpenGL for skinned shaders: an `int4`/`uint4`
+  `BLENDINDICES` input and `float4x3` bone uniforms are refused (`SD0210`), and the stock
+  `SkinnedEffect.fx` stops earlier at `SD0010` (macro-defined techniques).
+- **DXC's "initializer ignored" warning no longer survives a kept default whose initializer starts on a later
+  line** (`float4x4 M =` then `{ ... };`, as in KNI's `OptimizedMatrix.fx`; also `float4 C` / `= ...` and multi-line
+  arrays and matrices). The default was stored but the warning was still shown on OpenGL and Vulkan, because it was
+  matched on the name's line and DXC's SPIR-V path reports the initializer's first token. It is now matched by
+  position anywhere in the declaration, from column 1 of the name's line (the name itself when another declaration
+  precedes it there) to the end of the initializer (`GlobalInitializerDefault.EndLine`/`EndColumn`, new init-only
+  properties), so a macro-written declaration on DirectX 12 loses it too, while the true warning of an unkept
+  declaration (one on a kept one's line, or one the reader does not see, such as inside a `namespace`) stays. The
+  variable name in DXC's message is no key: DXC names the first initialized global in every such warning. A removed
+  warning's `expanded from macro` note goes with it. Warnings only; no output byte changes.
+- **DirectX 11: legacy samplers' textures now sit on the texture slots `mgfxc` gives them, so
+  SpriteBatch's sprite reaches the right sampler.** fxc (and so `mgfxc` and KNI's pipeline) gives
+  a LEGACY sampler's texture (`sampler2D A;`, a `sampler_state` block, read with `tex2D`) the
+  `tN` slot of the shader's FIRST READ of it, in evaluation order (an argument before the call
+  that takes it, an inner read before the dependent read around it), ahead of every modern
+  resource without a register (those keep declaration order), around every explicit `t`
+  register (read or not, on any texture, buffer or `tbuffer`; a register on the `texture2D` a
+  `sampler_state` names only reserves it, the sampler's own texture takes the next free slot).
+  ShadowDusk numbered the SM4 rewrite in declaration order, which put a texture `sampler_state`
+  names, or one declared above the sprite sampler, on `t0` where SpriteBatch binds the sprite:
+  the XNA/MonoGame `BloomCombine.fx` shape (`sampler BloomSampler : register(s0); sampler
+  BaseSampler : register(s1) = sampler_state { Texture = (BaseTexture); };`) swapped the bloom and
+  the base (maxd 188 in real KNI WinForms.DX11, maxd 200 in real MonoGame WindowsDX against
+  `mgfxc` 3.8.4.1's build). Each DirectX 11 shader with a legacy sampler is now checked after its
+  compile and, when the slots differ, recompiled with each resource pinned by an explicit
+  `register(tN)`. The evaluation order is read from the preprocessed SOURCE, identically on both
+  DXBC backends and every host: no compiled instruction stream carries it (`d3dcompiler_47`
+  schedules its reads, emitting a read feeding `clip` first and `tex2D(A) * tex2D(B) +
+  tex2D(C) * 2` C first, and vkd3d-shader swaps the operands of `>` and `<=`); the surviving
+  resources come from the shipped compile's own RDEF. The walk follows straight-line evaluation
+  order exactly; it also removes a read after an unconditional `return`, `break` or `continue` in
+  the same block (fxc does; `discard` removes nothing) and numbers a `switch`'s `default` arm
+  after every `case` arm, wherever it is written (both measured). It never evaluates a
+  condition: fxc numbers after inlining and folding every condition it can evaluate, which no
+  syntactic test predicts (measured: a call returning a constant, a local, a default or `out`
+  argument, `k > 0 && false`, one component of a vector, a uniform the shader assigns, a local
+  declared in a comma list, a parenthesized write to an input, an `unsigned int` compared with
+  `0`, a loop bound that truncates). So a read under an `if`/`else`, in a `switch` arm, in a loop
+  that is not certainly entered (only a signed `int` counter from an integer literal against an
+  integer literal or a `static const int` from one is), in a later loop iteration, or after a
+  `return`/`break`/`continue` that may not run, is one fxc may or may not keep; when keeping or
+  dropping such reads could change the order, the check refuses with `SD0230` and keeps the old
+  slots rather than guess. Both arms of `?:` always count, and reads sharing their conditions
+  share their fate (everything after one early `return` stays or goes together). The price is a
+  class of loud refusals where fxc in fact keeps the order: a texture first read under a uniform
+  or input condition and read again after another texture (26 of the 304 golden shapes, among
+  them `if (k > 0)` on a uniform and a `switch` on one), and the real Apos.Shapes shader (issue
+  #202), whose blur branch reads the dither noise and returns ahead of the ramp reads: it keeps
+  its declaration-order slots, which are `mgfxc`'s, and warns. Measured on 304 shapes
+  (`tests/fixtures/golden/dx11-texture-slots/`, 95 of them condition probes from two reviews) and
+  the 27 legacy-sampler goldens, on both backends: `mgfxc`'s table or an `SD0230` warning, never a
+  silent other order (the 11 listed as divergent before now match), except one texture
+  behind two legacy samplers, or behind a legacy sampler and a direct read (one record, `mgfxc`
+  has two), legacy samplers a macro declares (compiled natively, a pre-existing gap), and, on
+  vkd3d only, reads vkd3d's optimiser keeps where fxc folds them (`x * 0`, `lerp(a, b, 1)`,
+  `a - a`, a `switch` on a `static const`): the dead texture keeps a record and a slot. Anything
+  the check cannot model or apply
+  (a texture declared through a macro or in a declarator list, a resource array, an unreadable
+  preprocessed view, an order a foldable condition could change, an overloaded function, a legacy
+  sampler passed as a function argument, a bound texture whose read the check did not find, two
+  resources under one name) keeps the old slots and warns `SD0230`. So do four shapes the final
+  review found numbered silently wrong (measured against `mgfxc`, the `U*` goldens): a statement
+  that discards a call reading a texture (fxc DROPS `tex2D(B, uv);`, `(tex2D(B, uv));`,
+  `float4(tex2D(B, uv));` and `Tb.Sample(SB, uv);` before it numbers, in a block, a loop, a void
+  helper or a `for` init too, but keeps `.r`, `* 2`, a cast, `clip(...)` and a user function's
+  call; every bare call that reads warns except `clip`, `sincos` and a user function's, so a bare
+  `max`/`saturate`/`dot` statement is a false warning), a read or user-function call in a global
+  initializer (numbered before the entry point's, even for an unused global), a function defined
+  inside a struct or namespace, and a legacy sampler's texture the shader also uses through a
+  method of its own (`Tb.GetDimensions`, `Tb.Load`, even `Tb.Sample`: `mgfxc` gives that use a
+  second record, `A@t0 Tb@t1 Tb@t2`; ShadowDusk keeps one `Tb` record, as on `main`, and now
+  warns). **DirectX 11 and KNIFX DirectX output changes** only for
+  shaders whose legacy-sampler texture slots were not fxc's: in the corpus, `ForwardLighting.fx`,
+  `SamplerPairMirror.fx` and `SamplerRegisterOrder.fx` (now `mgfxc`'s table exactly; the same
+  three under the d3dcompiler backend), and none of the byte-identity manifests' fixtures;
+  OpenGL, DirectX 12, Vulkan, FNA and KNIFX OpenGL bytes are unchanged for every `.fx` under
+  `tests/fixtures` (DirectX 12 keeps declaration order, no reference table for these shapes was
+  established; FNA already matches `fxc`'s declaration-order sampler registers). Rung 4, both
+  backends: `validation/DxModernFeatures` arm "texture-slots" (real MonoGame WindowsDX, GPU and
+  WARP), the texture-slot rows of `validation/KniWinFormsDX` (real KNI 4.2.9001 WinForms.DX11,
+  MGFX and KNIFX at FL10_0, vkd3d and d3dcompiler) and the DX corpus through
+  `CandidateDx -- d3dcompiler`, all maxd 0 against the `mgfxc` golden (maxd 200 in MonoGame with
+  the previous compiler).
+- **Vulkan: an explicit `register(tN)` is the texture's slot again, as on DirectX and in
+  `mgfxc`.** A texture whose register did not start at `t0`, or that followed a gap, was written
+  with its position among the shader's textures instead: a lone `Texture2D Tex1 : register(t1)`
+  got slot 0 (header texture-slot mask `0x1`, where `mgfxc` 3.8.5 `/Profile:Vulkan` writes slot 1
+  and `0x2`), so MonoGame DesktopVK bound the parameter's texture to a slot the shader never
+  reads and the effect drew (0,0,0,0) where `mgfxc`'s build draws the texture. A `Texture2DArray`
+  on `t1` failed the same way, and a `t0` + `t2` pair lost its second texture. The slot is now the
+  SPIR-V binding minus 32, `mgfxc`'s rule and the one the runtime reads back, on every host
+  (desktop, browser and Android all reflect Vulkan from SPIR-V). Proven in real MonoGame 3.8.5
+  DesktopVK against `mgfxc` 3.8.5 goldens (`validation/VsDrivenVulkan -- regslots`: lone `t1`,
+  `t0` + `t2`, `Texture2DArray` slice 1; maxd 0, no Khronos validation-layer message, with an
+  ordinal-slot positive control that turns it red). The Vulkan binding rewriter also stopped
+  reading declarations out of comments: a commented `Texture2D T;` took register 0 and pushed the
+  real textures up one slot. A texture or sampler that rewriter does not model (such as
+  `Texture2D A, B;`) lands below binding 32 with no slot the runtime can bind, and is now refused
+  with `SD0228` (`mgfxc` writes it as slot 224 with no descriptor). A declaration that comes out of
+  a macro (`#define DECL_TEX(x) Texture2D x##Tex;`) is no longer one of them: after that first failure
+  the effect is compiled once from its preprocessed source, where the declaration is literal, and gets
+  one combined descriptor at slot 0 (it used to compile to a separate image + sampler pair below
+  binding 32, the shape that access-violates in DesktopVK). An unregistered texture read through a
+  sampler with an explicit register (`Texture2D A; SamplerState S : register(s2);`) now takes the
+  texture register DirectX gives it (slot 0, where SpriteBatch binds) instead of inheriting the
+  sampler's `s2`, and a sampler named only in its declaration (dead code) no longer holds a register
+  such a texture has to step past. One previously committed fixture has the first shape:
+  `tests/fixtures/golden/legacy-sampler-units/LegacyBeforeModernSamplerRegister0.fx` (a legacy `sampler2D A`
+  before `Texture2D T` read through `SamplerState S : register(s0)`) now puts `A` on slot 0 and `T` on
+  slot 1 on Vulkan, where it put `T` on 0 and `A` on 1; the new slots are the ones `mgfxc`'s DirectX 11
+  golden of that file gives them. `SD0228` names every
+  texture and sampler below binding 32, and after the retry names only what the retry could not pin,
+  at its line.
+- **Vulkan: an explicit register space is dropped (`register(t1, space0)`).** A space is a Vulkan
+  descriptor set and MonoGame DesktopVK binds one per stage (pixel shaders: set 1), so a pixel
+  shader's `space0` texture, sampler or constant buffer was read from a set the runtime never writes
+  and the effect drew (0,0,0,0), exactly as `mgfxc` 3.8.5's own build of it does (measured; `mgfxc`
+  keeps the space). The space is now dropped on Vulkan, also behind a macro (through the
+  preprocessed retry), and a resource that still lands outside its stage's set is refused with the
+  new `SD0229`. Proven in real DesktopVK (`VsDrivenVulkan -- regslots`, `RegisterSpace0` vs `mgfxc`'s
+  build of the shader without the spaces, maxd 0).
+- **Vulkan: a sampler the binding rewrite could not pair no longer ships as a standalone descriptor.**
+  A texture passed to a helper with its sampler (`H(B, U, uv)`), a helper sampling a parameter
+  texture through a global sampler, a sampler name from a macro or a token-pasting macro, and a
+  pairing hidden by an inactive `#if` all compiled to a separate `SAMPLED_IMAGE` + `SAMPLER` pair that
+  MonoGame DesktopVK does not handle (the texture drew nothing). Pairs are now followed through helper
+  calls, an output that would still carry a standalone sampler is compiled once more from the
+  preprocessed source, and what stays unpairable is refused with the new `SD0232`. One texture sampled
+  directly through two samplers (the linear + point idiom) gets a second combined descriptor: an alias
+  declaration of the texture on its own register whose record binds the same effect parameter (set the
+  texture through its parameter: SpriteBatch fills slot 0 only). A texture read only
+  with `Load` now gets the sampler record `mgfxc` 3.8.5 writes for it (texture slot, sampler slot 255);
+  it had none, so its parameter was never bound and it read (0,0,0,0). A read-write texture (UAV) is
+  refused with the new `SD0233`; an uppercase register letter (`register(T1)`), which DXC's SPIR-V
+  backend rejected with an internal compiler error, is written lowercase. Proven in real DesktopVK
+  (`VsDrivenVulkan -- regslots`: `RegisterLoadOnly` vs `mgfxc`'s own build, `RegisterHelperPair` and
+  `RegisterPreprocessedPairs` and `RegisterTwoSamplers` vs `mgfxc` on their explicit-register forms, maxd 0), with positive
+  controls for the register-space and dead-sampler fixes. **Vulkan output changes** (these fixes
+  together with the slot fix above) for `examples/ExLegacyTextureDiscard.fx` (its sprite sampler `s0`
+  now reads slot 0, like DirectX), `third-party/MonoGame/ParameterTypes.fx` (`Tex3D`/`TexCube` now
+  slots 1/2, their registers) and, outside the byte-identity corpus,
+  `legacy-sampler-units/LegacyBeforeModernSamplerRegister0.fx` (see above); every other committed
+  Vulkan entry and every DirectX 12, DirectX 11, OpenGL and FNA entry is unchanged.
+- **Vulkan: texture/sampler pairing is per compiled shader, and dead code no longer decides it.**
+  Each compiled shader is its own Vulkan descriptor layout, but the binding rewrite paired a texture
+  once for the whole file, from its first `Sample` call: a texture read through a point sampler in
+  one technique and a linear sampler in another (or through one sampler in the vertex shader and
+  another in the pixel shader) left the second shader's sampler as a standalone descriptor, as in
+  `mgfxc`'s own build, which DesktopVK does not handle, so that technique drew nothing. A call in a
+  function the entry point never calls (read with every macro expanded, so a helper called only
+  through a `#define` still counts as called; a member call such as `h.Get(uv)` reaches only the
+  methods of a struct, named or anonymous, whatever its base clause (`: N::Base`, `: I, J`), and a
+  function inside braces the rewrite cannot classify counts as reached by every call, while a qualified call such as `Lib::H(uv)` or `S::Get(uv)`
+  reaches a namespace's function and a static method alike; a `#define`'s body counts only where the
+  shader's own reachable code expands it, so a macro another technique or stage uses pairs nothing
+  here), or on a line an inactive `#if` drops (`#if 0`, the branch
+  the macros do not take, read by the managed preprocessor with the compile's macros), took the
+  pairing the same way: the live call's sampler shipped as a standalone descriptor, or a second
+  texture on that sampler was refused as `SD0028`. Pairing now reads only the code each shader can
+  run (except when a conditional tests a macro only DXC defines, the `SD0009` warning, or the
+  preprocessed view cannot be built: then the whole file is paired, every line and every function
+  counting, as before, and a dead call that comes first gives the live one an alias and `SD0235`);
+  a second sampler is
+  aliased only where both calls can be live (the two branches of one `#if` are resolved by the
+  preprocessed retry instead); an alias whose original DXC removed keeps the original's parameter
+  name; and an unregistered texture nothing live references (a legacy branch's synthesized
+  declaration) is numbered after every other texture. An alias takes the lowest free slot above its
+  texture's, so the texture's own slot stays its DirectX register and an alias never takes slot 0,
+  where SpriteBatch binds its sprite; never past the stage's last texture slot (MonoGame DesktopVK
+  has 16 for a pixel shader, 8 for a vertex shader), where it takes the lowest free slot below its
+  texture's instead (never slot 0), and is refused with the new `SD0237` when no slot but slot 0 is free. Declaring an alias now raises the warning
+  `SD0235` (set that texture through `Effect.Parameters`: SpriteBatch fills slot 0 only), and an
+  identifier using the reserved `_SDVkAlias` suffix is refused on Vulkan with `SD0234` (other targets
+  treat it as an ordinary name). Storage buffers (`StructuredBuffer`, `ByteAddressBuffer` and their
+  `RW` forms) compiled silently as a uniform-buffer descriptor the runtime never fills, and a
+  `Buffer<T>` compiled silently too: both are now `SD0233`, like a read-write texture. Proven in real DesktopVK (`VsDrivenVulkan -- regslots`: `RegisterSamplerPerPass`,
+  both techniques through SpriteBatch alone, and `RegisterSamplerPerStage`, vs `mgfxc` on their
+  one-sampler forms, maxd 0, every pixel the expected colour, Khronos validation layer clean), with a
+  `whole-file-pairing` positive control that turns both red. **Vulkan output changes** for
+  `register-slots/RegisterPreprocessedPairs.fx` (its `#if 0` pairing no longer reaches the layout) and
+  `legacy-sampler-names/StateBlockUndeclaredTextureShared.fx` (outside the byte-identity corpus: its
+  second sampler now gets an aliased combined descriptor bound to `Tex`, and `SD0235`, where it
+  shipped a standalone sampler descriptor). With `Debug` on, 28 other corpus entries' Vulkan bytes
+  move because DXC embeds the rewritten source; their release bytes, and every DirectX 12, DirectX
+  11, OpenGL and FNA entry, are unchanged.
+- **A forward-declared entry point no longer kills the process on OpenGL and Vulkan.** An
+  entry point declared before its definition (`float4 PS(float4 c : COLOR0) : COLOR0;` above
+  the technique, the definition below it), or declared again after it, ended the compile with an
+  `AccessViolationException` inside DXC's SPIR-V back end: an uncatchable crash that took down
+  the game, the MGCB build or the test host. It is a fault in the pinned DXC itself (a null read
+  in `dxcompiler`, reproduced through Vortice's own wrapper with no ShadowDusk code), hit by
+  every `-spirv` compile whose entry function has a redeclaration, so OpenGL, Vulkan, raylib and
+  SkSL. The entry point's redundant prototypes are now blanked from DXC's input (lines and
+  columns kept), which is what DXC's DXIL path and fxc already do with them: the effect compiles
+  to exactly the bytes of the same effect without the prototype, and `mgfxc` 3.8.4.1 compiles
+  these shapes too. An unused overload prototype (different parameters, no definition) is dropped
+  the same way, as fxc compiles past it. Every decision is DXC's own: its preprocessor is run
+  first (`-P`, with the compile's own arguments, which never reaches the back end that faults),
+  skipped only when the source spells the entry's name at most once and defines no macro at all
+  (a comment, form feed or vertical tab inside a `#define` directive no longer hides one), and
+  only when ITS text declares the entry more than once is anything done, so a prototype in a
+  branch DXC does not compile (`#ifdef _XBOX`, `#ifndef __HLSL_VERSION`), a conditional on a
+  macro only DXC defines, and C's unsigned preprocessor arithmetic (`#if -1 > 0u`, which crashed
+  0.22.1 too) all come out as DXC sees them. The blanked range is proven, not guessed: DXC's
+  preprocessor, run again on the source with the range blanked, must produce exactly the original
+  tokens minus the prototype's, so a macro call on the prototype's line
+  (`DECL_PARAM(Unused) float4 PS(...);`) is never removed with it, while a prototype a macro
+  completes (`: POS_OUT`), writes whole (`DECLARE(PS)`) or names (`#define PF PSX`) is removed
+  exactly. Blanked characters become as many spaces as their UTF-8 bytes, so DXC's columns later
+  on the line do not move, and a directive inside a multi-line prototype (`#line`, `#if`,
+  `#define`) is kept, so later diagnostics keep their lines; a GNU line marker (`# 33 "foo.fx"`)
+  is read like `#line`. A source DXC's preprocessor rejects (`#error`, a warning under `-WX`)
+  reaches DXC as written and fails on that diagnostic in the front end. What cannot be compiled
+  safely is refused with the new `SD0236` instead of a crash: a call to the entry point between
+  its prototype and its definition, an overload prototype of an entry point the source calls
+  (`mgfxc` compiles both), a prototype that says more than its definition (an attribute, a
+  leading `inline`, `static` or `precise`, a parameter's interpolation modifier or default value,
+  which DXC may merge into the definition), a macro call writing the prototype together with
+  other code, and a declaration shape the reading does not model (a parenthesised declarator
+  `float4 (PS)(...)`, which also crashed, or a second declarator). OpenGL's DXIL reflection
+  companion, which DXC compiles without the fault, reads such a source as written, so DXC's own
+  error from it (`ambiguous entry point function`, `cannot find entry function`) can come first,
+  as in 0.22.1. In the browser, whose DXC module exports no preprocess-only entry point, the
+  source is compiled as written (that DXC build does not crash; it rejects a redeclared entry
+  with "Entry points cannot share the same name", now reported as `SD0236` with DXC's text kept).
+  DirectX 11, DirectX 12 and FNA never had the fault and are unchanged. Measured against 0.22.1
+  on OpenGL, Vulkan, DirectX 11, FNA and KNIFX over 546 `.fx` files (every fixture,
+  sample and validation effect, and the real-world effects under FlatRedBall, KNI, XnaFiddle,
+  Gum and the MonoGame HLSL examples): every one compiles to the same bytes with the same diagnostics on every target, and every reviewer crash reproducer that ended 0.22.1's process now compiles or fails with a registered diagnostic (three sources DXC's front end rejects anyway, a `%:define` digraph, a `??=` trigraph and an `extern` prototype, get `SD0236` on Vulkan instead of DXC's own error).
+- **`__TIMESTAMP__` no longer kills the process (issue #444).** The pinned DXC ends the process
+  (`0xC0000409`) whenever its preprocessor expands its built-in `__TIMESTAMP__` (the modification
+  time of the in-memory source, which it cannot read), even preprocessing only, and also when the
+  name is pasted together (`__TIME ## STAMP__`). Every DXC call (desktop and browser, every target
+  DXC compiles, the zero-technique fallback's preprocess run and the entry-prototype proof
+  included) now defines `__TIMESTAMP__` to clang's own text for an unknown time,
+  `"??? ??? ?? ??:??:?? ????"` (a string literal), with `-Wno-builtin-macro-redefined` so `-WX`
+  does not fail on the redefinition. An effect that only mentions it (a dead `#if 0` branch, an
+  unused macro body, a comment) compiles exactly as in 0.22.1; one that uses its value gets
+  DXC's ordinary front-end diagnostic for a string literal instead of a crash. DirectX 11 and
+  FNA (vkd3d) never ran DXC on it and are unchanged. Release bytes on every target are
+  unchanged; DirectX 12 `Debug` output moves, because DXC records its command line in the DXIL
+  debug information. Side effect: redefining or undefining another built-in macro (`__FILE__`,
+  `__LINE__`) is no longer a `-WX` error on the DXC targets.
+- **The Vulkan texture/sampler pairing knows the rest of DXC's predefined macros.** The pairing
+  reads the lines DXC compiles from the managed preprocessed view, which read a conditional on a
+  macro only DXC defines as false: `#ifdef __GNUC__` around one `Sample` call and `#else` around
+  another paired the `#else` texture while DXC compiled the first branch (a wrong texture with no
+  diagnostic). The pairing's view now also treats the macros the pinned DXC was measured to define
+  beyond 0.22.1's list (`__GNUC__`, `__GNUC_MINOR__`, `__GNUC_PATCHLEVEL__`, `__GXX_ABI_VERSION`,
+  `__llvm__`, `__BYTE_ORDER__`, the `__ORDER_*`, `__FLT_*` and `__DBL_*` families,
+  `__LITTLE_ENDIAN__`, `__DECIMAL_DIG__`, `__is_identifier`) as unknown, so such a file is paired
+  whole, as DXC compiles it. Only the pairing: the technique list, legacy-sampler recovery and
+  initializer defaults keep 0.22.1's list on every target, because they are `mgfxc`'s reading and
+  `mgfxc`'s preprocessor defines none of these (so `#ifdef __GNUC__` around a technique gives the
+  technique list `mgfxc` gives). A name neither compiler defines (`_XBOX`, `_DEBUG`, `__PSSL__`)
+  stays undefined everywhere, as in 0.22.1 and `mgfxc`.
+
+## [0.22.1] - 2026-10-29
+
+### Added
+
+- **The SkSL and raylib conversion results report each uniform's declared default (issue #435).**
+  `SkslConversion.Uniforms` (new, a list of the new `SkslUniform`: name, SkSL type, array length)
+  and `RaylibUniform` both gain `DefaultValue`: the default the HLSL declaration gives the uniform
+  (`float Thickness = 1.0;`), with the same values and layout as `ParameterReflection.DefaultValue`
+  on the MGFX route for the same source (row-major matrices, array element after element, `bool` 0
+  or 1, `uint` unsigned), or `null` when there is no initializer, it cannot be evaluated (with the
+  MGFX route's `SD0017` warning), or the uniform is synthesized (`ShadowDusk_Color`,
+  `ShadowDusk_Resolution`). Both converted shaders still declare every uniform without a value
+  (an unset uniform reads 0 in Skia and raylib), so a caller that wants the author's default sets
+  it from `DefaultValue`: on Skia the list goes straight to `SKRuntimeEffectUniforms` (DXC's
+  `matRxC` columns are the HLSL rows, so even a matrix needs no reordering). Reflection only: the
+  emitted SkSL and GLSL are byte-identical for every fixture (all 202 `.fx`/`.slang` fixtures
+  diffed against the previous build), and issue #424's "emit the initializer into the shader"
+  option is not taken. Proven in the real runtimes: `validation/SkiaVsKni` and
+  `validation/RaylibRoute` each gain an `UnsetDefaults` case drawn with the reported defaults set on
+  Skia / raylib and nothing set on KNI / MonoGame GL (the `.mgfx` defaults apply), plus a
+  `Defaults-zeros` match and a `control-unset-defaults` control that must diverge (and, on Skia, a
+  `control-transposed-matrix` control).
+  A uniform SPIRV-Cross renamed (`input` to `_input`, `a__b` to `a_b`, `gl_X`, a clash suffix) is paired
+  with its HLSL global through the SPIR-V member names, and a global with a default that no uniform
+  pairs with is an `SD0017` warning, never a silent `null`. The value is the MGFX route's for an
+  OpenGL build (the converters' macro set). **Record equality:** `RaylibUniform` and `SkslUniform`
+  equality now includes `DefaultValue` (compared element by element), so two entries for the same
+  uniform with different declared defaults are no longer equal.
+
+### Fixed
+
+- **KNIFX records the shader model KNI's own pipeline records for `*_4_0_level_9_1` and
+  `*_4_0_level_9_3`: 2.0 and 3.0, not 4.0.** ShadowDusk read the first `_N_N` of the profile, so a
+  KNIFX container always recorded 4.0 (version byte `08`) for a literal `ps_4_0_level_9_1`, which
+  KNI's runtime refuses on HiDef and Reach ("Shader model 4.0 is not supported by the current
+  graphics profile 'HiDef'"). Since the issue #407 fix below expanded macro `compile` targets, the
+  same happened to every MonoGame-template effect (`#define PS_SHADERMODEL ps_4_0_level_9_1`) built
+  as KNIFX for KNI DX, which was rejected on HiDef; before #407 those recorded 3.0 by accident.
+  Now `_level_9_1` is 2.0 (`04`) and `_level_9_3` is 3.0 (`06`), as measured with KNI's own MGCB
+  (Windows on 4.2.9001 and 4.3.9001, DesktopGL on 4.3.9001); every other profile is unchanged,
+  including the ones KNI's own pipeline refuses (`*_4_0_level_9_0`, SM6, `*_2_a`, `*_sw`), which
+  keep loading wherever they loaded before. Only KNIFX bytes change: one version byte per affected
+  shader record, plus each backend entry's 4-byte effect key; MGFX, FNA, DirectX 12 and Vulkan
+  output is untouched. `validation/InitializerDefaultsKniDx` and `InitializerDefaultsKniGl` now also
+  pin the version on a real Reach device. CI's DX WARP job reported the DX driver green while it
+  failed, because a multi-command `pwsh` step only reports its last command's exit code; every
+  such step now checks each command.
+- **Techniques are read from the preprocessed source, like `mgfxc` (issue #407).** A technique
+  inside a false `#if` (or behind an unset `/Defines` value) was still compiled, a technique in an
+  `#include`d file was not found (`SD0010`, or dropped beside the main file's own), and a macro
+  `compile` target (`compile VS_SM V()`) was recorded as shader model 3.0 in a KNIFX container.
+  All targets (MGFX OpenGL/DirectX/DirectX 12/Vulkan, KNIFX, FNA, raylib, SkSL) now take the
+  technique list from the managed preprocessed view. **KNIFX output changes** for the common
+  `#define VS_SHADERMODEL vs_4_0` pattern: it now records 4.0 (version byte `08`), as KNI's own
+  content pipeline does (measured on KNI 4.2.9001). KNI's GL backends refuse SM 4.0 on the
+  HiDef profile, so an effect such as Apos.Shapes that names `vs_4_0` behind `#if __KNIFX__`
+  loads there only with a 3.0 profile, exactly as when KNI's pipeline builds it. On FNA a macro
+  that expands to an SM 2-3 profile is now honored (it was compiled at SM3); any other expansion
+  keeps the SM3 ceiling. On raw text the same technique name in each `#if` branch is no longer
+  an `FX0005`; a real duplicate is still reported, on the preprocessed text. A view that cannot be built (`__has_include`, a conditional on `__HLSL_VERSION`) keeps the raw technique list and adds an `SD0009` warning; `#region`/`#endregion` are ignored by the view. MGFX v10 records no shader
+  model; the committed byte-identity manifests (OpenGL, DirectX 11,
+  DirectX 12, Vulkan, FNA) are unchanged.
+- **OpenGL no longer fails with `SD0100` when HLSL packing puts a uniform mid-register** (issue #425).
+  A `float3` or `float2` declared after a `float` (`float Gain; float3 Axis;`, loose or in a
+  `cbuffer`, in either stage, such as the `float3` ahead of a `float4x4` the issue was reported with)
+  failed the OpenGL, KNIFX, raylib and SkSL compiles: DXC laid the uniform block out with HLSL cbuffer
+  packing, which puts the `float3` at byte 4, and SPIRV-Cross's GLSL can only express std140, so it
+  refused the block ("cannot be expressed as any of std430, std140, scalar"). A member packed into an
+  array's last register (`float W[2]; float B;`) failed the same way as `SD0210`. The OpenGL compile
+  now asks DXC for the std140 layout (`-fvk-use-gl-layout`). Each uniform gets its own
+  `ps_uniforms_vec4[]` register in declaration order, as before and as in `mgfxc`'s build. Every
+  shader that compiled before is byte-identical (all 579 OpenGL v10, v11 and KNIFX outputs of the
+  fixture corpus, checked before and after), and the vendored Nez `Reflection.fx` now compiles for
+  OpenGL. Vulkan keeps the HLSL packing, since it ships the SPIR-V. An explicit `packoffset` that puts a
+  vector mid-register (`float3 b : packoffset(c0.y)`) still cannot compile for OpenGL (it was `SD0100`);
+  it is now `SD0210` naming the `packoffset`, with DXC's validator text kept, instead of DXC's
+  "file a bug report" internal error.
+- **OpenGL: a uniform named after a GLSL reserved word no longer lands in another uniform's register when
+  uniforms pack** (found reviewing issue #425). SPIRV-Cross renames such a uniform (`noise` to `_noise`,
+  also `filter`, `output`, ...), and the step that maps it back to its parameter matched the reflected
+  byte offset to `register * 16`, which only holds when nothing packs. `float a; float b; float noise;
+  float4 c;` put `c` in `noise`'s register and gave `noise` a dead one, so `SetValue` on either drew
+  wrong, silently. A renamed `float3`/`float2` behind a `float`, which compiles now that the entry
+  above is fixed, would have done the same on the desktop but not in the browser host, which reflects
+  the std140 SPIR-V. The mapping now uses
+  declaration order with every other uniform's name checked, identically on every host (also for
+  SPIRV-Cross's other renames: `my__val` to `my_val`, and `_noise_1` beside a real `_noise`), and fails
+  `SD0012` with a message naming the cause when that cannot be proven (a renamed uniform in a stage
+  with two cbuffers). No shader in the fixture corpus changes bytes.
+- **A block comment that spans lines inside a `#define` (or any directive) no longer ends it** (issue #426).
+  ShadowDusk's managed preprocessed view, which the initializer defaults and the OpenGL sampler-register
+  decisions are read from, ended the directive at the comment's first line break and spilled the rest of the
+  macro into the code. So `#define SCALE /* the scale,` / `in pixels */ 2` defined an empty `SCALE`, the
+  declaration after it lost its default (`null` in `CompiledShader.Parameters`, no default in the file), and a
+  `register(SLOT)` spelled through such a macro reserved no OpenGL unit (`ps_s0` instead of the `ps_s1` the
+  issue #283 reservation gives the same macro written on one line).
+  A comment is now whitespace, as in DXC and fxc: the directive runs on to its real end, and every later line
+  keeps its number. A `#line` that spans lines now numbers the next line as DXC does (from the line its number
+  is on). DXC always compiled such sources correctly; only what ShadowDusk reads off the view changes, and an
+  effect without a multi-line comment in a directive is unchanged byte for byte.
+- **`ParameterReflection.DefaultValue` reads a `bool` as 0 or 1 on Vulkan and a `uint` above 2^31 as its unsigned value**
+  (issue #427). On Vulkan a `bool` parameter is `Int32` (SPIR-V has no bool in a uniform block, and real `mgfxc`'s
+  Vulkan build says `Int32` too), so `bool Flag = true;` reflected -1, indistinguishable from `int Flag = -1;`; and
+  every target reflects a `uint` as `Int32`, so `uint U = 3000000000;` reflected -1294967296. The value is now read by
+  the HLSL declaration's kind (exposed as the new `GlobalInitializerDefault.Kind` / `GlobalInitializerKind` in
+  `ShadowDusk.HLSL`). `ParameterReflection.Type` stays `Int32` on Vulkan, and no emitted byte changes. This changes what 0.22.0 reported for those two cases (its "Vulkan `bool` reads -1" note no longer applies).
+- **Vulkan non-square matrix parameters now reach the shader in the right registers, and keep their initializer default** (issue #423).
+  DXC turns each HLSL row of a `floatRxC` into a SPIR-V column, and the SPIR-V reflection read that back as C x R,
+  so a column-major `float2x3` was written to the `.mgfx` as 3x2. MonoGame uploads a matrix as `ColumnCount`
+  registers of `RowCount` floats, so the transposed header put a Set matrix in the wrong registers (a `float4x3`
+  lost its translation row, a `float3x2` read zero, a `float4x3[2]` threw at the first `Apply`), and the initializer
+  default was dropped with `SD0017` and a zero blob. A column-major matrix (the default packing) now has its HLSL
+  shape, as on DirectX 11 and 12, with the same column-by-column default; the Vulkan parameter table of the new
+  `G_NonSquare.fx` fixture equals the DirectX 12 one byte for byte. A `row_major` non-square matrix keeps the C x R
+  header, because its buffer holds one register per HLSL row and that is the header the upload matches (a Set
+  matrix arrives transposed, as a `row_major float4x4` does on every backend, except a `row_major floatNx2`, whose 2xN
+  header `SetValue(Matrix)` has no case for, so a Set does nothing, as in `mgfxc`'s Vulkan build).
+  Real `mgfxc` 3.8.5 `/Profile:Vulkan` writes C x R for both packings (measured), so the column-major header
+  deliberately departs from it: its build renders the cases above wrong, and MonoGame 3.8.5's own stock DesktopVK
+  `SkinnedEffect` throws at the first `Apply` for the same reason. Proven in real MonoGame 3.8.5 DesktopVK against
+  MonoGame's WindowsDX semantics by the new `validation/NonSquareMatrixVulkan` and `validation/NonSquareMatrixDx`
+  probes (in CI and the gate script). Only the row and column bytes and the default blob of column-major non-square
+  matrix parameters change, on Vulkan; in the byte-identity corpus only `SkinnedEffect.fx` (`float4x3 Bones[]`)
+  moved, in its Vulkan `.mgfx` hash.
+- **Vulkan effects whose globals end in a `float2x2` (or a `float2x3`, `float2x4`) no longer throw at the first draw.**
+  ShadowDusk sized the constant buffer from the last matrix's packed `rows*cols*4` bytes, but a column-major `float2x2`
+  spans 24 bytes (two registers, the second half-used), so a buffer ending in one was a register short and MonoGame
+  DesktopVK's upload of the last register ran past its end. The size now covers both the matrix's real footprint and
+  what MonoGame writes for its header (`ColumnCount` registers of `RowCount` floats, 16 bytes apart), which is what
+  DirectX 12's DXIL reflection reports (`float2 Offset; float2x2 M;` is 48 bytes, not 32) and what real `mgfxc` 3.8.5's
+  Vulkan build writes (measured: 48, and its build renders that shader). The short size was ShadowDusk's own. Only
+  the constant-buffer size bytes of those Vulkan effects change; the `InitializerDefaultsVulkan` driver no longer
+  skips its `float2x2` case.
+- **A `row_major` matrix's initializer default no longer lands transposed** (issue #423 follow-up, since 0.22.0).
+  `row_major float4x4 M = ...;` (or any matrix under `#pragma pack_matrix(row_major)`) was given the same
+  column-by-column default blob as a column-major matrix, but a `row_major` buffer holds one register per row and
+  MonoGame copies the blob into the registers in order, so the default arrived transposed, with no warning
+  (measured in real DesktopVK). The blob is now in register order: every square `row_major` matrix on DirectX 11,
+  DirectX 12, Vulkan and KNIFX on DX, every non-square one on Vulkan, and on DirectX a TALL one (more rows than
+  columns, such as an affine `float4x3` world or bone matrix): MonoGame uploads it as C registers of R floats, which
+  reaches rows 0..C-1, so those rows are written and a zero tail is kept; a non-zero row at index C or beyond is
+  the `SD0017` warning naming the row. A WIDE `row_major` matrix on DirectX (more columns than rows) is uploaded
+  past the matrix, and an ARRAY of non-square `row_major` matrices on DirectX is uploaded one element every
+  `ColumnCount` registers over a stride of `RowCount` (so every element after the first lands wrong): both are
+  `SD0017` and a zero default instead of a scrambled one. For these the warning says why a Set does not help
+  either and suggests column-major packing (or, for an array, separate parameters). OpenGL is unchanged
+  (render-proven). Real `mgfxc` has no reference: its DirectX_11 build refuses every `row_major` matrix and its
+  Vulkan build writes zeros. Only those default blob bytes change (among the test fixtures only `tests/fixtures/golden/FNA/defaults/DefaultsMatrices.fx`'s `M4r` on
+  DirectX 11, DirectX 12, Vulkan and KNIFX-DX; no byte-identity manifest covers that file). Proven in real MonoGame WindowsDX, WindowsDX12 and DesktopVK by the
+  new `H_RowMajorMatrix`, `I_PackMatrixPragma`, `J_RowMajor2x2`, `K_RowMajorTallSymmetric`,
+  `L_RowMajorTallAsymmetric`, `M_RowMajorTallFourthRow` and `N_RowMajorTallArray` cases of the `InitializerDefaults*` drivers, KNIFX on DX
+  included: the KNIFX arm of `InitializerDefaultsKniDx` runs them since the KNIFX `_level_9_x` shader-model fix
+  above, which shipped in this same release (green in CI on the release commit).
+
+## [0.22.0] - 2026-10-28
+
+### Added
+
+- **A global initializer is now the parameter's default value in every MGFX and KNIFX output** (OpenGL, DirectX 11, DirectX 12,
+  Vulkan, `.knifx`). `float R = 1;` is 1 in the real engine before any `Set` call; ShadowDusk used to write zeros everywhere. This
+  deliberately deviates from `mgfxc`, whose OpenGL build stores zeros and whose DirectX 11 build drops array elements and half of a
+  `float2x2`. Scalars, vectors, matrices, `int`, `bool` and arrays (each element its own blob) are evaluated from the source
+  (macros, `#if`, `-D` defines, `const` references, constructors and simple folding included). An initializer ShadowDusk cannot
+  evaluate is the new warning `SD0017` and a zero default, never silent. Only the default blob bytes change; MGFX stays v10 where it
+  was. DXC's now-untrue `initializer ignored` warning is dropped for every default that was preserved. Proven in real MonoGame
+  DesktopGL, WindowsDX, WindowsDX12 and DesktopVK and real KNI SDL2.GL and WinForms.DX11 (MGFX and KNIFX) by the new
+  `validation/InitializerDefaults*` drivers, each with a no-initializer control. The raylib and SkSL routes are unchanged; FNA keeps its own defaults (entry below).
+- **`CompiledShader.Parameters` and `ParameterReflection.DefaultValue`** (issue #413): a successful
+  compile now lists the effect's parameters (name, shape, type, and annotations on MGFX/KNIFX) and, for each, the
+  default its HLSL declares (`float Scale = 2.0;`, `float4 Tint = float4(1, 0, 0, 1);`), so a
+  tool can show real defaults without loading the effect into a runtime. On the MGFX and KNIFX
+  targets it is exactly the default blob the file carries (the initializer reading above), `null`
+  where the blob is zeros because there is no initializer or it could not be evaluated (`SD0017`);
+  on FNA it comes from the same reader (the constant table for a scalar or vector it cannot read), and can be larger than what the `.fxb` carries because the file's table is trimmed to the registers the shader reads. Matrices and arrays are logical row-major
+  (not the column-by-column blob order), array element after array element. No emitted byte changes.
+- `tests/ShadowDusk.TestPng`: a small, dependency-free PNG encoder/decoder for the test and
+  validation tooling, with its own unit suite (`tests/ShadowDusk.TestPng.Tests`). Not shipped:
+  no `ShadowDusk.*` package references it.
+
+### Changed
+
+- **Behavior change: an effect with global initializers now starts at those defaults instead of zero.**
+  `float Scale = 2.0;` is 2 before any `Set` call in every MGFX and KNIFX output (and FNA matrix and array defaults now match
+  `fxc`). A shader that relied on the old zero (an unset parameter reading 0) renders differently. Set the parameter
+  explicitly, or remove the initializer, to get zero. Details in the Added and Fixed entries below.
+- **Removed `SixLabors.ImageSharp`** from the repository (it was only ever a test-tooling
+  dependency, never part of a shipped package, so consumers are unaffected). Five security
+  advisories were published against it on 2026-10-07, and every release that fixes them
+  (3.2.0, 4.1.2+) refuses to build without a paid Six Labors licence, while every release that
+  builds without one carries the advisories. With warnings-as-errors, the advisories also broke
+  `dotnet restore` of `ShadowDusk.ImageTests`. `ShadowDusk.ImageTests` and the ShaderToy
+  render-proof driver now read and write PNGs through `ShadowDusk.TestPng`, which decodes all
+  52 committed PNGs and re-encodes them pixel-identically to ImageSharp, and the render-proof
+  fidelity montage is byte-identical to the one the ImageSharp build produced.
+
+### Fixed
+
+- **FNA (`fx_2_0` `.fxb`) now keeps matrix and array initializer defaults.** `float2x2 M = 0.5 * I` and
+  `float4 Colors[2] = {red, green}` read as zero in real FNA 26.06 (both FNA3D drivers) where `fxc /T fx_2_0`'s
+  build reads the initializers; only scalar and vector defaults survived. The CTAB default is now read for
+  every class and written as the dense declaration-order value blob `fxc` writes, for every matrix shape
+  (2x2, 3x3, 4x4, `row_major`), arrays of scalars, vectors, int, bool and matrices, and arrays of those.
+  Parameter blobs are byte-identical to `fxc`'s for eight fixtures (`tests/fixtures/golden/FNA/defaults`),
+  and `FnaValidation -- defaults` proves the getter values and the unset render equal `fxc`'s in real FNA on
+  the D3D11 and OpenGL drivers. A default for registers the shader never reads (a matrix column, array
+  element or row it ignores) stays 0: the CTAB drops those registers, so they carry no data. A non-symmetric
+  matrix default reads transposed in FNA for `fxc`'s own build too (MojoShader copies the blob into registers
+  as written); ShadowDusk matches `fxc`.
+- **OpenGL pixel shaders now ask for `highp` precision on GLES when the GPU supports it** (issue #406).
+  The precision header was `mgfxc`'s unconditional `precision mediump`, which real iOS GPUs run as
+  16-bit floats, so shaders working in pixel units (Apos.Shapes) drew nothing on an iPhone. The
+  header now selects `highp` under `#ifdef GL_FRAGMENT_PRECISION_HIGH` and keeps `mediump` as the
+  GLES2 fallback. Desktop GL ignores the block, and KNI's WebGL2 converter already promoted it to
+  `highp`, so neither changes behavior.
+
+### Known issues
+
+- FNA renders a non-symmetric matrix default transposed (`float2x2 M = float2x2(1,2,3,4);`); real `fxc`'s own `.fxb` does the same, and ShadowDusk matches it. Tracked in #421.
+- Vulkan reflects non-square matrix defaults transposed, so a non-square matrix initializer gets `SD0017` and a zero default. Tracked in #423.
+- Vulkan reflects a `bool = true` default as `Int32` with value `-1`, and a `uint` default above 2^31 reads negative on every target (`ParameterReflection.DefaultValue`). Tracked in #427.
+
 ## [0.21.0] - 2026-10-05
 
 ### Added
@@ -3534,7 +4161,10 @@ WASM-capable build — the same pipeline on every host, with no substitute compi
 - **The MGCB content-processor plugin** is a scaffold; the PATH-based `mgfxc` override is the
   shipping MGCB integration path.
 
-[Unreleased]: https://github.com/kaltinril/ShadowDusk/compare/v0.21.0...HEAD
+[Unreleased]: https://github.com/kaltinril/ShadowDusk/compare/v0.23.0...HEAD
+[0.23.0]: https://github.com/kaltinril/ShadowDusk/compare/v0.22.1...v0.23.0
+[0.22.1]: https://github.com/kaltinril/ShadowDusk/compare/v0.22.0...v0.22.1
+[0.22.0]: https://github.com/kaltinril/ShadowDusk/compare/v0.21.0...v0.22.0
 [0.21.0]: https://github.com/kaltinril/ShadowDusk/compare/v0.20.0...v0.21.0
 [0.20.0]: https://github.com/kaltinril/ShadowDusk/compare/v0.19.0...v0.20.0
 [0.19.0]: https://github.com/kaltinril/ShadowDusk/compare/v0.18.0...v0.19.0

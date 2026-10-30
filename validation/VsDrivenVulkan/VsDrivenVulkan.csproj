@@ -38,6 +38,9 @@
   <ItemGroup>
     <Compile Include="..\Shared\*.cs" />
     <Compile Include="..\SharedDx\AposGalleryRenderer.cs" />
+    <!-- Mode legacy-lod (tex2Dlod / tex2Dbias / tex2Dproj): the scene the DX11 and DX12
+         drivers draw too. -->
+    <Compile Include="..\SharedLegacyLod\LegacyLodScene.cs" />
     <!-- Issue #324 (mode texarr): the MGFX parameter-block reader and the Vulkan ShaderCode
          header reader, source-linked (BCL-only) so the driver can read the mgfxc golden's
          (empty) table and descriptor layout. -->

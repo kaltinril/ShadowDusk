@@ -71,7 +71,78 @@ public sealed record SkslConversion(
     string SkslText,
     IReadOnlyList<ShaderError> Warnings,
     IReadOnlyList<string> ChildShaders,
-    IReadOnlyList<string> SynthesizedUniforms);
+    IReadOnlyList<string> SynthesizedUniforms)
+{
+    /// <summary>
+    /// Every uniform <see cref="SkslText"/> declares except the <c>uniform shader</c> children
+    /// (<see cref="ChildShaders"/>), in declaration order, each with the default its HLSL
+    /// declaration gives it (<see cref="SkslUniform.DefaultValue"/>, issue #435). The SkSL text
+    /// declares every uniform WITHOUT a value, so a uniform the caller does not set reads as zero
+    /// in Skia; set each one whose <see cref="SkslUniform.DefaultValue"/> is not
+    /// <see langword="null"/> to that value to get the effect the <c>.fx</c> author declared.
+    /// The synthesized uniforms (<see cref="SynthesizedUniforms"/>) are listed too, with a
+    /// <see langword="null"/> default.
+    /// </summary>
+    public IReadOnlyList<SkslUniform> Uniforms { get; init; } = [];
+}
+
+/// <summary>One non-child uniform of an <see cref="SkslConversion"/> (see <see cref="SkslConversion.Uniforms"/>).</summary>
+/// <param name="Name">
+/// The SkSL uniform name, the key for <c>SKRuntimeEffectUniforms</c>: the HLSL global's name, or
+/// the synthesized uniform's (<c>ShadowDusk_Color</c>, <c>ShadowDusk_Resolution</c>,
+/// <c>in_var_&lt;SEMANTIC&gt;</c>). A global whose name GLSL cannot take comes out of SPIRV-Cross
+/// renamed (<c>input</c> is <c>_input</c>, <c>a__b</c> is <c>a_b</c>, <c>gl_X</c> is
+/// <c>_RESERVED_IDENTIFIER_FIXUP_gl_X</c>), and that is the name listed here, with the renamed
+/// global's default (paired through the SPIR-V member names, never guessed from the spelling).
+/// </param>
+/// <param name="SkslType">The declared type as emitted, e.g. <c>float</c>, <c>vec4</c>, <c>mat4</c>, <c>int</c>.</param>
+/// <param name="ArrayLength">The element count of an array uniform, or <c>0</c> for a non-array.</param>
+public sealed record SkslUniform(string Name, string SkslType, int ArrayLength)
+{
+    /// <summary>
+    /// The default the HLSL declaration gives this uniform (<c>float Thickness = 1.0;</c>), or
+    /// <see langword="null"/> when it is unknown: the same values, in the same layout, as
+    /// <see cref="ShadowDusk.Core.Reflection.ParameterReflection.DefaultValue"/> on the MGFX route
+    /// for the same source (issue #435).
+    /// </summary>
+    /// <remarks>
+    /// <para><b>Layout.</b> Array element after array element, each element in logical row-major
+    /// order (the HLSL cell at row <c>r</c>, column <c>c</c> of a <c>floatRxC</c> is at
+    /// <c>r * C + c</c>), no padding. This is exactly the float list to hand Skia: SkSL packs
+    /// uniforms tightly, and DXC declares an HLSL <c>floatRxC</c> as a <c>matRxC</c> whose column
+    /// <c>i</c> is HLSL row <c>i</c>, so Skia's column-major matrix data is the HLSL rows in order,
+    /// whatever the HLSL packing (<c>row_major</c> or not). So
+    /// <c>uniforms[u.Name] = u.DefaultValue.ToArray()</c> sets the declared default for a
+    /// <c>vecN</c> or <c>matN</c> uniform and arrays of them (SkiaSharp takes a scalar uniform as
+    /// the single value, <c>u.DefaultValue[0]</c>); an <c>int</c> or <c>ivecN</c> uniform takes the
+    /// same values as integers.</para>
+    /// <para><b>Values.</b> <c>int</c> values converted to floats, <c>uint</c> values by their
+    /// unsigned value (so one beyond 2^24 is not exact), <c>bool</c> as 0 or 1 (SkSL itself has no
+    /// <c>uint</c> or <c>bool</c> uniforms, which Skia's compiler rejects). The converter compiles
+    /// with the OpenGL macro set, so this is the MGFX route's value for an OpenGL build; a default
+    /// chosen under <c>#if OPENGL</c> can differ on DirectX.</para>
+    /// <para><b>Degenerate shapes.</b> The shape is the converted uniform's: <c>float1 F = 0.5;</c>
+    /// is a <c>float</c> uniform with <c>[0.5]</c> (the MGFX route reports none, with <c>SD0017</c>),
+    /// while <c>float1x1</c>, <c>float1xN</c> and <c>floatNx1</c> come out of DXC as a scalar, a
+    /// vector or an array and are <see langword="null"/> with <c>SD0017</c> (the MGFX route has a value).</para>
+    /// <para><b>When it is <see langword="null"/>.</b> The global has no initializer; the
+    /// initializer could not be evaluated, or its shape does not match the uniform (the
+    /// conversion then carries the MGFX route's <c>SD0017</c> warning); or the uniform has no HLSL
+    /// declaration (a synthesized uniform). A global with a default that no listed uniform could be
+    /// paired with is an <c>SD0017</c> warning too. Child shaders (textures and samplers) are not listed.</para>
+    /// </remarks>
+    public IReadOnlyList<float>? DefaultValue { get; init; }
+
+    /// <summary>Value equality, comparing <see cref="DefaultValue"/> element by element.</summary>
+    /// <param name="other">The uniform to compare with.</param>
+    public bool Equals(SkslUniform? other) =>
+        other is not null && Name == other.Name && SkslType == other.SkslType && ArrayLength == other.ArrayLength
+        && (DefaultValue is null ? other.DefaultValue is null
+            : other.DefaultValue is not null && DefaultValue.SequenceEqual(other.DefaultValue));
+
+    /// <inheritdoc/>
+    public override int GetHashCode() => HashCode.Combine(Name, SkslType, ArrayLength, DefaultValue?.Count);
+}
 
 /// <summary>
 /// Converts an HLSL <c>.fx</c> pixel shader to an <b>SkSL runtime effect</b> for SkiaSharp's
@@ -137,9 +208,24 @@ public static class SkslConverter
             ]);
         }
 
+        // Issue #407: the techniques come from the preprocessed translation unit (OpenGL macro
+        // set, the one this converter compiles with), as on every CompilationPipeline target.
+        Result<EffectTechniques.Resolution, ShaderError> techniques = EffectTechniques.Resolve(
+            fxSource,
+            options.SourceName,
+            PlatformMacros.For(PlatformTarget.OpenGL),
+            options.IncludeResolver ?? new FileSystemIncludeResolver(),
+            options.AdditionalIncludePaths,
+            parse.Value);
+        if (techniques.IsFailure)
+            return Result<SkslConversion, ShaderError[]>.Fail([techniques.Error]);
+        FxParseResult rawParsed = parse.Value with { Techniques = techniques.Value.Techniques };
+
         Result<SkslConversion, ShaderError[]> first = ConvertCore(
-            parse.Value, options, recovered: null, out bool shaderCompileFailed, cancellationToken,
+            rawParsed, options, recovered: null, out bool shaderCompileFailed, cancellationToken,
             dxcCompilerFactory, glslTranspilerFactory);
+        // A technique view that could not be built leaves the conversion on the raw technique
+        // list (issue #407), as it was before.
         if (first.IsSuccess || !shaderCompileFailed)
             return first;
 
@@ -201,7 +287,7 @@ public static class SkslConverter
         if (pass.VertexEntryPoint is not null)
         {
             return Fail(options.SourceName, "SD0610",
-                $"pass '{pass.Name}' compiles a vertex shader ('{pass.VertexEntryPoint}'), and SkSL " +
+                $"{PassLabel(pass)} compiles a vertex shader ('{pass.VertexEntryPoint}'), and SkSL " +
                 "runtime effects have no vertex stage at all (a Skia platform limit, not a " +
                 "ShadowDusk one). Only pixel-only passes convert; refusing rather than silently " +
                 "dropping the vertex work.");
@@ -210,7 +296,7 @@ public static class SkslConverter
         if (pass.PixelEntryPoint is null)
         {
             return Fail(options.SourceName, "SD0610",
-                $"pass '{pass.Name}' has no pixel shader — an SkSL runtime effect IS a pixel " +
+                $"{PassLabel(pass)} has no pixel shader — an SkSL runtime effect IS a pixel " +
                 "function, so there is nothing to convert.");
         }
 
@@ -228,7 +314,9 @@ public static class SkslConverter
                 parsed.StrippedHlsl, options.SourceName, options.IncludeResolver, options.AdditionalIncludePaths);
             if (flattened.IsFailure)
                 return Result<SkslConversion, ShaderError[]>.Fail([flattened.Error]);
-            compilerInput = flattened.Value.Text;
+            // An #include'd technique block is effect syntax DXC does not take; its technique
+            // comes from the preprocessed view now (issue #407).
+            compilerInput = FxPreParser.StripTechniqueBlocks(flattened.Value.Text, options.SourceName);
         }
 
         var seam = ModernGlslSeam.CompilePixel(compilerInput, pass.PixelEntryPoint, options.SourceName, cancellationToken,
@@ -255,12 +343,37 @@ public static class SkslConverter
         if (mapped.IsFailure)
             return Result<SkslConversion, ShaderError[]>.Fail(mapped.Error);
 
+        // 6. The declared default of each uniform (issue #435), read off the text DXC compiled by
+        // the machinery behind the MGFX route's ParameterReflection.DefaultValue. Reported beside
+        // the SkSL, never written into it.
+        var warnings = new List<ShaderError>(mapped.Value.Warnings);
+        var declared = SkslUniformDecl.Matches(mapped.Value.SkslText)
+            .Where(m => m.Groups["type"].Value != "shader")
+            .Select(m => new ConvertedUniformDefaults.Uniform(
+                m.Groups["name"].Value,
+                m.Groups["type"].Value,
+                m.Groups["len"].Success ? int.Parse(m.Groups["len"].Value, System.Globalization.CultureInfo.InvariantCulture) : 0))
+            .ToList();
+        IReadOnlyList<float>?[] defaults = ConvertedUniformDefaults.Resolve(
+            compilerInput, options.SourceName, seam.Value.Glsl, seam.Value.Spirv, declared, mapped.Value.SynthesizedUniforms.ToHashSet(StringComparer.Ordinal), warnings);
+
         return Result<SkslConversion, ShaderError[]>.Ok(new SkslConversion(
             mapped.Value.SkslText,
-            mapped.Value.Warnings,
+            warnings,
             mapped.Value.ChildShaders,
-            mapped.Value.SynthesizedUniforms));
+            mapped.Value.SynthesizedUniforms)
+        {
+            Uniforms = declared
+                .Select((u, i) => new SkslUniform(u.Name, u.GlslType, u.ArrayLength) { DefaultValue = defaults[i] })
+                .ToList()
+                .AsReadOnly(),
+        });
     }
+
+    // One SkSL uniform declaration as the mapper emits it: `uniform [layout(...)] TYPE NAME[ [N] ];`.
+    private static readonly System.Text.RegularExpressions.Regex SkslUniformDecl = new(
+        @"^[ \t]*uniform[ \t]+(?:layout\s*\([^)]*\)\s*)?(?<type>\w+)[ \t]+(?<name>\w+)[ \t]*(?:\[\s*(?<len>\d+)\s*\])?[ \t]*;",
+        System.Text.RegularExpressions.RegexOptions.Compiled | System.Text.RegularExpressions.RegexOptions.Multiline);
 
     /// <summary>
     /// Converts HLSL-compatible <c>.slang</c> source to SkSL through the built-in Slang frontend
@@ -293,6 +406,11 @@ public static class SkslConverter
             })
             : converted;
     }
+
+    // A diagnostic names an anonymous pass (`pass { ... }`, name "") by its index; SkSL converts
+    // only the single pass #0, the one these diagnostics are about.
+    private static string PassLabel(PassInfo pass) =>
+        pass.Name.Length > 0 ? $"pass '{pass.Name}'" : "pass #0 (anonymous)";
 
     private static Result<SkslConversion, ShaderError[]> Fail(string file, string code, string message) =>
         Result<SkslConversion, ShaderError[]>.Fail(

@@ -3,7 +3,7 @@
 namespace ShadowDusk.GLSL;
 
 /// <summary>
-/// Thrown by <see cref="MonoGameGlslRewriter.Rewrite"/> when the SPIRV-Cross GLSL
+/// Thrown by <see cref="MonoGameGlslRewriter.Rewrite(string, ShadowDusk.Core.ShaderStage, IReadOnlyList{int}?)"/> when the SPIRV-Cross GLSL
 /// contains a construct the MojoShader-dialect rewrite cannot lower to a form that
 /// is valid across every MonoGame/KNI GL profile (desktop GL, KNI Reach/WebGL1, and
 /// KNI HiDef/WebGL2). Failing loudly here — rather than emitting GLSL that silently

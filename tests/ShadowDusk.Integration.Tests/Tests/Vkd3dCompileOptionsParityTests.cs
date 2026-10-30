@@ -91,8 +91,10 @@ public sealed class Vkd3dCompileOptionsParityTests
                 "change an option in the contract, never in a host.");
         }
 
-        contract.ShouldBe([8, 1], customMessage:
-            "BACKWARD_COMPATIBILITY (8) = MAP_SEMANTIC_NAMES (1) is what makes SM1-3 semantics legal at SM4+");
+        contract.ShouldBe([8, 9], customMessage:
+            "BACKWARD_COMPATIBILITY (8) = MAP_SEMANTIC_NAMES (1) | ALLOW_HALF_GLOBALS (8): the first makes " +
+            "SM1-3 semantics legal at SM4+, the second makes a `half` global a float, as mgfxc's fxc " +
+            "backcompat flag does");
     }
 
     [FnaFact]

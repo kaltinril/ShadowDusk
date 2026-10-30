@@ -355,6 +355,43 @@ public sealed class RaylibConverterTests
         error.Message.ShouldContain("'P1'", Case.Sensitive);
     }
 
+    // An anonymous pass or technique is named "" (as mgfxc names it), so a diagnostic names it by
+    // its index instead of printing `pass ''`.
+    [Fact]
+    public void AnonymousPasses_AreNamedByIndex_InTheDiagnostic()
+    {
+        const string fx = """
+            float4 A() : COLOR0 { return 1; }
+            technique
+            {
+                pass { PixelShader = compile ps_3_0 A(); }
+                pass { PixelShader = compile ps_3_0 A(); }
+            }
+            """;
+
+        ShaderError error = ConvertFails(fx, "SD0630");
+        error.Message.ShouldContain("technique #0 (anonymous) declares 2 passes", Case.Sensitive);
+        error.Message.ShouldContain("(pass #1 (anonymous) is the second)", Case.Sensitive);
+        error.Message.ShouldNotContain("''", Case.Sensitive);
+    }
+
+    [Fact]
+    public void AnonymousVertexShaderPass_IsNamedByIndex_InTheDiagnostic()
+    {
+        const string fx = """
+            struct V { float4 Position : SV_Position; };
+            V MainVS(float4 p : POSITION) { V v; v.Position = p; return v; }
+            float4 MainPS() : COLOR0 { return float4(1, 0, 0, 1); }
+            technique { pass {
+                VertexShader = compile vs_3_0 MainVS();
+                PixelShader = compile ps_3_0 MainPS();
+            } }
+            """;
+
+        ShaderError error = ConvertFails(fx, "SD0631");
+        error.Message.ShouldStartWith("pass #0 (anonymous) compiles a vertex shader", Case.Sensitive);
+    }
+
     [Fact]
     public void VertexShader_IsRefused_AtItsCompileProfile()
     {

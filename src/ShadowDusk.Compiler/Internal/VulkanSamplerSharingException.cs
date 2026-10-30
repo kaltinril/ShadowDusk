@@ -5,12 +5,15 @@ using ShadowDusk.Core;
 namespace ShadowDusk.Compiler.Internal;
 
 /// <summary>
-/// Thrown by <see cref="VulkanTextureSamplerBindingRewriter.Rewrite"/> when two DIFFERENT
+/// Thrown by <see cref="VulkanTextureSamplerBindingRewriter.Rewrite(string)"/> when two DIFFERENT
 /// textures sample through ONE sampler in the same live code path (not in mutually-exclusive
 /// preprocessor branches). Vulkan's combined image-sampler binding model gives each texture
 /// its own descriptor, and the pair co-location this rewriter enforces would put BOTH
 /// textures on one binding — leaving the second texture unbound and rendering silently wrong
 /// on DesktopVK (bug-hunt 2026-07-27 M5). Failing loudly here upholds design constraint 5.
+/// Also thrown (<c>SD0237</c>) when ONE texture read through a second sampler needs a second
+/// descriptor and no texture slot of the stage is left for it (slot 0, where SpriteBatch binds its sprite,
+/// is never one).
 ///
 /// <para>Mirrors the <c>MonoGameGlslRewriteException</c> pattern: the rewriter's
 /// <c>string → string</c> signature is fixed by its <c>CompilationPipeline</c> call site, so

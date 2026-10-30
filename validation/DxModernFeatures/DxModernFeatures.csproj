@@ -18,5 +18,8 @@
   </ItemGroup>
   <ItemGroup>
     <Compile Include="..\SharedDx\DxHeadlessRasterizer.cs" />
+    <!-- Arm "legacy-lod" (tex2Dlod / tex2Dbias / tex2Dproj): the scene the DX12 and Vulkan
+         drivers draw too, so the three targets render the identical picture. -->
+    <Compile Include="..\SharedLegacyLod\LegacyLodScene.cs" />
   </ItemGroup>
 </Project>
