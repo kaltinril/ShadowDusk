@@ -101,6 +101,7 @@ public sealed class ArgumentParserTests
     [InlineData("monogame-dx", "MonoGameDX_SM5")]
     [InlineData("monogame-gl-v11", "MonoGameGL_3_8_5")]
     [InlineData("kni-knifx", "KniGL_4_02")]
+    [InlineData("kni-knifx-v12", "KniGL_4_03")]
     [InlineData("fna", "Fna_Fx2")]
     public void Parse_TargetRuntime_MapsToProfile(string name, string expectedProfileName)
     {

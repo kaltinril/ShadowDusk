@@ -86,6 +86,23 @@ public sealed class CapabilityProfileByteIdentityTests
 
     [Fact]
     [Trait("Platform", "OpenGL")]
+    public async Task KniV12Profile_DiffersFromV11_OnlyInTheHeaderVersion()
+    {
+        // KNI's KNIFXReader12 is KNIFXReader11 renamed, so v12 is v11 with the int16 version at
+        // offset 4 changed (the effect key hashes the body, which is unchanged).
+        byte[] v11 = await CompileBytesAsync("Minimal.fx", PlatformTarget.OpenGL, CapabilityProfile.KniGL_4_02);
+        byte[] v12 = await CompileBytesAsync("Minimal.fx", PlatformTarget.OpenGL, CapabilityProfile.KniGL_4_03);
+
+        BitConverter.ToInt16(v11, 4).ShouldBe((short)11);
+        BitConverter.ToInt16(v12, 4).ShouldBe((short)12);
+        v12.Length.ShouldBe(v11.Length);
+        for (int i = 0; i < v11.Length; i++)
+            if (i != 4)
+                v12[i].ShouldBe(v11[i], $"byte {i}");
+    }
+
+    [Fact]
+    [Trait("Platform", "OpenGL")]
     public async Task KniProfile_SelectsKnifx_IsByteIdenticalToContainerKnifx()
     {
         // Seam 5: a profile selects the container, so KniGL_4_02 must emit exactly what the

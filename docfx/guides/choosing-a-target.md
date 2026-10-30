@@ -61,7 +61,8 @@ Instead of setting the backend (`Target`), container (`Container`), and version 
 | `MonoGameGL_3_8_2` | `monogame-gl` | OpenGL, MGFX v10 |
 | `MonoGameDX_SM5` | `monogame-dx` | DirectX, MGFX v10 |
 | `MonoGameGL_3_8_5` | `monogame-gl-v11` | OpenGL, MGFX v11 (MonoGame 3.8.5+) |
-| `KniGL_4_02` | `kni-knifx` | OpenGL, KNIFX v11 (KNI 4.02+) |
+| `KniGL_4_02` | `kni-knifx` | OpenGL, KNIFX v11 (KNI 4.02+; loads on 4.3.x with a console warning) |
+| `KniGL_4_03` | `kni-knifx-v12` | OpenGL, KNIFX v12 (KNI 4.3.x only; 4.2.x rejects it) |
 | `Fna_Fx2` | `fna` | FNA, fx_2_0 |
 
 Set it on the library with `CompilerOptions.Profile = CapabilityProfile.KniGL_4_02`, or on the CLI with `--target-runtime kni-knifx`. A set profile **overrides** `Target` / `Container` / `MgfxVersion`. The set is **closed** — it holds only render-proven contracts, so you can never request an untested combination.

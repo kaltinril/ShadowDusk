@@ -25,7 +25,12 @@ public enum KnifxBackend : short
 }
 
 /// <summary>Options for <see cref="KnifxWriter"/>.</summary>
-public sealed record KnifxWriterOptions(KnifxBackend Backend);
+/// <param name="Backend">The KNIFX backend (and thus integer-as-float decoding) to emit for.</param>
+/// <param name="Version">
+/// The KNIFX container version: <see cref="KnifxWriter.KnifxVersion"/> (11, the default) or
+/// <see cref="KnifxWriter.KnifxVersionNewest"/> (12). Any other value is a failure.
+/// </param>
+public sealed record KnifxWriterOptions(KnifxBackend Backend, short Version = KnifxWriter.KnifxVersion);
 
 /// <summary>
 /// Serializes a ShadowDusk <see cref="ShaderIR"/> into KNI's <b>KNIFX v11</b> effect
@@ -52,8 +57,19 @@ public sealed class KnifxWriter
     /// <summary>KNIFX 4-byte signature (ASCII "KNIF"), per KNI's <c>KNIFXWriter11</c>.</summary>
     public const string KnifxSignature = "KNIF";
 
-    /// <summary>The only KNIFX container version KNI defines today.</summary>
+    /// <summary>
+    /// The default KNIFX container version (v11). Loads on KNI 4.2.x clean and on 4.3.x with a
+    /// "needs to be rebuilt" console warning, so it stays the default until 4.2.x is old enough
+    /// to drop (see the tracking issue linked from <c>project_decisions.md</c>).
+    /// </summary>
     public const short KnifxVersion = 11;
+
+    /// <summary>
+    /// The newest KNIFX container version (v12, KNI 4.3.x). Opt-in via <see cref="CapabilityProfile.KniGL_4_03"/>
+    /// (<c>--target-runtime kni-knifx-v12</c>); KNI 4.2.x rejects it. The body layout is identical to v11
+    /// (KNI's <c>KNIFXReader12</c> is <c>KNIFXReader11</c> under a new name), so only the header version differs.
+    /// </summary>
+    public const short KnifxVersionNewest = 12;
 
     /// <summary>
     /// Serializes <paramref name="ir"/> into the binary KNIFX (v11) container bytes for the
@@ -64,6 +80,15 @@ public sealed class KnifxWriter
     /// <returns>The KNIFX bytes on success, or a <see cref="ShaderError"/> on failure.</returns>
     public Result<byte[], ShaderError> Write(ShaderIR ir, KnifxWriterOptions options)
     {
+        if (options.Version is not (KnifxVersion or KnifxVersionNewest))
+            return Result<byte[], ShaderError>.Fail(new ShaderError(
+                File: "",
+                Line: 0,
+                Column: 0,
+                Code: "SD0030",
+                Message: $"KNIFX version {options.Version} is not supported (valid: {KnifxVersion}, {KnifxVersionNewest})."));
+        short version = options.Version;
+
         // KNIFX writes a leading bool the runtime uses to decode integer-typed parameter
         // defaults as floats; KNI sets it true for the OpenGL (MojoShader) profile.
         bool integersAsFloats = options.Backend is
@@ -73,7 +98,7 @@ public sealed class KnifxWriter
         if (!IsGlBackend(options.Backend))
         {
             byte[] dxBody = SerializeBody(ir, options.Backend, integersAsFloats, rawGlShaderCode: false);
-            return WriteContainer(new[] { (options.Backend, dxBody) });
+            return WriteContainer(version, new[] { (options.Backend, dxBody) });
         }
 
         // A GL target advertises the WHOLE GL family so ONE .knifx loads on EVERY KNI GL host
@@ -90,7 +115,7 @@ public sealed class KnifxWriter
         byte[] desktopBody = SerializeBody(ir, KnifxBackend.OpenGL, integersAsFloats, rawGlShaderCode: false);
         byte[] webBody     = SerializeBody(ir, KnifxBackend.WebGL,  integersAsFloats, rawGlShaderCode: true);
 
-        return WriteContainer(new[]
+        return WriteContainer(version, new[]
         {
             (KnifxBackend.OpenGL, desktopBody),
             (KnifxBackend.GLES,   webBody),
@@ -101,6 +126,7 @@ public sealed class KnifxWriter
     // Serialize the "KNIF" header + a backend directory (one entry per item) followed by each
     // DISTINCT body once; entries that share a body (by reference) share its file offset.
     private Result<byte[], ShaderError> WriteContainer(
+        short version,
         IReadOnlyList<(KnifxBackend Backend, byte[] Body)> entries)
     {
         var distinctBodies = new List<byte[]>();
@@ -125,7 +151,7 @@ public sealed class KnifxWriter
         using var bw = new BinaryWriter(ms, Encoding.UTF8, leaveOpen: true);
 
         bw.Write(KnifxSignature.ToCharArray());  // 4 bytes (no length prefix; matches KNI)
-        bw.Write(KnifxVersion);                  // int16 = 11
+        bw.Write(version);                       // int16 = 11 or 12
         bw.Write((short)0);                       // reserved
         bw.Write((short)entries.Count);           // backendCount
 

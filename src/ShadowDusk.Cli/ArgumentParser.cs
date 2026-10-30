@@ -28,7 +28,7 @@ internal static class ArgumentParser
           --mgfx-version <10|11>    Output format version. Default: 10
           --target-runtime <name>   Output target runtime (picks backend + format together).
                                     Names: monogame-gl, monogame-dx, monogame-gl-v11,
-                                    kni-knifx, fna. Overrides /Profile and --mgfx-version.
+                                    kni-knifx (KNIFX v11), kni-knifx-v12 (KNI 4.3+), fna. Overrides /Profile and --mgfx-version.
           --input-format <fmt>      Input language: auto (default), fx, glsl, slang. ShaderToy / GLSL
                                     image shaders (.glsl/.frag/.fs) are auto-detected and converted
                                     to .fx before compiling; never required for correct output.
@@ -434,6 +434,7 @@ internal static class ArgumentParser
             "monogame-dx"     => CapabilityProfile.MonoGameDX_SM5,
             "monogame-gl-v11" => CapabilityProfile.MonoGameGL_3_8_5,
             "kni-knifx"       => CapabilityProfile.KniGL_4_02,
+            "kni-knifx-v12"   => CapabilityProfile.KniGL_4_03,
             "fna"             => CapabilityProfile.Fna_Fx2,
             _                 => null,
         };
@@ -444,7 +445,7 @@ internal static class ArgumentParser
                 Line: 0,
                 Column: 0,
                 Code: "X0008",
-                Message: $"Unknown --target-runtime value '{value}'. Valid: monogame-gl, monogame-dx, monogame-gl-v11, kni-knifx, fna"));
+                Message: $"Unknown --target-runtime value '{value}'. Valid: monogame-gl, monogame-dx, monogame-gl-v11, kni-knifx, kni-knifx-v12, fna"));
 
         return Result<CapabilityProfile, ShaderError>.Ok(profile);
     }

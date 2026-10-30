@@ -46,7 +46,7 @@ A **`.slang`** file (detected by extension, or forced with `--input-format slang
 ShadowDuskCLI shader.slang shader.mgfx /Profile:OpenGL
 ```
 
-The output container defaults to **MGFX v10**, which loads on every MonoGame 3.8.1.263+ and KNI runtime — you never need a flag for correct output. For newer runtimes, `--mgfx-version 11` opts into a faithful MonoGame MGFX v11 container (MonoGame 3.8.5+, opt-in/experimental). To pick a whole target in one flag, `--target-runtime <name>` (`monogame-gl`, `monogame-dx`, `monogame-gl-v11`, `kni-knifx`, `fna`) selects the backend and container together — e.g. `--target-runtime kni-knifx` emits KNI's KNIFX v11 container.
+The output container defaults to **MGFX v10**, which loads on every MonoGame 3.8.1.263+ and KNI runtime — you never need a flag for correct output. For newer runtimes, `--mgfx-version 11` opts into a faithful MonoGame MGFX v11 container (MonoGame 3.8.5+, opt-in/experimental). To pick a whole target in one flag, `--target-runtime <name>` (`monogame-gl`, `monogame-dx`, `monogame-gl-v11`, `kni-knifx`, `kni-knifx-v12`, `fna`) selects the backend and container together — e.g. `--target-runtime kni-knifx` emits KNI's KNIFX v11 container.
 
 ### Using it with the MonoGame content pipeline
 

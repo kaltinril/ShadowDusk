@@ -43,6 +43,8 @@ dotnet run --project validation/KniXnbContentLoad -c Release                    
 dotnet run --project validation/KniXnbContentLoad -c Release -p:KniVersion=4.3.9001  # KNI 4.3.9001
 ```
 
+The `shadowdusk-knifx-v12` arm (issue #455, `kni-knifx-v12`) is asserted per line: 4.3.9001 must load it and render maxd 0 vs the mgcb payload (and print no "older version" warning, unlike v10/v11); 4.2.9001 must reject it with "seems to be for a newer version of KNI". Measured 2026-10-30, 4/4 fixtures on both lines.
+
 Both are default-ON in `validation/run-windows-render-gates.ps1`. PNGs land in
 `validation/output-xnb-kni/<version>/`. A KNI line other than the two measured ones is refused
 until someone classifies whether stock mgcb output loads on it (Phase 64 §2.3).

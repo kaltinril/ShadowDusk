@@ -1527,7 +1527,8 @@ internal sealed class CompilationPipeline
                 PlatformTarget.DirectX => KnifxBackend.DirectX11,
                 _ => KnifxBackend.OpenGL,
             };
-            var knifxResult = new KnifxWriter().Write(ir, new KnifxWriterOptions(knifxBackend));
+            var knifxResult = new KnifxWriter().Write(ir, new KnifxWriterOptions(
+                knifxBackend, options.Profile?.KnifxVersion ?? KnifxWriter.KnifxVersion));
             if (knifxResult.IsFailure)
                 return Fail(knifxResult.Error, runWarnings);
             return Result<CompiledShader, ShaderError[]>.Ok(

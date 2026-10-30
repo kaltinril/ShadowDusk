@@ -32,7 +32,8 @@ public sealed class CapabilityProfile
         EffectContainer container,
         int mgfxVersion,
         ShaderDialect dialect,
-        ShaderFeatures allowedFeatures = ShaderFeatures.None)
+        ShaderFeatures allowedFeatures = ShaderFeatures.None,
+        short knifxVersion = KnifxWriter.KnifxVersion)
     {
         Name = name;
         GraphicsTarget = graphicsTarget;
@@ -40,6 +41,7 @@ public sealed class CapabilityProfile
         MgfxVersion = mgfxVersion;
         Dialect = dialect;
         AllowedFeatures = allowedFeatures;
+        KnifxVersion = knifxVersion;
     }
 
     /// <summary>The stable, human-readable identifier (also what <see cref="ToString"/> returns).</summary>
@@ -69,6 +71,13 @@ public sealed class CapabilityProfile
     /// <see cref="PlatformTarget.Fna"/>.
     /// </summary>
     public int MgfxVersion { get; }
+
+    /// <summary>
+    /// The KNIFX container version (11 or 12). Only read when <see cref="Container"/> is
+    /// <see cref="EffectContainer.Knifx"/>; <see cref="MgfxVersion"/> is ignored for KNIFX and this
+    /// is ignored for MGFX.
+    /// </summary>
+    public short KnifxVersion { get; }
 
     /// <summary>The GL dialect this profile emits. <see cref="ShaderDialect.NotApplicable"/> for non-GL contracts.</summary>
     public ShaderDialect Dialect { get; }
@@ -110,6 +119,17 @@ public sealed class CapabilityProfile
     /// </summary>
     public static readonly CapabilityProfile KniGL_4_02 =
         new("KniGL_4_02", PlatformTarget.OpenGL, EffectContainer.Knifx, 11, ShaderDialect.LegacyMojoShader);
+
+    /// <summary>
+    /// KNI OpenGL, the <b>KNIFX v12</b> container: <see cref="KniGL_4_02"/>'s output with only the
+    /// header version changed (KNI's v12 reader is its v11 reader renamed). For KNI 4.3.x, which loads
+    /// v11 with a "needs to be rebuilt" console warning; KNI 4.2.x rejects v12, so this is opt-in and
+    /// <see cref="KniGL_4_02"/> stays the <c>kni-knifx</c> default. Flipping that default is tracked in
+    /// <c>project_decisions.md</c>.
+    /// </summary>
+    public static readonly CapabilityProfile KniGL_4_03 =
+        new("KniGL_4_03", PlatformTarget.OpenGL, EffectContainer.Knifx, 11, ShaderDialect.LegacyMojoShader,
+            knifxVersion: KnifxWriter.KnifxVersionNewest);
 
     /// <summary>
     /// FNA, the D3D9 fx_2_0 <c>.fxb</c> container (SM1-3). No GL dialect; render-proven in real FNA
