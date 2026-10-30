@@ -82,6 +82,7 @@ The heavyweight CI jobs are label-gated, so the default PR run comes back all-gr
 - Use `/release` to cut a release; `RELEASING.md` is the human runbook and the ground truth it follows.
 - Bump the single `<Version>` line in `Directory.Build.props`, merge that PR to `main`, and only then dispatch `release.yml`; the workflow is dispatch-only and a pushed tag publishes nothing.
 - Run the Windows render gate before bumping the version, not after: it is the longest and most likely step to fail, so a divergence should stop the release before any version churn.
+- **Always fix doc issues before the release** (owner directive, 2026-10-29). The `/release` docs audit may run as a separate read-only agent, but every finding it reports is fixed on the release branch, each claim verified against the code or CI, before the build-and-test step and the release commit. A release never ships with known doc drift and never defers a finding to "a follow-up"; a fix that truly cannot land yet stops the release and goes to the owner.
 
 ## Handoff — leave nothing that only you know
 

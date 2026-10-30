@@ -70,12 +70,16 @@ to nuget.org, and attaches self-contained CLI binaries for each RID to a GitHub 
 
 5. **A green Windows render gate — RUN IT FIRST (CI covers only part of it).** `validation-render.yml`
    runs some of the rung-4 render proofs ("renders like `mgfxc`/`fxc` in the real engine") on
-   software rasterizers: the in-process OpenGL gates and the GL corpus on Mesa llvmpipe; a
-   `windows-latest` job pinned to **WARP** with `DxModernFeatures`, `KniWinFormsDX`, the DX11 and
-   DX12 corpora (issues #204/#209), `SlangFullCorpus` gates 1 + 3, `VsDrivenDx` (the DX11 VS rig,
-   Apos.Shapes gallery and texture/sampler-array rows) and the ShaderToy DX route
-   (`ShaderToyRouteDx`) (issue #254); and both Vulkan gates on Mesa lavapipe. Everything else still
-   has no CI driver: the DX12 VS-driven/Apos.Shapes gallery, FNA, real-KNI-desktop-GL, the MGCB plugin / XNB / Content Builder gates,
+   software rasterizers: the in-process OpenGL gates (real KNI SDL2.GL among them) and the GL corpus
+   on Mesa llvmpipe; a `windows-latest` job pinned to **WARP** with `DxModernFeatures`,
+   `KniWinFormsDX`, the DX11 corpus (on both DXBC backends) and the DX12 corpus (issues #204/#209),
+   `SlangFullCorpus` gates 1 + 3, `VsDrivenDx` (the DX11 VS rig, Apos.Shapes gallery and
+   texture/sampler-array rows), the ShaderToy DX route (`ShaderToyRouteDx`) (issue #254), and the
+   DX initializer-default, non-square-matrix and KNI EffectTest drivers; and the Vulkan lane on Mesa
+   lavapipe (`VsDrivenVulkan`, `CandidateVulkan`, `InitializerDefaultsVulkan`,
+   `NonSquareMatrixVulkan`, `KniEffectTestVulkan`). Everything else still has no CI driver: the DX12
+   VS-driven/Apos.Shapes gallery, FNA, the real-KNI-desktop-GL corpus (`KniDesktopGL`) and
+   `KniVsDriven`, the MGCB plugin / XNB / Content Builder gates,
    the Slang DX12/Vulkan/FNA arms, and browser-ANGLE (CI's browser smoke renders on SwiftShader,
    blind to ANGLE-D3D11 behavior like the issue-#136 gradient poisoning). No GPU driver is ever
    exercised in CI. **`release.yml` does not check any of this either**, so this gate is the only
@@ -159,6 +163,12 @@ so a stale one ships silently. Check all three:
 
 The `/release` skill's docs-audit step checks all three as a backstop, but the backstop catching
 drift is a process failure.
+
+**Doc drift is fixed before the release, never deferred** (owner directive, 2026-10-29: "Always
+fix doc issues before the release."). The `/release` docs audit (step 7 of the skill) can run as a
+separate read-only agent, but every finding it reports is fixed on the release branch, each claim
+verified against the code or CI, before the build-and-test run and the release commit. If a fix
+cannot land yet, the release stops and the owner decides.
 
 ---
 
