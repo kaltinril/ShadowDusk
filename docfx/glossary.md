@@ -24,10 +24,9 @@ Plain-language definitions of the shader and compiler terms used across these do
 ## Intermediate representations
 
 - **SPIR-V** — a portable, binary shader intermediate language. ShadowDusk compiles HLSL to SPIR-V, then converts that to GLSL for the OpenGL path. For the **Vulkan** target the SPIR-V *is* the shipped shader payload — the `.mgfx` carries it directly, no GLSL conversion.
-- **DXIL** — the binary intermediate DXC emits for Shader Model 6. Carried as-is (no DXBC conversion) for the **DirectX 12** target.
+- **DXIL** — the binary intermediate DXC emits for Shader Model 6 (Direct3D 12). Carried as-is (no DXBC conversion) for the **DirectX 12** target. The DX11 runtime can't load it, which is why ShadowDusk doesn't use DXC for the DX11 path.
 - **GLSL** — the OpenGL Shading Language (source text). What a `.mgfx` carries for the OpenGL, WebGL, and Android targets.
 - **DXBC** — Direct3D **bytecode**, the compiled GPU program the DirectX 11 runtime loads. What a DirectX `.mgfx` carries.
-- **DXIL** — a newer DirectX intermediate (Direct3D 12 / Shader Model 6). The DX11 runtime can't load it, which is why ShadowDusk doesn't use DXC for the DX11 path.
 
 ## Tools (the compilers)
 
@@ -48,4 +47,4 @@ Plain-language definitions of the shader and compiler terms used across these do
 - **oracle** — a trusted reference output you compare against to check correctness. ShadowDusk treats `fxc` / `d3dcompiler_47` (and mgfxc) as oracles: the "right answer" its output should match.
 - **faithful** — producing output that behaves and renders the same as the reference compiler's, rather than a re-implementation that's merely close. ShadowDusk's pipeline drives the same core compilers (DXC, vkd3d) the references use.
 - **RID** — Runtime Identifier, .NET's name for a platform (for example `win-x64`, `linux-x64`, `osx-arm64`, `android-arm64`). Native binaries ship per RID.
-- **Reach / HiDef** — MonoGame `GraphicsProfile` settings (a runtime feature level, not a compile target). One `.mgfx` serves both.
+- **Reach / HiDef** — MonoGame/KNI `GraphicsProfile` settings (a runtime feature level, not a compile target). An MGFX `.mgfx` serves both. A KNIFX `.knifx` records each shader's model and KNI refuses one above the profile's ceiling (Reach 2.0, HiDef 3.0), so a KNIFX effect built at `ps_3_0` or `*_4_0_level_9_3` loads on HiDef but not on Reach; `ps_2_0` or `*_4_0_level_9_1` loads on both.
