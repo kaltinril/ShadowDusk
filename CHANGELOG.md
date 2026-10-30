@@ -14,6 +14,12 @@ that loads and renders identically to `mgfxc`'s in the real MonoGame/KNI runtime
 
 ### Added
 
+- **KNIFX v12 output for KNI 4.3.x (issue #455).** `--target-runtime kni-knifx-v12` / `CapabilityProfile.KniGL_4_03`
+  writes the KNIFX container with header version 12; the body is byte-identical to v11 (KNI's `KNIFXReader12` is
+  `KNIFXReader11` renamed). `kni-knifx` stays v11, which loads on 4.2.x clean and on 4.3.x with a "needs to be rebuilt"
+  console warning; 4.2.x rejects v12. Flipping the default is tracked in issue #456. `KnifxWriterOptions` gains a
+  `Version` (11 or 12; anything else is `SD0030`). Measured in real KNI via `validation/KniXnbContentLoad`: 4.3.9001 loads v12 with no "older version" warning and renders maxd 0 vs mgcb on all 4 fixtures; 4.2.9001 rejects it ("seems to be for a newer version of KNI").
+
 ### Changed
 
 ### Fixed

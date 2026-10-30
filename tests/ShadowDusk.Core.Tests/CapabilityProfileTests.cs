@@ -19,6 +19,7 @@ public sealed class CapabilityProfileTests
         CapabilityProfile.MonoGameDX_SM5,
         CapabilityProfile.MonoGameGL_3_8_5,
         CapabilityProfile.KniGL_4_02,
+        CapabilityProfile.KniGL_4_03,
         CapabilityProfile.Fna_Fx2,
     };
 

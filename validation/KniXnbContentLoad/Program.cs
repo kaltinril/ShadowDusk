@@ -62,6 +62,7 @@ internal static class Program
     private const string ReferenceArm = "mgcb-payload-rewrapped";
     private const string V10Arm       = "shadowdusk-v10";
     private const string KnifxArm     = "shadowdusk-knifx";
+    private const string Knifx12Arm   = "shadowdusk-knifx-v12";
 
     private static int Main()
     {
@@ -116,6 +117,11 @@ internal static class Program
                 + "(Phase 64 §2.3) and add it here before trusting a verdict"),
         };
 
+        // KNIFX v12 (issue #455, kni-knifx-v12): 4.3.x reads it; 4.2.x's Effect ctor falls to its
+        // default branch and throws "...seems to be for a newer version of KNI." Same measured-lines
+        // rule as above.
+        bool knifx12MustFail = stockMustFail;
+
         string repoRoot = FindRepoRoot();
         string mgcb     = LocateMgcb(repoRoot);
         string fixtures = Path.Combine(repoRoot, "tests", "fixtures", "shaders");
@@ -137,6 +143,7 @@ internal static class Program
             [ReferenceArm] = Path.Combine(work, "content-rewrapped"),
             [V10Arm]       = Path.Combine(work, "content-shadowdusk-v10"),
             [KnifxArm]     = Path.Combine(work, "content-shadowdusk-knifx"),
+            [Knifx12Arm]   = Path.Combine(work, "content-shadowdusk-knifx-v12"),
         };
         foreach (string dir in armRoots.Values)
             Directory.CreateDirectory(dir);
@@ -164,6 +171,8 @@ internal static class Program
                     byte[] knifx = BuildShadowDuskXnb(fixtures, fixture, EffectContainer.Knifx).GetAwaiter().GetResult();
                     File.WriteAllBytes(Path.Combine(armRoots[V10Arm], assetName + ".xnb"), v10);
                     File.WriteAllBytes(Path.Combine(armRoots[KnifxArm], assetName + ".xnb"), knifx);
+                    byte[] knifx12 = BuildShadowDuskXnb(fixtures, fixture, EffectContainer.Knifx, CapabilityProfile.KniGL_4_03).GetAwaiter().GetResult();
+                    File.WriteAllBytes(Path.Combine(armRoots[Knifx12Arm], assetName + ".xnb"), knifx12);
 
                     // Envelope assertions that need no GPU: header identical to mgcb's
                     // ('X' 'N' 'B' 'd' 5 0), the counts and ids identical, the reader name the
@@ -171,6 +180,7 @@ internal static class Program
                     // that ShadowDusk, not mgcb, produced them).
                     AssertEnvelope(stock, v10, "v10");
                     AssertEnvelope(stock, knifx, "knifx");
+                    AssertEnvelope(stock, knifx12, "knifx-v12");
 
                     jobs.Add(new XnbJob(assetName, null));
                     Console.WriteLine($"  built  {assetName}: stock {stock.Length} B, v10 {v10.Length} B, knifx {knifx.Length} B; envelopes OK");
@@ -245,9 +255,22 @@ internal static class Program
                 }
 
                 // (b) the arms under test
-                foreach (string arm in new[] { V10Arm, KnifxArm })
+                foreach (string arm in new[] { V10Arm, KnifxArm, Knifx12Arm })
                 {
                     ArmResult r = arms[arm];
+                    if (arm == Knifx12Arm && knifx12MustFail)
+                    {
+                        if (r.Pixels is null && r.Error is not null
+                            && r.Error.Contains("newer version of KNI", StringComparison.Ordinal))
+                            Console.WriteLine($"  [OK  ] {job.AssetName,-16} {arm}: REJECTED by KNI {loadedLine} as pinned: {r.Error}");
+                        else
+                        {
+                            failures++;
+                            Console.WriteLine($"  [FAIL] {job.AssetName,-16} {arm}: expected \"newer version of KNI\" rejection on KNI {loadedLine} but "
+                                              + (r.Pixels is null ? $"failed differently: {r.Error}" : "LOADED - KNI changed; re-measure before accepting"));
+                        }
+                        continue;
+                    }
                     if (r.Pixels is null)
                     {
                         failures++;
@@ -267,7 +290,7 @@ internal static class Program
 
             Console.WriteLine();
             Console.WriteLine(failures == 0
-                ? $"KNI {loadedLine} XNB Content.Load gate: all {Fixtures.Length} fixtures PASSED (v10 + KNIFX maxd 0 vs mgcb; stock-mgcb {(stockMustFail ? "rejection" : "load")} pinned)"
+                ? $"KNI {loadedLine} XNB Content.Load gate: all {Fixtures.Length} fixtures PASSED (v10 + KNIFX v11{(knifx12MustFail ? "" : " + v12")} maxd 0 vs mgcb;{(knifx12MustFail ? " KNIFX v12 rejection pinned;" : "")} stock-mgcb {(stockMustFail ? "rejection" : "load")} pinned)"
                 : $"KNI {loadedLine} XNB Content.Load gate: {failures} failure(s)");
             return failures == 0 ? 0 : 1;
         }
@@ -326,7 +349,7 @@ internal static class Program
     }
 
     /// <summary>ShadowDusk compiles for OpenGL in the requested container, and <c>ToXnb()</c> wraps.</summary>
-    private static async Task<byte[]> BuildShadowDuskXnb(string fixtures, string fixture, EffectContainer container)
+    private static async Task<byte[]> BuildShadowDuskXnb(string fixtures, string fixture, EffectContainer container, CapabilityProfile? profile = null)
     {
         string source = Path.Combine(fixtures, fixture);
         var compiler = new EffectCompiler();
@@ -336,6 +359,7 @@ internal static class Program
             {
                 Target          = PlatformTarget.OpenGL,
                 Container       = container,
+                Profile         = profile,
                 IncludeResolver = new FileSystemIncludeResolver(),
                 SourceFileName  = source,
             });
