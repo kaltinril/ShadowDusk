@@ -14,6 +14,14 @@ that loads and renders identically to `mgfxc`'s in the real MonoGame/KNI runtime
 
 ### Added
 
+### Changed
+
+### Fixed
+
+## [0.23.0] - 2026-10-29
+
+### Added
+
 - **`vs_2_0`, `ps_2_0`, `vs_3_0` and `ps_3_0` compile for KNIFX on DirectX, as they do in KNI's own
   pipeline.** XNA-era effects, and every shader in KNI's own EffectTest suite, name SM 2.0 or 3.0;
   KNI's DirectX pipeline (4.2.9001 and 4.3.9001) builds them by compiling `*_2_0` as
@@ -4133,7 +4141,8 @@ WASM-capable build — the same pipeline on every host, with no substitute compi
 - **The MGCB content-processor plugin** is a scaffold; the PATH-based `mgfxc` override is the
   shipping MGCB integration path.
 
-[Unreleased]: https://github.com/kaltinril/ShadowDusk/compare/v0.22.1...HEAD
+[Unreleased]: https://github.com/kaltinril/ShadowDusk/compare/v0.23.0...HEAD
+[0.23.0]: https://github.com/kaltinril/ShadowDusk/compare/v0.22.1...v0.23.0
 [0.22.1]: https://github.com/kaltinril/ShadowDusk/compare/v0.22.0...v0.22.1
 [0.22.0]: https://github.com/kaltinril/ShadowDusk/compare/v0.21.0...v0.22.0
 [0.21.0]: https://github.com/kaltinril/ShadowDusk/compare/v0.20.0...v0.21.0
