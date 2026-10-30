@@ -161,9 +161,13 @@
 #                              is unloadable for it, upstream SlotOffset bug).
 #   * KniEffectTestVulkan    — KNI's own effect test suite in real DesktopVK (measured with zero
 #                              layer errors locally under the same Khronos validation layer).
-#   * Two POSITIVE CONTROLS  — a wrong shader must fail the pixel diff, and SPIR-V stamped 1.3
+#   * InitializerDefaultsVulkan, NonSquareMatrixVulkan (2026-10-28) and the VsDrivenVulkan
+#     wave / texarr refusal rows, legacy-lod and regslots modes.
+#   * Six POSITIVE CONTROLS  — a wrong shader must fail the pixel diff; SPIR-V stamped 1.3
 #                              on MonoGame's Vulkan 1.0 instance must trip the layer (lavapipe
-#                              renders it at maxd 0, which is exactly why the layer is here).
+#                              renders it at maxd 0, which is exactly why the layer is here);
+#                              and four defects planted in the regslots candidate (ordinal-slots,
+#                              keep-space, reserve-dead, whole-file-pairing) must turn that row red.
 #
 # NOT here (issue #204 follow-ups, still manual-only via run-windows-render-gates.ps1):
 #   * VsDrivenDx12 — the DX12 twin of VsDrivenDx (which now runs above); the issue #209 SwiftShader fix should
