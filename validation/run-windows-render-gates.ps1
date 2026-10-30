@@ -109,8 +109,14 @@
                                    XNA by KNI's author) in the real engine, on KNI's vendored test
                                    shaders plus five companions. GATE rows must pass, KNOWN-FAIL rows
                                    (listed ShadowDusk bugs) must still fail, INFO rows are printed with
-                                   their reason, three positive controls must be caught. The KNI ones
+                                   their reason, up to three positive controls must be caught (a
+                                   render control runs only where that render is gated). The KNI ones
                                    run against nkast 4.2.9001 AND 4.3.9001; Vulkan is in that block.
+    * Non-square matrix Set      - validation/NonSquareMatrix{Dx,Vulkan} (issue #423): float4x3,
+                                   float3x2, float4x3[2] and trailing-matrix parameters Set from C#
+                                   land in the right registers, vs MonoGame's own DirectX semantics
+                                   (the committed real mgfxc 3.8.5 builds render alongside). The
+                                   Vulkan one is in the Vulkan block.
     * Apos.Shapes GL render-proof - validation/VsDriven -- apos: a single shape plus a needle-thin
                                    ellipse vs the mgfxc OpenGL golden, tol 2/255. Uses the older
                                    apos-shapes.fx pin - the current revision's mgfxc GL compile is
@@ -205,10 +211,12 @@
                                    requires pixel-identical renders. Also the only run of the
                                    Builder's unguarded GetTypes() scan over our real graph.
 
-  Both Vulkan gates are DEFAULT-ON (issue #145: a Vulkan-affecting change must not depend on
-  someone remembering a switch). Pass -SkipVulkan only on a box with no Vulkan-capable GPU.
-  CI also runs both (validation-render.yml, Mesa lavapipe + the Khronos validation layer), but
-  that is a CPU driver; this local run is still the only GPU-driver Vulkan render.
+  The Vulkan block (CandidateVulkan, InitializerDefaultsVulkan, NonSquareMatrixVulkan,
+  KniEffectTestVulkan, VsDrivenVulkan in every mode, SlangFullCorpusVulkan) is DEFAULT-ON
+  (issue #145: a Vulkan-affecting change must not depend on someone remembering a switch). Pass
+  -SkipVulkan only on a box with no Vulkan-capable GPU. CI also runs all of it but
+  SlangFullCorpusVulkan (validation-render.yml, Mesa lavapipe + the Khronos validation layer),
+  but that is a CPU driver; this local run is still the only GPU-driver Vulkan render.
 
   The in-process MonoGame OpenGL render gates (StateFidelity / CbufferModel /
   TextureBreadthValidation / ReservedWordGl / SamplerPairsGl / SamplerRegisterOrderGl /
@@ -224,7 +232,7 @@
   switch changes nothing; passing it is harmless.
 
 .PARAMETER SkipVulkan
-  Skip both Vulkan gates. Use ONLY on a machine with no Vulkan-capable GPU - a
+  Skip the Vulkan block. Use ONLY on a machine with no Vulkan-capable GPU - a
   Vulkan-affecting change is not validated without them.
 
 .PARAMETER SkipRestore
@@ -417,7 +425,7 @@ foreach ($drv in @(
     @('KniEffectTestDx12',  'MonoGame 3.8.5 WindowsDX12', @()))) {
     $runArgs = (@('run', '--project', "validation/$($drv[0])", '-c', 'Release') + $drv[2] | ForEach-Object { "'$_'" }) -join ', '
     $gates.Add(@{
-        Name   = "KNI EffectTest ($($drv[1]): KNI's own effect tests in the real engine, gated / known-failing / informational rows, 3 positive controls)"
+        Name   = "KNI EffectTest ($($drv[1]): KNI's own effect tests in the real engine, gated / known-failing / informational rows, up to three positive controls)"
         # [scriptblock]::Create, not GetNewClosure(): a closure runs in a module scope that cannot see Invoke-Checked.
         Action = [scriptblock]::Create("Invoke-Checked 'dotnet' @($runArgs)")
     })

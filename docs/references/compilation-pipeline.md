@@ -271,6 +271,39 @@ compile (OpenGL SPIR-V, DirectX DXBC, DirectX 12 DXIL) still validates fully. DX
 is constructed lazily and invoked through a per-platform raw vtable call rather than Vortice's
 string wrapper, which is what makes it run on Linux and macOS at all.
 
+**Before DXC compiles: two guards against crashes in the pinned DXC.** Both exist because
+the pinned DXC (Vortice.Dxc 3.3.4's `dxcompiler`) can end the host process, which for a library
+compiled into a game is never acceptable.
+
+- **Entry-point prototypes are blanked, proven by DXC's own preprocessor**
+  (`src/ShadowDusk.HLSL/Dxc/DxcSpirvEntryRedeclarations.cs`). DXC's SPIR-V back end faults with an
+  access violation whenever the ENTRY function is declared more than once (a prototype before or
+  after its definition). So for every SPIR-V compile (OpenGL, Vulkan, the raylib and SkSL
+  converters) and the OpenGL target's `-Vd` DXIL reflection companion, `DxcShaderCompiler` first
+  runs DXC with `-P` (preprocess only, which never reaches a back end) and the compile's own
+  `-D` macros, profile and `-spirv`, so every macro DXC predefines takes the value the compile
+  sees. When that text declares the entry once, the source goes to DXC unchanged. When it
+  declares it more than once, each redundant prototype whose types match the single definition
+  is replaced by spaces in the raw source (every line break kept, so no diagnostic moves), and
+  each blanked range is accepted only when a second `-P` run produces exactly the original token
+  stream minus the prototype's tokens. A prototype that says more than its definition (an
+  attribute, a modifier, a default value), a call to the entry between prototype and definition,
+  or a shape no proven range removes is refused with **`SD0236`**. DirectX 12's validated DXIL
+  and the DXBC backends never had the fault and keep their input. **The browser** has no
+  preprocess-only DXC export, so it cannot prove the edit: it compiles the source as written,
+  and the browser DXC's own "entry points cannot share the same name" error is reported as
+  `SD0236` with DXC's text kept.
+- **`__TIMESTAMP__` is always defined** (`src/ShadowDusk.HLSL/Dxc/DxcFlagBuilder.cs`, issue #444).
+  The pinned DXC fail-fasts (`0xC0000409`) whenever its preprocessor expands the built-in
+  `__TIMESTAMP__` (it cannot stat the in-memory input), in a `-P` run as in a compile, also when
+  the name is pasted together (`__TIME ## STAMP__`), so no reading of the source can find every
+  use. Every DXC call, compile and `-P` alike, on every target and on the desktop and in the
+  browser, therefore passes `-Wno-builtin-macro-redefined -D__TIMESTAMP__="??? ??? ?? ??:??:?? ????"`
+  (clang's own text for an unknown file time; the `-W` flag keeps `-WX` from failing on the
+  redefinition). A used `__TIMESTAMP__` is then an ordinary string literal. Release bytes do not
+  change; DirectX 12 `Debug` bytes do, because DXC records its arguments in the DXIL debug
+  information.
+
 **Why.** DXC is the canonical, cross-platform HLSL compiler, the whole "no Wine, no Windows
 SDK" promise rests on it running natively everywhere. The DX-layout flags keep reflection and
 the transpiled GLSL in agreement about cbuffer offsets.

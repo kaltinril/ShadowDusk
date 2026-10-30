@@ -14,6 +14,14 @@ that loads and renders identically to `mgfxc`'s in the real MonoGame/KNI runtime
 
 ### Added
 
+### Changed
+
+### Fixed
+
+## [0.23.0] - 2026-10-29
+
+### Added
+
 - **`vs_2_0`, `ps_2_0`, `vs_3_0` and `ps_3_0` compile for KNIFX on DirectX, as they do in KNI's own
   pipeline.** XNA-era effects, and every shader in KNI's own EffectTest suite, name SM 2.0 or 3.0;
   KNI's DirectX pipeline (4.2.9001 and 4.3.9001) builds them by compiling `*_2_0` as
@@ -36,7 +44,7 @@ that loads and renders identically to `mgfxc`'s in the real MonoGame/KNI runtime
   keep failing until its fix flips it, or informational with the reason printed; positive controls must be
   caught. A known-failing row must also fail for its listed reason, or the run is red. It is wired into CI
   (llvmpipe, WARP, lavapipe with the Vulkan validation layer, the lavapipe job raising `vm.max_map_count` first;
-  first CI run pending) and into `run-windows-render-gates.ps1`; measured green locally. Test and validation only: no package changes.
+  green in all three jobs on the merge of PR #450) and into `run-windows-render-gates.ps1`; measured green locally. Test and validation only: no package changes.
   On a strict GL driver (Mesa, as in CI) two rows change class, measured on Mesa 25.2.8 llvmpipe: the `OldSyntax` render
   rows are informational (Mesa refuses KNI's PS behind BasicEffect's VS for `mgfxc`'s build too), and KNI GL's
   `DeferredBasicEffect` is known-failing on the existing `SD0403` gap (issue #453; a `mat3x4` Mesa refuses at `Effect` load, where
@@ -52,6 +60,20 @@ that loads and renders identically to `mgfxc`'s in the real MonoGame/KNI runtime
   `DescriptorSet` decoration of a Vulkan constant buffer, set by the SPIR-V reflection (0 elsewhere).
   The Vulkan target uses it to refuse a buffer outside its stage's descriptor set (`SD0229`).
 - **`TextureReflection.IsStorage`** (`ShadowDusk.Core.Reflection`): true for a read-write (storage) image, an HLSL `RWTexture*`, set by the SPIR-V reflection from `OpTypeImage`'s Sampled operand; false from DXIL/DXBC. The Vulkan target uses it to refuse such a texture (`SD0233`).
+- **New public members in `ShadowDusk.GLSL` and `ShadowDusk.HLSL`** that carry the OpenGL matrix-interpolant
+  layout and the `tex2Dlod`-family rewrite (see Fixed). `ShadowDusk.GLSL`: the record
+  **`MonoGameGlslInterpolantPacking`** (`RowMajor`, `Refused`, and the init-only `Declared`, `Split`,
+  `RefusedVertexInputs` and `Unmodelled`: what the HLSL source says about a stage's interpolants that
+  DXC's GLSL drops) and the 4-argument **`MonoGameGlslRewriter.Rewrite(string, ShaderStage, IReadOnlyList<int>?,
+  MonoGameGlslInterpolantPacking?)`** overload that takes it (the 3-argument overload is unchanged and passes
+  `null`). `ShadowDusk.HLSL` (`ShadowDusk.HLSL.Ast`): the records **`MatrixInterpolantDeclaration`** (semantic,
+  name, rows, columns, `RowMajor`, `IsDegenerate`) and **`EntryPointMatrixInterpolants`** (an entry point's
+  matrix inputs, outputs and the signature shapes the scan does not model), exposed as
+  **`GlSamplerSlots.EntryPointInterpolants`**; **`FxParseResult.RestructuredHelpers`** with the record
+  **`RestructuredHelperDefinition`** (each helper a `tex2Dlod`/`tex2Dbias`/`tex2Dproj` call was rewritten to,
+  and where its definition sits) and **`FxParseResult.DeferredLegacyIntrinsicCalls`** (the calls a raw-text parse
+  left for the preprocessed re-parse); and, in the `ShadowDusk.HLSL` namespace, **`GlobalInitializerDefault.EndLine` / `EndColumn`** (init-only, where
+  a kept declaration's initializer ends). All additive; no existing signature changes.
 
 ### Changed
 
@@ -4133,7 +4155,8 @@ WASM-capable build — the same pipeline on every host, with no substitute compi
 - **The MGCB content-processor plugin** is a scaffold; the PATH-based `mgfxc` override is the
   shipping MGCB integration path.
 
-[Unreleased]: https://github.com/kaltinril/ShadowDusk/compare/v0.22.1...HEAD
+[Unreleased]: https://github.com/kaltinril/ShadowDusk/compare/v0.23.0...HEAD
+[0.23.0]: https://github.com/kaltinril/ShadowDusk/compare/v0.22.1...v0.23.0
 [0.22.1]: https://github.com/kaltinril/ShadowDusk/compare/v0.22.0...v0.22.1
 [0.22.0]: https://github.com/kaltinril/ShadowDusk/compare/v0.21.0...v0.22.0
 [0.21.0]: https://github.com/kaltinril/ShadowDusk/compare/v0.20.0...v0.21.0

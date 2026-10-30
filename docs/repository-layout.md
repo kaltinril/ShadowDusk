@@ -106,6 +106,13 @@ ShadowDusk/
 │                                       #   modern twin, mgfxc 3.8.4.1/3.8.5 goldens, MonoGame VertexTextureEffect goldens)
 │                                       #   + dx11-texture-slots/ (legacy sampler TEXTURE slot shapes, sources beside their
 │                                       #   mgfxc DirectX_11 goldens; DirectX11TextureSlotOrderTests + the DX texture-slot arms)
+│                                       #   + vertex-semantics/ (GL vertex-input semantic + matrix-interpolant fixtures beside
+│                                       #   their mgfxc 3.8.4.1 OpenGL goldens; packing/ holds the interpolant-layout cases;
+│                                       #   the VertexSemanticsGl/KniGl render rows)
+│                                       #   + initializer-defaults/ (global-initializer fixtures; mgfxc-3.8.4.1-OpenGL/ and
+│                                       #   -DirectX_11/ builds, kni-4.2.9001-Windows/ KNI's own KNIFX ps/vs_2_0 + 3_0
+│                                       #   builds; the InitializerDefaults* drivers' reference arms)
+│                                       #   + sksl/ (the desktop SkSL golden the browser SkSL gate compares against, issue #349)
 ├── samples/
 │   ├── ShaderFiddle.Web/               # KNI Blazor-WASM in-browser fiddle (sample of reach)
 │   ├── ShaderToyViewer/                # Interactive ShaderToy viewer: runtime convert -> in-memory
