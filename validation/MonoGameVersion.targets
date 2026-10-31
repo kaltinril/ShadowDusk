@@ -1,0 +1,41 @@
+<Project>
+
+  <!-- Phase 69: build a validation driver against ANOTHER MonoGame release with
+       -p:MonoGameVersion=<version>, the way the KNI drivers take -p:KniVersion. Imported at the
+       END of a driver's csproj (an Update must follow the Include it updates).
+
+       Without the property nothing changes: the driver keeps its own pin (3.8.2.1105 through
+       Directory.Packages.props for the classic DesktopGL/WindowsDX drivers, 3.8.5 for the
+       MonoGame.Framework.Native ones) and its packages.lock.json.
+
+       With it:
+         - every MonoGame runtime package the driver references moves to that version
+           (VersionOverride under Central Package Management, Version otherwise);
+         - the version gets its own lock file, packages.<version>.lock.json, so both arms stay
+           locked (tools/check-lock-files.sh restores it with the same property);
+         - MonoGameVersionGuard runs before Main and exits 3 unless the MonoGame.Framework that
+           actually loaded is that version, so a stale build cannot pass as the other arm.
+
+       The product never depends on MonoGame; this only chooses which runtime a gate proves
+       the unchanged output on (CLAUDE.md: the commitment is the output format, not a version). -->
+
+  <PropertyGroup Condition="'$(MonoGameVersion)' != ''">
+    <NuGetLockFilePath>packages.$(MonoGameVersion).lock.json</NuGetLockFilePath>
+    <_SdMonoGamePackages>MonoGame.Framework.DesktopGL;MonoGame.Framework.WindowsDX;MonoGame.Framework.Native;MonoGame.Runtime.Windows.DX12;MonoGame.Runtime.Windows.Vulkan;MonoGame.Runtime.Linux.Vulkan;MonoGame.Framework.Content.Pipeline</_SdMonoGamePackages>
+  </PropertyGroup>
+
+  <ItemGroup Condition="'$(MonoGameVersion)' != '' and '$(ManagePackageVersionsCentrally)' == 'true'">
+    <PackageReference Update="$(_SdMonoGamePackages)" VersionOverride="$(MonoGameVersion)" />
+  </ItemGroup>
+
+  <ItemGroup Condition="'$(MonoGameVersion)' != '' and '$(ManagePackageVersionsCentrally)' != 'true'">
+    <PackageReference Update="$(_SdMonoGamePackages)" Version="$(MonoGameVersion)" />
+  </ItemGroup>
+
+  <ItemGroup Condition="'$(MonoGameVersion)' != ''">
+    <AssemblyMetadata Include="ExpectedMonoGameVersion" Value="$(MonoGameVersion)" />
+    <Compile Include="$(MSBuildThisFileDirectory)SharedMonoGameVersion\MonoGameVersionGuard.cs"
+             Link="SharedMonoGameVersion\MonoGameVersionGuard.cs" />
+  </ItemGroup>
+
+</Project>

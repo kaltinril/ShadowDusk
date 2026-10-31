@@ -48,4 +48,6 @@
     <Compile Include="..\..\tests\ShadowDusk.Integration.Tests\VulkanShaderCodeReader.cs" Link="VulkanShaderCodeReader.cs" />
   </ItemGroup>
 
+  <Import Project="..\MonoGameVersion.targets" />
+
 </Project>

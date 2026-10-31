@@ -36,4 +36,6 @@
     <Compile Include="..\SharedSlang\*.cs" />
   </ItemGroup>
 
+  <Import Project="..\MonoGameVersion.targets" />
+
 </Project>

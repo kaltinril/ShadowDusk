@@ -34,10 +34,10 @@
     so packages.lock.json here reflects whichever matrix cell ran last and its
     churn is expected, not a signal. (These validation projects are not in
     ShadowDusk.slnx, which is the only thing CI restores in locked mode.)
-    Kept at the newest cell in the matrix: 3.8.5 stable, added 2026-07-28.
+    Kept at the newest cell in the matrix: 3.8.6 stable, added 2026-10-31.
   -->
   <PropertyGroup>
-    <ForwardCompatMonoGameVersion>3.8.5</ForwardCompatMonoGameVersion>
+    <ForwardCompatMonoGameVersion>3.8.6</ForwardCompatMonoGameVersion>
   </PropertyGroup>
 
   <ItemGroup>

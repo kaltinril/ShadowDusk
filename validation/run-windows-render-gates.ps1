@@ -235,6 +235,11 @@
   Skip the Vulkan block. Use ONLY on a machine with no Vulkan-capable GPU - a
   Vulkan-affecting change is not validated without them.
 
+.PARAMETER NewerMonoGameOnly
+  Run ONLY the newer-MonoGame block (Phase 69): the drivers rebuilt against each release in
+  `$newerMonoGame` with -p:MonoGameVersion. For taking on a new MonoGame release; the release gate
+  is always the full run, which includes this block.
+
 .PARAMETER SkipRestore
   Skip `tools/restore.ps1` (the vkd3d-shader native the DX/KNI-DX/FNA gates P/Invoke). Use only
   when you know the natives are already restored.
@@ -252,7 +257,8 @@ param(
     [switch]$IncludeFna,
     [switch]$IncludeVulkan,
     [switch]$SkipVulkan,
-    [switch]$SkipRestore
+    [switch]$SkipRestore,
+    [switch]$NewerMonoGameOnly
 )
 
 $ErrorActionPreference = 'Stop'
@@ -668,6 +674,68 @@ if (-not $SkipVulkan) {
 } else {
     Write-Host "NOTE: Vulkan gates SKIPPED by -SkipVulkan. They are default-ON; only skip them on a box with no Vulkan GPU.`n" -ForegroundColor Yellow
 }
+
+# Phase 69: every newer MonoGame release runs the same drivers again, built with
+# -p:MonoGameVersion=<v> (validation/MonoGameVersion.targets), BESIDE the pinned arms above, never
+# instead of them. The output is the same bytes; only the runtime that loads it changes. A driver's
+# MonoGameVersionGuard exits 3 unless that release actually loaded. A new MonoGame release is
+# appended here (and to the CI lanes) after its sweep is green (CLAUDE.md: validate before AND after).
+$newerMonoGame = @('3.8.6')
+$newerGates = [System.Collections.Generic.List[object]]::new()
+foreach ($mg in $newerMonoGame) {
+    $p = "-p:MonoGameVersion=$mg"
+    # Each entry: gate name, then the commands (dotnet run args, or 'py:<script>'; a leading '?'
+    # marks a best-effort command whose exit code is not part of the gate, as in the Vulkan block).
+    $arms = [System.Collections.Generic.List[object]]::new()
+    $arms.Add(@("MonoGame $mg WindowsDX corpus (vkd3d + d3dcompiler arms vs mgfxc golden)",
+        @('validation/BaselineDx'), @('validation/CandidateDx'), 'py:validation/compare_dx.py',
+        @('validation/CandidateDx', '--', 'd3dcompiler'), 'py:validation/compare_dx.py'))
+    $arms.Add(@("MonoGame $mg WindowsDX VS rig + Apos.Shapes gallery + resource arrays",
+        @('validation/VsDrivenDx'), @('validation/VsDrivenDx', '--', 'apos'),
+        @('validation/VsDrivenDx', '--', 'texarr'), @('validation/VsDrivenDx', '--', 'samparr')))
+    $arms.Add(@("MonoGame $mg WindowsDX modern features (VTF, legacy registers, half globals, legacy texture slots, legacy lod)",
+        @('validation/DxModernFeatures')))
+    $arms.Add(@("MonoGame $mg WindowsDX initializer defaults + non-square matrix Set + KNI EffectTest + XNB Content.Load",
+        @('validation/InitializerDefaultsDx'), @('validation/NonSquareMatrixDx'),
+        @('validation/KniEffectTestDx'), @('validation/XnbContentLoad')))
+    $arms.Add(@("MonoGame $mg DesktopGL initializer defaults + KNI EffectTest + XNB Content.Load + Apos.Shapes + MGFX v11",
+        @('validation/InitializerDefaultsGl'), @('validation/KniEffectTestGl'),
+        @('validation/XnbContentLoadGl'), @('validation/VsDriven', '--', 'apos'), @('validation/MonoGameV11')))
+    $arms.Add(@("MonoGame $mg WindowsDX12 corpus + VS rig + Apos.Shapes + texture array + legacy lod",
+        @('validation/BaselineDx12'), @('validation/CandidateDx12'), 'py:validation/compare_dx12.py',
+        @('validation/VsDrivenDx12'), @('validation/VsDrivenDx12', '--', 'apos'),
+        @('validation/VsDrivenDx12', '--', 'texarr'), @('validation/VsDrivenDx12', '--', 'legacy-lod')))
+    $arms.Add(@("MonoGame $mg WindowsDX12 initializer defaults + KNI EffectTest + Slang full corpus",
+        @('validation/InitializerDefaultsDx12'), @('validation/KniEffectTestDx12'), @('validation/SlangFullCorpusDx12')))
+    if (-not $SkipVulkan) {
+        $arms.Add(@("MonoGame $mg DesktopVK corpus + VS rig + Apos.Shapes + texarr + legacy lod + register slots",
+            @('validation/CandidateVulkan'), @('?validation/BaselineVulkan'), 'py:validation/compare_vulkan.py',
+            @('validation/VsDrivenVulkan'), @('validation/VsDrivenVulkan', '--', 'apos'),
+            @('validation/VsDrivenVulkan', '--', 'texarr'), @('validation/VsDrivenVulkan', '--', 'legacy-lod'),
+            @('validation/VsDrivenVulkan', '--', 'regslots')))
+        $arms.Add(@("MonoGame $mg DesktopVK initializer defaults + non-square matrix Set + KNI EffectTest + Slang full corpus",
+            @('validation/InitializerDefaultsVulkan'), @('validation/NonSquareMatrixVulkan'),
+            @('validation/KniEffectTestVulkan'), @('validation/SlangFullCorpusVulkan')))
+    }
+    foreach ($arm in $arms) {
+        $lines = foreach ($cmd in $arm[1..($arm.Count - 1)]) {
+            if ($cmd -is [string]) {
+                "Invoke-Checked 'python' @('$($cmd.Substring(3))')"
+            } else {
+                $project = $cmd[0]; $bestEffort = $project.StartsWith('?')
+                if ($bestEffort) { $project = $project.Substring(1) }
+                $runArgs = @('run', '--project', $project, '-c', 'Release', $p)
+                if ($cmd.Count -gt 1) { $runArgs += $cmd[1..($cmd.Count - 1)] }
+                $quoted = ($runArgs | ForEach-Object { "'$_'" }) -join ', '
+                if ($bestEffort) { "& dotnet @($quoted)" } else { "Invoke-Checked 'dotnet' @($quoted)" }
+            }
+        }
+        # [scriptblock]::Create, not GetNewClosure(): a closure runs in a module scope that cannot see Invoke-Checked.
+        $newerGates.Add(@{ Name = $arm[0]; Action = [scriptblock]::Create($lines -join "`n") })
+    }
+}
+if ($NewerMonoGameOnly) { $gates.Clear() }
+$gates.AddRange($newerGates)
 
 $results = [System.Collections.Generic.List[object]]::new()
 foreach ($gate in $gates) {

@@ -22,7 +22,7 @@
 #   3.8.0.1641  REJECTS - "This MGFX effect seems to be for a newer release of
 #               MonoGame" (0/10). Its loader predates MGFX v10. This is the honest
 #               floor-minus-one, not a defect.
-#   3.8.1.263 .. 3.8.5   ALL LOAD + RENDER 10/10.
+#   3.8.1.263 .. 3.8.6   ALL LOAD + RENDER 10/10 (3.8.5.1 and 3.8.6 added 2026-10-31).
 #
 # So the first entry is the OLDEST SUPPORTED runtime (3.8.1.263), and it is the
 # forward-compat reference every other cell must match pixel-for-pixel. Do not
@@ -38,7 +38,7 @@
 #           Python with pillow + numpy for the pixel compare.
 
 param(
-    [string[]]$Versions = @("3.8.1.263", "3.8.1.303", "3.8.2.1105", "3.8.3", "3.8.4", "3.8.4.1", "3.8.5"),
+    [string[]]$Versions = @("3.8.1.263", "3.8.1.303", "3.8.2.1105", "3.8.3", "3.8.4", "3.8.4.1", "3.8.5", "3.8.5.1", "3.8.6"),
     [int]$Tolerance = 4,
     [switch]$SkipBaseline
 )

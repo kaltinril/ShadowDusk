@@ -4,9 +4,9 @@
     "net8.0": {
       "MonoGame.Framework.DesktopGL": {
         "type": "Direct",
-        "requested": "[3.8.5, )",
-        "resolved": "3.8.5",
-        "contentHash": "oG5Thkic4i/6kX3OWtq2p6DEATflP71yM0p/1ymIoFaIp1xNFOqAd4jW2D9GIQLIMT6mn5RmJknYPqJnOQbi5w==",
+        "requested": "[3.8.6, )",
+        "resolved": "3.8.6",
+        "contentHash": "pVAwFo+wNCco7881v8VAkPcls/jYVyfzxx/eSBMuT45ZqZcTFqptsZxd8KwBEE5PQc5UxbX5erGh0rwtFGsKVg==",
         "dependencies": {
           "MonoGame.Library.OpenAL": "1.24.3.4",
           "MonoGame.Library.SDL": "2.32.10.2",
