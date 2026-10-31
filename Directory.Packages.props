@@ -3,6 +3,10 @@
     <ManagePackageVersionsCentrally>true</ManagePackageVersionsCentrally>
   </PropertyGroup>
 
+  <!-- Dependabot (.github/dependabot.yml) opens weekly bump PRs for this file. A DELIBERATE pin
+       (native hashes, a render-proof runtime, an evidence pin) also needs an `ignore:` entry
+       there, or Dependabot keeps proposing the bump. -->
+
   <!-- Vortice.Direct3D12 is deliberately ABSENT (dropped in Phase 63, issue #203): it carries one
        type the CLR refuses to load, and MonoGame 3.8.5's Content Builder GetTypes()-scans every
        consumer dependency unguarded. The ID3D12ShaderReflection interop is ShadowDusk-owned now. -->

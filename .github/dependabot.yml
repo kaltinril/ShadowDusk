@@ -1,0 +1,81 @@
+# Dependabot version updates: it opens PRs, it never merges or blocks anything.
+#
+# Only the root is watched. Central Package Management means every in-solution version lives in
+# Directory.Packages.props. The projects that opt out of CPM (validation drivers, samples, tool
+# scratch consumers) reference only proof-pinned MonoGame/KNI/native versions, which are ignored
+# below anyway. CI's `Lock files (all projects, locked mode)` job restores every committed lock
+# file, so a bump that leaves an out-of-solution lock file stale fails on its own PR.
+#
+# The labels switch on the label-gated CI lanes the change touches (project_rules: main is always
+# releasable, CI green on every lane a change touches). Without them those lanes would be skipped.
+version: 2
+updates:
+  - package-ecosystem: nuget
+    directory: "/"
+    schedule:
+      interval: weekly
+      day: monday
+      time: "06:00"
+    target-branch: main
+    open-pull-requests-limit: 10
+    labels:
+      - dependencies
+      - run-integration
+      - run-validation-render
+    commit-message:
+      prefix: chore
+      include: scope
+    groups:
+      test:
+        patterns:
+          - "xunit*"
+          - "Microsoft.NET.Test.Sdk"
+          - "Shouldly"
+          - "coverlet*"
+      skiasharp:
+        patterns:
+          - "SkiaSharp*"
+      silk-net-rendering:
+        patterns:
+          - "Silk.NET.OpenGL"
+          - "Silk.NET.Windowing*"
+    # Deliberate pins. Each is explained at its entry in Directory.Packages.props; a bump is
+    # planned work (re-pinned native hashes or a re-run render proof), never a routine PR.
+    ignore:
+      # DxcLoader runs only the DXC natives Vortice.Dxc 3.3.4 ships (exact range, SD0219).
+      # The other Vortice packages move with it as one family.
+      - dependency-name: "Vortice.*"
+      # SpvcLoader checks the SHA-256 of each native file (issue #350).
+      - dependency-name: "Silk.NET.SPIRV.Cross.Native"
+      # Validation runtimes the render gates prove against, and the MGCB plugin's contract floor
+      # (3.8.2.1105 is a floor: compiling against a newer one would not load in an older MGCB).
+      # New MonoGame/KNI releases are added to the matrix, not swapped in.
+      - dependency-name: "MonoGame.*"
+      - dependency-name: "nkast.*"
+      - dependency-name: "Raylib-cs"
+      # Evidence pin for the Phase 55 gallery: the package's shader must equal the vendored fixture.
+      - dependency-name: "Apos.Shapes"
+
+  - package-ecosystem: github-actions
+    directory: "/"
+    schedule:
+      interval: weekly
+      day: monday
+      time: "06:00"
+    target-branch: main
+    open-pull-requests-limit: 10
+    # An action bump touches every workflow, including the label-gated ones.
+    labels:
+      - dependencies
+      - run-integration
+      - run-validation-render
+      - run-browser
+      - run-android
+      - run-win-arm64
+    commit-message:
+      prefix: chore
+      include: scope
+    groups:
+      actions:
+        patterns:
+          - "*"
