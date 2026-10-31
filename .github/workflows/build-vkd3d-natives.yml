@@ -62,7 +62,7 @@ jobs:
             os: macos-15-intel
     steps:
       - name: Check out (smoke-test script)
-        uses: actions/checkout@v5
+        uses: actions/checkout@v7
 
       - name: Download + verify pinned tarball
         run: |
@@ -164,7 +164,7 @@ jobs:
             xz-utils pkg-config curl ca-certificates binutils
 
       - name: Check out (smoke-test script)
-        uses: actions/checkout@v5
+        uses: actions/checkout@v7
 
       - name: Download + verify pinned tarball
         run: |
@@ -264,7 +264,7 @@ jobs:
             mingw-w64-x86_64-spirv-headers
 
       - name: Check out (smoke-test script)
-        uses: actions/checkout@v5
+        uses: actions/checkout@v7
 
       - name: Download + verify pinned tarball
         run: |

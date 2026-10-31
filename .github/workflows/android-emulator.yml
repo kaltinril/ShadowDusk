@@ -82,7 +82,7 @@ jobs:
     timeout-minutes: 60
     steps:
       - name: Checkout
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
 
       # ubuntu runners expose /dev/kvm, but only root can open it until a udev rule says
       # otherwise; without KVM the x86_64 emulator falls back to software and never boots in time.
@@ -93,13 +93,13 @@ jobs:
           sudo udevadm trigger --name-match=kvm
 
       - name: Setup Java 17 (Android build tools)
-        uses: actions/setup-java@v5
+        uses: actions/setup-java@v6
         with:
           distribution: temurin
           java-version: '17'
 
       - name: Setup .NET 8 + .NET 10
-        uses: actions/setup-dotnet@v5
+        uses: actions/setup-dotnet@v6
         with:
           dotnet-version: |
             8.0.x
@@ -109,7 +109,7 @@ jobs:
         run: dotnet workload install android
 
       - name: Cache NuGet
-        uses: actions/cache@v5
+        uses: actions/cache@v6
         with:
           path: ~/.nuget/packages
           key: nuget-android-${{ runner.os }}-${{ hashFiles('**/packages.lock.json', '**/Directory.Packages.props') }}
@@ -117,7 +117,7 @@ jobs:
             nuget-android-${{ runner.os }}-
 
       - name: Cache the x86_64 Android natives
-        uses: actions/cache@v5
+        uses: actions/cache@v6
         with:
           path: |
             tools/dxc/android-x64

@@ -80,7 +80,7 @@ jobs:
     timeout-minutes: 60
     steps:
       # The wrapper + smoke gate live in the repo (tools/vkd3d-wasm/).
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
 
       # bison/flex: vkd3d's HLSL lexer/parser generators (run on the HOST at build
       # time — never compiled to WASM). perl JSON: a hard configure requirement

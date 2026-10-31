@@ -59,7 +59,7 @@ jobs:
     outputs:
       version: ${{ steps.resolve.outputs.version }}
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
         with:
           fetch-depth: 0
 
@@ -99,17 +99,17 @@ jobs:
         # longer initializes GLFW on macOS — see its comment).
         os: [ ubuntu-latest, macos-latest, windows-latest ]
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
 
       - name: Setup .NET 8 + .NET 10
-        uses: actions/setup-dotnet@v5
+        uses: actions/setup-dotnet@v6
         with:
           dotnet-version: |
             8.0.x
             10.0.x
 
       - name: Cache NuGet
-        uses: actions/cache@v5
+        uses: actions/cache@v6
         with:
           path: ~/.nuget/packages
           key: nuget-${{ runner.os }}-${{ hashFiles('**/packages.lock.json', '**/Directory.Packages.props') }}
@@ -163,17 +163,17 @@ jobs:
     runs-on: ubuntu-latest
     needs: [ validate, build-and-test ]
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
 
       - name: Setup .NET 8 + .NET 10
-        uses: actions/setup-dotnet@v5
+        uses: actions/setup-dotnet@v6
         with:
           dotnet-version: |
             8.0.x
             10.0.x
 
       - name: Cache NuGet
-        uses: actions/cache@v5
+        uses: actions/cache@v6
         with:
           path: ~/.nuget/packages
           key: nuget-${{ runner.os }}-${{ hashFiles('**/packages.lock.json', '**/Directory.Packages.props') }}
@@ -184,13 +184,13 @@ jobs:
       # the pinned downloads should hit the cache, with restore self-healing a stale
       # or corrupt entry by hash.
       - name: Cache vkd3d natives
-        uses: actions/cache@v5
+        uses: actions/cache@v6
         with:
           path: tools/vkd3d
           key: vkd3d-2.1-${{ runner.os }}
 
       - name: Cache DXC macOS natives
-        uses: actions/cache@v5
+        uses: actions/cache@v6
         with:
           path: tools/dxc
           key: dxc-${{ runner.os }}-${{ hashFiles('tools/restore.sh', 'tools/restore.ps1') }}
@@ -199,7 +199,7 @@ jobs:
       # about 9 MB together), keyed on restore.sh so a re-pin invalidates it. restore.* re-verifies
       # the SHA-256 of a cached file and re-downloads on a mismatch.
       - name: Cache Android SPIRV-Cross natives
-        uses: actions/cache@v5
+        uses: actions/cache@v6
         with:
           path: |
             tools/spirv-cross/android-arm64
@@ -207,7 +207,7 @@ jobs:
           key: spirv-cross-android-${{ runner.os }}-${{ hashFiles('tools/restore.sh', 'tools/restore.ps1') }}
 
       - name: Cache slangc natives
-        uses: actions/cache@v5
+        uses: actions/cache@v6
         with:
           path: tools/slang
           key: slang-2026.14.1-${{ runner.os }}
@@ -445,17 +445,17 @@ jobs:
     runs-on: ubuntu-latest
     needs: [ validate, build-and-test ]
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
 
       - name: Setup .NET 8 + .NET 10
-        uses: actions/setup-dotnet@v5
+        uses: actions/setup-dotnet@v6
         with:
           dotnet-version: |
             8.0.x
             10.0.x
 
       - name: Cache NuGet
-        uses: actions/cache@v5
+        uses: actions/cache@v6
         with:
           path: ~/.nuget/packages
           key: nuget-${{ runner.os }}-${{ hashFiles('**/packages.lock.json', '**/Directory.Packages.props') }}
@@ -548,17 +548,17 @@ jobs:
           - rid: osx-arm64
             os: macos-latest
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
 
       - name: Setup .NET 8 + .NET 10
-        uses: actions/setup-dotnet@v5
+        uses: actions/setup-dotnet@v6
         with:
           dotnet-version: |
             8.0.x
             10.0.x
 
       - name: Cache NuGet
-        uses: actions/cache@v5
+        uses: actions/cache@v6
         with:
           path: ~/.nuget/packages
           key: nuget-${{ runner.os }}-${{ hashFiles('**/packages.lock.json', '**/Directory.Packages.props') }}
@@ -718,7 +718,7 @@ jobs:
     needs: [ validate, pack-desktop, pack-wasm ]
     steps:
       - name: Setup .NET 8 + .NET 10
-        uses: actions/setup-dotnet@v5
+        uses: actions/setup-dotnet@v6
         with:
           dotnet-version: |
             8.0.x
