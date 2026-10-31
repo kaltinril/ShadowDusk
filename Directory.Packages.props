@@ -46,8 +46,8 @@
          evidence bar is "Skia's own compiler accepts the emission and it renders right", and
          SKRuntimeEffect is how a test asks Skia. The Linux native package keeps the CI ubuntu
          lanes loading libSkiaSharp. -->
-    <PackageVersion Include="SkiaSharp"                                    Version="4.151.1" />
-    <PackageVersion Include="SkiaSharp.NativeAssets.Linux.NoDependencies"  Version="4.151.1" />
+    <PackageVersion Include="SkiaSharp"                                    Version="4.154.0" />
+    <PackageVersion Include="SkiaSharp.NativeAssets.Linux.NoDependencies"  Version="4.154.0" />
   </ItemGroup>
 
   <ItemGroup Label="MonoGame runtime validation (Phase 17 / Phase 18)">
