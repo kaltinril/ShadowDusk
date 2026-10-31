@@ -80,3 +80,7 @@ Example: `Compile_SyntaxError_ReturnsShaderErrorWithLineNumber`
 - [ ] File permissions on extracted binaries (chmod +x on Unix)
 - [ ] Process exits cleanly — no zombie processes
 - [ ] Temp directory cleanup on both success and failure paths
+
+## Dependencies and Dependabot
+
+Package versions live only in `Directory.Packages.props` (Central Package Management). `.github/dependabot.yml` opens weekly bump PRs for that file and the GitHub Actions; everything a shipped `src/` project references is on its `ignore:` list, because those are pinned on purpose. Adding a `src/` dependency or a deliberate pin means adding an `ignore:` entry in the same PR. Before you review, fix or merge a Dependabot PR, read `project_rules.md` (the Dependabot rules under "A green PR with `skipping` jobs is NOT a green PR"): labels, skipped jobs, stale lock files, and Actions bumps that the PR cannot exercise.

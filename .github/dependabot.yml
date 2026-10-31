@@ -8,6 +8,8 @@
 #
 # The labels switch on the label-gated CI lanes the change touches (project_rules: main is always
 # releasable, CI green on every lane a change touches). Without them those lanes would be skipped.
+# How to work a Dependabot PR, and when this file must change (new src/ dependency, new deliberate
+# pin): project_rules.md, "Dependabot PRs meet the same bar as any dependency change".
 version: 2
 updates:
   - package-ecosystem: nuget
@@ -18,10 +20,12 @@ updates:
       time: "06:00"
     target-branch: main
     open-pull-requests-limit: 10
+    # The three labels project_rules requires on any dependency change.
     labels:
       - dependencies
       - run-integration
       - run-validation-render
+      - run-browser
     commit-message:
       prefix: chore
       include: scope

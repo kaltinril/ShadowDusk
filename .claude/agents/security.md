@@ -67,3 +67,7 @@ Identify and remediate security vulnerabilities in a tool that:
 ## Acceptable Risk
 - Shader source that causes compiler crashes/hangs: mitigated by `CancellationToken` timeout, not our bug
 - Output files larger than expected: enforce max output size, log and reject
+
+## Dependencies and Dependabot
+
+Package versions live only in `Directory.Packages.props` (Central Package Management). `.github/dependabot.yml` opens weekly bump PRs for that file and the GitHub Actions; everything a shipped `src/` project references is on its `ignore:` list, because those are pinned on purpose. Adding a `src/` dependency or a deliberate pin means adding an `ignore:` entry in the same PR. Before you review, fix or merge a Dependabot PR, read `project_rules.md` (the Dependabot rules under "A green PR with `skipping` jobs is NOT a green PR"): labels, skipped jobs, stale lock files, and Actions bumps that the PR cannot exercise.
