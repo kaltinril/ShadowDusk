@@ -29,6 +29,8 @@ updates:
     commit-message:
       prefix: chore
       include: scope
+    # Groups take minor and patch bumps only; a major bump arrives as its own PR, so one breaking
+    # major cannot turn the whole group red.
     groups:
       test:
         patterns:
@@ -36,13 +38,16 @@ updates:
           - "Microsoft.NET.Test.Sdk"
           - "Shouldly"
           - "coverlet*"
+        update-types: ["minor", "patch"]
       skiasharp:
         patterns:
           - "SkiaSharp*"
+        update-types: ["minor", "patch"]
       silk-net-rendering:
         patterns:
           - "Silk.NET.OpenGL"
           - "Silk.NET.Windowing*"
+        update-types: ["minor", "patch"]
     # Deliberate pins. Each is explained at its entry in Directory.Packages.props; a bump is
     # planned work (re-pinned native hashes or a re-run render proof), never a routine PR.
     ignore:
