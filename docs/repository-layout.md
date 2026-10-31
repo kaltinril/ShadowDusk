@@ -6,6 +6,7 @@
 
 ```
 ShadowDusk/
+├── .github/dependabot.yml         # weekly bump PRs: Directory.Packages.props + Actions; deliberate pins ignored
 ├── .github/workflows/             # CI: ci.yml (build + unit + integration on ubuntu/macos/windows),
 │                                  #   validation-render.yml (the render gates CI can run: GL llvmpipe,
 │                                  #   DX on WARP, Vulkan on lavapipe), wasm.yml (WASM & browser gates),
