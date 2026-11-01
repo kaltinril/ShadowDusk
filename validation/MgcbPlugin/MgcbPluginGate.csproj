@@ -30,7 +30,9 @@
     original numbering) stays; both must pass.
   -->
   <ItemGroup>
-    <PackageDownload Include="dotnet-mgcb" Version="[3.8.5]" />
+    <!-- Phase 69 adds the third arm, dotnet-mgcb 3.8.6. One item, both versions: NuGet refuses
+         duplicate PackageDownload items for the same id (NU1505). -->
+    <PackageDownload Include="dotnet-mgcb" Version="[3.8.5];[3.8.6]" />
   </ItemGroup>
 
   <!--
