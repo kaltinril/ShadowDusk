@@ -24,10 +24,17 @@ to nuget.org, and attaches self-contained CLI binaries for each RID to a GitHub 
 
 ## Prerequisites (one-time)
 
-1. **`NUGET_API_KEY` repository secret.** The `release.yml` workflow pushes packages with
-   this key. Set it under **Settings → Secrets and variables → Actions → New repository
-   secret**. It must be an [nuget.org API key](https://www.nuget.org/account/apikeys) scoped
-   to **Push** for the `ShadowDusk.*` package IDs (a glob-scoped key is simplest).
+1. **A nuget.org Trusted Publishing policy (no API key).** `release.yml` pushes with a
+   one-hour key that nuget.org issues in exchange for the run's GitHub OIDC token
+   (`NuGet/login`), so there is no long-lived key to store, rotate, or let expire (the
+   `NUGET_API_KEY` secret this replaced expired between 0.23.0 and 0.24.0 and failed that
+   publish with a 403). On nuget.org: your profile → **Trusted Publishing** → create a policy
+   owned by `Kaltinril` with **Repository Owner** `kaltinril`, **Repository** `ShadowDusk`,
+   **Workflow File** `release.yml` (file name only), **Environment** empty. The `user:` in
+   `release.yml`'s `NuGet/login` step must be that owner's profile name. A policy on a
+   private repo starts "temporarily active" for 7 days and becomes permanent at its first
+   successful publish; this repo is public. A 403 at **NuGet Push** now means the policy is
+   missing, inactive, or no longer matches the workflow file name.
 
 2. **nuget.org owner rights on all ten package IDs.** You must be an owner (or have push
    rights) of every ID — `ShadowDusk.Core`, `ShadowDusk.HLSL`, `ShadowDusk.GLSL`,

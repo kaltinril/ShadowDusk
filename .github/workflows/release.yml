@@ -39,8 +39,10 @@ on:
         type: string
 
 # Least privilege for GITHUB_TOKEN, applied to every job that does not override it.
-# Read is enough for all of them: the packages go to NuGet.org authenticated by
-# NUGET_API_KEY (not GITHUB_TOKEN), and artifact up/download is not token-gated.
+# Read is enough for all of them: the packages go to NuGet.org authenticated by a
+# one-hour key from nuget.org Trusted Publishing (not GITHUB_TOKEN), and artifact
+# up/download is not token-gated. `nuget-push` adds `id-token: write` so it can ask GitHub
+# for the OIDC token that key is exchanged for.
 # The ONE job that writes to GitHub is `github-release` (softprops/action-gh-release),
 # and it declares its own `contents: write` block, which replaces this one for that job.
 permissions:
@@ -716,6 +718,12 @@ jobs:
     name: NuGet Push
     runs-on: ubuntu-latest
     needs: [ validate, pack-desktop, pack-wasm ]
+    # Trusted Publishing: GitHub's OIDC token is exchanged for a one-hour nuget.org key, so
+    # there is no long-lived key to expire or leak. The policy on nuget.org trusts this repo's
+    # `release.yml` (RELEASING.md, Prerequisites).
+    permissions:
+      contents: read
+      id-token: write
     steps:
       - name: Setup .NET 8 + .NET 10
         uses: actions/setup-dotnet@v6
@@ -738,10 +746,17 @@ jobs:
           name: nupkg-wasm
           path: nupkg/
 
+      # Requested right before the push: the key it returns lives one hour.
+      - name: NuGet login (OIDC to a temporary API key)
+        uses: NuGet/login@v1
+        id: nuget-login
+        with:
+          user: Kaltinril  # the nuget.org profile name that owns the policy (public, not a secret)
+
       - name: Push to NuGet.org
         run: >
           dotnet nuget push "nupkg/*.nupkg"
-          --api-key ${{ secrets.NUGET_API_KEY }}
+          --api-key ${{ steps.nuget-login.outputs.NUGET_API_KEY }}
           --source https://api.nuget.org/v3/index.json
           --skip-duplicate
 
