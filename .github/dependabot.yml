@@ -64,6 +64,9 @@ updates:
       - dependency-name: "Raylib-cs"
       # Evidence pin for the Phase 55 gallery: the package's shader must equal the vendored fixture.
       - dependency-name: "Apos.Shapes"
+      # The reference-compiler (mgfxc) pin in .config/dotnet-tools.json: mgfxc 3.8.5+ writes MGFX v11
+      # and tools/compile-fixtures.ps1 refuses it over the v10 goldens (validation-matrix section 6.1).
+      - dependency-name: "dotnet-mgcb"
 
   - package-ecosystem: github-actions
     directory: "/"
