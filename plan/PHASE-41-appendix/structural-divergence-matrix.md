@@ -91,9 +91,9 @@ Legend: `OK` = match, `XX` = diverge, `--` = compile/parse failed (see notes). L
 | Pixelated | OpenGL | OK | OK | OK | OK | OK |  |
 | PolygonLight | DirectX_11 | OK | OK | OK | OK | OK |  |
 | PolygonLight | OpenGL | OK | XX | OK | OK | OK | cbuffer `ps_uniforms_vec4` size 112 vs 48; cbuffer `vs_uniforms_vec4` size 112 vs 64; param `viewProjectionMatrix` cbuffer offset 48 vs 0 |
-| SamplerLegacyInclude | DirectX_11 | XX | OK | XX | OK | OK | param `MaskBTexture` missing (golden class=3 type=7); extra value-class param `MaskB` (class=3 type=7); sampler slot 2 missing (golden ``); sampler slot 3 missing (golden ``); extra sampler slot 0 (``); extra sampler slot 1 (``) |
+| SamplerLegacyInclude | DirectX_11 | XX | OK | OK | OK | OK | param `MaskBTexture` missing (golden class=3 type=7); extra value-class param `MaskB` (class=3 type=7) |
 | SamplerLegacyInclude | OpenGL | OK | OK | OK | OK | OK |  |
-| SamplerLegacyMacroDecl | DirectX_11 | XX | OK | XX | OK | OK | param `MaskBTexture` missing (golden class=3 type=7); extra value-class param `MaskB` (class=3 type=7); sampler slot 2 missing (golden ``); sampler slot 3 missing (golden ``); extra sampler slot 0 (``); extra sampler slot 1 (``) |
+| SamplerLegacyMacroDecl | DirectX_11 | XX | OK | OK | OK | OK | param `MaskBTexture` missing (golden class=3 type=7); extra value-class param `MaskB` (class=3 type=7) |
 | SamplerLegacyMacroDecl | OpenGL | OK | OK | OK | OK | OK |  |
 | SamplerLegacyRegisterIfBranch | DirectX_11 | OK | OK | OK | OK | OK |  |
 | SamplerLegacyRegisterIfBranch | OpenGL | OK | OK | OK | OK | OK |  |
@@ -214,12 +214,6 @@ Affected cells: SamplerLegacyInclude [DirectX_11], SamplerLegacyMacroDecl [Direc
 On the OpenGL target, mgfxc sizes each per-stage `{vs,ps}_uniforms_vec4` record to ONLY the members that stage actually uses (dead-uniform elimination); ShadowDusk emits each stage's FULL declared cbuffer layout. Both `.mgfx` files are internally self-consistent — the USED parameter's offset and the GLSL `uniform vec4 {vs,ps}_uniforms_vec4[size/16]` array length agree within each file, so `SetValue` binds correctly either way. This is the pinned, render-equivalent divergence already documented and tolerated by `Phase43CbufferModelTests` (F4); the accompanying `offset N vs 0` lines are the SAME shape (the used member sits at a different absolute offset but the same relative slot). Not a defect.
 
 Affected cells: PolygonLight [OpenGL], SharedCbuffer [OpenGL], VertexAndPixel [OpenGL]
-
-### Sampler slot / baked-state delta (2 cell(s))
-
-A sampler slot is missing/extra or its baked sampler_state differs.
-
-Affected cells: SamplerLegacyInclude [DirectX_11], SamplerLegacyMacroDecl [DirectX_11]
 
 ### Constant-buffer layout (size / offset) — TRIAGE (1 cell(s))
 

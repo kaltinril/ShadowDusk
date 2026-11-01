@@ -61,6 +61,30 @@ public sealed class LegacyTextureDirectUseTests
         slots.ModernMethodTextures.ShouldBeEmpty();
     }
 
+    [Theory]
+    [InlineData("// was tex2D(S, uv)\nfloat4 P() : SV_Target { return 0; }", false)]
+    [InlineData("/* sampler2D old; */ float4 P() : SV_Target { return 0; }", false)]
+    [InlineData("sampler2D S; float4 P(float2 uv : TEXCOORD0) : COLOR0 { return tex2D(S, uv); }", true)]
+    [InlineData("Texture2D T; SamplerState S; float4 P(float2 uv : TEXCOORD0) : SV_Target { return T.Sample(S, uv); }", false)]
+    public void MentionsLegacySamplerSyntaxInCode_IgnoresComments(string source, bool expected)
+    {
+        // A legacy-sampler word in a comment must not send a modern DirectX 11 effect down the
+        // legacy slot-check path (found by the issue-pass review, 2026-10-31).
+        FxPreParser.MentionsLegacySamplerSyntaxInCode(source).ShouldBe(expected);
+    }
+
+    [Theory]
+    [InlineData("texture Texture; sampler SB = sampler_state { Texture = <Texture>; };")]
+    [InlineData("texture Texture; sampler SB = sampler_state { MinFilter = Linear; Texture = <Texture>; };")]
+    [InlineData("texture Texture; sampler SB { texture = (Texture); };")]
+    public void AStateKeyNamedLikeTheTexture_IsNotAValueUse(string declarations)
+    {
+        // The classic XNA spelling names the texture `Texture`, so the state block's KEY is the same
+        // identifier as the texture; it is not a value use (found by the issue-pass review, 2026-10-31).
+        GlSamplerSlots slots = Slots("sampler2D A; " + declarations + "\nstatic float4 G = 0;" + Ps);
+        slots.ValueUseTextures.ShouldBeEmpty();
+    }
+
     [Fact]
     public void AMethodCall_IsAMethodUse_NotAValueUse()
     {

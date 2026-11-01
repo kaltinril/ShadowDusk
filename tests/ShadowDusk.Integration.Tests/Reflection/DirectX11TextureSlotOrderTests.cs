@@ -287,6 +287,44 @@ public sealed class DirectX11TextureSlotOrderTests
         Tables(Golden(shape)).ShouldHaveSingleItem().ShouldBe("ps: A@t1s0 B@t0s1");
     }
 
+    [Theory]
+    [InlineData(DxbcBackend.Vkd3d)]
+    [InlineData(DxbcBackend.D3DCompiler)]
+    public async Task ATextureNamedTexture_IsNotADirectUse_AndKeepsTheSlotsOfTheRenamedShader(DxbcBackend backend)
+    {
+        // The classic XNA spelling: `texture Texture; ... { Texture = <Texture>; }`. The state key is the
+        // same identifier as the texture, and the issue #447 value-use scan once read it as a direct use:
+        // a false SD0230 and, with a second legacy texture, no slot pinning (found by the issue-pass
+        // review, 2026-10-31). The shader must compile exactly as its renamed twin does.
+        if (backend == DxbcBackend.D3DCompiler && !OperatingSystem.IsWindows())
+            return; // the d3dcompiler_47 oracle is Windows-only
+        const string Source = """
+            texture Texture;
+            texture Other;
+            sampler TextureSampler = sampler_state { Texture = <Texture>; MinFilter = Linear; };
+            sampler OtherSampler = sampler_state { Texture = <Other>; };
+            float4 PS(float2 uv : TEXCOORD0) : COLOR0 { return tex2D(OtherSampler, uv) * 0.5 + tex2D(TextureSampler, uv); }
+            technique T { pass P { PixelShader = compile ps_4_0_level_9_1 PS(); } }
+            """;
+        string renamed = Source.Replace("texture Texture;", "texture Tex0;", StringComparison.Ordinal)
+                               .Replace("<Texture>", "<Tex0>", StringComparison.Ordinal);
+
+        async Task<(MgfxBlobReader Blob, IReadOnlyList<ShaderError> Warnings)> Build(string src)
+        {
+            using var cts = new CancellationTokenSource(TestBudget.Compile);
+            var result = await new EffectCompiler().CompileAsync(src,
+                new CompilerOptions { Target = PlatformTarget.DirectX, DxbcBackend = backend, SourceFileName = "t.fx" }, cts.Token);
+            result.IsSuccess.ShouldBeTrue(result.IsFailure ? string.Join(" | ", result.Error.Select(e => e.FxcFormattedMessage)) : "");
+            return (MgfxBlobReader.Parse(result.Value.Data), result.Value.Warnings);
+        }
+
+        var (named, namedWarnings) = await Build(Source);
+        var (twin, _) = await Build(renamed);
+        namedWarnings.ShouldNotContain(w => w.Code == "SD0230");
+        // Same slots; the table names the texture, so map the twin's name back.
+        Tables(named).ShouldBe(Tables(twin).Select(t => t.Replace("Tex0@", "Texture@", StringComparison.Ordinal)).ToList());
+    }
+
     [Fact]
     public async Task BloomCombine_PutsTheSpriteSamplerOnT0()
     {

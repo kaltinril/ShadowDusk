@@ -88,14 +88,18 @@ internal static class DxcVertexPositionOutputRewriter
         var edits = new List<(int Start, int Length)>();
         var outputTypes = new HashSet<string>(StringComparer.Ordinal);
         var inputTypes = new HashSet<string>(StringComparer.Ordinal);
+        var svPositionWriterTypes = new HashSet<string>(StringComparer.Ordinal);
 
         foreach (string entry in vertexEntries)
             foreach (int nameStart in FindTopLevelDeclarations(hlsl, entry))
-                ScanEntrySignature(hlsl, nameStart, entry, edits, outputTypes, inputTypes);
+                ScanEntrySignature(hlsl, nameStart, entry, edits, outputTypes, inputTypes, svPositionWriterTypes);
 
         // A struct a vertex entry also takes as an INPUT carries the vertex attribute names
-        // MonoGame's input layout binds; never rewrite its shared definition.
+        // MonoGame's input layout binds; never rewrite its shared definition. Nor a struct an entry
+        // outputs beside an SV_Position it already writes through its return or an `out` parameter:
+        // a second SV_Position is a DXC error (found by the issue-pass review, 2026-10-31).
         outputTypes.ExceptWith(inputTypes);
+        outputTypes.ExceptWith(svPositionWriterTypes);
         foreach (string structName in outputTypes)
             foreach ((int open, int close) in FindTopLevelStructBodies(hlsl, structName))
             {
@@ -124,8 +128,10 @@ internal static class DxcVertexPositionOutputRewriter
     /// semantic edits and the struct types used for output and for input.</summary>
     private static void ScanEntrySignature(
         string s, int nameStart, string entry,
-        List<(int, int)> edits, HashSet<string> outputTypes, HashSet<string> inputTypes)
+        List<(int, int)> edits, HashSet<string> outputTypes, HashSet<string> inputTypes,
+        HashSet<string> svPositionWriterTypes)
     {
+        var entryOutputTypes = new HashSet<string>(StringComparer.Ordinal);
         string? returnType = PreviousIdentifier(s, nameStart);
         int open = SkipWsAndComments(s, nameStart + entry.Length);
         int close = MatchParen(s, open);
@@ -166,7 +172,7 @@ internal static class DxcVertexPositionOutputRewriter
             if (type is not null)
             {
                 if (isIn) inputTypes.Add(type);
-                if (isOut) outputTypes.Add(type);
+                if (isOut) entryOutputTypes.Add(type);
             }
 
             if (colon >= 0 && isOut)
@@ -184,7 +190,7 @@ internal static class DxcVertexPositionOutputRewriter
         }
 
         if (returnType is not null)
-            outputTypes.Add(returnType);
+            entryOutputTypes.Add(returnType);
 
         int after = SkipWsAndComments(s, close + 1);
         if (after < s.Length && s[after] == ':')
@@ -200,8 +206,13 @@ internal static class DxcVertexPositionOutputRewriter
             }
         }
 
-        if (!writesSvPosition)
-            edits.AddRange(siteEdits);
+        if (writesSvPosition)
+        {
+            svPositionWriterTypes.UnionWith(entryOutputTypes);
+            return;
+        }
+        edits.AddRange(siteEdits);
+        outputTypes.UnionWith(entryOutputTypes);
     }
 
     /// <summary>The identifier after the <c>:</c> at <paramref name="colon"/>, as (start, length);

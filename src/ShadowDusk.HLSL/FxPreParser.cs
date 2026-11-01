@@ -2219,11 +2219,24 @@ public sealed partial class FxPreParser
                 (prev is { Kind: TokenKind.Identifier } && prev.Text.StartsWith("texture", StringComparison.OrdinalIgnoreCase))
                 || prev is { Kind: TokenKind.RAngle } && i + 1 < code.Count && code[i + 1].Kind is TokenKind.Semicolon or TokenKind.Identifier or TokenKind.LAngle or TokenKind.Comma
                 || (prev is { Kind: TokenKind.Comma } && braces == 0 && parens == 0);
-            if (declaration || IsStateTextureBinding(code, i))
+            if (declaration || IsStateTextureBinding(code, i) || IsStateKey(code, i, braces))
                 continue;
             found.Add(t.Text);
         }
         return found;
+
+        // The KEY of a state assignment, `{ Texture = <T>; }` or `Texture[0] = ...` (the lexer drops
+        // the brackets): the classic XNA texture is itself named `Texture`, and its state key must
+        // not read as a value use of it.
+        static bool IsStateKey(List<Token> code, int i, int braces)
+        {
+            if (braces == 0 || i == 0 || code[i - 1].Kind is not (TokenKind.LBrace or TokenKind.Semicolon))
+                return false;
+            int k = i + 1;
+            if (k < code.Count && code[k].Kind == TokenKind.Number)
+                k++;
+            return k < code.Count && code[k].Kind == TokenKind.Equals;
+        }
 
         // `Texture = <T>`, `Texture = (T)`, `Texture = T`, `Texture[0] = <T>` (the lexer drops '[' and ']').
         static bool IsStateTextureBinding(List<Token> code, int i)
@@ -2379,6 +2392,25 @@ public sealed partial class FxPreParser
     {
         ArgumentNullException.ThrowIfNull(source);
         return LegacySamplerSyntaxWord.IsMatch(source);
+    }
+
+    /// <summary>
+    /// <see cref="MentionsLegacySamplerSyntax"/> on CODE only: a legacy-sampler word inside a
+    /// comment (<c>// was tex2D(...)</c>) does not count. For callers that already have the
+    /// preprocessed text and must not change behavior because of a comment.
+    /// </summary>
+    /// <param name="source">Any effect text.</param>
+    public static bool MentionsLegacySamplerSyntaxInCode(string source)
+    {
+        ArgumentNullException.ThrowIfNull(source);
+        if (!LegacySamplerSyntaxWord.IsMatch(source))
+            return false; // cheap reject: most effects never mention it
+        foreach (Token t in new FxLexer(source, "<scan>").Tokenize())
+        {
+            if (t.Kind == TokenKind.Identifier && LegacySamplerSyntaxWord.IsMatch(t.Text))
+                return true;
+        }
+        return false;
     }
 
     private static readonly System.Text.RegularExpressions.Regex LegacySamplerSyntaxWord = new(

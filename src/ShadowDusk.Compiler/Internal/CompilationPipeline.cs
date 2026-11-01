@@ -794,7 +794,7 @@ internal sealed class CompilationPipeline
         // slots were never checked, silently. The compiler's own input, includes inlined, still
         // spells legacy sampler syntax then (the rewrite removes what it reached), so its texture
         // slots go through the same check, which keys such a sampler by its own name.
-        bool directXNativeLegacy = directX && FxPreParser.MentionsLegacySamplerSyntax(preprocessed.Text);
+        bool directXNativeLegacy = directX && FxPreParser.MentionsLegacySamplerSyntaxInCode(preprocessed.Text);
         if (options.Target == PlatformTarget.OpenGL)
         {
             // A recovery pass (issue #308) has the flattened raw source in hand already, and its

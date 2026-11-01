@@ -42,6 +42,19 @@ public sealed class DxcVertexPositionOutputRewriterTests
         DxcVertexPositionOutputRewriter.Rewrite(hlsl, Techniques((vs, ps)));
 
     [Fact]
+    public void AnOutputStructBesideAnSvPositionTheEntryAlreadyWrites_IsLeftAlone()
+    {
+        // The entry writes SV_Position through its return; its `out` struct's POSITION0 member is
+        // an ordinary output, and mapping it too would give DXC two SV_Position outputs (found by
+        // the issue-pass review, 2026-10-31).
+        const string hlsl = """
+            struct VOut { float4 wpos : POSITION0; float2 uv : TEXCOORD0; };
+            float4 VS(float4 p : POSITION0, out VOut o) : SV_Position { o.wpos = p; o.uv = 0; return p; }
+            """;
+        Rewrite(hlsl, ps: null).ShouldBeSameAs(hlsl);
+    }
+
+    [Fact]
     public void ReturnedStruct_PositionMember_BecomesSvPosition_InputStructUntouched()
     {
         const string hlsl = """

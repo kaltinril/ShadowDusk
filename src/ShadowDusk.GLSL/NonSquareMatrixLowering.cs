@@ -26,7 +26,9 @@ namespace ShadowDusk.GLSL;
 /// mix with the padding: <c>M * v</c> becomes <c>(M * vecN(v, 0.0)).xyz</c>, <c>v * M</c> becomes
 /// <c>(vecN(v, 0.0) * M).xy</c>, <c>M[i]</c> becomes <c>M[i].xyz</c>, and a product of two padded
 /// matrices of one size stays padded. Padding values are exact zeros added to the logical sums,
-/// so the results are bit-identical to the non-square arithmetic.
+/// so for finite values the results are bit-identical to the non-square arithmetic. (A padded zero
+/// times an infinity, or 0/0 after a matrix divided by zero, is NaN where the non-square arithmetic
+/// had no such element; that only arises from values that are already infinite or NaN.)
 /// </para>
 /// <para>
 /// <b>Typed, all-or-nothing.</b> Each statement that touches a non-square matrix is parsed and
