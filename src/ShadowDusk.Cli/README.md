@@ -22,13 +22,15 @@ Flags mirror `mgfxc` (`/Profile`, `/Debug`, `/I`, `/Defines`, `/DxbcBackend`, `-
 
 > `/Profile:DirectX_12` should be compiled **on Windows**: DXIL signing runs through the Windows-only `dxil.dll`, so a non-Windows DX12 compile emits unsigned DXIL that retail D3D12 rejects (warned as `SD0214`). Other targets are host-independent.
 
-### ShaderToy / GLSL input
+### Direct `.xnb` output
 
-**Direct `.xnb` output.** Name an `.xnb` output path and the CLI writes the content-pipeline container itself, so `Content.Load<Effect>("MyShader")` keeps working with MGCB out of the picture and no consumer code change; the platform byte is derived from the profile and the payload inside is byte-for-byte the `.mgfx` (or FNA `.fxb`) the same invocation would write, except that on DirectX 12 and Vulkan (MGFX v11) the per-shader source-file string is `<unknown>`, as in a stock MGCB build, instead of the path you passed. Render-proven with a real `ContentManager` on MonoGame (WindowsDX + DesktopGL), KNI (4.2.9001 + 4.3.9001) and FNA. Name the profile: with no `/Profile:` the default is `DirectX_11`, which a DesktopGL game rejects (the CLI warns with `SD0029`).
+Name an `.xnb` output path and the CLI writes the content-pipeline container itself, so `Content.Load<Effect>("MyShader")` keeps working with MGCB out of the picture and no consumer code change; the platform byte is derived from the profile and the payload inside is byte-for-byte the `.mgfx` (or FNA `.fxb`) the same invocation would write, except that on DirectX 12 and Vulkan (MGFX v11) the per-shader source-file string is `<unknown>`, as in a stock MGCB build, instead of the path you passed. Render-proven with a real `ContentManager` on MonoGame (WindowsDX + DesktopGL), KNI (4.2.9001 + 4.3.9001) and FNA. Name the profile: with no `/Profile:` the default is `DirectX_11`, which a DesktopGL game rejects (the CLI warns with `SD0029`).
 
 ```sh
 ShadowDuskCLI <input.fx> Content/<output>.xnb /Profile:OpenGL
 ```
+
+### ShaderToy / GLSL input
 
 In addition to `.fx`, the CLI accepts a single-pass **ShaderToy / GLSL image shader** (`.glsl`, `.frag`, `.fs`) and converts it to a self-contained `.fx` before compiling — so a ShaderToy `mainImage` (or a plain `void main()` fragment shader) compiles straight to a loadable `.mgfx`/`.fxb` for any target:
 
