@@ -8,6 +8,11 @@ namespace ShadowDusk.Core.Reflection;
 /// the current implementation returns <see cref="BindingSlotMap.Empty"/> so the reflection
 /// pipeline can still run for DXIL-only use cases.
 /// </summary>
+/// <remarks>
+/// Obsolete: nothing in ShadowDusk calls it, and it never checked anything. It will be removed in a
+/// future release (issue #429).
+/// </remarks>
+[Obsolete("SpvReflectionVerifier is a no-op that always returns BindingSlotMap.Empty; nothing calls it. It will be removed in a future release (issue #429).")]
 public sealed class SpvReflectionVerifier
 {
     /// <summary>

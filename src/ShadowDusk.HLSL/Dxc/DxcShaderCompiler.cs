@@ -179,6 +179,12 @@ public sealed class DxcShaderCompiler : IDxcShaderCompiler, IDisposable
         if (NativeError(request.SourceFileName, usesValidator) is { } loadError)
             return Result<PlatformBlob, ShaderError>.Fail(loadError);
 
+        // A '#pragma pack_matrix' argument DXC rejects is an error DXC can crash the process
+        // while reporting (issue #452), so it is refused (SD0241) before any DXC call; the browser
+        // DXC backend applies the same check.
+        if (DxcPackMatrixGuard.Check(request.HlslSource, request.SourceFileName, request.Macros) is { } packMatrixError)
+            return Result<PlatformBlob, ShaderError>.Fail(packMatrixError);
+
         // DXC's SPIR-V back end crashes the process on an entry function that is declared more
         // than once; its redundant prototypes are kept out of the input (SD0236 when that
         // cannot be done safely), decided and proven by DXC's own preprocessor (-P, which never

@@ -28,6 +28,16 @@
 // If the bridge had mapped `noise` to the wrong register (or dropped it), the GL
 // compile would fail (SD0012) or the pixels would not track `noise` — both caught.
 //
+// Issue #438 (cross-stage): a VS-only cbuffer declares a REAL `_noise` while the PS
+// reads `noise` (renamed `_noise` in the PS GLSL) and `c`. The old name join bound the
+// PS's renamed uniform to the VS's `_noise` parameter, so the PS record was
+// [_noise@0 c@1 noise@2] and SetValue("noise") reached a dead phantom register. The
+// layout is now paired with DXC's SPIR-V member names by position. The check sets
+// _noise = (1,1,1,1) (the VS scales the clip-space quad by it), noise = 0.25 grey and
+// c = 0.5 red, and asserts the pixel is (191,64,64): the pre-fix binding put _noise's
+// (1,1,1,1) in the PS's register 0 and rendered white. Rendered with mgfxc too when
+// it is available.
+//
 // Self-asserting (exit 0 iff every check passes). Needs a real GL context; set
 // SHADOWDUSK_REQUIRE_GL=1 to turn a missing-context skip into a hard failure.
 
@@ -102,7 +112,26 @@ Console.WriteLine($"[reservedword] ShadowDusk GL compile OK ({shadowDuskMgfx.Len
 byte[]? mgfxcMgfx = TryCompileWithMgfxc(fxPath, outDir, out string mgfxcNote);
 Console.WriteLine($"[reservedword] mgfxc golden: {mgfxcNote}\n");
 
-using var game = new ReservedWordGame(catPath, outDir, shadowDuskMgfx, mgfxcMgfx, noiseValues, tolerance);
+// ---- Issue #438: the cross-stage shape (inline, kept out of the fixture corpus).
+string crossPath = Path.Combine(outDir, "CrossStageReservedWord.fx");
+await File.WriteAllTextAsync(crossPath, ReservedWordGame.CrossStageSource);
+var crossResult = await new EffectCompiler().CompileAsync(ReservedWordGame.CrossStageSource, new CompilerOptions
+{
+    Target = PlatformTarget.OpenGL,
+    SourceFileName = crossPath,
+});
+if (crossResult.IsFailure)
+{
+    Console.Error.WriteLine("[reservedword] FATAL: ShadowDusk GL compile of the issue #438 shape FAILED:");
+    foreach (var e in crossResult.Error)
+        Console.Error.WriteLine($"    {e.Code}: {e.Message}");
+    return 1;
+}
+byte[]? crossMgfxc = TryCompileWithMgfxc(crossPath, outDir, out string crossMgfxcNote);
+Console.WriteLine($"[reservedword] issue #438 shape: ShadowDusk {crossResult.Value.Data.Length} bytes; mgfxc: {crossMgfxcNote}\n");
+
+using var game = new ReservedWordGame(catPath, outDir, shadowDuskMgfx, mgfxcMgfx, noiseValues, tolerance,
+    crossResult.Value.Data, crossMgfxc);
 game.Run();
 
 int passed = 0;
@@ -128,7 +157,7 @@ static byte[]? TryCompileWithMgfxc(string fxPath, string outDir, out string note
         return null;
     }
 
-    string outFile = Path.Combine(outDir, "mgfxc-gl.mgfx");
+    string outFile = Path.Combine(outDir, Path.GetFileNameWithoutExtension(fxPath) + ".mgfxc-gl.mgfx");
     try
     {
         // mgfxc ships as a framework-dependent .dll; run it through the dotnet host.
@@ -235,6 +264,21 @@ internal sealed class ReservedWordGame : Game
     private readonly byte[]? _mgfxcMgfx;
     private readonly float[] _noiseValues;
     private readonly int _tolerance;
+    private readonly byte[] _crossStageMgfx;
+    private readonly byte[]? _crossStageMgfxc;
+
+    /// <summary>
+    /// Issue #438's shape: the VS reads a real <c>_noise</c> from a VS-only cbuffer; the PS reads
+    /// <c>noise</c> (SPIRV-Cross spells it <c>_noise</c> in the PS GLSL) and <c>c</c>.
+    /// </summary>
+    internal const string CrossStageSource = """
+        cbuffer VSOnly { float4 _noise; };
+        float4 noise;
+        float4 c;
+        float4 VS(float4 p : POSITION0) : POSITION0 { return float4(p.xy * _noise.xy, 0, 1); }
+        float4 PS() : COLOR0 { return float4(noise.rgb + c.rgb, 1); }
+        technique T { pass P { VertexShader = compile vs_3_0 VS(); PixelShader = compile ps_3_0 PS(); } }
+        """;
 
     private SpriteBatch _sb = null!;
     private Texture2D _cat = null!;
@@ -245,8 +289,11 @@ internal sealed class ReservedWordGame : Game
     public ReservedWordGame(
         string catPath, string outDir,
         byte[] shadowDuskMgfx, byte[]? mgfxcMgfx,
-        float[] noiseValues, int tolerance)
+        float[] noiseValues, int tolerance,
+        byte[] crossStageMgfx, byte[]? crossStageMgfxc)
     {
+        _crossStageMgfx = crossStageMgfx;
+        _crossStageMgfxc = crossStageMgfxc;
         _catPath = catPath;
         _outDir = outDir;
         _shadowDuskMgfx = shadowDuskMgfx;
@@ -396,6 +443,79 @@ internal sealed class ReservedWordGame : Game
         }
 
         sdEffect.Dispose();
+
+        RunCrossStageChecks();
+    }
+
+    /// <summary>Issue #438: the renamed PS uniform must bind to its own parameter, not the VS's <c>_noise</c>.</summary>
+    private void RunCrossStageChecks()
+    {
+        var expected = new Color(191, 64, 64, 255); // noise 0.25 grey + c 0.5 red
+        foreach ((string label, byte[]? bytes) in new[] { ("shadowdusk", (byte[]?)_crossStageMgfx), ("mgfxc", _crossStageMgfxc) })
+        {
+            if (bytes is null)
+                continue; // mgfxc arm: optional, as for the B10 checks above
+            Color? px = RenderCrossStage(bytes, label, out string? err);
+            if (px is null)
+            {
+                Outcomes.Add(new ReservedWordOutcome($"{label}.issue438", false, $"render failed: {err}"));
+                continue;
+            }
+            Color a = px.Value;
+            int d = Math.Max(Math.Max(Math.Abs(a.R - expected.R), Math.Abs(a.G - expected.G)),
+                    Math.Max(Math.Abs(a.B - expected.B), Math.Abs(a.A - expected.A)));
+            Outcomes.Add(new ReservedWordOutcome($"{label}.issue438", d <= _tolerance,
+                $"pixel={a} expected {expected} maxDelta={d} (the pre-fix binding put the VS's _noise (1,1,1,1) " +
+                "in the PS's register 0 and rendered white)"));
+        }
+    }
+
+    private Color? RenderCrossStage(byte[] bytes, string label, out string? error)
+    {
+        error = null;
+        const int size = 16;
+        try
+        {
+            using var effect = new Effect(GraphicsDevice, bytes);
+            foreach (string name in new[] { "_noise", "noise", "c" })
+            {
+                if (effect.Parameters[name] is null)
+                {
+                    error = $"effect.Parameters[\"{name}\"] is null";
+                    return null;
+                }
+            }
+            effect.Parameters["_noise"].SetValue(Vector4.One);
+            effect.Parameters["noise"].SetValue(new Vector4(0.25f, 0.25f, 0.25f, 0f));
+            effect.Parameters["c"].SetValue(new Vector4(0.5f, 0f, 0f, 0f));
+
+            using var rt = new RenderTarget2D(GraphicsDevice, size, size, false, SurfaceFormat.Color, DepthFormat.None);
+            GraphicsDevice.SetRenderTarget(rt);
+            GraphicsDevice.Clear(Color.Black);
+            GraphicsDevice.RasterizerState = RasterizerState.CullNone;
+            GraphicsDevice.BlendState = BlendState.Opaque;
+            GraphicsDevice.DepthStencilState = DepthStencilState.None;
+            effect.CurrentTechnique.Passes[0].Apply();
+            var quad = new[]
+            {
+                new VertexPosition(new Vector3(-1, -1, 0)), new VertexPosition(new Vector3(1, -1, 0)),
+                new VertexPosition(new Vector3(-1, 1, 0)), new VertexPosition(new Vector3(1, 1, 0)),
+            };
+            GraphicsDevice.DrawUserPrimitives(PrimitiveType.TriangleStrip, quad, 0, 2);
+            GraphicsDevice.SetRenderTarget(null);
+
+            var pixels = new Color[size * size];
+            rt.GetData(pixels);
+            using (var outFs = File.Create(Path.Combine(_outDir, $"issue438_{label}.png")))
+                rt.SaveAsPng(outFs, size, size);
+            return pixels[(size / 2) * size + size / 2];
+        }
+        catch (Exception ex)
+        {
+            try { GraphicsDevice.SetRenderTarget(null); } catch { /* ignore */ }
+            error = $"{ex.GetType().Name}: {ex.Message}";
+            return null;
+        }
     }
 
     /// <summary>

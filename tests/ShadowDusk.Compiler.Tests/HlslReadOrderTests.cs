@@ -202,13 +202,84 @@ public sealed class HlslReadOrderTests
 
     // ---- Shapes outside the model --------------------------------------------------------------
 
-    [Fact]
-    public void AReadThroughASamplerParameter_IsRefused()
+    // ---- Legacy sampler parameters (issue #443) ------------------------------------------------
+
+    // The SM4 rewrite of `float4 F(sampler2D s, float2 uv) { return tex2D(s, uv); }` called as F(B, uv).
+    private const string RewrittenHelper =
+        "float4 F(Texture2D s_SDTexture, SamplerState s, float2 uv) { return s_SDTexture.Sample(s, uv); }\n";
+
+    private static readonly Dictionary<string, IReadOnlyList<string>> RewrittenF = new(StringComparer.Ordinal)
     {
-        // K13: the walk does not follow `s` to B; placing B by guess gave A t0 where mgfxc has B t0.
+        ["F"] = ["s_SDTexture"],
+        ["G"] = ["t_SDTexture"],
+        ["H"] = ["s_SDTexture"],
+    };
+
+    private static IReadOnlyList<string>? OrderWithParameters(string body, out string? refusal, string extra)
+    {
+        string source = "Texture2D TA; Texture2D TB; Texture2D TC; SamplerState A; SamplerState B; SamplerState C;\n" + extra +
+                        "float4 P(float2 uv : TEXCOORD0) : COLOR0 { " + body + " }\n";
+        var present = new HashSet<string>(Legacy.Where(t => (extra + body).Contains(t, StringComparison.Ordinal)), StringComparer.Ordinal);
+        return HlslReadOrder.FirstReads(source, "P", Legacy, Samplers, present, out refusal, RewrittenF);
+    }
+
+    [Theory]
+    [InlineData("return F(TB, B, uv) * 0.5 + TA.Sample(A, uv);", "TB,TA")]                    // K13: mgfxc B t0
+    [InlineData("return F(TB, B, uv) + TB.Sample(B, uv * 2) + TA.Sample(A, uv);", "TB,TA")]   // K14 (issue #443)
+    [InlineData("return TA.Sample(A, uv) * F(TB, B, uv);", "TA,TB")]
+    [InlineData("return F(TA, A, F(TB, B, uv).xy);", "TB,TA")]                                // an argument before the call
+    public void AReadThroughARewrittenSamplerParameter_IsTheArgumentsTexture(string body, string expected)
+    {
+        OrderWithParameters(body, out string? refusal, RewrittenHelper)!.ShouldBe(expected.Split(','), refusal);
+    }
+
+    [Fact]
+    public void AMiddleArgument_IsBound_NotTakenForADeclaratorList()
+    {
+        // `, TB ,` sits where a declarator list's name would; the bound texture is still TB.
+        const string helper = "float4 H(float k, Texture2D s_SDTexture, SamplerState s, float2 uv) { return s_SDTexture.Sample(s, uv) * k; }\n";
+        OrderWithParameters("return H(2, TB, B, uv) + TA.Sample(A, uv);", out string? refusal, helper)!.ShouldBe(["TB", "TA"], refusal);
+    }
+
+    [Fact]
+    public void ASamplerParameterPassedOn_KeepsItsBinding()
+    {
+        // K40: G reads through t, F passes s on to G and reads s itself; mgfxc A t0 B t1.
+        const string helpers =
+            "float4 G(Texture2D t_SDTexture, SamplerState t, float2 uv) { return t_SDTexture.Sample(t, uv * 3); }\n" +
+            "float4 F(Texture2D s_SDTexture, SamplerState s, float2 uv) { return G(s_SDTexture, s, uv) + s_SDTexture.Sample(s, uv); }\n";
+        OrderWithParameters("return TA.Sample(A, uv) * F(TB, B, uv) + TB.Sample(B, uv * 2);", out string? refusal, helpers)!
+            .ShouldBe(["TA", "TB"], refusal);
+    }
+
+    [Fact]
+    public void AReadThroughANativeSamplerParameter_IsTheSamplersTexture()
+    {
+        // A function the rewrite left verbatim (compiled natively): tex2D(s, …) reads what F(B, …) passed.
         const string helper = "float4 F(SamplerState s, float2 uv) { return tex2D(s, uv); }\n";
-        Order("return F(B, uv) * 0.5 + TA.Sample(A, uv);", out string? refusal, helper).ShouldBeNull();
-        refusal.ShouldNotBeNull().ShouldContain("sampler parameter", Case.Sensitive);
+        Order("return F(B, uv) * 0.5 + TA.Sample(A, uv);", out string? refusal, helper, "TA", "TB")!.ShouldBe(["TB", "TA"], refusal);
+    }
+
+    [Fact]
+    public void AReadThroughASamplerParameterBoundToNoLegacySampler_IsRefused()
+    {
+        // The argument is the caller's own local: nothing says which texture it is.
+        const string helper = "float4 F(SamplerState s, float2 uv) { return tex2D(s, uv); }\n";
+        Order("SamplerState L = B; return F(L, uv) * 0.5 + TA.Sample(A, uv);", out string? refusal, helper).ShouldBeNull();
+        refusal.ShouldNotBeNull().ShouldContain("sampler parameter or local", Case.Sensitive);
+    }
+
+    [Theory]
+    [InlineData("float4 G(Texture2D t, float2 uv) { return t.Sample(A, uv); }\n", "return G(TB, uv) + TA.Sample(A, uv);")]
+    [InlineData("float4 F(Texture2D s_SDTexture, SamplerState s, float2 uv) { float w, h; s_SDTexture.GetDimensions(w, h); return w; }\n",
+                "return F(TB, B, uv) + TA.Sample(A, uv);")]
+    [InlineData("float4 Q(Texture2D t, float2 uv) { return t.Sample(A, uv); }\nfloat4 F(Texture2D s_SDTexture, SamplerState s, float2 uv) { return Q(s_SDTexture, uv); }\n",
+                "return F(TB, B, uv) + TA.Sample(A, uv);")]
+    public void ALegacyTexturePassedAnywhereButARewrittenSamplerParameter_IsRefused(string helpers, string body)
+    {
+        // fxc gives a texture used as a value a record of its own; only the rewrite's own pass is followed.
+        OrderWithParameters(body, out string? refusal, helpers).ShouldBeNull();
+        refusal.ShouldNotBeNull();
     }
 
     [Fact]

@@ -251,14 +251,32 @@ public sealed class SkslConverterLegacySamplerRecoveryTests
     }
 
     [Fact]
-    public void ASampler2DFunctionParameter_FailsWithSd0016AfterTheCompilersOwnDiagnostic()
+    public void ACalledSampler2DFunctionParameterInAnInclude_ConvertsLikeTheDirectForm()
     {
+        // Issue #443: the rewrite follows a legacy sampler parameter through its calls, on the
+        // preprocessed source as on the raw main file, so the include form converts like the
+        // same code written in the main file (it was SD0016).
+        const string declarations = """
+            sampler2D S : register(s1);
+            float4 Blur(sampler2D s, float2 uv) { return tex2D(s, uv); }
+            """;
+        string shader = PixelShader.Replace("tex2D(S, uv)", "Blur(S, uv)", StringComparison.Ordinal);
+
+        Flatten(ConvertOk(Header + "#include \"s.fxh\"" + shader, declarations))
+            .ShouldBe(Flatten(ConvertOk(Header + declarations + shader)),
+                customMessage: "the recovered conversion must be exactly the directly written form's");
+    }
+
+    [Fact]
+    public void AnUncalledSampler2DFunctionParameter_FailsWithSd0016AfterTheCompilersOwnDiagnostic()
+    {
+        // Nothing calls Blur, so the rewrite has no sampler to bind its parameter to and leaves it.
         const string include = """
             sampler2D S : register(s1);
             float4 Blur(sampler2D s, float2 uv) { return tex2D(s, uv); }
             """;
 
-        var result = Convert(Header + "#include \"s.fxh\"" + PixelShader.Replace("tex2D(S, uv)", "Blur(S, uv)", StringComparison.Ordinal), include);
+        var result = Convert(Header + "#include \"s.fxh\"" + PixelShader, include);
 
         result.IsFailure.ShouldBeTrue();
         result.Error[0].Code.ShouldNotBe("SD0016", customMessage: "the compiler's own diagnostic stays first");

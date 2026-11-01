@@ -21,10 +21,12 @@ namespace ShadowDusk.Compiler.Internal;
 /// (<c>#define PS_SHADERMODEL ps_4_0_level_9_1</c>) unloadable on HiDef.
 ///
 /// <para>Every other profile keeps the reading it always had, even where KNI's own processor differs
-/// (it refuses <c>*_4_0_level_9_0</c>, <c>*_2_a</c>, <c>*_sw</c>, SM1 and SM6 as invalid profiles):
+/// (it refuses <c>*_4_0_level_9_0</c>, <c>*_2_a</c>, <c>*_sw</c> and SM1 as invalid profiles):
 /// those outputs already load somewhere a consumer may rely on (a desktop GL body at 4.0 loads on
 /// FL10_0 and up; the GLES/WebGL body records 0.0 and skips the check), so changing them is not this
-/// reader's call. See the known-gap rows in <c>project_facts.md</c>.</para>
+/// reader's call. See the known-gap rows in <c>project_facts.md</c>. An SM6 profile never reaches
+/// this reader on a KNIFX container: it is refused with <c>SD0015</c> on DirectX and, since issue
+/// #439, on OpenGL too (a 6.0 body loaded on no KNI graphics profile).</para>
 /// </remarks>
 internal static class KnifxShaderModel
 {

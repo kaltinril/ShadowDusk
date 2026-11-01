@@ -202,6 +202,44 @@ public sealed class Issue308LegacySamplerRecoveryTests
     // -------------------------------------------------------------------------
 
     /// <summary>
+    /// Issue #443: a function taking a legacy sampler, defined in an #include and called with the
+    /// include's sampler, reaches the compiler through the recovery with its parameter rewritten
+    /// like a declaration (<c>Texture2D s_SDTexture, SamplerState s</c>), and compiles to exactly
+    /// the bytes of the same code written in the main file, which the raw pre-parse rewrites
+    /// directly. Before, it was <c>SD0016</c> on every target that compiles through DXC.
+    /// </summary>
+    [Theory]
+    [Trait("Platform", "OpenGL")]
+    [Trait("Platform", "Vulkan")]
+    [Trait("Platform", "DirectX12")]
+    [InlineData(PlatformTarget.OpenGL)]
+    [InlineData(PlatformTarget.Vulkan)]
+    [InlineData(PlatformTarget.DirectX12)]
+    public async Task ACalledSampler2DFunctionParameterInAnInclude_CompilesLikeTheDirectForm(PlatformTarget target)
+    {
+        const string declarations = """
+            sampler2D S : register(s1);
+            float4 Blur(sampler2D s, float2 uv) { return tex2D(s, uv); }
+            """;
+        string shader = PixelShader.Replace("tex2D(S, uv)", "Blur(S, uv)", StringComparison.Ordinal);
+
+        var expected = await Compile(Header + declarations + shader, target);
+        expected.IsSuccess.ShouldBeTrue(
+            expected.IsFailure ? string.Join("; ", expected.Error.Select(e => $"{e.Code}: {e.Message}")) : "ok");
+        var include = await Compile(Header + "#include \"s.fxh\"" + shader, target, declarations);
+        include.IsSuccess.ShouldBeTrue(
+            include.IsFailure ? string.Join("; ", include.Error.Select(e => $"{e.Code}: {e.Message}")) : "ok");
+        include.Value.Data.ShouldBe(expected.Value.Data,
+            customMessage: $"{target}: the function in an include must compile to the bytes of the direct form");
+
+        if (target == PlatformTarget.OpenGL)
+        {
+            MgfxBlobReader mgfx = MgfxBlobReader.Parse(include.Value.Data);
+            PixelSamplers(mgfx).Single().Name.ShouldBe("ps_s1", customMessage: "the register(s1) of the sampler passed pins the unit, as mgfxc's");
+        }
+    }
+
+    /// <summary>
     /// The recovered compile must produce exactly what the directly written declaration
     /// produces, on every target that compiles through DXC. That is the proof the recovery
     /// changes nothing but the text the pre-parser could see: the rewritten source is the one the
@@ -277,14 +315,17 @@ public sealed class Issue308LegacySamplerRecoveryTests
 
     [Fact]
     [Trait("Platform", "OpenGL")]
-    public async Task ASampler2DFunctionParameter_FailsWithSd0016NamingTheShape()
+    public async Task AnUncalledSampler2DFunctionParameter_FailsWithSd0016NamingTheShape()
     {
+        // Nothing calls Blur, so nothing binds its parameter and the rewrite leaves it (issue #443
+        // rewrites a sampler parameter only through its calls): legacy syntax the recovery could
+        // not model, named where it is.
         const string include = """
             sampler2D S : register(s1);
             float4 Blur(sampler2D s, float2 uv) { return tex2D(s, uv); }
             """;
 
-        var result = await Compile(Header + "#include \"s.fxh\"" + PixelShader.Replace("tex2D(S, uv)", "Blur(S, uv)", StringComparison.Ordinal), include: include);
+        var result = await Compile(Header + "#include \"s.fxh\"" + PixelShader, include: include);
 
         result.IsFailure.ShouldBeTrue();
         ShaderError residue = result.Error.Single(e => e.Code == "SD0016");

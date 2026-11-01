@@ -35,7 +35,7 @@ namespace ShadowDusk.HLSL.Preprocessing;
 /// error carrying the file and line, never a guess. Callers only surface that error for source
 /// DXC itself accepted, so a genuinely malformed shader still reports DXC's own diagnostic.</para>
 /// </summary>
-internal sealed class FxMacroPreprocessor
+internal sealed partial class FxMacroPreprocessor
 {
     /// <summary>The registered diagnostic code for "the preprocessed view could not be built".</summary>
     public const string ErrorCode = "SD0009";
@@ -83,12 +83,17 @@ internal sealed class FxMacroPreprocessor
     /// line N of the source held), so a caller can read what the code calls with no macro in the way.
     /// Its one caller is the Vulkan binding rewrite, which must know every line DXC may compile, so
     /// here a conditional on a name only DXC predefines (<c>__GNUC__</c>, <c>__llvm__</c>, ...) is
-    /// reported too (see <see cref="IsCompilerPredefined(string, bool)"/>).
+    /// reported too (see <see cref="IsCompilerPredefined(string, bool)"/>), unless
+    /// <paramref name="compilerPredefines"/> gives its value (issue #442: the values DXC was
+    /// measured to define for this compile, <see cref="DxcSpirvPredefinedMacros"/>), in which case
+    /// it is a defined object-like macro, as in DXC, that the source may still redefine or undefine.
     /// </summary>
     internal static Result<(IReadOnlySet<int> Lines, CompilerPredefinedMacroUse? PredefinedMacroUse, string View), ShaderError> SkippedLines(
-        string flattenedSource, string sourceFile)
+        string flattenedSource, string sourceFile, IReadOnlyList<(string Name, string Value)>? compilerPredefines = null)
     {
         var preprocessor = new FxMacroPreprocessor(sourceFile, compilerInput: true, dxcPredefines: true) { _skippedLines = new HashSet<int>() };
+        foreach ((string name, string value) in compilerPredefines ?? [])
+            preprocessor._macros[name] = new Macro(name, null, false, [new Tok(TokKind.Number, value)]);
         Result<string, ShaderError> view = preprocessor.Run(flattenedSource);
         return view.IsFailure
             ? Result<(IReadOnlySet<int>, CompilerPredefinedMacroUse?, string), ShaderError>.Fail(view.Error)
@@ -461,6 +466,9 @@ internal sealed class FxMacroPreprocessor
                             // code generation, and an '#error' must still stop the compile.
                             if (_compilerInput)
                                 EmitDirectiveVerbatim(output, physicalLine, logical);
+                            if (_guardMode && directive == "pragma" &&
+                                NotePragma(rest, logical, physicalLine, lineNo) is { } pragmaError) // issue #452
+                                return Result<string, ShaderError>.Fail(pragmaError);
                             break;
                         case "include":
                             return Fail(lineNo,
@@ -634,6 +642,8 @@ internal sealed class FxMacroPreprocessor
                 !_macros.TryGetValue(t.Text, out Macro? macro) ||
                 t.Hide.Contains(t.Text))
             {
+                if (_guardMode)
+                    NoteBlockedName(t, stack, file, line); // issue #449
                 output.Add(t);
                 continue;
             }

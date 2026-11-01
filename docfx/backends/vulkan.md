@@ -34,9 +34,9 @@ A texture and its sampler are paired from `Tex.Sample(Sampler, ...)` calls, also
 
 One shape is refused: a **single sampler shared by two textures in the same live code path**. Vulkan's combined-image-sampler model needs a distinct descriptor per texture, and ShadowDusk does not split that shape, so it is rejected at compile time with **`SD0028`**, located at the offending `Sample` call (judged per compiled shader, like the pairing above: a call its entry point never reaches, or on a line an inactive `#if` drops, does not count). `SD0213` is the post-compile reflection backstop for shared-sampler shapes the source scan cannot see. Declare one sampler per texture.
 
-## Write the vertex position as `SV_POSITION`
+## A legacy `POSITION` vertex output works
 
-A vertex shader that writes its clip-space position to a legacy **`: POSITION0`** output (`struct VOut { float4 Pos : POSITION0; ... };`) does not draw on this target: DXC's SPIR-V path does not map `POSITION[n]` to the system position, so the shader writes an ordinary output and **DesktopVK silently draws nothing** (`mgfxc` refuses the same file for Vulkan). Declare the output **`: SV_POSITION`** (the cross-platform header's `#define SV_POSITION POSITION` keeps it `POSITION` on OpenGL). DirectX 11 is unaffected (vkd3d maps the name), and DirectX 12 fails the same way at draw time. Tracked as [issue #446](https://github.com/kaltinril/ShadowDusk/issues/446), which will map the semantic or refuse it with a diagnostic.
+A vertex shader that writes its clip-space position to the legacy **`: POSITION0`** output (`struct VOut { float4 Pos : POSITION0; ... };`, the XNA spelling) is mapped to `SV_Position` on this target, as DirectX 11 does ([issue #446](https://github.com/kaltinril/ShadowDusk/issues/446), fixed 2026-10-31). Before that, DXC's SPIR-V path left it an ordinary output and DesktopVK silently drew nothing (`mgfxc` refuses the same file for Vulkan). Not mapped: `POSITION1` and up, a semantic spelled through a macro, and a struct the vertex shader also takes as input; for those, write `: SV_POSITION`.
 
 ## Additive by policy
 

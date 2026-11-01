@@ -48,11 +48,12 @@ public sealed class KnifxShaderModelTests
     /// Profiles KNI's own processor refuses as invalid keep the reading ShadowDusk always gave
     /// them: their output already loads somewhere (a 4.0 desktop GL body on FL10_0 and up; the
     /// GLES/WebGL body records 0.0), so they are pinned here as known divergences, not fixed.
+    /// SM6 is not among them: a 6.0 body loaded nowhere, so a KNIFX compile refuses it with
+    /// <c>SD0015</c> before this reader runs (issue #439, <c>KnifxLevel9ShaderModelTests</c>).
     /// </summary>
     [Theory]
     [InlineData("ps_4_0_level_9_0", 4, 0)]
     [InlineData("vs_4_0_level_9_0", 4, 0)]
-    [InlineData("ps_6_0", 6, 0)]
     [InlineData("ps_2_a", 3, 0)]
     [InlineData("ps_3_sw", 3, 0)]
     [InlineData("ps_1_1", 1, 1)]

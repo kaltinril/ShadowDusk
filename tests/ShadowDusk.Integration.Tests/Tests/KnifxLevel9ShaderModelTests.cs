@@ -98,6 +98,49 @@ public sealed class KnifxLevel9ShaderModelTests
             result.IsFailure ? string.Join("; ", result.Error.Select(e => $"{e.Code}: {e.Message}")) : "ok");
     }
 
+    /// <summary>
+    /// Issue #439 (owner decision: refuse, as KNI does). An SM6 profile on the KNIFX OpenGL container
+    /// recorded shader model 6.0 in the desktop body, which KNI's SDL2.GL runtime refuses at every
+    /// graphics profile ("Shader model 6.0 is not supported by the current graphics profile"; its
+    /// ceiling is 5.0 at FL11_x), so the effect never loaded; KNI's own GL effect processor refuses SM6
+    /// profiles at build time. It is now <c>SD0015</c>, like KNIFX on DirectX, written literally or
+    /// through a macro, on either stage.
+    /// </summary>
+    [Theory]
+    [InlineData("vs_6_0", "ps_6_0", "vs_6_0")]
+    [InlineData("vs_4_0", "ps_6_0", "ps_6_0")]
+    [InlineData("vs_6_0", "ps_4_0", "vs_6_0")]
+    [InlineData("vs_4_0_level_9_1", "ps_6_1", "ps_6_1")]
+    public async Task Knifx_OpenGl_Sm6_IsRefusedLikeKnisOwnPipeline(string vs, string ps, string refused)
+    {
+        string literal = Functions +
+            $"technique T {{ pass {{ VertexShader = compile {vs} V(); PixelShader = compile {ps} P(); }} }}\n";
+        string macro = $"#define VS_SM {vs}\n#define PS_SM {ps}\n" + Functions +
+            "technique T { pass { VertexShader = compile VS_SM V(); PixelShader = compile PS_SM P(); } }\n";
+
+        foreach (string source in new[] { literal, macro })
+        {
+            var result = await Compile(source, PlatformTarget.OpenGL, EffectContainer.Knifx);
+
+            result.IsFailure.ShouldBeTrue();
+            ShaderError error = result.Error.ShouldHaveSingleItem();
+            error.Code.ShouldBe("SD0015");
+            error.Message.ShouldContain($"'{refused}'", Case.Sensitive);
+            error.Message.ShouldContain("Shader Model 6", Case.Sensitive);
+            error.Message.ShouldContain("KNI's own effect processor refuses SM6", Case.Sensitive);
+        }
+    }
+
+    [Fact]
+    public async Task Mgfx_OpenGl_Sm6_IsUnchanged()
+    {
+        // The MGFX OpenGL container records no shader model: an SM6 compile there is untouched.
+        var result = await Compile(Literal("6_0"), PlatformTarget.OpenGL, EffectContainer.Mgfx);
+
+        result.IsSuccess.ShouldBeTrue(
+            result.IsFailure ? string.Join("; ", result.Error.Select(e => $"{e.Code}: {e.Message}")) : "ok");
+    }
+
     private static async Task<Result<CompiledShader, ShaderError[]>> Compile(
         string source, PlatformTarget target, EffectContainer container)
     {
@@ -108,8 +151,12 @@ public sealed class KnifxLevel9ShaderModelTests
             Container = container,
             SourceFileName = "KnifxLevel9.fx",
         }, cts.Token);
-        // Only DirectX refuses *_4_0_level_9_0 (SD0015, below mgfxc's DirectX_11 floor).
-        bool expectsFailure = target == PlatformTarget.DirectX && source.Contains("level_9_0", StringComparison.Ordinal);
+        // Only DirectX refuses *_4_0_level_9_0 (SD0015, below mgfxc's DirectX_11 floor), and only
+        // KNIFX on OpenGL refuses SM6 here (issue #439).
+        bool expectsFailure =
+            (target == PlatformTarget.DirectX && source.Contains("level_9_0", StringComparison.Ordinal)) ||
+            (target == PlatformTarget.OpenGL && container == EffectContainer.Knifx &&
+             System.Text.RegularExpressions.Regex.IsMatch(source, @"[vp]s_6_\d"));
         if (!expectsFailure)
             result.IsSuccess.ShouldBeTrue(
                 result.IsFailure ? string.Join("; ", result.Error.Select(e => $"{e.Code}: {e.Message}")) : "ok");

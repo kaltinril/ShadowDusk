@@ -96,12 +96,6 @@ public sealed class GlVertexSemanticTests
         "packing/VecToSplit1x3", "packing/LocalStructShadow", "packing/LocalTypedefShadow",
     };
 
-    private static readonly HashSet<string> NonSquare = new(StringComparer.Ordinal)
-    {
-        "packing/MatToVec43", "packing/RowMatToVec43", "packing/MatToVec34", "packing/RowMatToVec34",
-        "packing/VecToMat43", "packing/VecToRowMat43", "packing/VecToMat34",
-    };
-
     [Theory]
     [MemberData(nameof(PackingShapes))]
     public async Task PackingShape_RecordsAndVaryingsMatchMgfxc(string shape)
@@ -228,12 +222,12 @@ technique T { pass P { VertexShader = compile vs_3_0 VS(); PixelShader = compile
         result.IsSuccess.ShouldBeTrue(result.IsFailure
             ? string.Join(" | ", result.Error.Select(e => e.FxcFormattedMessage))
             : "");
-        // A non-square matrix interpolant puts a mat4x3 / mat3x4 / mat2x4 in at least one stage's
-        // GLSL, which is the registered SD0403 warning (strict front ends refuse it); nothing else
-        // may warn.
-        result.Value.Warnings.Where(w => !(NonSquare.Contains(shape) && w.Code == "SD0403")).ShouldBeEmpty();
-        if (NonSquare.Contains(shape))
-            result.Value.Warnings.ShouldContain(w => w.Code == "SD0403");
+        // Nothing may warn. A non-square matrix interpolant used to leave a mat4x3 / mat3x4 / mat2x4
+        // in one stage's GLSL (SD0403: strict front ends and DesktopGL4 refuse it); Rule 17
+        // (issue #453) now holds it as a zero-padded square matN, so no non-square type survives.
+        result.Value.Warnings.ShouldBeEmpty();
+        foreach (var stage in MgfxBlobReader.Parse(result.Value.Data).Shaders)
+            Encoding.ASCII.GetString(stage.Bytecode).ShouldNotMatch(@"mat[234]x[234]");
         return result.Value.Data;
     }
 }

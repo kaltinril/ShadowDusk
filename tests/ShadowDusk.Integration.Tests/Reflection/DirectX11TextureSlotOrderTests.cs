@@ -84,17 +84,21 @@ public sealed class DirectX11TextureSlotOrderTests
     /// <c>Sample</c>, <c>U64</c> <c>SampleLevel</c>, <c>U65</c>, <c>U67</c> the sprite template with
     /// <c>GetDimensions</c>): <c>mgfxc</c> has <c>A@t0 Tb@t1 Tb@t2</c>, ShadowDusk one <c>Tb</c>
     /// record, and these warn <c>SD0230</c> (pre-existing on <c>main</c>, which warned nothing).</item>
-    /// <item><c>A02_DeclListLegacyReverse</c>: <c>sampler2D A, B;</c> gets its SAMPLER slots in
-    /// another order (texture slots match; same on <c>main</c> before this change).</item>
     /// <item><c>A01_TexArrayPlusLegacy</c>: a texture array beside a legacy sampler is not modelled;
     /// the compile warns <c>SD0230</c>.</item>
-    /// <item><c>B02_MacroTexture</c>: legacy samplers a macro declares are compiled natively by the
-    /// backend (the raw pre-parse cannot see them), which names the parameter after the sampler
-    /// and ignores the sampler order; the TEXTURE slots match (pre-existing, <c>project_facts.md</c>).</item>
-    /// <item><c>K13_SamplerParam</c>: a legacy sampler passed to a function as an argument is
-    /// compiled natively, and its SAMPLER slot is <c>s0</c> where <c>mgfxc</c> has <c>s1</c>
-    /// (pre-existing native-path gap, like <c>B02_MacroTexture</c>); its texture slots warn
-    /// <c>SD0230</c>, since the walk does not follow the parameter.</item>
+    /// <item><c>B02_MacroTexture</c>: legacy <c>sampler_state</c> samplers a macro declares are
+    /// compiled natively by the backend (the raw pre-parse cannot see them), which names the
+    /// parameter after the sampler (<c>ASamp</c>), where <c>mgfxc</c> names it after the texture
+    /// (<c>ATex</c>); the texture and sampler slots match (issue #441 joined the native sampler by
+    /// its RDEF name).</item>
+    /// <item><c>M10</c>, <c>M18</c>, <c>M20</c> (issue #447): a legacy sampler's texture also used as a
+    /// value (an index in a global initializer, a <c>static Texture2D</c> alias, an argument), and
+    /// <c>I08</c>, <c>I09</c>: an <c>#include</c>d <c>sampler_state</c> sampler, compiled natively,
+    /// whose texture the shader also calls <c>Load</c> on. <c>mgfxc</c> gives that use a second record
+    /// (<c>A@t0 Tb@t1 Tb@t2</c>); these warn <c>SD0230</c> (they were silent).</item>
+    /// <item><c>K43_PassedLodAndModern</c>: a <c>tex2Dlod</c> read (through a sampler parameter here)
+    /// becomes a call of the helper the rewrite defines, which passes the texture as a value; the
+    /// walk does not model the helper and warns <c>SD0230</c> (the same for a global sampler).</item>
     /// <item>The false-<c>SD0230</c> class (<see cref="FalseSD0230"/>): the walk cannot tell whether
     /// fxc keeps a read under a condition, so it warns and keeps declaration order, which is not
     /// <c>mgfxc</c>'s here. Loud, never silent.</item>
@@ -102,8 +106,9 @@ public sealed class DirectX11TextureSlotOrderTests
     /// </summary>
     private static readonly HashSet<string> KnownDivergence = new HashSet<string>(StringComparer.Ordinal)
     {
-        "TwoSamplersShareOneTexture", "S13_ModernSampledAndStateNamed", "A02_DeclListLegacyReverse", "A01_TexArrayPlusLegacy",
-        "B02_MacroTexture", "K13_SamplerParam",
+        "TwoSamplersShareOneTexture", "S13_ModernSampledAndStateNamed", "A01_TexArrayPlusLegacy",
+        "B02_MacroTexture", "K43_PassedLodAndModern",
+        "M10_StaticGlobalIndex", "M18_StaticTextureAlias", "M20_ValueArgument", "I08_IncludeStateTextureLoad", "I09_IncludeOnlyStateLoad",
         "U60_StateTextureGetDimsUsed", "U62_StateTextureLoadFirst", "U63_StateTextureSampleKept", "U64_StateTextureSampleLevelKept",
         "U65_StateTextureGetDimsAfter", "U67_SpriteTemplateGetDims",
     }.Union(FalseSD0230).ToHashSet(StringComparer.Ordinal);
@@ -127,7 +132,11 @@ public sealed class DirectX11TextureSlotOrderTests
     /// component, a value range, a loop that runs zero times, a uniform the shader assigns, a
     /// <c>uint</c> compared with <c>0</c>, a loop bound that truncates). Each of those was guessed
     /// wrong, silently, by a walk that tried to prove a condition run-time. <c>A01</c> and
-    /// <c>K13</c> refuse for their own reasons (a resource array, a sampler parameter). The
+    /// <c>K43</c> refuse for their own reasons (a resource array, a <c>tex2Dlod</c> helper); the
+    /// <c>M*</c> and <c>I08</c>/<c>I09</c> ones for a texture used directly beside its sampler, and
+    /// <c>I02</c>/<c>I07</c> are an <c>#include</c>d sampler's order behind a condition or a global
+    /// initializer, checked since issue #447 (they were silent; the native order happens to be
+    /// <c>mgfxc</c>'s). The
     /// <c>U0*</c>/<c>U1*</c> shapes are bare call statements fxc DROPS before it numbers
     /// (<c>tex2D(B, uv);</c>, in parentheses, a block, a loop, a void helper, a <c>for</c> init, a
     /// constructor, <c>tex2Dgrad</c>, <c>Tb.Sample(SB, uv);</c>); the <c>U6*</c> ones and <c>S13</c>
@@ -135,7 +144,9 @@ public sealed class DirectX11TextureSlotOrderTests
     /// </summary>
     private static readonly HashSet<string> ExpectedSD0230 = new HashSet<string>(StringComparer.Ordinal)
     {
-        "A01_TexArrayPlusLegacy", "K13_SamplerParam",
+        "A01_TexArrayPlusLegacy", "K43_PassedLodAndModern",
+        "M10_StaticGlobalIndex", "M18_StaticTextureAlias", "M20_ValueArgument",
+        "I02_IncludeOnlyConditional", "I07_IncludeGlobalInitializer", "I08_IncludeStateTextureLoad", "I09_IncludeOnlyStateLoad",
         "U01_StmtBareRead", "U02_StmtParenRead", "U03_StmtCtor", "U04_StmtCtorTwoArgs", "U05_StmtGrad", "U06_StmtBlock",
         "U07_StmtInCertainLoop", "U08_StmtNestedRead", "U09_StmtAfterIf", "U10_VoidHelperBareRead", "U11_VoidHelperAssignThenBare",
         "U12_ForInitBareRead", "U13_StmtStateSampler", "U14_StmtCtorMulti", "U68_StmtStateTextureSample", "U69_StmtStateTextureSampleLevel",
@@ -213,7 +224,11 @@ public sealed class DirectX11TextureSlotOrderTests
             using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(120));
             var rejected = await new EffectCompiler().CompileAsync(
                 await File.ReadAllTextAsync(SourcePath(shape), cts.Token),
-                new CompilerOptions { Target = PlatformTarget.DirectX, DxbcBackend = backend, SourceFileName = shape + ".fx" },
+                new CompilerOptions
+                {
+                    Target = PlatformTarget.DirectX, DxbcBackend = backend, SourceFileName = shape + ".fx",
+                    AdditionalIncludePaths = [GoldenFolder],
+                },
                 cts.Token);
             rejected.IsFailure.ShouldBeTrue($"{shape} [{backend}] now compiles: take it off Vkd3dRejects and check its table");
             return;
@@ -235,6 +250,79 @@ public sealed class DirectX11TextureSlotOrderTests
             return;
         }
         actual.ShouldBe(expected, customMessage: $"{shape} [{backend}]: each shader's sampler table must be mgfxc's");
+    }
+
+    [Theory]
+    [InlineData(DxbcBackend.Vkd3d)]
+    [InlineData(DxbcBackend.D3DCompiler)]
+    public async Task ASamplerPassedToAFunctionAndReadDirectly_CompilesWithOneRecordPerSampler(DxbcBackend backend)
+    {
+        // Issue #443 (probe K14): `F(B, uv) + tex2D(B, uv * 2) + tex2D(A, uv)` with
+        // `float4 F(sampler2D s, float2 uv)`. vkd3d refused it (E5005: the rewritten SamplerState B
+        // handed to a sampler2D parameter) and d3dcompiler_47 gave B two records (A@t1s0 B@t0s0
+        // B@t2s1). mgfxc 3.8.4.1: A@t1s0 B@t0s1.
+        if (backend == DxbcBackend.D3DCompiler && !OperatingSystem.IsWindows())
+            return; // the d3dcompiler_47 oracle is Windows-only
+        (MgfxBlobReader subject, IReadOnlyList<ShaderError> warnings) = await CompileAsync("K14_PassedAndRead", backend);
+        warnings.ShouldNotContain(w => w.Code == "SD0230");
+        Tables(subject).ShouldHaveSingleItem().ShouldBe("ps: A@t1s0 B@t0s1");
+        Tables(Golden("K14_PassedAndRead")).ShouldHaveSingleItem().ShouldBe("ps: A@t1s0 B@t0s1");
+    }
+
+    [Theory]
+    [InlineData("N01_MacroRead", DxbcBackend.Vkd3d)]
+    [InlineData("N01_MacroRead", DxbcBackend.D3DCompiler)]
+    [InlineData("N02_LineContinuedMacroRead", DxbcBackend.Vkd3d)]
+    [InlineData("N02_LineContinuedMacroRead", DxbcBackend.D3DCompiler)]
+    public async Task ASamplerReadThroughAMacro_KeepsItsOwnSamplerSlot(string shape, DxbcBackend backend)
+    {
+        // Issue #441 (probes P06, P18): `sampler2D A; sampler2D B;` read B first through a macro.
+        // The sampler the rewrite does not reach is compiled natively, and the record fell back to
+        // its texture slot: A s1 B s0 (P06), B s0 beside A's s0 (P18). mgfxc 3.8.4.1: A s0, B s1,
+        // which is also what both backends' own RDEF says.
+        if (backend == DxbcBackend.D3DCompiler && !OperatingSystem.IsWindows())
+            return; // the d3dcompiler_47 oracle is Windows-only
+        (MgfxBlobReader subject, _) = await CompileAsync(shape, backend);
+        Tables(subject).ShouldHaveSingleItem().ShouldBe("ps: A@t1s0 B@t0s1");
+        Tables(Golden(shape)).ShouldHaveSingleItem().ShouldBe("ps: A@t1s0 B@t0s1");
+    }
+
+    [Theory]
+    [InlineData(DxbcBackend.Vkd3d)]
+    [InlineData(DxbcBackend.D3DCompiler)]
+    public async Task ATextureNamedTexture_IsNotADirectUse_AndKeepsTheSlotsOfTheRenamedShader(DxbcBackend backend)
+    {
+        // The classic XNA spelling: `texture Texture; ... { Texture = <Texture>; }`. The state key is the
+        // same identifier as the texture, and the issue #447 value-use scan once read it as a direct use:
+        // a false SD0230 and, with a second legacy texture, no slot pinning (found by the issue-pass
+        // review, 2026-10-31). The shader must compile exactly as its renamed twin does.
+        if (backend == DxbcBackend.D3DCompiler && !OperatingSystem.IsWindows())
+            return; // the d3dcompiler_47 oracle is Windows-only
+        const string Source = """
+            texture Texture;
+            texture Other;
+            sampler TextureSampler = sampler_state { Texture = <Texture>; MinFilter = Linear; };
+            sampler OtherSampler = sampler_state { Texture = <Other>; };
+            float4 PS(float2 uv : TEXCOORD0) : COLOR0 { return tex2D(OtherSampler, uv) * 0.5 + tex2D(TextureSampler, uv); }
+            technique T { pass P { PixelShader = compile ps_4_0_level_9_1 PS(); } }
+            """;
+        string renamed = Source.Replace("texture Texture;", "texture Tex0;", StringComparison.Ordinal)
+                               .Replace("<Texture>", "<Tex0>", StringComparison.Ordinal);
+
+        async Task<(MgfxBlobReader Blob, IReadOnlyList<ShaderError> Warnings)> Build(string src)
+        {
+            using var cts = new CancellationTokenSource(TestBudget.Compile);
+            var result = await new EffectCompiler().CompileAsync(src,
+                new CompilerOptions { Target = PlatformTarget.DirectX, DxbcBackend = backend, SourceFileName = "t.fx" }, cts.Token);
+            result.IsSuccess.ShouldBeTrue(result.IsFailure ? string.Join(" | ", result.Error.Select(e => e.FxcFormattedMessage)) : "");
+            return (MgfxBlobReader.Parse(result.Value.Data), result.Value.Warnings);
+        }
+
+        var (named, namedWarnings) = await Build(Source);
+        var (twin, _) = await Build(renamed);
+        namedWarnings.ShouldNotContain(w => w.Code == "SD0230");
+        // Same slots; the table names the texture, so map the twin's name back.
+        Tables(named).ShouldBe(Tables(twin).Select(t => t.Replace("Tex0@", "Texture@", StringComparison.Ordinal)).ToList());
     }
 
     [Fact]
@@ -300,7 +388,8 @@ public sealed class DirectX11TextureSlotOrderTests
         // `sampler SB = sampler_state { Texture = <TexB>; }` lives in a header the raw pre-parse does
         // not rewrite; the backend compiles it natively and its RDEF texture is named `SB`, while the
         // preprocessed view knows the texture as `TexB`. mgfxc 3.8.4.1: TexB@t0s1 SA@t1s0 (the
-        // sampler slot and the parameter name are a separate, pre-existing native-path gap).
+        // parameter name is a separate, pre-existing native-path gap; the sampler slot is the native
+        // sampler's own, joined by its RDEF name since issue #441).
         const string main = """
             sampler2D SA;
             #include "inc_hdr.fxh"
@@ -324,6 +413,9 @@ public sealed class DirectX11TextureSlotOrderTests
         var slots = r.Samplers.ToDictionary(x => r.Parameters[x.Parameter].Name, x => (int)x.TextureSlot);
         slots.Values.Order().ShouldBe([0, 1]);
         slots["SA"].ShouldBe(1, "the header's SB is read first, so it takes t0 as in mgfxc");
+        var samplerSlots = r.Samplers.ToDictionary(x => r.Parameters[x.Parameter].Name, x => (int)x.SamplerSlot);
+        samplerSlots["SA"].ShouldBe(0, "mgfxc: SA s0, declared first");
+        samplerSlots.Single(p => p.Key != "SA").Value.ShouldBe(1, "mgfxc: the header's sampler on s1 (it fell back to its texture slot, s0, before #441)");
     }
 
     [Fact]
@@ -387,6 +479,8 @@ public sealed class DirectX11TextureSlotOrderTests
          .Order(StringComparer.Ordinal)
          .ToList();
 
+    private static string GoldenFolder => Path.Combine(AppContext.BaseDirectory, "fixtures", "golden", Folder);
+
     private static string SourcePath(string shape) =>
         Path.Combine(AppContext.BaseDirectory, "fixtures", "golden", Folder, shape + ".fx");
 
@@ -402,7 +496,11 @@ public sealed class DirectX11TextureSlotOrderTests
         using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(120));
         var result = await new EffectCompiler().CompileAsync(
             await File.ReadAllTextAsync(SourcePath(shape), cts.Token),
-            new CompilerOptions { Target = PlatformTarget.DirectX, DxbcBackend = backend, SourceFileName = shape + ".fx" },
+            new CompilerOptions
+            {
+                Target = PlatformTarget.DirectX, DxbcBackend = backend, SourceFileName = shape + ".fx",
+                AdditionalIncludePaths = [GoldenFolder],
+            },
             cts.Token);
         result.IsSuccess.ShouldBeTrue(result.IsFailure
             ? string.Join(" | ", result.Error.Select(e => e.FxcFormattedMessage))

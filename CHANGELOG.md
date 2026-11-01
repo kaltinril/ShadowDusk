@@ -23,14 +23,41 @@ that loads and renders identically to `mgfxc`'s in the real MonoGame/KNI runtime
 - **MonoGame 3.8.6 (stable 2026-10-08) is validated ([Phase 69](plan/DONE/PHASE-69-monogame-3.8.6-support.md)).** The unchanged
   output renders on 3.8.6 on DesktopGL, WindowsDX, WindowsDX12 and DesktopVK in the real engine; the v10 forward-compat
   matrix now covers nine releases, 3.8.1.263 to 3.8.6, pixel-identical on every one. 3.8.6's new native OpenGL 4.1
-  runtime (`DesktopGL4`) loads and renders ShadowDusk's OpenGL output identically to classic DesktopGL, except a shader
-  whose GLSL holds a non-square matrix (for example a `mul(float3, float4x4)`), which DesktopGL4's core-profile compile
-  aborts on (`docs/validation-matrix.md` section 7). No default changed: MGFX v10 stays the OpenGL/DirectX 11 output.
+  runtime (`DesktopGL4`) loads and renders ShadowDusk's OpenGL output identically to classic DesktopGL, non-square matrices
+  included (issue #453, below). No default changed: MGFX v10 stays the OpenGL/DirectX 11 output.
 
 ### Changed
 
+- `SpvReflectionVerifier` is marked `[Obsolete]`: it is a no-op that always returned an empty map and nothing calls
+  it. It will be removed in a future release (issue #429).
+
 ### Fixed
 
+- **OpenGL: non-square matrices load on strict drivers, WebGL and MonoGame 3.8.6 DesktopGL4 (issue #453).** A
+  truncating `mul(float3, float4x4)`, a `(float3x3)` cast or a non-square matrix interpolant emitted `mat3x4`-style
+  types, which ShadowDusk's versionless GLSL (GLSL 1.10 / ESSL 1.00) does not have: Mesa refused the effect and
+  DesktopGL4 aborted the process. They are now held as zero-padded square `matN` (GLSL rewrite Rule 17). Only shaders
+  that warned `SD0403` for a non-square type change bytes; every byte-identity manifest is unchanged.
+- **OpenGL: a uniform SPIRV-Cross renames joins its own parameter (issues #438, #440).** The join paired by name, so a
+  renamed `noise` could bind to another stage's `_noise`, silently, and `float _input; float input;` failed with an
+  internal `SD0012`. It now pairs by position through DXC's SPIR-V member names, with the old join as the fallback.
+- **DirectX 12 and Vulkan: a vertex shader output declared `: POSITION`/`: POSITION0` is `SV_Position` (issue
+  #446).** WindowsDX12 threw at pipeline creation and DesktopVK drew nothing. DirectX 11, OpenGL and FNA bytes are
+  unchanged.
+- **Vulkan: a conditional on DXC's own predefined macros no longer adds a dead texture pairing (issue #442).**
+  `__HLSL_VERSION`, `__spirv__`, `__SHADER_TARGET_*` and `__SHADER_STAGE_*` are evaluated with DXC's measured values,
+  so an `#if 0`-style dead branch no longer binds a second descriptor (`SD0235`).
+- **A crash or a hang in a native compiler is a diagnostic instead (issues #448, #449, #452).** On DirectX 11 and
+  FNA, a cast to `void` (`SD0239`) and a self-referential or recursive macro (`SD0240`) are refused before vkd3d,
+  which crashed and hung on them; on the DXC targets an invalid `#pragma pack_matrix` argument is refused (`SD0241`)
+  before DXC, which crashed on it.
+- **DirectX 11 legacy samplers (issues #443, #441, #447).** A `sampler2D` passed to a function and also read
+  directly compiles (vkd3d failed with `E5005`; d3dcompiler wrote two records) with one record per sampler, as `mgfxc`
+  does, and such functions now compile on OpenGL, Vulkan and DirectX 12 too; a natively compiled legacy sampler keeps
+  `mgfxc`'s sampler slot (a macro-read sampler had the texture's slot, so one sampler's state applied to another); and
+  a direct legacy texture use or an include-declared sampler warns `SD0230` instead of a silently wrong record.
+- **KNIFX on OpenGL refuses SM6 profiles with `SD0015` (issue #439)**, as KNI's own pipeline does: the 6.0 record it
+  wrote could never load on desktop KNI.
 - **The content importer failed every MonoGame 3.8.6 content build.** MonoGame 3.8.6 removed
   `ContentIdentity(string, string)`, which `ShadowDuskEffectImporter` called, so `ShadowDusk.MgcbPlugin` under
   `dotnet mgcb` 3.8.6 and `ShadowDusk.ContentPipeline` in a 3.8.6 Content Builder threw `MissingMethodException`

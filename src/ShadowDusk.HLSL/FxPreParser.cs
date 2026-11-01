@@ -16,7 +16,7 @@ namespace ShadowDusk.HLSL;
 /// treated: rewritten forward to SM4 for DXC (the default), or preserved verbatim for an
 /// SM1–3 backend (the FNA fx_2_0 target, compiled by vkd3d).
 /// </summary>
-public sealed class FxPreParser
+public sealed partial class FxPreParser
 {
     // -------------------------------------------------------------------------
     // Known shader profiles
@@ -363,7 +363,8 @@ public sealed class FxPreParser
     // Constructor (private — callers use the static Parse entry point)
     // -------------------------------------------------------------------------
 
-    private FxPreParser(string source, string sourceFile, IReadOnlyList<Token> tokens, int[] tokenCharOffset, FxSourceMode mode, bool preprocessed = false)
+    private FxPreParser(string source, string sourceFile, IReadOnlyList<Token> tokens, int[] tokenCharOffset, FxSourceMode mode, bool preprocessed = false,
+        IReadOnlySet<string>? excludedSamplerParameterFunctions = null)
     {
         _source = source;
         _sourceFile = sourceFile;
@@ -371,6 +372,7 @@ public sealed class FxPreParser
         _tokenCharOffset = tokenCharOffset;
         _mode = mode;
         _preprocessed = preprocessed;
+        _excludedSamplerParameterFunctions = excludedSamplerParameterFunctions ?? new HashSet<string>(StringComparer.Ordinal);
         _pos = 0;
     }
 
@@ -399,8 +401,8 @@ public sealed class FxPreParser
         var lexer = new FxLexer(source, sourceFile);
         var tokens = lexer.Tokenize();
         var offsets = ComputeCharacterOffsets(source, tokens);
-        var parser = new FxPreParser(source, sourceFile, tokens, offsets, mode);
-        return parser.ParseFile();
+        return ParseFileExcludingUnboundSamplerParameterFunctions(
+            excluded => new FxPreParser(source, sourceFile, tokens, offsets, mode, preprocessed: false, excluded));
     }
 
     // -------------------------------------------------------------------------
@@ -558,6 +560,13 @@ public sealed class FxPreParser
         // intrinsic so the main loop knows which declarations to rewrite.
         _legacyIntrinsicSamplers = CollectLegacyIntrinsicSamplers();
 
+        // Pre-scan (issue #443): user functions taking a legacy sampler parameter whose every use
+        // the rewrite can follow. Their parameters, calls and reads are rewritten below, and the
+        // samplers passed to them are rewritten like samplers a tex2D reads.
+        IReadOnlySet<string> passedSamplers = CollectSamplerParameterFunctions();
+        if (passedSamplers.Count > 0)
+            _legacyIntrinsicSamplers = new HashSet<string>(_legacyIntrinsicSamplers.Concat(passedSamplers), StringComparer.Ordinal);
+
         // Pre-scan: discover which samplers are used through a MODERN Texture
         // method call (e.g. 'Tex.Sample(S, uv)') so a 'sampler_state' declaration
         // that the modern code actually references is rewritten to a passthrough
@@ -571,6 +580,16 @@ public sealed class FxPreParser
         while (Peek().Kind != TokenKind.EOF)
         {
             var tok = Peek();
+
+            // Issue #443: a legacy sampler parameter of a function the pre-scan can follow
+            // becomes the pair the declaration rewrite produces ('sampler2D s' ->
+            // 'Texture2D s_SDTexture, SamplerState s'), and a sampler passed to it becomes its
+            // texture and itself ('F(B, uv)' -> 'F(B_SDTexture, B, uv)').
+            if (TryRewriteSamplerParameter(replacedRanges) || TryRewriteSamplerArgument(tok, replacedRanges))
+            {
+                SkipNonCodeTokens();
+                continue;
+            }
 
             // technique / technique10 / technique11 — but NOT macro calls like TECHNIQUE(name, vs, ps).
             // A real technique declaration is followed by an identifier name (or annotation '<' or body '{'),
@@ -1001,7 +1020,7 @@ public sealed class FxPreParser
                 tok.Kind == TokenKind.Identifier &&
                 RestructuredLegacySampleIntrinsics.ContainsKey(tok.Text) &&
                 TryMatchTexSampleArgument(out string restructuredSampler) &&
-                _samplerTextureBindings.TryGetValue(restructuredSampler, out string? restructuredTexture))
+                TryGetBoundTexture(restructuredSampler, out string? restructuredTexture))
             {
                 Result<(int Start, int End, string Replacement)?, FxParseError> call =
                     RewriteRestructuredIntrinsic(tok, restructuredTexture, braceDepth);
@@ -1056,7 +1075,7 @@ public sealed class FxPreParser
                 tok.Kind == TokenKind.Identifier &&
                 LegacySampleIntrinsics.TryGetValue(tok.Text, out string? sampleMethod) &&
                 TryMatchTexSampleArgument(out string samplerArg) &&
-                _samplerTextureBindings.TryGetValue(samplerArg, out string? boundTexture))
+                TryGetBoundTexture(samplerArg, out string? boundTexture))
             {
                 int texStart = _tokenCharOffset[_pos];
                 int texEnd = texStart + tok.Text.Length;
@@ -1165,6 +1184,7 @@ public sealed class FxPreParser
             ReservedGlSamplerSlots = CollectReservedSamplerRegisters(),
             DeferredLegacyIntrinsicCalls = _deferredRestructuredCalls.ToArray(),
             RestructuredHelpers = LocateRestructuredHelpers(strippedHlsl),
+            SamplerParameterTextures = SamplerParameterTexturesResult(),
         });
     }
 
@@ -2052,6 +2072,12 @@ public sealed class FxPreParser
             }
         }
 
+        // Issue #447: every sampler's state-block texture in the view, the native ones included; a
+        // direct use of any of them is looked for, not only of the textures the rewrite bound.
+        Dictionary<string, string> stateTextures = CollectStateTextures(tokens);
+        var directlyUsable = new HashSet<string>(legacyTextures, StringComparer.Ordinal);
+        directlyUsable.UnionWith(stateTextures.Values);
+
         return Result<GlSamplerSlots, ShaderError>.Ok(
             new GlSamplerSlots(explicitSlots, CollectReservedSamplerRegisters(tokens))
             {
@@ -2060,7 +2086,9 @@ public sealed class FxPreParser
                 LegacySamplerTextures = legacySamplerTextures,
                 EntryPointInterpolants = GlEntryPointInterpolantScanner.Scan(tokens),
                 ExplicitTextureRegisters = CollectTextureRegisters(tokens),
-                ModernMethodTextures = CollectMethodObjects(tokens, legacyTextures),
+                ModernMethodTextures = CollectMethodObjects(tokens, directlyUsable),
+                ValueUseTextures = CollectValueUses(tokens, directlyUsable),
+                StateTextures = stateTextures,
             });
     }
 
@@ -2089,6 +2117,140 @@ public sealed class FxPreParser
             }
         }
         return found;
+    }
+
+    /// <summary>
+    /// Sampler -> the texture its state block names, for every <c>name [: register(…)] = sampler_state
+    /// { … Texture = &lt;T&gt; … }</c> and brace form <c>name [: register(…)] { … }</c> in
+    /// <paramref name="tokens"/> (the lexer drops the ':'). A sampler named twice keeps its last
+    /// texture; one whose name cannot be found before its block is skipped.
+    /// </summary>
+    private static Dictionary<string, string> CollectStateTextures(IReadOnlyList<Token> tokens)
+    {
+        var found = new Dictionary<string, string>(StringComparer.Ordinal);
+        var code = new List<Token>(tokens.Count);
+        foreach (Token t in tokens)
+        {
+            if (t.Kind is not (TokenKind.LineComment or TokenKind.BlockComment or TokenKind.Preprocessor or TokenKind.EOF))
+                code.Add(t);
+        }
+        for (int i = 0; i + 2 < code.Count; i++)
+        {
+            if (code[i].Kind != TokenKind.Identifier || !string.Equals(code[i].Text, "Texture", StringComparison.OrdinalIgnoreCase)
+                || code[i + 1].Kind != TokenKind.Equals)
+            {
+                continue;
+            }
+            int k = i + 2;
+            if (code[k].Kind is TokenKind.LAngle or TokenKind.LParen)
+                k++;
+            if (k >= code.Count || code[k].Kind != TokenKind.Identifier)
+                continue;
+            string texture = code[k].Text;
+
+            // The '{' that opens the block, then the sampler's name before it.
+            int open = i - 1, depth = 0;
+            for (; open >= 0; open--)
+            {
+                if (code[open].Kind == TokenKind.RBrace) depth++;
+                else if (code[open].Kind == TokenKind.LBrace && depth-- == 0) break;
+            }
+            int n = open - 1;
+            if (n >= 0 && code[n].Kind == TokenKind.Identifier && string.Equals(code[n].Text, "sampler_state", StringComparison.OrdinalIgnoreCase))
+            {
+                n--;
+                if (n < 0 || code[n].Kind != TokenKind.Equals)
+                    continue;
+                n--;
+            }
+            if (n >= 0 && code[n].Kind == TokenKind.RParen)
+            {
+                while (n >= 0 && code[n].Kind != TokenKind.LParen) n--;
+                n -= 2; // '(' and 'register'
+            }
+            if (n >= 1 && code[n].Kind == TokenKind.Identifier && code[n - 1].Kind == TokenKind.Identifier
+                && SamplerTypeKeywords.Contains(code[n - 1].Text))
+            {
+                found[code[n].Text] = texture;
+            }
+        }
+        return found;
+    }
+
+    /// <summary>
+    /// The names in <paramref name="textures"/> the source uses as a VALUE (issue #447): every
+    /// reference but a declaration (after a <c>texture*</c> type, a template's <c>&gt;</c>, or a
+    /// <c>,</c> at global scope outside any bracket, a declarator list), the binding of a state block
+    /// (<c>Texture = &lt;T&gt;</c>, <c>Texture = (T)</c>, <c>Texture = T</c>, <c>Texture[0] = &lt;T&gt;</c>), the
+    /// object of a method call (<see cref="CollectMethodObjects"/>) and a member (<c>x.T</c>). See
+    /// <see cref="GlSamplerSlots.ValueUseTextures"/>.
+    /// </summary>
+    private static HashSet<string> CollectValueUses(IReadOnlyList<Token> tokens, IReadOnlySet<string> textures)
+    {
+        var found = new HashSet<string>(StringComparer.Ordinal);
+        var code = new List<Token>(tokens.Count);
+        foreach (Token t in tokens)
+        {
+            if (t.Kind is not (TokenKind.LineComment or TokenKind.BlockComment or TokenKind.Preprocessor or TokenKind.EOF))
+                code.Add(t);
+        }
+        int braces = 0, parens = 0;
+        for (int i = 0; i < code.Count; i++)
+        {
+            Token t = code[i];
+            switch (t.Kind)
+            {
+                case TokenKind.LBrace: braces++; continue;
+                case TokenKind.RBrace: braces = Math.Max(0, braces - 1); continue;
+                case TokenKind.LParen: parens++; continue;
+                case TokenKind.RParen: parens = Math.Max(0, parens - 1); continue;
+            }
+            if (t.Kind != TokenKind.Identifier || !textures.Contains(t.Text))
+                continue;
+            Token? prev = i > 0 ? code[i - 1] : null;
+            if (prev is { Kind: TokenKind.Dot })
+                continue; // a member of something else
+            if (i + 3 < code.Count && code[i + 1].Kind == TokenKind.Dot && code[i + 2].Kind == TokenKind.Identifier
+                && code[i + 3].Kind == TokenKind.LParen)
+            {
+                continue; // a method call: CollectMethodObjects
+            }
+            bool declaration =
+                (prev is { Kind: TokenKind.Identifier } && prev.Text.StartsWith("texture", StringComparison.OrdinalIgnoreCase))
+                || prev is { Kind: TokenKind.RAngle } && i + 1 < code.Count && code[i + 1].Kind is TokenKind.Semicolon or TokenKind.Identifier or TokenKind.LAngle or TokenKind.Comma
+                || (prev is { Kind: TokenKind.Comma } && braces == 0 && parens == 0);
+            if (declaration || IsStateTextureBinding(code, i) || IsStateKey(code, i, braces))
+                continue;
+            found.Add(t.Text);
+        }
+        return found;
+
+        // The KEY of a state assignment, `{ Texture = <T>; }` or `Texture[0] = ...` (the lexer drops
+        // the brackets): the classic XNA texture is itself named `Texture`, and its state key must
+        // not read as a value use of it.
+        static bool IsStateKey(List<Token> code, int i, int braces)
+        {
+            if (braces == 0 || i == 0 || code[i - 1].Kind is not (TokenKind.LBrace or TokenKind.Semicolon))
+                return false;
+            int k = i + 1;
+            if (k < code.Count && code[k].Kind == TokenKind.Number)
+                k++;
+            return k < code.Count && code[k].Kind == TokenKind.Equals;
+        }
+
+        // `Texture = <T>`, `Texture = (T)`, `Texture = T`, `Texture[0] = <T>` (the lexer drops '[' and ']').
+        static bool IsStateTextureBinding(List<Token> code, int i)
+        {
+            int k = i - 1;
+            if (k >= 0 && code[k].Kind is TokenKind.LAngle or TokenKind.LParen)
+                k--;
+            if (k < 0 || code[k].Kind != TokenKind.Equals)
+                return false;
+            k--;
+            if (k >= 0 && code[k].Kind == TokenKind.Number)
+                k--;
+            return k >= 0 && code[k].Kind == TokenKind.Identifier && string.Equals(code[k].Text, "Texture", StringComparison.OrdinalIgnoreCase);
+        }
     }
 
     /// <summary>
@@ -2232,6 +2394,25 @@ public sealed class FxPreParser
         return LegacySamplerSyntaxWord.IsMatch(source);
     }
 
+    /// <summary>
+    /// <see cref="MentionsLegacySamplerSyntax"/> on CODE only: a legacy-sampler word inside a
+    /// comment (<c>// was tex2D(...)</c>) does not count. For callers that already have the
+    /// preprocessed text and must not change behavior because of a comment.
+    /// </summary>
+    /// <param name="source">Any effect text.</param>
+    public static bool MentionsLegacySamplerSyntaxInCode(string source)
+    {
+        ArgumentNullException.ThrowIfNull(source);
+        if (!LegacySamplerSyntaxWord.IsMatch(source))
+            return false; // cheap reject: most effects never mention it
+        foreach (Token t in new FxLexer(source, "<scan>").Tokenize())
+        {
+            if (t.Kind == TokenKind.Identifier && LegacySamplerSyntaxWord.IsMatch(t.Text))
+                return true;
+        }
+        return false;
+    }
+
     private static readonly System.Text.RegularExpressions.Regex LegacySamplerSyntaxWord = new(
         @"\b(sampler1D|sampler2D|sampler3D|samplerCUBE|sampler_state|tex(1D|2D|3D|CUBE)(bias|grad|lod|proj)?)\b",
         System.Text.RegularExpressions.RegexOptions.CultureInvariant);
@@ -2273,9 +2454,9 @@ public sealed class FxPreParser
         var lineMap = new Preprocessing.SourceLineMap(text, sourceFile);
 
         IReadOnlyList<Token> tokens = new FxLexer(text, sourceFile).Tokenize();
-        var parser = new FxPreParser(
-            text, sourceFile, tokens, ComputeCharacterOffsets(text, tokens), FxSourceMode.RewriteToSm4, preprocessed: true);
-        Result<FxParseResult, FxParseError> parsed = parser.ParseFile();
+        int[] offsets = ComputeCharacterOffsets(text, tokens);
+        Result<FxParseResult, FxParseError> parsed = ParseFileExcludingUnboundSamplerParameterFunctions(
+            excluded => new FxPreParser(text, sourceFile, tokens, offsets, FxSourceMode.RewriteToSm4, preprocessed: true, excluded));
         if (parsed.IsFailure)
         {
             FxParseError error = parsed.Error;

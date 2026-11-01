@@ -524,9 +524,17 @@ internal sealed class CompilationPipeline
         // only pattern confirmed to draw correctly on real DesktopVK (see
         // VulkanTextureSamplerBindingRewriter). No-op for GL/DX/FNA and for shaders with no
         // Texture2D/SamplerState declarations.
+        //
+        // DirectX 12 (here) and Vulkan (VulkanShaderSource below), issue #446: a vertex shader's
+        // legacy `: POSITION[0]` OUTPUT becomes `: SV_Position` for DXC, as fxc and vkd3d map it on
+        // DirectX 11; DXC has no such mapping, so the shader had no position (WindowsDX12 threw
+        // creating the pipeline, DesktopVK drew nothing). Vertex inputs are never touched, and the
+        // DirectX 11 / OpenGL / FNA sources are not this copy. See DxcVertexPositionOutputRewriter.
         PreprocessedSource glCompileSource = monoGameGl
             ? preprocessed with { Text = GlStructOutputColorRewriter.Rewrite(preprocessed.Text, fxParsed.Techniques) }
-            : preprocessed;
+            : options.Target == PlatformTarget.DirectX12
+                ? preprocessed with { Text = DxcVertexPositionOutputRewriter.Rewrite(preprocessed.Text, fxParsed.Techniques) }
+                : preprocessed;
 
         // Vulkan: the binding rewrite runs PER COMPILED SHADER (VulkanShaderSource below), because
         // each shader is its own descriptor layout: a texture read through sampler A in one pass
@@ -645,6 +653,10 @@ internal sealed class CompilationPipeline
         // mgfxc's refusal.
         bool enforceDx11Floor = directX;
         bool kniDirectXFloor = directX && effectiveContainer == EffectContainer.Knifx;
+        // A KNIFX container on OpenGL refuses SM6 profiles the way KNI's own pipeline does (issue
+        // #439): the shader model it records is checked by KNI's runtime against the graphics
+        // profile's ceiling (5.0 at FL11_x), so a 6.0 body never loads on any profile.
+        bool kniOpenGlNoSm6 = options.Target == PlatformTarget.OpenGL && effectiveContainer == EffectContainer.Knifx;
         // A profile a macro produced is validated through the macro name the author wrote, so DXC
         // expands it with -P as before issue #407. (The Android emulator hangs the first SPIR-V
         // compile after the corpus' effects stop making those -P calls: a DXC-spawned thread is
@@ -663,7 +675,7 @@ internal sealed class CompilationPipeline
                         dxcCompiler, macros, preprocessed, sourceFileName,
                         profileExpansionCache, enforceStagePrefix: true, cancellationToken,
                         enforceDirectX11Floor: enforceDx11Floor, entryPoint: pass.VertexEntryPoint,
-                        kniDirectXFloor: kniDirectXFloor);
+                        kniDirectXFloor: kniDirectXFloor, kniOpenGlNoSm6: kniOpenGlNoSm6);
                     if (v is { } vErr)
                         return Fail(vErr);
                 }
@@ -675,7 +687,7 @@ internal sealed class CompilationPipeline
                         dxcCompiler, macros, preprocessed, sourceFileName,
                         profileExpansionCache, enforceStagePrefix: true, cancellationToken,
                         enforceDirectX11Floor: enforceDx11Floor, entryPoint: pass.PixelEntryPoint,
-                        kniDirectXFloor: kniDirectXFloor);
+                        kniDirectXFloor: kniDirectXFloor, kniOpenGlNoSm6: kniOpenGlNoSm6);
                     if (p is { } pErr)
                         return Fail(pErr);
                 }
@@ -698,31 +710,36 @@ internal sealed class CompilationPipeline
         var vulkanSources = new Dictionary<(string, ShaderStage), PreprocessedSource>();
         // The lines an untaken #if drops from the text DXC compiles, and the macro-expanded view the
         // rewrite reads each function's calls from, both from the managed preprocessor with this
-        // compile's macros (they head the flattened text). Unknown (null) when the view cannot be
-        // built or a conditional tests a macro only DXC defines (the view may then not be the code DXC
-        // compiles, and the preprocessed retry that backs the per-shader pairing is unavailable too):
-        // the rewrite then pairs over the whole file, every line and every function counting, as the
+        // compile's macros (they head the flattened text) and the values DXC was measured to predefine
+        // for this stage's Vulkan compile (issue #442: __HLSL_VERSION, __spirv__, __SHADER_TARGET_*,
+        // ...; DxcSpirvPredefinedMacros), so a conditional on one of those is evaluated as DXC does.
+        // Per stage: __SHADER_TARGET_STAGE differs. Unknown (null) when the view cannot be built or a
+        // conditional tests a macro DXC defines with no host-independent measured value
+        // (__DXC_VERSION_*, __GNUC__, __LINE__, ...; the view may then not be the code DXC compiles,
+        // and the preprocessed retry that backs the per-shader pairing is unavailable too): the
+        // rewrite then pairs over the whole file, every line and every function counting, as the
         // released rewrite did.
-        (IReadOnlySet<int> Lines, string View)? vulkanLiveCode = null;
-        bool vulkanLiveCodeRead = false;
+        var vulkanLiveCode = new Dictionary<ShaderStage, (IReadOnlySet<int> Lines, string View)?>();
         // Keyed by stage too: a vertex shader has fewer texture slots than a pixel shader
         // (VulkanTextureSamplerBindingRewriter.MaxVertexTextureSlots), and no alias goes past them.
         PreprocessedSource VulkanShaderSource(string entryPoint, ShaderStage stage)
         {
             if (vulkanSources.TryGetValue((entryPoint, stage), out PreprocessedSource? cached))
                 return cached;
-            if (!vulkanLiveCodeRead)
+            if (!vulkanLiveCode.TryGetValue(stage, out (IReadOnlySet<int> Lines, string View)? liveCode))
             {
-                vulkanLiveCodeRead = true;
-                var skipped = ShadowDusk.HLSL.Preprocessing.FxMacroPreprocessor.SkippedLines(preprocessed.Text, sourceFileName);
-                if (skipped.IsSuccess && skipped.Value.PredefinedMacroUse is null)
-                    vulkanLiveCode = (skipped.Value.Lines, skipped.Value.View);
+                var skipped = ShadowDusk.HLSL.Preprocessing.FxMacroPreprocessor.SkippedLines(
+                    preprocessed.Text, sourceFileName, ShadowDusk.HLSL.Preprocessing.DxcSpirvPredefinedMacros.Vulkan(stage));
+                liveCode = skipped.IsSuccess && skipped.Value.PredefinedMacroUse is null
+                    ? (skipped.Value.Lines, skipped.Value.View)
+                    : null;
+                vulkanLiveCode[stage] = liveCode;
             }
             IReadOnlyList<VulkanTextureSamplerBindingRewriter.Alias> aliases;
             int textureSlots = stage == ShaderStage.Vertex
                 ? VulkanTextureSamplerBindingRewriter.MaxVertexTextureSlots
                 : VulkanTextureSamplerBindingRewriter.MaxPixelTextureSlots;
-            string text = vulkanLiveCode is { } live
+            string text = liveCode is { } live
                 ? VulkanTextureSamplerBindingRewriter.Rewrite(preprocessed.Text, entryPoint, live.Lines, live.View, out aliases, textureSlots)
                 : VulkanTextureSamplerBindingRewriter.Rewrite(preprocessed.Text, entryPoint: null, skippedLines: null, out aliases, textureSlots);
             foreach (var alias in aliases)
@@ -741,6 +758,10 @@ internal sealed class CompilationPipeline
                               "the first sampler.",
                     Severity: ShaderErrorSeverity.Warning)]);
             }
+            // Issue #446, after the binding rewrite (whose alias offsets index `text` above): the
+            // same POSITION -> SV_Position output mapping DirectX 12 gets. Same-line edits only, so
+            // the dead-line view still lines up.
+            text = DxcVertexPositionOutputRewriter.Rewrite(text, fxParsed.Techniques);
             return vulkanSources[(entryPoint, stage)] = preprocessed with { Text = text };
         }
 
@@ -768,6 +789,12 @@ internal sealed class CompilationPipeline
         IReadOnlyDictionary<string, EntryPointMatrixInterpolants>? glEntryInterpolants = null;
         IReadOnlyDictionary<string, int> legacySamplerRegisters = new Dictionary<string, int>(StringComparer.Ordinal);
         DxTextureSlotInputs? dxTextureSlots = null;
+        // Issue #447: DirectX 11 compiles a legacy sampler the raw pre-parse never saw (declared in
+        // an #include or through a macro, or read only through a macro) natively, and its texture
+        // slots were never checked, silently. The compiler's own input, includes inlined, still
+        // spells legacy sampler syntax then (the rewrite removes what it reached), so its texture
+        // slots go through the same check, which keys such a sampler by its own name.
+        bool directXNativeLegacy = directX && FxPreParser.MentionsLegacySamplerSyntaxInCode(preprocessed.Text);
         if (options.Target == PlatformTarget.OpenGL)
         {
             // A recovery pass (issue #308) has the flattened raw source in hand already, and its
@@ -803,7 +830,8 @@ internal sealed class CompilationPipeline
         else if (fxParsed.Samplers.Select(s => s.Name)
                      .Concat(fxParsed.SynthesizedSamplerTextures.Keys)
                      .Distinct(StringComparer.Ordinal)
-                     .Skip(directX ? 0 : 1).Any())
+                     .Skip(directX ? 0 : 1).Any()
+                 || directXNativeLegacy)
         {
             // The other targets need the same preprocessed view for one thing only: two legacy
             // samplers on one explicit register (SD0227, below). It is read only when two legacy
@@ -825,16 +853,19 @@ internal sealed class CompilationPipeline
                 // with them pinned. Left null on every other target and for an effect with no
                 // legacy sampler, so those bytes cannot move. The evaluation order is read from
                 // the source (HlslReadOrder), the same on every backend and host.
-                if (directX && view.Value.LegacySamplerTextures.Count > 0)
+                if (directX && (view.Value.LegacySamplerTextures.Count > 0 || directXNativeLegacy))
                 {
                     dxTextureSlots = new DxTextureSlotInputs(
                         new HashSet<string>(view.Value.LegacySamplerTextures.Values, StringComparer.Ordinal),
                         view.Value.LegacySamplerTextures,
                         view.Value.ExplicitTextureRegisters,
-                        view.Value.ModernMethodTextures);
+                        view.Value.ModernMethodTextures,
+                        view.Value.ValueUseTextures,
+                        view.Value.StateTextures,
+                        fxParsed.SamplerParameterTextures);
                 }
             }
-            else if (directX && fxParsed.LegacySamplerTextures.Count > 0)
+            else if (directX && (fxParsed.LegacySamplerTextures.Count > 0 || directXNativeLegacy))
             {
                 // Fail loudly: without the view the DirectX 11 texture slots cannot be checked.
                 runWarnings.Add(new ShaderError(
@@ -1338,13 +1369,15 @@ internal sealed class CompilationPipeline
                 foreach (MonoGameGlslUniform u in layout)
                 {
                     sizeRegisters = Math.Max(sizeRegisters, u.BaseRegister + u.RegisterCount);
-                    // Primary: join by NAME. Every shader that compiles today resolves
-                    // here, so it never reaches the fallback below and its bytes are
-                    // unchanged (the byte-identity corpus stays green by construction).
+                    // Primary: join by NAME. The layout's names are already the HLSL names,
+                    // paired by position from DXC's SPIR-V member names (WithHlslNames,
+                    // issues #438/#440), so a renamed uniform resolves here too and can no
+                    // longer bind to another stage's parameter that shares its GLSL spelling.
                     int paramIndex = IndexOfParam(allParameters, u.Name);
                     if (paramIndex < 0)
                     {
-                        // Fallback (B10): SPIRV-Cross renames a free uniform whose name
+                        // Fallback (B10), reached only when the positional pairing declined
+                        // (a block that pairs with no reflected buffer): SPIRV-Cross renames a free uniform whose name
                         // collides with a GLSL reserved word (e.g. `noise` -> `_noise`,
                         // legal+required GLSL; also underscore runs and collisions), so the
                         // GLSL layout's name no longer
@@ -1369,9 +1402,10 @@ internal sealed class CompilationPipeline
                                      "effect parameter: the GLSL uniform layout and the reflected " +
                                      "parameter list diverged. SPIRV-Cross renames some uniforms " +
                                      "(a GLSL reserved word, noise -> _noise; a run of underscores, " +
-                                     "my__val -> my_val; a name collision, _noise_1); a renamed " +
-                                     "uniform can only be mapped back when the stage's uniforms are " +
-                                     "all loose globals or in one cbuffer, so rename it otherwise"), runWarnings);
+                                     "my__val -> my_val; a name collision, _noise_1), which are " +
+                                     "mapped back through DXC's SPIR-V member names by position; " +
+                                     "here the GLSL uniform blocks did not pair with the SPIR-V " +
+                                     "constant buffers. Please report the shader shape"), runWarnings);
                     paramIndices.Add(paramIndex);
                     paramOffsets.Add((ushort)(u.BaseRegister * 16));
                     backedParamIndices.Add(paramIndex);
@@ -1591,10 +1625,19 @@ internal sealed class CompilationPipeline
                         // mgfxc's record carries the sampler's own DXBC binding, which is not the
                         // texture's when a register or a modern SamplerState moved it). Otherwise
                         // slot first (the 1:1 modern shape), then the sole shared sampler.
+                        // A legacy sampler the rewrite did not reach (read through a macro, declared
+                        // through one or in an #include) is compiled natively: its RDEF texture and
+                        // sampler both carry the SAMPLER's name, which no modern pair can (HLSL has
+                        // one namespace for both), and its sampler slot is fxc's own (issue #441:
+                        // mgfxc A s0, B s1 for `sampler2D A; sampler2D B;` read B first through a
+                        // macro, and both backends' RDEF agree). Joined by that name before the
+                        // fallback below, which took the TEXTURE slot and could put two samplers'
+                        // records on one sampler slot.
                         SamplerReflection? legacySamp = directX
                             ? samplerRefs.FirstOrDefault(s =>
-                                legacySamplerTextureView.TryGetValue(s.Name, out string? t)
-                                && string.Equals(t, tex.Name, StringComparison.Ordinal))
+                                  legacySamplerTextureView.TryGetValue(s.Name, out string? t)
+                                  && string.Equals(t, tex.Name, StringComparison.Ordinal))
+                              ?? samplerRefs.FirstOrDefault(s => string.Equals(s.Name, tex.Name, StringComparison.Ordinal))
                             : null;
                         SamplerReflection? matchedSamp =
                             legacySamp
@@ -1991,7 +2034,8 @@ internal sealed class CompilationPipeline
         CancellationToken cancellationToken,
         bool enforceDirectX11Floor = false,
         string? entryPoint = null,
-        bool kniDirectXFloor = false)
+        bool kniDirectXFloor = false,
+        bool kniOpenGlNoSm6 = false)
     {
         // A missing profile cannot be validated (and never reaches a compile with a real
         // target) — leave the existing SM3 fallback behavior untouched.
@@ -2002,7 +2046,8 @@ internal sealed class CompilationPipeline
         // (IsKnownProfile is case-insensitive, so the lowercased form is fine here.)
         if (FxPreParser.IsKnownProfile(profile))
             return ResolvedProfileChecks(
-                profile, stage, span, sourceFileName, enforceStagePrefix, enforceDirectX11Floor, entryPoint, kniDirectXFloor);
+                profile, stage, span, sourceFileName, enforceStagePrefix, enforceDirectX11Floor, entryPoint, kniDirectXFloor,
+                kniOpenGlNoSm6);
 
         // Profile-SHAPED but NOT a known profile (e.g. 'ps_9_9', 'ps_2_5'): unconditionally
         // invalid — no macro could rescue a literal that already looks like a profile — so
@@ -2033,7 +2078,8 @@ internal sealed class CompilationPipeline
 
         if (expanded is not null && FxPreParser.IsKnownProfile(expanded))
             return ResolvedProfileChecks(
-                expanded, stage, span, sourceFileName, enforceStagePrefix, enforceDirectX11Floor, entryPoint, kniDirectXFloor);
+                expanded, stage, span, sourceFileName, enforceStagePrefix, enforceDirectX11Floor, entryPoint, kniDirectXFloor,
+                kniOpenGlNoSm6);
 
         return ProfileError(profile, span, sourceFileName);
     }
@@ -2044,7 +2090,8 @@ internal sealed class CompilationPipeline
     /// profile floor (<c>SD0015</c>). Stage prefix runs first because it is the more
     /// specific diagnosis of the same token — a <c>ps_*</c> in a <c>VertexShader</c> slot
     /// is a slot error, not a shader-model one (mgfxc conflates the two and reports its
-    /// floor message for both).
+    /// floor message for both). A KNIFX container on OpenGL refuses SM6 (also <c>SD0015</c>,
+    /// <see cref="KniOpenGlSm6Check"/>).
     /// </summary>
     private static ShaderError? ResolvedProfileChecks(
         string knownProfile,
@@ -2054,11 +2101,15 @@ internal sealed class CompilationPipeline
         bool enforceStagePrefix,
         bool enforceDirectX11Floor,
         string? entryPoint,
-        bool kniDirectXFloor)
+        bool kniDirectXFloor,
+        bool kniOpenGlNoSm6 = false)
     {
         ShaderError? stagePrefix = StagePrefixCheck(knownProfile, stage, span, sourceFileName, enforceStagePrefix);
         if (stagePrefix is not null)
             return stagePrefix;
+
+        if (kniOpenGlNoSm6)
+            return KniOpenGlSm6Check(knownProfile, stage, span, sourceFileName, entryPoint);
 
         if (!enforceDirectX11Floor)
             return null;
@@ -2263,6 +2314,38 @@ internal sealed class CompilationPipeline
                      $"profiles such as {prefix}_6_0 are refused too). Use the standard " +
                      "'#if OPENGL … #else …' header so the DirectX arm defines " +
                      "VS_SHADERMODEL/PS_SHADERMODEL as the *_4_0_level_9_1 pair");
+    }
+
+    /// <summary>
+    /// The SM6 refusal for a KNIFX container on OpenGL (issue #439, owner decision: refuse as KNI
+    /// does). The desktop GL body records the profile's shader model (<see cref="KnifxShaderModel"/>),
+    /// and KNI's GL runtime throws "Shader model 6.0 is not supported by the current graphics profile"
+    /// for any recorded version above the profile's ceiling (Reach 2.0 … FL11_x 5.0;
+    /// <c>Platforms/Graphics/.GL/Shader/ConcreteShader.cs</c>, KNI 4.2.9001 to main), so an SM6 pass
+    /// built an effect that never loads. KNI's own GL effect processor refuses SM6 profiles as invalid
+    /// (<c>ShaderVersion.ParseShaderModel</c> only reads <c>_1</c>–<c>_5</c>). Every other profile keeps
+    /// what it records today.
+    /// </summary>
+    private static ShaderError? KniOpenGlSm6Check(
+        string knownProfile, ShaderStage stage, SourceSpan? span, string sourceFileName, string? entryPoint)
+    {
+        if (KnifxShaderModel.Parse(knownProfile).Major < 6)
+            return null;
+
+        string stageWord = stage == ShaderStage.Vertex ? "vertex" : "pixel";
+        string prefix    = stage == ShaderStage.Vertex ? "vs" : "ps";
+        string named     = entryPoint is null ? string.Empty : $" (the {stageWord} shader '{entryPoint}')";
+        return new ShaderError(
+            File: sourceFileName,
+            Line: span?.StartLine ?? 0,
+            Column: span?.StartColumn ?? 0,
+            Code: "SD0015",
+            Message: $"compile target '{knownProfile}'{named} is a Shader Model 6 profile, which the KNIFX container " +
+                     "on OpenGL cannot carry: KNI's own effect processor refuses SM6 profiles, and KNI's runtime " +
+                     "refuses a shader that records shader model 6.0 on every graphics profile (the highest it " +
+                     $"accepts is 5.0, at FL11_0). The OpenGL output does not depend on the SM4+ profile, so use " +
+                     $"{prefix}_4_0_level_9_1 (Reach), {prefix}_4_0_level_9_3 (HiDef), {prefix}_4_0, {prefix}_4_1 " +
+                     $"or {prefix}_5_0, or {prefix}_2_0/{prefix}_3_0");
     }
 
     /// <summary>
@@ -3020,8 +3103,9 @@ internal sealed class CompilationPipeline
                     // The shader's uniform register layout — the pipeline builds the
                     // per-shader {vs,ps}_uniforms_vec4 cbuffer record from THIS, so
                     // the .mgfx offsets and the GLSL indices share one allocation
-                    // (Phase 43 F4/F5/F6).
-                    uniforms = rewritten.Uniforms;
+                    // (Phase 43 F4/F5/F6). Each entry is renamed to its HLSL global by
+                    // POSITION (issues #438, #440), so the join never trusts SPIRV-Cross's spelling.
+                    uniforms = WithHlslNames(rewritten.Uniforms, transpileResult.Value.Text, spirvResult.Value.Bytes);
                     if (stage == ShaderStage.Vertex && rewritten.Attributes.Count > 0)
                     {
                         // Map the rewriter's discovered attributes (vs_v{k} + usage/index)
@@ -3496,7 +3580,10 @@ internal sealed class CompilationPipeline
         IReadOnlySet<string> LegacyTextures,
         IReadOnlyDictionary<string, string> LegacySamplerTextures,
         IReadOnlyList<ExplicitTextureRegister> ExplicitRegisters,
-        IReadOnlySet<string> ModernMethodTextures)
+        IReadOnlySet<string> ModernMethodTextures,
+        IReadOnlySet<string> ValueUseTextures,
+        IReadOnlyDictionary<string, string> StateTextures,
+        IReadOnlyDictionary<string, IReadOnlyList<string>> SamplerParameterTextures)
     {
         private string? _cachedText;
         private Result<string, ShaderError>? _cachedView;
@@ -3547,9 +3634,6 @@ internal sealed class CompilationPipeline
         DxTextureSlotInputs inputs,
         CancellationToken ct)
     {
-        if (inputs.LegacyTextures.Count == 0)
-            return null;
-
         string described = "";
         ShaderError Unplaced(string why) => new(
             File: request.SourceFileName,
@@ -3595,15 +3679,27 @@ internal sealed class CompilationPipeline
         // (`Tb.GetDimensions`, `Tb.Load`, even `Tb.Sample`): fxc gives that use a texture record of
         // its own, numbered apart (mgfxc A@t0 Tb@t1 Tb@t2, measured), and in the compiled text the
         // rewrite's `Tb.Sample(SB, uv)` reads look the same as the author's.
-        string? modern = present.Where(inputs.ModernMethodTextures.Contains).Order(StringComparer.Ordinal).FirstOrDefault();
+        // A natively compiled sampler (keyed by its own name) stands for the texture its state block
+        // names (issue #447).
+        string Direct(string key) => nativeSamplers.Contains(key) && inputs.StateTextures.TryGetValue(key, out string? t) ? t : key;
+        string? modern = present.Select(Direct).Where(inputs.ModernMethodTextures.Contains).Order(StringComparer.Ordinal).FirstOrDefault();
         if (modern is not null)
         {
             return (null, Unplaced($"the legacy sampler's texture '{modern}' is also used through a method call of its own " +
                                    "(GetDimensions, Load, Sample, ...), which fxc gives a texture record of its own"));
         }
+        // Issue #447: the same for any other direct use, outside a function body too (an index, an
+        // assignment, an argument): mgfxc A@t0 Tb@t1 Tb@t2 where the rewrite has one Tb record.
+        string? value = present.Select(Direct).Where(inputs.ValueUseTextures.Contains).Order(StringComparer.Ordinal).FirstOrDefault();
+        if (value is not null)
+        {
+            return (null, Unplaced($"the legacy sampler's texture '{value}' is also used directly as a value (indexed, assigned " +
+                                   "or passed), which fxc gives a texture record of its own"));
+        }
 
         IReadOnlyList<string>? reads = HlslReadOrder.FirstReads(
-            view.Value, request.EntryPoint, inputs.LegacyTextures, inputs.LegacySamplerTextures, present, out string? refusal);
+            view.Value, request.EntryPoint, inputs.LegacyTextures, inputs.LegacySamplerTextures, present, out string? refusal,
+            inputs.SamplerParameterTextures);
         if (reads is null)
             return (null, Unplaced($"the evaluation order of the reads is not certain ({refusal})"));
         var readOrder = new List<string>();
@@ -3629,7 +3725,11 @@ internal sealed class CompilationPipeline
             return null;
 
         described = " (" + string.Join(", ", plan.OrderBy(p => p.Value).Select(p => $"{p.Key} t{p.Value}")) + ")";
-        string? pinnedText = DxTextureSlotOrder.Pin(request.HlslSource, plan);
+        // A natively compiled legacy sampler (its RDEF texture carries the sampler's own name) has no
+        // texture declaration to pin; it takes the slot the pinned resources leave, checked below.
+        var natives = new HashSet<string>(
+            bindings.Select(b => b.Name).Where(n => nativeSamplers.Contains(n) && !inputs.LegacyTextures.Contains(n)), StringComparer.Ordinal);
+        string? pinnedText = DxTextureSlotOrder.Pin(request.HlslSource, plan, natives);
         if (pinnedText is null)
             return (null, Unplaced("a declaration could not be given an explicit register (declared through a macro or in an #include, in a declarator list, as an array, or with an annotation)"));
 
@@ -3677,6 +3777,28 @@ internal sealed class CompilationPipeline
                 m => $"SamplerState{m.Groups[1].Value}{sampler} : register(s{slot});");
         }
         return text;
+    }
+
+    /// <summary>
+    /// The rewriter's uniform layout with each entry renamed to the HLSL global it is (issues #438,
+    /// #440): paired by POSITION with DXC's SPIR-V member names
+    /// (<see cref="ConvertedUniformDefaults.HlslMemberNamesInBlockOrder"/>), since the rewriter lays
+    /// the registers out block by block, member by member, in the GLSL's declaration order. A
+    /// renamed member (<c>noise</c> to <c>_noise</c>) then joins its own parameter, never another
+    /// stage's that happens to be spelled <c>_noise</c>. When the pairing declines, or its count
+    /// disagrees with the layout's, the layout keeps its GLSL names and the name join plus the
+    /// declaration-order bridge apply as before. A member SPIRV-Cross did not rename keeps its name,
+    /// so every such shader's bytes are unchanged.
+    /// </summary>
+    private static IReadOnlyList<MonoGameGlslUniform> WithHlslNames(
+        IReadOnlyList<MonoGameGlslUniform> layout, string spirvCrossGlsl, ReadOnlyMemory<byte> spirv)
+    {
+        if (layout.Count == 0)
+            return layout;
+        IReadOnlyList<string>? names = ConvertedUniformDefaults.HlslMemberNamesInBlockOrder(spirvCrossGlsl, spirv);
+        if (names is null || names.Count != layout.Count)
+            return layout;
+        return layout.Select((u, k) => u.Name == names[k] ? u : u with { Name = names[k] }).ToList();
     }
 
     private static int IndexOfParam(IReadOnlyList<ParameterReflection> parameters, string name)

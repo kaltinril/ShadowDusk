@@ -100,10 +100,10 @@
                                    the interpolant differently (column_major and row_major, 3x3 /
                                    4x3 / 3x4 / 2x2). Controls that must diverge: a relabelled
                                    BINORMAL0 record, two row_major fixtures packed by columns, a split float1x4 in one register.
-                                   The non-square packing cases are an explicit list a strict GL
-                                   driver (Mesa/Apple/ANGLE, from GL_RENDERER) must refuse
-                                   (EXPECTED-REFUSED, SD0403); on a desktop GPU driver they must
-                                   render and match like the rest, so this run is where they do.
+                                   The non-square packing cases render and match on every driver,
+                                   strict ones (Mesa/Apple/ANGLE) included, since issue #453 holds
+                                   their GLSL as zero-padded square matN; a compile that still
+                                   warns SD0403 fails the run.
     * KNI EffectTest             - validation/KniEffectTest{KniGl,KniDx,Gl,Dx,Dx12,Vulkan}: every test
                                    of KNI's own Tests/Framework.Graphics/EffectTest.cs (checked against
                                    XNA by KNI's author) in the real engine, on KNI's vendored test
@@ -708,14 +708,15 @@ foreach ($mg in $newerMonoGame) {
         @('validation/VsDriven'), @('validation/VertexSemanticsGl'), @('validation/DeferredSpriteMrtGl'),
         @('validation/SamplerPairsGl'), @('validation/SamplerRegisterOrderGl')))
     # DesktopGL4 (MonoGame 3.8.6+): the native OpenGL 4.1-core runtime, which loads the same OpenGL
-    # .mgfx. Not VertexSemanticsGl or KniEffectTestGl: a GLSL non-square matrix (mat3x4/mat4x3) aborts
-    # DesktopGL4's core-profile compile of version-less GLSL (docs/validation-matrix.md section 7).
-    $arms.Add(@("MonoGame $mg DesktopGL4 (native GL 4.1 core): corpus + VS rig + Apos.Shapes + MRT + sampler pairs/order + initializer defaults + XNB + MGFX v11",
+    # .mgfx. VertexSemanticsGl and KniEffectTestGl carry the non-square matrices (interpolants, KNI's
+    # DeferredBasicEffect) that aborted DesktopGL4's core-profile compile until issue #453.
+    $arms.Add(@("MonoGame $mg DesktopGL4 (native GL 4.1 core): corpus + VS rig + Apos.Shapes + MRT + sampler pairs/order + initializer defaults + XNB + MGFX v11 + vertex semantics + KNI EffectTest",
         'props:-p:MonoGameDesktopGL4=true',
         @('validation/Baseline'), @('validation/Candidate'), 'py:validation/compare.py',
         @('validation/VsDriven'), @('validation/VsDriven', '--', 'apos'), @('validation/DeferredSpriteMrtGl'),
         @('validation/SamplerPairsGl'), @('validation/SamplerRegisterOrderGl'), @('validation/InitializerDefaultsGl'),
-        @('validation/XnbContentLoadGl'), @('validation/MonoGameV11')))
+        @('validation/XnbContentLoadGl'), @('validation/MonoGameV11'),
+        @('validation/VertexSemanticsGl'), @('validation/KniEffectTestGl')))
     # The Content Builder gate's newer arm also moves its DXC tool package (ContentBuilder.csproj).
     $arms.Add(@("MonoGame $mg Content Builder (ShadowDusk.ContentPipeline pair vs stock pair, real ContentBuilder + Content.Load<Effect>)",
         'build:src/ShadowDusk.Cli/ShadowDusk.Cli.csproj', @('validation/ContentBuilder')))

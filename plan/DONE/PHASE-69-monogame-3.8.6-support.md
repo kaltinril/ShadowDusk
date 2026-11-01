@@ -2,8 +2,8 @@
 
 **Track:** Forward-compatibility (newer versions, seamless).
 **Status:** ✅ **Done (2026-10-31).** Opened and closed the same day, after MonoGame **3.8.6** shipped
-stable on 2026-10-08 (nuget.org) and the repo had no record of it. One open follow-up is registered
-outside this doc (DesktopGL4 and non-square matrices, §5).
+stable on 2026-10-08 (nuget.org) and the repo had no record of it. Its one open follow-up (DesktopGL4 and non-square matrices,
+§3.4) was fixed the same day by issue #453.
 
 **Outcome in one line:** the unchanged output (MGFX v10 by default, v11 for DirectX 12 and Vulkan) is
 render-proven on MonoGame 3.8.6 on every runtime, plus the new native OpenGL 4.1 runtime
@@ -125,7 +125,7 @@ rig maxd 0 (render target and backbuffer); Apos.Shapes maxd 2 (its usual toleran
 (`DeferredSpriteMrtGl`); sampler pairs; sampler register order; initializer defaults; XNB
 `Content.Load`; MGFX v11.
 
-**Open gap — non-square matrices.** DesktopGL4 compiles the GLSL verbatim in a core-profile context.
+**Was a gap, fixed the same day by issue #453 — non-square matrices.** DesktopGL4 compiles the GLSL verbatim in a core-profile context.
 ShadowDusk's GLSL carries no `#version` and is read as GLSL 1.10, which has no non-square matrix types;
 NVIDIA reports *"global type mat4x3 requires #version 120 or later"* and MonoGame's `MGGL_FAIL` aborts
 the process. A truncating `mul(float3, float4x4)` is the usual source (KNI's `DeferredBasicEffect.fx`
@@ -147,7 +147,7 @@ temporary file failed", the same transient Windows file lock Phase 52 F2 recorde
 
 ## 5. Follow-ups registered elsewhere
 
-- DesktopGL4 + GLSL non-square matrices: `docs/validation-matrix.md` §7, `project_facts.md`.
+- DesktopGL4 + GLSL non-square matrices: fixed by issue #453 (GLSL rewrite Rule 17), 2026-10-31.
 - DesktopGL4 on Linux/Mesa (core profile, version-less GLSL): unmeasured, §7.
 - CI (`validation-render.yml`) runs the core of the 3.8.6 block at the end of its GL, DX and Vulkan jobs; the
   rest of the block and the DesktopGL4 arm run only in the Windows render gate: §7.

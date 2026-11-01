@@ -80,7 +80,7 @@ ShadowDusk works with **MonoGame, KNI, and FNA** across these graphics backends.
 | Vulkan (MonoGame)   | SPIR-V `.mgfx` | Supported    |
 | DirectX 12 (MonoGame WindowsDX12) | SM6 DXIL `.mgfx` | Supported |
 
-**MonoGame 3.8.6.** Everything above is render-proven on MonoGame 3.8.6 as well as 3.8.5 and older (the default v10 output on every release from 3.8.1.263 to 3.8.6). 3.8.6's new native OpenGL 4.1 runtime, **DesktopGL4**, loads the same OpenGL `.mgfx` and renders it like DesktopGL, except a shader whose GLSL has a non-square matrix (typically from `mul(float3, float4x4)`), which DesktopGL4 cannot compile yet. The MGCB plugin and the Content Builder library need a ShadowDusk release newer than 0.23.0 on MonoGame 3.8.6 (see the CHANGELOG).
+**MonoGame 3.8.6.** Everything above is render-proven on MonoGame 3.8.6 as well as 3.8.5 and older (the default v10 output on every release from 3.8.1.263 to 3.8.6). 3.8.6's new native OpenGL 4.1 runtime, **DesktopGL4**, loads the same OpenGL `.mgfx` and renders it like DesktopGL. The MGCB plugin and the Content Builder library need a ShadowDusk release newer than 0.23.0 on MonoGame 3.8.6 (see the CHANGELOG).
 
 Supported targets are tested end-to-end against the reference compiler (on-device Android via byte-identity: its output is byte-identical to the desktop build, whose renders are proven — the on-device pixel diff is a tracked follow-up). For the exact per-version, per-OS proof status, see the [Validation Matrix](docs/validation-matrix.md). To choose a target (or build a shader-download feature), see the [Choosing a Target](https://kaltinril.github.io/ShadowDusk/guides/choosing-a-target.html) guide. Classic Microsoft XNA 4.0 is out of scope.
 
@@ -112,7 +112,7 @@ For **DirectX 11**, the default compiler is the cross-platform **vkd3d-shader**,
 <details>
 <summary><b>Framework notes</b> (output format, FNA, KNI HiDef / WebGL)</summary>
 
-**Output format.** ShadowDusk emits **MGFX v10** by default, the format that loads on MonoGame 3.8.1.263 (the measured floor) and every newer MonoGame, plus KNI. You never set a flag to get correct output. Targeting a newer runtime? Two optional formats load and render exactly like v10:
+**Output format.** ShadowDusk emits **MGFX v10** by default, the format that loads on MonoGame 3.8.1.263 (the measured floor) and every newer MonoGame, plus KNI. You never set a flag to get correct output. A global initializer (`float R = 1;`) becomes the parameter's default value on every MGFX and KNIFX target, so the effect renders right before any `Set` call; `mgfxc`'s OpenGL build stores zeros there. Targeting a newer runtime? Two optional formats load and render exactly like v10:
 
 - MonoGame 3.8.5+ &rarr; `CompilerOptions.MgfxVersion = 11`
 - KNI v4.02+ &rarr; `CompilerOptions.Container = EffectContainer.Knifx`

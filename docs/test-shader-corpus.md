@@ -355,6 +355,17 @@ They feed the byte-identity manifests under `tests/fixtures/golden/byte-identity
   `mgfxc` OpenGL refuses a `half` global (`X3650`), and so does FNA's reference `fxc /T fx_2_0`,
   which is why it is in the DirectX and OpenGL byte-identity arms but not the FNA one.
 
+### Initializer-default set (`golden/initializer-defaults/`, owner directive 2026-10-28)
+
+Global-initializer fixtures (`float R = 1;`, vectors, a `float4x4`, arrays, `bool`/`int`, a `float3`
+packed behind a `float`, non-square and `row_major` matrices, `#pragma pack_matrix`, an unmodelled
+initializer, and a no-initializer control) live in `tests/fixtures/golden/initializer-defaults/`,
+outside `shaders/` on purpose: they are default-value fixtures, not corpus members, so the corpus
+sweeps never pick them up. The same folder holds the real `mgfxc` 3.8.4.1 `OpenGL` and `DirectX_11`
+builds they are compared against (`mgfxc-3.8.4.1-*`) and KNI's own `.xnb` builds
+(`kni-4.2.9001-Windows`); `ReadMe.md` there lists what each fixture pins. They feed
+`InitializerDefaultsTests` and the six `validation/InitializerDefaults*` drivers.
+
 ### How they are used
 
 - **Now (no `mgfxc` golden required):** compile-level coverage in

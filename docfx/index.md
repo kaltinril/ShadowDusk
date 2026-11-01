@@ -38,7 +38,7 @@ FNA  (D3D9 fx_2_0):
 
 | Backend | Output | Status |
 |---|---|---|
-| OpenGL / DesktopGL (incl. MonoGame 3.8.6 DesktopGL4) | GLSL | Validated end-to-end (DesktopGL4: except a GLSL non-square matrix) |
+| OpenGL / DesktopGL (incl. MonoGame 3.8.6 DesktopGL4) | GLSL | Validated end-to-end |
 | DirectX (DX11) | DXBC (SM5) via `vkd3d-shader` (default, cross-platform) / `d3dcompiler_47` (Windows-only oracle, opt-in) | Validated end-to-end |
 | WebGL (XNA Fiddle / KNI browser) | GLSL ES | Validated end-to-end |
 | [Android on-device](guides/on-device-android.md) (MonoGame, KNI) | GLSL | Validated end-to-end (byte-identical to the desktop build) |
@@ -57,7 +57,7 @@ The table above is the **graphics-backend** axis — the one that decides the ou
 
 > **"Same `.mgfx` as `mgfxc`"** means behaviorally equivalent and `Effect`-loadable — it renders the same pixels in the real runtime. Byte-identity is only ShadowDusk's *own* reproducibility (same version + source + target → same bytes), **never** byte-equality with `mgfxc`.
 
-> **Output container.** The default is **MGFX v10** — it loads on every MonoGame 3.8.1.263+ (the measured floor) and KNI runtime, so you never set a flag for correct output. Opt-in/experimental **MGFX v11** (`CompilerOptions.MgfxVersion = 11`, MonoGame 3.8.5+) and **KNIFX v11** (`CompilerOptions.Container = EffectContainer.Knifx`, KNI v4.02+) containers are additionally available, both render-proven in their real engines. See [Parameters & Caveats](guides/parameters-and-caveats.md).
+> **Output container.** The default is **MGFX v10** — it loads on every MonoGame 3.8.1.263+ (the measured floor) and KNI runtime, so you never set a flag for correct output. A global initializer (`float R = 1;`) becomes the parameter's default value on every MGFX and KNIFX target, so the effect renders right before any `Set` call; `mgfxc`'s OpenGL build stores zeros there. Opt-in/experimental **MGFX v11** (`CompilerOptions.MgfxVersion = 11`, MonoGame 3.8.5+) and **KNIFX v11** (`CompilerOptions.Container = EffectContainer.Knifx`, KNI v4.02+) containers are additionally available, both render-proven in their real engines. See [Parameters & Caveats](guides/parameters-and-caveats.md).
 
 ## Quick links
 

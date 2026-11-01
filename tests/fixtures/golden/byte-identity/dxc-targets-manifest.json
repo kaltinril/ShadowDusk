@@ -95,15 +95,15 @@
     "warnings": []
   },
   "DirectX12.Debug/FnaMultiPassStates.fx": {
-    "mgfx": "3769b5499ff5c1ad455f7adc9f4133dbab171398ad6822e8d0171d81faa740fd",
-    "mgfxNormalized": "ea061afaee7f02a63a42b97d971aaa97c9a40d8c394548286e669cd94293e27a",
-    "dxil": "73b1dcbd66adc2ee9add5a93362f2f534cd6f746088672a84c51cfb1243156d4",
+    "mgfx": "3d4d0ea5856855dc26d7003f264447d5871a85d1770630fd5e02305a08d6ba6e",
+    "mgfxNormalized": "7fa7148564dff354d657d4fd0090a39d6314f43cb1e3b2d22e0dfb21b578123e",
+    "dxil": "facdc6017e6ab9862c7c1f936b30cfa5b8f89f99a9a233fc9362fd0f1a202280",
     "warnings": []
   },
   "DirectX12.Debug/ForwardLighting.fx": {
-    "mgfx": "861ff2907bf97bcea2ea04addb52830311d4e68585c47176917b018bd6a7b637",
-    "mgfxNormalized": "72d3b43c1bd9d8f42b0e5c813c3143816505a1e8ef6d984a3e62f9f0a9f7056d",
-    "dxil": "03eee578e893b15175af3adaa33fdded34e75cb06207fa6d69ba69ab331e9f4e",
+    "mgfx": "52d7084e6c2107187d2eb3cdad200e77a5ec05b3ab1029c9608611a8eddaba96",
+    "mgfxNormalized": "5c1a4568ab04afdc1fe0533939f254b699bac6be99847e714c4dffeb227ea923",
+    "dxil": "b378c6ab358bc51be66391cdd0878d8f2d3cff5d20444c97ace036d72a1b23ac",
     "warnings": []
   },
   "DirectX12.Debug/Grayscale.fx": {
@@ -1281,15 +1281,15 @@
     "warnings": []
   },
   "DirectX12/FnaMultiPassStates.fx": {
-    "mgfx": "9a9a26811a04a781cd0a0567a4a692ac97b654777e0bbaceea8b553cc0f282ff",
-    "mgfxNormalized": "9f9f2f1396dbe7cd8cba7c824b5a320429590f43cc8d1df6d6316e4dba1a84d7",
-    "dxil": "7299d3dfc30e80298f675eb03c69bdf2dbfc7dcfd5dcabccdf315ec7d652763f",
+    "mgfx": "3b7c62c07fe7e0ab8d0b773dee92bf742b304684e0575fcc34baf55b2866f040",
+    "mgfxNormalized": "429e8191b96b2debb350121010377b1a647382517073efecb406fa58236b4b81",
+    "dxil": "bcf539b0cf1b80af546f398ab713d9689c3d2012c2c89bafe27b059ca581c643",
     "warnings": []
   },
   "DirectX12/ForwardLighting.fx": {
-    "mgfx": "9eb77e60e26a9e37c3dbafedf9fc82f269bac44f87cebe3f775d8b81f6cc7b0e",
-    "mgfxNormalized": "c69cda4dfbdead24e7e8c2b43bb350b97413278a8ae82a3b5274f54925770df2",
-    "dxil": "230075e523eed20f04bad7218103fb41b80584b524a57ee1729ef45ad866c975",
+    "mgfx": "389a60ea41a8f3821d7a3a7893210f38cd26ea11b1128a00a84b1de8a7cb5ef6",
+    "mgfxNormalized": "44c9e794358d3b5c7ad22182866c644f248df1b45c61c0d16786d975f3c1b878",
+    "dxil": "b0ba69b866d7d7b2dc332f82b8e885de452282b2a0aaa0c37a41c2997e2254c3",
     "warnings": []
   },
   "DirectX12/Grayscale.fx": {
@@ -2452,13 +2452,13 @@
     "warnings": []
   },
   "Vulkan.Debug/FnaMultiPassStates.fx": {
-    "mgfx": "0a013433179829f005d65f4bda38a3ed72166574fc29f943c717c02cd8b4b8ef",
-    "spirv": "9a83371d6b766a7741e221e1ad9f915e11cabd17fb85c4e72da56fada01153f8",
+    "mgfx": "76c2aaa72df42c09c8af9796c1f87d77d4b3f1836a990e070bb315c420866826",
+    "spirv": "b111296919db5f7af558e428a591a5216b61652f749f3b129f95d2496da07a4a",
     "warnings": []
   },
   "Vulkan.Debug/ForwardLighting.fx": {
-    "mgfx": "95cad490f65d62bd29e53b25c3a9660441b92c8a762682e7789abff955d74a76",
-    "spirv": "bc8fb4f8719f81a6cb5a2d69ad9bb23a17316dbec036fdce8000203dd1912ca3",
+    "mgfx": "2f8a8787a264e6321d1a3ba1c78536cd7b4e8f5fdb7d5d466a7a8065f17d16af",
+    "spirv": "f5a4d725b8fde9d4e36d0b09c7e902ee6f3258e992db120244cefd2463b02483",
     "warnings": []
   },
   "Vulkan.Debug/Grayscale.fx": {
@@ -3455,13 +3455,13 @@
     "warnings": []
   },
   "Vulkan/FnaMultiPassStates.fx": {
-    "mgfx": "c3b8539b2577cfd2a3d7f503b4d910bff0fa2b2b2b98a3a76c29f7562017bbbb",
-    "spirv": "527aff530e2132a798fd751520528a18608f747cb5eb10e5ea8f87a69cc81900",
+    "mgfx": "fe999915da7c708877050658850773d525836fabc7b95235b9787969ff341f50",
+    "spirv": "4f2b09100eaaf35dd02c51e2bf9b5d21f484015e8e5795cb963a56c799424287",
     "warnings": []
   },
   "Vulkan/ForwardLighting.fx": {
-    "mgfx": "f15c432eb7ffc34cbf09d5fc4a8cca33ee278bc46494f28d226d1f4cd3957a93",
-    "spirv": "864cda921a5b1840c20be70ce0ce725631a6cb71386facaf2a94fb50c6ba9c56",
+    "mgfx": "337e0bc299bc9b570177a47967b66d25add28905d264fb4f9a695f545f09f18e",
+    "spirv": "7a2519039146ba80593a841285be2ed7459a72eaa096edf398d1dfff0c03438a",
     "warnings": []
   },
   "Vulkan/Grayscale.fx": {

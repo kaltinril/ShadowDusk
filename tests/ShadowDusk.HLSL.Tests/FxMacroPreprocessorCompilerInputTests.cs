@@ -1,5 +1,6 @@
 #nullable enable
 
+using ShadowDusk.Core;
 using ShadowDusk.HLSL.Preprocessing;
 using Shouldly;
 using Xunit;
@@ -306,6 +307,73 @@ public sealed class FxMacroPreprocessorCompilerInputTests
 
         result.IsSuccess.ShouldBeTrue();
         result.Value.PredefinedMacroUse.ShouldNotBeNull().Name.ShouldBe("__HLSL_VERSION");
+    }
+
+    // Issue #442: with the values DXC was measured to predefine for the Vulkan compile, a conditional
+    // on one of them is evaluated as DXC evaluates it, and the view stays trusted.
+    [Theory]
+    [InlineData("#if __HLSL_VERSION >= 2016\nfloat4 a;\n#else\nfloat4 b;\n#endif\n", 4)]
+    [InlineData("#if __HLSL_VERSION >= 2021\nfloat4 a;\n#else\nfloat4 b;\n#endif\n", 2)]
+    [InlineData("#ifdef __spirv__\nfloat4 a;\n#else\nfloat4 b;\n#endif\n", 4)]
+    [InlineData("#if defined(__hlsl_dx_compiler) && __SHADER_TARGET_MAJOR == 6 && __SHADER_TARGET_MINOR == 0\nfloat4 a;\n#else\nfloat4 b;\n#endif\n", 4)]
+    [InlineData("#if __SHADER_STAGE_MESH == 13 && __SHADER_STAGE_AMPLIFICATION == 14 && __SHADER_STAGE_LIBRARY == 6\nfloat4 a;\n#else\nfloat4 b;\n#endif\n", 4)]
+    public void SkippedLines_WithDxcsPredefines_EvaluateThemAsDxcDoes(string src, int skippedLine)
+    {
+        var result = FxMacroPreprocessor.SkippedLines(src, "t.fx", DxcSpirvPredefinedMacros.Vulkan(ShaderStage.Pixel));
+
+        result.IsSuccess.ShouldBeTrue(result.IsFailure ? $"{result.Error.Code}: {result.Error.Message}" : "ok");
+        result.Value.PredefinedMacroUse.ShouldBeNull();
+        result.Value.Lines.ShouldBe([skippedLine]);
+    }
+
+    [Fact]
+    public void SkippedLines_WithDxcsPredefines_AreStageDependentForTheTargetStage()
+    {
+        const string src =
+            "#if __SHADER_TARGET_STAGE == __SHADER_STAGE_VERTEX\n" + // 1
+            "float4 v;\n" +                                         // 2
+            "#elif __SHADER_TARGET_STAGE == __SHADER_STAGE_PIXEL\n" + // 3
+            "float4 p;\n" +                                         // 4
+            "#endif\n";
+
+        FxMacroPreprocessor.SkippedLines(src, "t.fx", DxcSpirvPredefinedMacros.Vulkan(ShaderStage.Vertex)).Value.Lines.ShouldBe([4]);
+        FxMacroPreprocessor.SkippedLines(src, "t.fx", DxcSpirvPredefinedMacros.Vulkan(ShaderStage.Pixel)).Value.Lines.ShouldBe([2]);
+    }
+
+    [Fact]
+    public void SkippedLines_WithDxcsPredefines_TheSourceMayStillUndefineOne()
+    {
+        // Undefined as in DXC; a test of it after the #undef is still reported (the conservative
+        // whole-file pairing), exactly as before the seeds.
+        const string src = "#undef __HLSL_VERSION\n#ifdef __HLSL_VERSION\nfloat4 a;\n#endif\n";
+
+        var result = FxMacroPreprocessor.SkippedLines(src, "t.fx", DxcSpirvPredefinedMacros.Vulkan(ShaderStage.Pixel));
+
+        result.Value.Lines.ShouldBe([3]);
+        result.Value.PredefinedMacroUse.ShouldNotBeNull().Name.ShouldBe("__HLSL_VERSION");
+    }
+
+    [Theory]
+    // The DXC version stamp differs by host for the same pinned DXC (1.7.2212.40 on Windows,
+    // 1.7.0.3759 on Linux), so it is never seeded and a test of it keeps the view untrusted.
+    [InlineData("#if __DXC_VERSION_MAJOR >= 1\nfloat4 a;\n#endif\n", "__DXC_VERSION_MAJOR")]
+    [InlineData("#if __DXC_VERSION_RELEASE >= 2212\nfloat4 a;\n#endif\n", "__DXC_VERSION_RELEASE")]
+    [InlineData("#ifdef __GNUC__\nfloat4 a;\n#endif\n", "__GNUC__")]
+    [InlineData("#if __LINE__ > 0\nfloat4 a;\n#endif\n", "__LINE__")]
+    public void SkippedLines_WithDxcsPredefines_StillReportAHostDependentOrUnseededMacro(string src, string macro)
+    {
+        DxcSpirvPredefinedMacros.Vulkan(ShaderStage.Pixel).ShouldNotContain(m => m.Name == macro);
+        FxMacroPreprocessor.SkippedLines(src, "t.fx", DxcSpirvPredefinedMacros.Vulkan(ShaderStage.Pixel))
+            .Value.PredefinedMacroUse.ShouldNotBeNull().Name.ShouldBe(macro);
+    }
+
+    [Fact]
+    public void TheOtherViews_StillReadDxcsPredefinesAsUndefined()
+    {
+        // mgfxc parity: the technique list, legacy-sampler recovery and initializer defaults are
+        // not given the seeds (they read what mgfxc's own preprocessor sees).
+        FxMacroPreprocessor.ProcessForCompiler("#if __HLSL_VERSION >= 2016\nfloat4 a;\n#endif\n", "t.fx")
+            .Value.PredefinedMacroUse.ShouldNotBeNull().Name.ShouldBe("__HLSL_VERSION");
     }
 
     [Fact]
