@@ -524,9 +524,17 @@ internal sealed class CompilationPipeline
         // only pattern confirmed to draw correctly on real DesktopVK (see
         // VulkanTextureSamplerBindingRewriter). No-op for GL/DX/FNA and for shaders with no
         // Texture2D/SamplerState declarations.
+        //
+        // DirectX 12 (here) and Vulkan (VulkanShaderSource below), issue #446: a vertex shader's
+        // legacy `: POSITION[0]` OUTPUT becomes `: SV_Position` for DXC, as fxc and vkd3d map it on
+        // DirectX 11; DXC has no such mapping, so the shader had no position (WindowsDX12 threw
+        // creating the pipeline, DesktopVK drew nothing). Vertex inputs are never touched, and the
+        // DirectX 11 / OpenGL / FNA sources are not this copy. See DxcVertexPositionOutputRewriter.
         PreprocessedSource glCompileSource = monoGameGl
             ? preprocessed with { Text = GlStructOutputColorRewriter.Rewrite(preprocessed.Text, fxParsed.Techniques) }
-            : preprocessed;
+            : options.Target == PlatformTarget.DirectX12
+                ? preprocessed with { Text = DxcVertexPositionOutputRewriter.Rewrite(preprocessed.Text, fxParsed.Techniques) }
+                : preprocessed;
 
         // Vulkan: the binding rewrite runs PER COMPILED SHADER (VulkanShaderSource below), because
         // each shader is its own descriptor layout: a texture read through sampler A in one pass
@@ -741,6 +749,10 @@ internal sealed class CompilationPipeline
                               "the first sampler.",
                     Severity: ShaderErrorSeverity.Warning)]);
             }
+            // Issue #446, after the binding rewrite (whose alias offsets index `text` above): the
+            // same POSITION -> SV_Position output mapping DirectX 12 gets. Same-line edits only, so
+            // the dead-line view still lines up.
+            text = DxcVertexPositionOutputRewriter.Rewrite(text, fxParsed.Techniques);
             return vulkanSources[(entryPoint, stage)] = preprocessed with { Text = text };
         }
 

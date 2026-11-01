@@ -399,7 +399,7 @@ public sealed class DxcTargetsCrossHostByteIdentityTests
             .Select(l => identity is null ? l : l.Replace(identity, "\"<dxc identity>\"", StringComparison.Ordinal)));
     }
 
-    private static string Disassemble(byte[] container)
+    internal static string Disassemble(byte[] container)
     {
         HLSL.Dxc.DxcLoader.Register().ShouldBeNull("the pinned DXC must be loaded to disassemble DXIL");
         using IDxcCompiler3 compiler = Vortice.Dxc.Dxc.CreateDxcCompiler<IDxcCompiler3>();
