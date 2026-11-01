@@ -47,8 +47,11 @@ namespace ShadowDusk.Compiler.Internal;
 ///
 /// <para>The walk also refuses: the entry point not found or overloaded, a call to an overloaded
 /// function, a legacy texture used other than as the object of a <c>Sample</c>/<c>SampleGrad</c>
-/// call (fxc gives <c>GetDimensions</c>, <c>Load</c> and the like a texture record of their own),
-/// a legacy sampler passed through a parameter, a texture the shader binds that the walk never saw
+/// call (fxc gives <c>GetDimensions</c>, <c>Load</c> and the like a texture record of their own)
+/// or passed as a value to anything but the texture parameter the SM4 rewrite gave a legacy sampler
+/// parameter (issue #443: <c>F(B_SDTexture, B, uv)</c> binds <c>F</c>'s <c>s_SDTexture</c> to
+/// <c>B_SDTexture</c>, and the callee's reads through it are <c>B_SDTexture</c>'s), a read through a
+/// sampler parameter whose argument is not a legacy sampler the view knows, a texture the shader binds that the walk never saw
 /// read, a read in a <c>for</c> loop's increment clause, a statement (or <c>for</c> init clause)
 /// that reads and is a bare call whose value is discarded, other than a user function's,
 /// <c>clip</c> or <c>sincos</c> (fxc drops <c>tex2D(B, uv);</c> and <c>float4(tex2D(B, uv));</c>
@@ -108,7 +111,21 @@ internal static class HlslReadOrder
 
     /// <param name="Path">The guards of the branches, switch arms and loops around this point.</param>
     /// <param name="Scope">The innermost scope a terminator leaves.</param>
-    private readonly record struct Ctx(Guards? Path, Scope Scope);
+    /// <param name="Bindings">The parameters of the function being walked that its call bound (issue #443).</param>
+    private readonly record struct Ctx(Guards? Path, Scope Scope, IReadOnlyDictionary<string, Binding> Bindings);
+
+    /// <summary>
+    /// A parameter bound to what its call passed (issue #443): <paramref name="Key"/> is the legacy
+    /// texture the walk numbers. <paramref name="AsTexture"/>: a texture parameter the SM4 rewrite
+    /// gave a legacy sampler parameter (<c>s_SDTexture</c>), read as <c>s_SDTexture.Sample(s, …)</c>;
+    /// otherwise a sampler, read as <c>tex2D(s, …)</c> (a function the rewrite left verbatim, compiled
+    /// natively).
+    /// </summary>
+    private readonly record struct Binding(string Key, bool AsTexture);
+
+    private static readonly IReadOnlyDictionary<string, Binding> NoBindings = new Dictionary<string, Binding>(StringComparer.Ordinal);
+    private static readonly IReadOnlyDictionary<string, IReadOnlyList<string>> NoSamplerParameters =
+        new Dictionary<string, IReadOnlyList<string>>(StringComparer.Ordinal);
 
     /// <summary>
     /// The legacy texture names in first-read order for <paramref name="entryPoint"/>, or <c>null</c>
@@ -120,15 +137,19 @@ internal static class HlslReadOrder
     /// <param name="legacySamplerTextures">Legacy sampler -> its texture (reads the rewrite did not reach, <c>tex2D(S, …)</c>).</param>
     /// <param name="present">The legacy textures the compiled shader still binds; only their order matters, and every one must be seen read.</param>
     /// <param name="refusal">Why the order could not be determined, when the result is <c>null</c>.</param>
+    /// <param name="samplerParameterTextures">Function -> the texture parameters the SM4 rewrite gave its legacy
+    /// sampler parameters (issue #443): the only parameters a legacy texture may be passed to.</param>
     public static IReadOnlyList<string>? FirstReads(
         string preprocessedSource,
         string entryPoint,
         IReadOnlySet<string> legacyTextures,
         IReadOnlyDictionary<string, string> legacySamplerTextures,
         IReadOnlySet<string> present,
-        out string? refusal)
+        out string? refusal,
+        IReadOnlyDictionary<string, IReadOnlyList<string>>? samplerParameterTextures = null)
     {
         refusal = null;
+        samplerParameterTextures ??= NoSamplerParameters;
         List<Tok> code = Tokenize(preprocessedSource);
         int[]? match = MatchBrackets(code);
         if (match is null)
@@ -238,7 +259,7 @@ internal static class HlslReadOrder
         string? why = null;
 
         var entryFn = new Fn(entryPoint, entry[0].ParamOpen, entry[0].BodyStart, entry[0].BodyEnd);
-        if (!WalkFunction(entryFn, null))
+        if (!WalkFunction(entryFn, null, NoBindings))
         {
             refusal = why ?? "the entry point's evaluation order is outside the model";
             return null;
@@ -321,7 +342,7 @@ internal static class HlslReadOrder
 
         // ---- Walking statements -------------------------------------------------------------
 
-        bool WalkFunction(Fn fn, Guards? path)
+        bool WalkFunction(Fn fn, Guards? path, IReadOnlyDictionary<string, Binding> bindings)
         {
             if (!walking.Add(fn.Name))
             {
@@ -329,7 +350,7 @@ internal static class HlslReadOrder
                 return false;
             }
             var frame = new Scope { Parent = null, IsFrame = true, IsLoop = false };
-            bool ok = WalkList(fn, fn.BodyStart, fn.BodyEnd, new Ctx(path, frame), out _);
+            bool ok = WalkList(fn, fn.BodyStart, fn.BodyEnd, new Ctx(path, frame, bindings), out _);
             walking.Remove(fn.Name);
             return ok;
         }
@@ -635,7 +656,8 @@ internal static class HlslReadOrder
         bool WalkExpression(Fn fn, int s, int e, Ctx ctx)
         {
             int[] guards = GuardsAt(ctx);
-            var pending = new Stack<(int Close, string? Read, Fn? Call)>();
+            var pending = new Stack<(int Close, string? Read, Fn? Call, IReadOnlyDictionary<string, Binding>? Bindings)>();
+            var passed = new HashSet<int>(); // legacy textures passed whole to a texture parameter the rewrite made
             for (int i = s; i <= e; i++)
             {
                 while (pending.Count > 0 && pending.Peek().Close == i)
@@ -647,7 +669,7 @@ internal static class HlslReadOrder
                             return Fail("the entry point reads its textures too many times to check");
                         occurrences.Add((read, guards));
                     }
-                    if (done.Call is { } call && !WalkFunction(call, PathOf(guards)))
+                    if (done.Call is { } call && !WalkFunction(call, PathOf(guards), done.Bindings ?? NoBindings))
                         return false;
                 }
                 if (i == e)
@@ -664,10 +686,19 @@ internal static class HlslReadOrder
                 if (StatementKeywords.Contains(t.Text))
                     return Fail($"a '{t.Text}' inside an expression in '{fn.Name}' could not be parsed");
 
-                if (legacyTextures.Contains(t.Text))
+                // Passed whole to the texture parameter the rewrite gave a legacy sampler parameter
+                // (`F(B_SDTexture, B, uv)`): bound at the call, read in the callee. Checked first:
+                // a middle argument sits where a declarator list would (`, B_SDTexture ,`), which
+                // LocalNames counts, conservatively, as a declaration.
+                if (passed.Contains(i))
+                    continue;
+                ctx.Bindings.TryGetValue(t.Text, out Binding bound);
+                bool boundTexture = bound.Key is not null && bound.AsTexture;
+                if (bound.Key is null && legacyTextures.Contains(t.Text) && LocalNames(fn).Contains(t.Text))
+                    return Fail($"a parameter or local shadows the legacy texture '{t.Text}'");
+                if (boundTexture || (bound.Key is null && legacyTextures.Contains(t.Text)))
                 {
-                    if (LocalNames(fn).Contains(t.Text))
-                        return Fail($"a parameter or local shadows the legacy texture '{t.Text}'");
+                    string key = boundTexture ? bound.Key! : t.Text;
                     if (i + 3 < e && Is(code[i + 1], ".") && code[i + 2].Kind == Kind.Ident && Is(code[i + 3], "("))
                     {
                         // Only the methods the legacy rewrite emits (tex2D -> Sample, tex2Dgrad ->
@@ -675,14 +706,14 @@ internal static class HlslReadOrder
                         // Gather, measured) a texture record of its own, numbered apart.
                         if (code[i + 2].Text is not ("Sample" or "SampleGrad"))
                         {
-                            return Fail($"the legacy texture '{t.Text}' is used through its method '{code[i + 2].Text}', which fxc " +
+                            return Fail($"the legacy texture '{key}' is used through its method '{code[i + 2].Text}', which fxc " +
                                         "gives a texture record of its own");
                         }
-                        pending.Push((match[i + 3], t.Text, null));
+                        pending.Push((match[i + 3], key, null, null));
                         i += 3;
                         continue;
                     }
-                    return Fail($"the legacy texture '{t.Text}' is used other than as the object of a method call");
+                    return Fail($"the legacy texture '{key}' is used other than as the object of a method call");
                 }
 
                 if (i + 1 < e && Is(code[i + 1], "("))
@@ -694,10 +725,24 @@ internal static class HlslReadOrder
                         if (i + 2 < e && code[i + 2].Kind == Kind.Ident)
                         {
                             string sampler = code[i + 2].Text;
-                            if (LocalNames(fn).Contains(sampler))
+                            string texture;
+                            if (ctx.Bindings.TryGetValue(sampler, out Binding samplerBinding))
+                            {
+                                // A sampler parameter bound at the call (a function the rewrite left
+                                // verbatim, compiled natively): the texture of the sampler passed.
+                                if (samplerBinding.AsTexture)
+                                    return Fail($"'{fn.Name}' reads through '{sampler}', a texture parameter, as a sampler");
+                                texture = samplerBinding.Key;
+                            }
+                            else if (LocalNames(fn).Contains(sampler))
+                            {
                                 return Fail($"'{fn.Name}' reads through the sampler parameter or local '{sampler}', whose texture this check does not follow");
-                            string texture = legacySamplerTextures.TryGetValue(sampler, out string? bound) ? bound : sampler;
-                            pending.Push((match[i + 1], texture, null));
+                            }
+                            else
+                            {
+                                texture = legacySamplerTextures.TryGetValue(sampler, out string? boundSampler) ? boundSampler : sampler;
+                            }
+                            pending.Push((match[i + 1], texture, null, null));
                             i += 1;
                         }
                         continue;
@@ -706,12 +751,73 @@ internal static class HlslReadOrder
                     {
                         if (overloads.Count != 1)
                             return Fail($"'{t.Text}' is overloaded");
-                        pending.Push((match[i + 1], null, new Fn(t.Text, overloads[0].ParamOpen, overloads[0].BodyStart, overloads[0].BodyEnd)));
+                        var callee = new Fn(t.Text, overloads[0].ParamOpen, overloads[0].BodyStart, overloads[0].BodyEnd);
+                        pending.Push((match[i + 1], null, callee, BindArguments(fn, ctx, callee, i + 1, passed)));
                         i += 1;
                     }
                 }
             }
             return pending.Count == 0 || Fail("a call could not be matched");
+        }
+
+        // The callee's parameters bound by the call whose '(' is at `open` (issue #443). An argument
+        // that is a single identifier binds the parameter at its position: a parameter of the caller
+        // bound already passes its binding on; a legacy texture binds a texture parameter the SM4
+        // rewrite gave a legacy sampler parameter, and only such a one (any other texture passed as
+        // a value is refused where it is met: fxc gives that use a record of its own); a legacy
+        // sampler the view knows binds as a sampler, to its texture, which matters only where the
+        // callee reads `tex2D(param, …)` (a function the rewrite left verbatim, compiled natively).
+        // `passed` collects the tokens of the legacy textures passed to such a texture parameter.
+        IReadOnlyDictionary<string, Binding> BindArguments(Fn caller, Ctx ctx, Fn callee, int open, HashSet<int> passed)
+        {
+            List<string> parameters = ParamNames(callee.ParamOpen);
+            IReadOnlyList<string> textureParameters =
+                samplerParameterTextures.TryGetValue(callee.Name, out var list) ? list : Array.Empty<string>();
+            var bindings = new Dictionary<string, Binding>(StringComparer.Ordinal);
+            int close = match[open];
+            int start = open + 1;
+            int position = 0;
+            for (int k = open + 1; k <= close; k++)
+            {
+                if (k < close && !Is(code[k], ","))
+                {
+                    if (code[k].Kind == Kind.Punct && code[k].Text is "(" or "[" or "{")
+                        k = match[k];
+                    continue;
+                }
+                if (k == start + 1 && code[start].Kind == Kind.Ident && position < parameters.Count)
+                {
+                    string argument = code[start].Text;
+                    string parameter = parameters[position];
+                    bool textureParameter = textureParameters.Contains(parameter, StringComparer.Ordinal);
+                    if (ctx.Bindings.TryGetValue(argument, out Binding outer))
+                    {
+                        if (!outer.AsTexture || textureParameter)
+                        {
+                            bindings[parameter] = outer;
+                            if (outer.AsTexture)
+                                passed.Add(start);
+                        }
+                    }
+                    else if (textureParameter && legacyTextures.Contains(argument))
+                    {
+                        // The rewrite put the sampler's texture here; the name is the global's
+                        // (no local can be a texture of that name).
+                        bindings[parameter] = new Binding(argument, AsTexture: true);
+                        passed.Add(start);
+                    }
+                    else if (legacySamplerTextures.TryGetValue(argument, out string? texture) && !LocalNames(caller).Contains(argument))
+                    {
+                        // A legacy sampler the view knows; one it does not (compiled natively from
+                        // an #include) stays unbound, so a read through the parameter refuses
+                        // rather than key a texture the caller cannot tell is legacy.
+                        bindings[parameter] = new Binding(texture, AsTexture: false);
+                    }
+                }
+                start = k + 1;
+                position++;
+            }
+            return bindings;
         }
 
         // ---- Certainly-entered loops --------------------------------------------------------

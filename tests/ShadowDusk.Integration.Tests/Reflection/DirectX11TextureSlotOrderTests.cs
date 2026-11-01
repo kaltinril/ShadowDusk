@@ -91,10 +91,9 @@ public sealed class DirectX11TextureSlotOrderTests
     /// <item><c>B02_MacroTexture</c>: legacy samplers a macro declares are compiled natively by the
     /// backend (the raw pre-parse cannot see them), which names the parameter after the sampler
     /// and ignores the sampler order; the TEXTURE slots match (pre-existing, <c>project_facts.md</c>).</item>
-    /// <item><c>K13_SamplerParam</c>: a legacy sampler passed to a function as an argument is
-    /// compiled natively, and its SAMPLER slot is <c>s0</c> where <c>mgfxc</c> has <c>s1</c>
-    /// (pre-existing native-path gap, like <c>B02_MacroTexture</c>); its texture slots warn
-    /// <c>SD0230</c>, since the walk does not follow the parameter.</item>
+    /// <item><c>K43_PassedLodAndModern</c>: a <c>tex2Dlod</c> read (through a sampler parameter here)
+    /// becomes a call of the helper the rewrite defines, which passes the texture as a value; the
+    /// walk does not model the helper and warns <c>SD0230</c> (the same for a global sampler).</item>
     /// <item>The false-<c>SD0230</c> class (<see cref="FalseSD0230"/>): the walk cannot tell whether
     /// fxc keeps a read under a condition, so it warns and keeps declaration order, which is not
     /// <c>mgfxc</c>'s here. Loud, never silent.</item>
@@ -103,7 +102,7 @@ public sealed class DirectX11TextureSlotOrderTests
     private static readonly HashSet<string> KnownDivergence = new HashSet<string>(StringComparer.Ordinal)
     {
         "TwoSamplersShareOneTexture", "S13_ModernSampledAndStateNamed", "A02_DeclListLegacyReverse", "A01_TexArrayPlusLegacy",
-        "B02_MacroTexture", "K13_SamplerParam",
+        "B02_MacroTexture", "K43_PassedLodAndModern",
         "U60_StateTextureGetDimsUsed", "U62_StateTextureLoadFirst", "U63_StateTextureSampleKept", "U64_StateTextureSampleLevelKept",
         "U65_StateTextureGetDimsAfter", "U67_SpriteTemplateGetDims",
     }.Union(FalseSD0230).ToHashSet(StringComparer.Ordinal);
@@ -127,7 +126,7 @@ public sealed class DirectX11TextureSlotOrderTests
     /// component, a value range, a loop that runs zero times, a uniform the shader assigns, a
     /// <c>uint</c> compared with <c>0</c>, a loop bound that truncates). Each of those was guessed
     /// wrong, silently, by a walk that tried to prove a condition run-time. <c>A01</c> and
-    /// <c>K13</c> refuse for their own reasons (a resource array, a sampler parameter). The
+    /// <c>K43</c> refuse for their own reasons (a resource array, a <c>tex2Dlod</c> helper). The
     /// <c>U0*</c>/<c>U1*</c> shapes are bare call statements fxc DROPS before it numbers
     /// (<c>tex2D(B, uv);</c>, in parentheses, a block, a loop, a void helper, a <c>for</c> init, a
     /// constructor, <c>tex2Dgrad</c>, <c>Tb.Sample(SB, uv);</c>); the <c>U6*</c> ones and <c>S13</c>
@@ -135,7 +134,7 @@ public sealed class DirectX11TextureSlotOrderTests
     /// </summary>
     private static readonly HashSet<string> ExpectedSD0230 = new HashSet<string>(StringComparer.Ordinal)
     {
-        "A01_TexArrayPlusLegacy", "K13_SamplerParam",
+        "A01_TexArrayPlusLegacy", "K43_PassedLodAndModern",
         "U01_StmtBareRead", "U02_StmtParenRead", "U03_StmtCtor", "U04_StmtCtorTwoArgs", "U05_StmtGrad", "U06_StmtBlock",
         "U07_StmtInCertainLoop", "U08_StmtNestedRead", "U09_StmtAfterIf", "U10_VoidHelperBareRead", "U11_VoidHelperAssignThenBare",
         "U12_ForInitBareRead", "U13_StmtStateSampler", "U14_StmtCtorMulti", "U68_StmtStateTextureSample", "U69_StmtStateTextureSampleLevel",
@@ -235,6 +234,23 @@ public sealed class DirectX11TextureSlotOrderTests
             return;
         }
         actual.ShouldBe(expected, customMessage: $"{shape} [{backend}]: each shader's sampler table must be mgfxc's");
+    }
+
+    [Theory]
+    [InlineData(DxbcBackend.Vkd3d)]
+    [InlineData(DxbcBackend.D3DCompiler)]
+    public async Task ASamplerPassedToAFunctionAndReadDirectly_CompilesWithOneRecordPerSampler(DxbcBackend backend)
+    {
+        // Issue #443 (probe K14): `F(B, uv) + tex2D(B, uv * 2) + tex2D(A, uv)` with
+        // `float4 F(sampler2D s, float2 uv)`. vkd3d refused it (E5005: the rewritten SamplerState B
+        // handed to a sampler2D parameter) and d3dcompiler_47 gave B two records (A@t1s0 B@t0s0
+        // B@t2s1). mgfxc 3.8.4.1: A@t1s0 B@t0s1.
+        if (backend == DxbcBackend.D3DCompiler && !OperatingSystem.IsWindows())
+            return; // the d3dcompiler_47 oracle is Windows-only
+        (MgfxBlobReader subject, IReadOnlyList<ShaderError> warnings) = await CompileAsync("K14_PassedAndRead", backend);
+        warnings.ShouldNotContain(w => w.Code == "SD0230");
+        Tables(subject).ShouldHaveSingleItem().ShouldBe("ps: A@t1s0 B@t0s1");
+        Tables(Golden("K14_PassedAndRead")).ShouldHaveSingleItem().ShouldBe("ps: A@t1s0 B@t0s1");
     }
 
     [Fact]

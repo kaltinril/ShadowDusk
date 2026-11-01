@@ -831,7 +831,8 @@ internal sealed class CompilationPipeline
                         new HashSet<string>(view.Value.LegacySamplerTextures.Values, StringComparer.Ordinal),
                         view.Value.LegacySamplerTextures,
                         view.Value.ExplicitTextureRegisters,
-                        view.Value.ModernMethodTextures);
+                        view.Value.ModernMethodTextures,
+                        fxParsed.SamplerParameterTextures);
                 }
             }
             else if (directX && fxParsed.LegacySamplerTextures.Count > 0)
@@ -3496,7 +3497,8 @@ internal sealed class CompilationPipeline
         IReadOnlySet<string> LegacyTextures,
         IReadOnlyDictionary<string, string> LegacySamplerTextures,
         IReadOnlyList<ExplicitTextureRegister> ExplicitRegisters,
-        IReadOnlySet<string> ModernMethodTextures)
+        IReadOnlySet<string> ModernMethodTextures,
+        IReadOnlyDictionary<string, IReadOnlyList<string>> SamplerParameterTextures)
     {
         private string? _cachedText;
         private Result<string, ShaderError>? _cachedView;
@@ -3603,7 +3605,8 @@ internal sealed class CompilationPipeline
         }
 
         IReadOnlyList<string>? reads = HlslReadOrder.FirstReads(
-            view.Value, request.EntryPoint, inputs.LegacyTextures, inputs.LegacySamplerTextures, present, out string? refusal);
+            view.Value, request.EntryPoint, inputs.LegacyTextures, inputs.LegacySamplerTextures, present, out string? refusal,
+            inputs.SamplerParameterTextures);
         if (reads is null)
             return (null, Unplaced($"the evaluation order of the reads is not certain ({refusal})"));
         var readOrder = new List<string>();

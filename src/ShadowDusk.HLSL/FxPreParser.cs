@@ -16,7 +16,7 @@ namespace ShadowDusk.HLSL;
 /// treated: rewritten forward to SM4 for DXC (the default), or preserved verbatim for an
 /// SM1–3 backend (the FNA fx_2_0 target, compiled by vkd3d).
 /// </summary>
-public sealed class FxPreParser
+public sealed partial class FxPreParser
 {
     // -------------------------------------------------------------------------
     // Known shader profiles
@@ -363,7 +363,8 @@ public sealed class FxPreParser
     // Constructor (private — callers use the static Parse entry point)
     // -------------------------------------------------------------------------
 
-    private FxPreParser(string source, string sourceFile, IReadOnlyList<Token> tokens, int[] tokenCharOffset, FxSourceMode mode, bool preprocessed = false)
+    private FxPreParser(string source, string sourceFile, IReadOnlyList<Token> tokens, int[] tokenCharOffset, FxSourceMode mode, bool preprocessed = false,
+        IReadOnlySet<string>? excludedSamplerParameterFunctions = null)
     {
         _source = source;
         _sourceFile = sourceFile;
@@ -371,6 +372,7 @@ public sealed class FxPreParser
         _tokenCharOffset = tokenCharOffset;
         _mode = mode;
         _preprocessed = preprocessed;
+        _excludedSamplerParameterFunctions = excludedSamplerParameterFunctions ?? new HashSet<string>(StringComparer.Ordinal);
         _pos = 0;
     }
 
@@ -399,8 +401,8 @@ public sealed class FxPreParser
         var lexer = new FxLexer(source, sourceFile);
         var tokens = lexer.Tokenize();
         var offsets = ComputeCharacterOffsets(source, tokens);
-        var parser = new FxPreParser(source, sourceFile, tokens, offsets, mode);
-        return parser.ParseFile();
+        return ParseFileExcludingUnboundSamplerParameterFunctions(
+            excluded => new FxPreParser(source, sourceFile, tokens, offsets, mode, preprocessed: false, excluded));
     }
 
     // -------------------------------------------------------------------------
@@ -558,6 +560,13 @@ public sealed class FxPreParser
         // intrinsic so the main loop knows which declarations to rewrite.
         _legacyIntrinsicSamplers = CollectLegacyIntrinsicSamplers();
 
+        // Pre-scan (issue #443): user functions taking a legacy sampler parameter whose every use
+        // the rewrite can follow. Their parameters, calls and reads are rewritten below, and the
+        // samplers passed to them are rewritten like samplers a tex2D reads.
+        IReadOnlySet<string> passedSamplers = CollectSamplerParameterFunctions();
+        if (passedSamplers.Count > 0)
+            _legacyIntrinsicSamplers = new HashSet<string>(_legacyIntrinsicSamplers.Concat(passedSamplers), StringComparer.Ordinal);
+
         // Pre-scan: discover which samplers are used through a MODERN Texture
         // method call (e.g. 'Tex.Sample(S, uv)') so a 'sampler_state' declaration
         // that the modern code actually references is rewritten to a passthrough
@@ -571,6 +580,16 @@ public sealed class FxPreParser
         while (Peek().Kind != TokenKind.EOF)
         {
             var tok = Peek();
+
+            // Issue #443: a legacy sampler parameter of a function the pre-scan can follow
+            // becomes the pair the declaration rewrite produces ('sampler2D s' ->
+            // 'Texture2D s_SDTexture, SamplerState s'), and a sampler passed to it becomes its
+            // texture and itself ('F(B, uv)' -> 'F(B_SDTexture, B, uv)').
+            if (TryRewriteSamplerParameter(replacedRanges) || TryRewriteSamplerArgument(tok, replacedRanges))
+            {
+                SkipNonCodeTokens();
+                continue;
+            }
 
             // technique / technique10 / technique11 — but NOT macro calls like TECHNIQUE(name, vs, ps).
             // A real technique declaration is followed by an identifier name (or annotation '<' or body '{'),
@@ -1001,7 +1020,7 @@ public sealed class FxPreParser
                 tok.Kind == TokenKind.Identifier &&
                 RestructuredLegacySampleIntrinsics.ContainsKey(tok.Text) &&
                 TryMatchTexSampleArgument(out string restructuredSampler) &&
-                _samplerTextureBindings.TryGetValue(restructuredSampler, out string? restructuredTexture))
+                TryGetBoundTexture(restructuredSampler, out string? restructuredTexture))
             {
                 Result<(int Start, int End, string Replacement)?, FxParseError> call =
                     RewriteRestructuredIntrinsic(tok, restructuredTexture, braceDepth);
@@ -1056,7 +1075,7 @@ public sealed class FxPreParser
                 tok.Kind == TokenKind.Identifier &&
                 LegacySampleIntrinsics.TryGetValue(tok.Text, out string? sampleMethod) &&
                 TryMatchTexSampleArgument(out string samplerArg) &&
-                _samplerTextureBindings.TryGetValue(samplerArg, out string? boundTexture))
+                TryGetBoundTexture(samplerArg, out string? boundTexture))
             {
                 int texStart = _tokenCharOffset[_pos];
                 int texEnd = texStart + tok.Text.Length;
@@ -1165,6 +1184,7 @@ public sealed class FxPreParser
             ReservedGlSamplerSlots = CollectReservedSamplerRegisters(),
             DeferredLegacyIntrinsicCalls = _deferredRestructuredCalls.ToArray(),
             RestructuredHelpers = LocateRestructuredHelpers(strippedHlsl),
+            SamplerParameterTextures = SamplerParameterTexturesResult(),
         });
     }
 
@@ -2273,9 +2293,9 @@ public sealed class FxPreParser
         var lineMap = new Preprocessing.SourceLineMap(text, sourceFile);
 
         IReadOnlyList<Token> tokens = new FxLexer(text, sourceFile).Tokenize();
-        var parser = new FxPreParser(
-            text, sourceFile, tokens, ComputeCharacterOffsets(text, tokens), FxSourceMode.RewriteToSm4, preprocessed: true);
-        Result<FxParseResult, FxParseError> parsed = parser.ParseFile();
+        int[] offsets = ComputeCharacterOffsets(text, tokens);
+        Result<FxParseResult, FxParseError> parsed = ParseFileExcludingUnboundSamplerParameterFunctions(
+            excluded => new FxPreParser(text, sourceFile, tokens, offsets, FxSourceMode.RewriteToSm4, preprocessed: true, excluded));
         if (parsed.IsFailure)
         {
             FxParseError error = parsed.Error;
