@@ -70,10 +70,10 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
 
       - name: Setup .NET 8 + .NET 10
-        uses: actions/setup-dotnet@v5
+        uses: actions/setup-dotnet@v6
         with:
           dotnet-version: |
             8.0.x
@@ -82,7 +82,7 @@ jobs:
       # Same caches as ci.yml: NuGet (carries the transitive DXC + SPIRV-Cross
       # natives), the pinned vkd3d natives, and the pinned macOS DXC dylibs.
       - name: Cache NuGet
-        uses: actions/cache@v5
+        uses: actions/cache@v6
         with:
           path: ~/.nuget/packages
           key: nuget-${{ runner.os }}-${{ hashFiles('**/packages.lock.json', '**/Directory.Packages.props') }}
@@ -90,13 +90,13 @@ jobs:
             nuget-${{ runner.os }}-
 
       - name: Cache vkd3d natives
-        uses: actions/cache@v5
+        uses: actions/cache@v6
         with:
           path: tools/vkd3d
           key: vkd3d-2.1-${{ runner.os }}
 
       - name: Cache DXC macOS natives
-        uses: actions/cache@v5
+        uses: actions/cache@v6
         with:
           path: tools/dxc
           key: dxc-${{ runner.os }}-${{ hashFiles('tools/restore.sh', 'tools/restore.ps1') }}
@@ -105,7 +105,7 @@ jobs:
       # ~80 MB together), keyed on restore.sh so a re-pin invalidates it. restore.* re-verifies
       # the SHA-256 of a cached file and re-downloads on a mismatch.
       - name: Cache Android SPIRV-Cross natives
-        uses: actions/cache@v5
+        uses: actions/cache@v6
         with:
           path: |
             tools/spirv-cross/android-arm64
@@ -113,7 +113,7 @@ jobs:
           key: spirv-cross-android-${{ runner.os }}-${{ hashFiles('tools/restore.sh', 'tools/restore.ps1') }}
 
       - name: Cache slangc natives
-        uses: actions/cache@v5
+        uses: actions/cache@v6
         with:
           path: tools/slang
           key: slang-2026.14.1-${{ runner.os }}

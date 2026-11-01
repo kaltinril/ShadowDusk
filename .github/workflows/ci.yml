@@ -52,10 +52,10 @@ jobs:
     timeout-minutes: 15
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Setup .NET 8 + .NET 10
-        uses: actions/setup-dotnet@v4
+        uses: actions/setup-dotnet@v6
         with:
           dotnet-version: |
             8.0.x
@@ -96,7 +96,7 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
 
       # actions/setup-dotnet always downloads and unzips the latest 8.0.x and 10.0.x SDKs, even
       # when the image has them one patch behind: 62 s on windows-latest and 31 s on macos-latest
@@ -120,7 +120,7 @@ jobs:
 
       - name: Setup .NET 8 + .NET 10
         if: steps.dotnet.outputs.install == 'true'
-        uses: actions/setup-dotnet@v5
+        uses: actions/setup-dotnet@v6
         with:
           dotnet-version: |
             8.0.x
@@ -130,7 +130,7 @@ jobs:
       # OpenGL + DXC in-memory path is self-contained from NuGet. Key on the lock files
       # and the central version pins so a dependency change invalidates the cache.
       - name: Cache NuGet
-        uses: actions/cache@v5
+        uses: actions/cache@v6
         with:
           path: ~/.nuget/packages
           key: nuget-${{ runner.os }}-${{ hashFiles('**/packages.lock.json', '**/Directory.Packages.props') }}
@@ -142,14 +142,14 @@ jobs:
       # runs once per runner image, not per job. The restore script self-heals a
       # stale/corrupt cache (hash mismatch -> re-download).
       - name: Cache vkd3d natives
-        uses: actions/cache@v5
+        uses: actions/cache@v6
         with:
           path: tools/vkd3d
           key: vkd3d-2.1-${{ runner.os }}
 
       # Same pattern for the pinned macOS DXC dylibs (Phase 37 A).
       - name: Cache DXC macOS natives
-        uses: actions/cache@v5
+        uses: actions/cache@v6
         with:
           path: tools/dxc
           key: dxc-${{ runner.os }}-${{ hashFiles('tools/restore.sh', 'tools/restore.ps1') }}
@@ -158,7 +158,7 @@ jobs:
       # ~80 MB together), keyed on restore.sh so a re-pin invalidates it. restore.* re-verifies
       # the SHA-256 of a cached file and re-downloads on a mismatch.
       - name: Cache Android SPIRV-Cross natives
-        uses: actions/cache@v5
+        uses: actions/cache@v6
         with:
           path: |
             tools/spirv-cross/android-arm64
