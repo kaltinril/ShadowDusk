@@ -194,7 +194,7 @@ author's source and everything after them stays verbatim.
 | `X0005` | Invalid `--mgfx-version` value (only 10 and 11). |
 | `X0006` | Invalid `/DxbcBackend` value (only `vkd3d`, `d3dcompiler`). |
 | `X0007` | CLI compile timed out (5-minute watchdog). |
-| `X0008` | Invalid `--target-runtime` value (only `monogame-gl`, `monogame-dx`, `monogame-gl-v11`, `kni-knifx`, `fna`). |
+| `X0008` | Invalid `--target-runtime` value (only `monogame-gl`, `monogame-dx`, `monogame-gl-v11`, `kni-knifx`, `kni-knifx-v12`, `fna`). |
 | `X0009` | A CLI flag that requires a value (`/I`, `--mgfx-version`, `--target-runtime`, …) reached the end of the argument list with no value supplied. |
 | `X0010` | Platform not supported by ShadowDusk (e.g. PlayStation4, XboxOne, Switch). |
 | `X0011` | Invalid `--input-format` value (only `auto`, `fx`, `glsl`). |

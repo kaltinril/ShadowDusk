@@ -246,8 +246,8 @@ ShadowDusk/
 │                                  #   Two entries here are NOT render proofs:
 │                                  #     MgcbPlugin runs a real `dotnet mgcb` content build through the MGCB
 │                                  #       content-processor plugin and diffs the .xnb payload against the
-│                                  #       CLI's bytes (Phase 29); since Phase 63 on TWO mgcb versions (the
-│                                  #       manifest 3.8.4.1 + 3.8.5, which renumbered TargetPlatform) with a
+│                                  #       CLI's bytes (Phase 29); since Phase 63 on several mgcb versions (the
+│                                  #       manifest 3.8.4.1, 3.8.5, which renumbered TargetPlatform, and 3.8.6) with a
 │                                  #       decoy dxcompiler.dll on the child PATH. On the MGFX v11 platforms
 │                                  #       (DesktopVK, WindowsDX12) it also pins the per-shader source-file
 │                                  #       string to the stock build's `<unknown>` and requires a byte-identical

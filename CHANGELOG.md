@@ -14,6 +14,14 @@ that loads and renders identically to `mgfxc`'s in the real MonoGame/KNI runtime
 
 ### Added
 
+### Changed
+
+### Fixed
+
+## [0.24.0] - 2026-10-31
+
+### Added
+
 - **KNIFX v12 output for KNI 4.3.x (issue #455).** `--target-runtime kni-knifx-v12` / `CapabilityProfile.KniGL_4_03`
   writes the KNIFX container with header version 12; the body is byte-identical to v11 (KNI's `KNIFXReader12` is
   `KNIFXReader11` renamed). `kni-knifx` stays v11, which loads on 4.2.x clean and on 4.3.x with a "needs to be rebuilt"
@@ -4201,7 +4209,8 @@ WASM-capable build — the same pipeline on every host, with no substitute compi
 - **The MGCB content-processor plugin** is a scaffold; the PATH-based `mgfxc` override is the
   shipping MGCB integration path.
 
-[Unreleased]: https://github.com/kaltinril/ShadowDusk/compare/v0.23.0...HEAD
+[Unreleased]: https://github.com/kaltinril/ShadowDusk/compare/v0.24.0...HEAD
+[0.24.0]: https://github.com/kaltinril/ShadowDusk/compare/v0.23.0...v0.24.0
 [0.23.0]: https://github.com/kaltinril/ShadowDusk/compare/v0.22.1...v0.23.0
 [0.22.1]: https://github.com/kaltinril/ShadowDusk/compare/v0.22.0...v0.22.1
 [0.22.0]: https://github.com/kaltinril/ShadowDusk/compare/v0.21.0...v0.22.0

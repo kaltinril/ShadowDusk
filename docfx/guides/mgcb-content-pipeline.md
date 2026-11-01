@@ -15,7 +15,7 @@ Windows SDK, on Linux, macOS, and Windows alike.
 > is the real integration.
 
 
-> **MonoGame 3.8.6:** use a ShadowDusk release newer than 0.23.0. MonoGame 3.8.6 removed a constructor
+> **MonoGame 3.8.6:** use ShadowDusk 0.24.0 or later. MonoGame 3.8.6 removed a constructor
 > (`ContentIdentity(string, string)`) that the 0.23.0 importer calls, so with 0.23.0 every `.fx` fails with
 > `MissingMethodException`. Until you can update, MonoGame's own `EffectImporter` with the ShadowDusk processor
 > works on 3.8.6. Newer releases are checked against every MonoGame content pipeline from 3.8.2.1105 to 3.8.6.
@@ -117,8 +117,8 @@ the same `EffectCompiler`, adding no compilation logic of its own. Two gates hol
 `MgcbPluginByteIdentityTests` drives the processor and compares against the real CLI binary on every
 `dotnet test`, and `validation/MgcbPlugin` runs an actual `dotnet mgcb` build and additionally checks
 that the `.xnb` envelope matches MGCB's own stock output while the payload *differs* from it. Verified
-green on `dotnet mgcb` 3.8.2.1105, 3.8.3, 3.8.4, 3.8.4.1, and 3.8.5 — the gate runs both the
-pinned 3.8.4.1 and a real 3.8.5 (`Web`, `DesktopVK`, `WindowsDX12` included), and it runs the
+green on `dotnet mgcb` 3.8.2.1105, 3.8.3, 3.8.4, 3.8.4.1, 3.8.5, and 3.8.6 — the gate runs the
+pinned 3.8.4.1 and real 3.8.5 and 3.8.6 builds (`Web`, `DesktopVK`, `WindowsDX12` included), and it runs the
 plugin-arm MGCB with a decoy `dxcompiler.dll` first on `PATH`, so a build that ever fell back to an
 OS-search-path DXC (a Vulkan SDK install puts one there) instead of the pinned one fails loudly.
 
