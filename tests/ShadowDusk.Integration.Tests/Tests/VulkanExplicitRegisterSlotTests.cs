@@ -742,15 +742,19 @@ public sealed class VulkanExplicitRegisterSlotTests
         error.Message.ShouldContain("textures 'B' and 'A' are both sampled through the single sampler 'S'", Case.Sensitive);
     }
 
-    [Fact]
-    public async Task Vulkan_AFileTestingADxcOnlyMacro_PairsOverTheWholeFile_AsBefore()
+    // Issue #442: a conditional on a macro DXC predefines with a host-independent measured value
+    // (DxcSpirvPredefinedMacros) no longer drops the whole dead-line view. The '#if 0' call is dead,
+    // so the live call alone decides SpriteTexture's sampler: one descriptor, no alias, no SD0235.
+    // (SD0009 for __HLSL_VERSION / __spirv__ still comes from the technique list's view, which reads
+    // them as undefined like mgfxc's preprocessor; it is not the pairing's.)
+    [Theory]
+    [InlineData("#if __HLSL_VERSION >= 2016")]
+    [InlineData("#ifdef __spirv__")]
+    [InlineData("#if __SHADER_TARGET_MAJOR >= 6")]
+    [InlineData("#if __SHADER_TARGET_STAGE == __SHADER_STAGE_PIXEL")]
+    public async Task Vulkan_AFileTestingAMacroDxcPredefines_DropsTheDeadPairing(string conditional)
     {
-        // The managed view cannot know __HLSL_VERSION (SD0009), so it neither drops the '#if 0' line
-        // nor reads the calls: every line and every function counts, as in the released rewrite. The
-        // dead call comes first and decides SpriteTexture's sampler, so the live one gets an alias
-        // (SD0235); DXC then removes the original and the alias keeps its parameter name.
-        const string source = """
-            #if __HLSL_VERSION >= 2016
+        string source = conditional + "\n" + """
             #endif
             Texture2D SpriteTexture; SamplerState U; SamplerState S;
             float4 MainPS(float4 pos : SV_Position, float4 color : COLOR0, float2 uv : TEXCOORD0) : SV_Target0 {
@@ -765,7 +769,113 @@ public sealed class VulkanExplicitRegisterSlotTests
         var result = await CompileSourceAsync(source, "DxcMacro.fx");
 
         result.IsSuccess.ShouldBeTrue(result.IsFailure ? string.Join("; ", result.Error.Select(e => $"{e.Code}: {e.Message}")) : "ok");
-        result.Value.Warnings.ShouldContain(w => w.Code == "SD0009" && w.Message.Contains("__HLSL_VERSION", StringComparison.Ordinal));
+        result.Value.Warnings.ShouldNotContain(w => w.Code == "SD0235");
+        var subject = MgfxBlobReader.Parse(result.Value.Data);
+        MgfxSamplerRecord record = subject.Samplers.ShouldHaveSingleItem();
+        (subject.ParameterNames[record.Parameter], record.TextureSlot, record.SamplerSlot).ShouldBe(("SpriteTexture", (byte)0, (byte)0));
+        subject.ParameterNames.ShouldNotContain(n => n.Contains("_SDVkAlias", StringComparison.Ordinal));
+        VulkanShaderCodeReader.Parse(subject.Shaders.Single().Bytecode).Bindings
+            .Select(b => (b.Binding, b.DescriptorType)).ShouldBe([(32u, CombinedImageSampler)]);
+    }
+
+    [Theory]
+    [InlineData("#if __HLSL_VERSION >= 2018", "TexB")]
+    [InlineData("#if __HLSL_VERSION >= 2021", "TexA")]
+    [InlineData("#ifdef __spirv__", "TexB")]
+    [InlineData("#if __SHADER_TARGET_STAGE == __SHADER_STAGE_PIXEL", "TexB")]
+    [InlineData("#if __SHADER_TARGET_STAGE == __SHADER_STAGE_VERTEX", "TexA")]
+    public async Task Vulkan_APairingUnderAConditionalOnAMeasuredPredefine_IsTheOneDxcCompiles(string conditional, string sampled)
+    {
+        // Each branch reads a different texture: the one bound must be the one DXC compiled, with
+        // the measured value (2018, __spirv__ defined, the PIXEL stage for a pixel shader).
+        string source = $$"""
+            Texture2D TexA; Texture2D TexB; SamplerState S;
+            float4 MainPS(float4 pos : SV_Position, float2 uv : TEXCOORD0) : SV_Target0 {
+            {{conditional}}
+              return TexB.Sample(S, uv);
+            #else
+              return TexA.Sample(S, uv);
+            #endif
+            }
+            technique T { pass P { PixelShader = compile ps_4_0 MainPS(); } }
+            """;
+
+        var result = await CompileSourceAsync(source, "Predefined.fx");
+
+        result.IsSuccess.ShouldBeTrue(result.IsFailure ? string.Join("; ", result.Error.Select(e => $"{e.Code}: {e.Message}")) : "ok");
+        result.Value.Warnings.ShouldNotContain(w => w.Code == "SD0235");
+        var subject = MgfxBlobReader.Parse(result.Value.Data);
+        MgfxSamplerRecord record = subject.Samplers.ShouldHaveSingleItem();
+        (subject.ParameterNames[record.Parameter], record.TextureSlot, record.SamplerSlot).ShouldBe((sampled, (byte)0, (byte)0));
+        VulkanShaderCodeReader.Parse(subject.Shaders.Single().Bytecode).Bindings
+            .Select(b => (b.Binding, b.DescriptorType)).ShouldBe([(32u, CombinedImageSampler)]);
+    }
+
+    [Fact]
+    public async Task Vulkan_TheStageMacro_IsEvaluatedPerStage()
+    {
+        // The vertex and the pixel shader of one pass see different __SHADER_TARGET_STAGE values, so
+        // each stage's view keeps only its own branch: the vertex shader samples VTex, the pixel
+        // shader PTex, each through its own sampler, with no alias in either (the dead '#if 0' call
+        // through a third sampler does not count).
+        const string source = """
+            Texture2D VTex; Texture2D PTex; SamplerState VsS; SamplerState PsS; SamplerState Dead;
+            float4 Fetch(float2 uv) {
+            #if __SHADER_TARGET_STAGE == __SHADER_STAGE_VERTEX
+              return VTex.SampleLevel(VsS, uv, 0);
+            #else
+              return PTex.Sample(PsS, uv);
+            #endif
+            }
+            struct V { float4 Pos : SV_Position; float4 Col : COLOR0; float2 UV : TEXCOORD0; };
+            V MainVS(float4 p : POSITION0, float2 uv : TEXCOORD0) { V o; o.Pos = p; o.Col = Fetch(uv); o.UV = uv; return o; }
+            float4 MainPS(V i) : SV_Target0 {
+            #if 0
+              return PTex.Sample(Dead, i.UV);
+            #endif
+              return Fetch(i.UV) * i.Col;
+            }
+            technique T { pass P { VertexShader = compile vs_4_0 MainVS(); PixelShader = compile ps_4_0 MainPS(); } }
+            """;
+
+        var result = await CompileSourceAsync(source, "PerStage.fx");
+
+        result.IsSuccess.ShouldBeTrue(result.IsFailure ? string.Join("; ", result.Error.Select(e => $"{e.Code}: {e.Message}")) : "ok");
+        result.Value.Warnings.ShouldNotContain(w => w.Code == "SD0235");
+        var subject = MgfxBlobReader.Parse(result.Value.Data);
+        subject.ParameterNames.ShouldNotContain(n => n.Contains("_SDVkAlias", StringComparison.Ordinal));
+        foreach (MgfxShaderRecord shader in subject.Shaders)
+        {
+            VulkanShaderCodeReader.Parse(shader.Bytecode).Bindings.ShouldHaveSingleItem()
+                .DescriptorType.ShouldBe(CombinedImageSampler, shader.IsVertex ? "vertex" : "pixel");
+        }
+    }
+
+    [Fact]
+    public async Task Vulkan_AFileTestingTheDxcVersion_PairsOverTheWholeFile_AsBefore()
+    {
+        // __DXC_VERSION_* is the DXC build's own stamp and differs by host for the same pinned DXC
+        // (1.7.2212.40 on Windows, 1.7.0.3759 on Linux, measured 2026-10-31), so it is not seeded
+        // (DxcSpirvPredefinedMacros): the managed view cannot know it, so it neither drops the '#if 0'
+        // line nor reads the calls: every line and every function counts, as in the released rewrite.
+        // The dead call comes first and decides SpriteTexture's sampler, so the live one gets an
+        // alias (SD0235); DXC then removes the original and the alias keeps its parameter name.
+        const string source = """
+            #if __DXC_VERSION_MAJOR >= 1
+            #endif
+            Texture2D SpriteTexture; SamplerState U; SamplerState S;
+            float4 MainPS(float4 pos : SV_Position, float4 color : COLOR0, float2 uv : TEXCOORD0) : SV_Target0 {
+            #if 0
+              return SpriteTexture.Sample(U, uv);
+            #endif
+              return SpriteTexture.Sample(S, uv) * color;
+            }
+            technique T { pass P { PixelShader = compile ps_4_0 MainPS(); } }
+            """;
+
+        var result = await CompileSourceAsync(source, "DxcMacro.fx");
+
+        result.IsSuccess.ShouldBeTrue(result.IsFailure ? string.Join("; ", result.Error.Select(e => $"{e.Code}: {e.Message}")) : "ok");
         result.Value.Warnings.ShouldContain(w => w.Code == "SD0235");
         var subject = MgfxBlobReader.Parse(result.Value.Data);
         MgfxSamplerRecord record = subject.Samplers.ShouldHaveSingleItem();
