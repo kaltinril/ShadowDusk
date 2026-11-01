@@ -91,6 +91,11 @@ public sealed class DirectX11TextureSlotOrderTests
     /// parameter after the sampler (<c>ASamp</c>), where <c>mgfxc</c> names it after the texture
     /// (<c>ATex</c>); the texture and sampler slots match (issue #441 joined the native sampler by
     /// its RDEF name).</item>
+    /// <item><c>M10</c>, <c>M18</c>, <c>M20</c> (issue #447): a legacy sampler's texture also used as a
+    /// value (an index in a global initializer, a <c>static Texture2D</c> alias, an argument), and
+    /// <c>I08</c>, <c>I09</c>: an <c>#include</c>d <c>sampler_state</c> sampler, compiled natively,
+    /// whose texture the shader also calls <c>Load</c> on. <c>mgfxc</c> gives that use a second record
+    /// (<c>A@t0 Tb@t1 Tb@t2</c>); these warn <c>SD0230</c> (they were silent).</item>
     /// <item><c>K43_PassedLodAndModern</c>: a <c>tex2Dlod</c> read (through a sampler parameter here)
     /// becomes a call of the helper the rewrite defines, which passes the texture as a value; the
     /// walk does not model the helper and warns <c>SD0230</c> (the same for a global sampler).</item>
@@ -103,6 +108,7 @@ public sealed class DirectX11TextureSlotOrderTests
     {
         "TwoSamplersShareOneTexture", "S13_ModernSampledAndStateNamed", "A01_TexArrayPlusLegacy",
         "B02_MacroTexture", "K43_PassedLodAndModern",
+        "M10_StaticGlobalIndex", "M18_StaticTextureAlias", "M20_ValueArgument", "I08_IncludeStateTextureLoad", "I09_IncludeOnlyStateLoad",
         "U60_StateTextureGetDimsUsed", "U62_StateTextureLoadFirst", "U63_StateTextureSampleKept", "U64_StateTextureSampleLevelKept",
         "U65_StateTextureGetDimsAfter", "U67_SpriteTemplateGetDims",
     }.Union(FalseSD0230).ToHashSet(StringComparer.Ordinal);
@@ -126,7 +132,11 @@ public sealed class DirectX11TextureSlotOrderTests
     /// component, a value range, a loop that runs zero times, a uniform the shader assigns, a
     /// <c>uint</c> compared with <c>0</c>, a loop bound that truncates). Each of those was guessed
     /// wrong, silently, by a walk that tried to prove a condition run-time. <c>A01</c> and
-    /// <c>K43</c> refuse for their own reasons (a resource array, a <c>tex2Dlod</c> helper). The
+    /// <c>K43</c> refuse for their own reasons (a resource array, a <c>tex2Dlod</c> helper); the
+    /// <c>M*</c> and <c>I08</c>/<c>I09</c> ones for a texture used directly beside its sampler, and
+    /// <c>I02</c>/<c>I07</c> are an <c>#include</c>d sampler's order behind a condition or a global
+    /// initializer, checked since issue #447 (they were silent; the native order happens to be
+    /// <c>mgfxc</c>'s). The
     /// <c>U0*</c>/<c>U1*</c> shapes are bare call statements fxc DROPS before it numbers
     /// (<c>tex2D(B, uv);</c>, in parentheses, a block, a loop, a void helper, a <c>for</c> init, a
     /// constructor, <c>tex2Dgrad</c>, <c>Tb.Sample(SB, uv);</c>); the <c>U6*</c> ones and <c>S13</c>
@@ -135,6 +145,8 @@ public sealed class DirectX11TextureSlotOrderTests
     private static readonly HashSet<string> ExpectedSD0230 = new HashSet<string>(StringComparer.Ordinal)
     {
         "A01_TexArrayPlusLegacy", "K43_PassedLodAndModern",
+        "M10_StaticGlobalIndex", "M18_StaticTextureAlias", "M20_ValueArgument",
+        "I02_IncludeOnlyConditional", "I07_IncludeGlobalInitializer", "I08_IncludeStateTextureLoad", "I09_IncludeOnlyStateLoad",
         "U01_StmtBareRead", "U02_StmtParenRead", "U03_StmtCtor", "U04_StmtCtorTwoArgs", "U05_StmtGrad", "U06_StmtBlock",
         "U07_StmtInCertainLoop", "U08_StmtNestedRead", "U09_StmtAfterIf", "U10_VoidHelperBareRead", "U11_VoidHelperAssignThenBare",
         "U12_ForInitBareRead", "U13_StmtStateSampler", "U14_StmtCtorMulti", "U68_StmtStateTextureSample", "U69_StmtStateTextureSampleLevel",
@@ -212,7 +224,11 @@ public sealed class DirectX11TextureSlotOrderTests
             using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(120));
             var rejected = await new EffectCompiler().CompileAsync(
                 await File.ReadAllTextAsync(SourcePath(shape), cts.Token),
-                new CompilerOptions { Target = PlatformTarget.DirectX, DxbcBackend = backend, SourceFileName = shape + ".fx" },
+                new CompilerOptions
+                {
+                    Target = PlatformTarget.DirectX, DxbcBackend = backend, SourceFileName = shape + ".fx",
+                    AdditionalIncludePaths = [GoldenFolder],
+                },
                 cts.Token);
             rejected.IsFailure.ShouldBeTrue($"{shape} [{backend}] now compiles: take it off Vkd3dRejects and check its table");
             return;
@@ -425,6 +441,8 @@ public sealed class DirectX11TextureSlotOrderTests
          .Order(StringComparer.Ordinal)
          .ToList();
 
+    private static string GoldenFolder => Path.Combine(AppContext.BaseDirectory, "fixtures", "golden", Folder);
+
     private static string SourcePath(string shape) =>
         Path.Combine(AppContext.BaseDirectory, "fixtures", "golden", Folder, shape + ".fx");
 
@@ -440,7 +458,11 @@ public sealed class DirectX11TextureSlotOrderTests
         using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(120));
         var result = await new EffectCompiler().CompileAsync(
             await File.ReadAllTextAsync(SourcePath(shape), cts.Token),
-            new CompilerOptions { Target = PlatformTarget.DirectX, DxbcBackend = backend, SourceFileName = shape + ".fx" },
+            new CompilerOptions
+            {
+                Target = PlatformTarget.DirectX, DxbcBackend = backend, SourceFileName = shape + ".fx",
+                AdditionalIncludePaths = [GoldenFolder],
+            },
             cts.Token);
         result.IsSuccess.ShouldBeTrue(result.IsFailure
             ? string.Join(" | ", result.Error.Select(e => e.FxcFormattedMessage))

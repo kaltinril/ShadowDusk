@@ -2072,6 +2072,12 @@ public sealed partial class FxPreParser
             }
         }
 
+        // Issue #447: every sampler's state-block texture in the view, the native ones included; a
+        // direct use of any of them is looked for, not only of the textures the rewrite bound.
+        Dictionary<string, string> stateTextures = CollectStateTextures(tokens);
+        var directlyUsable = new HashSet<string>(legacyTextures, StringComparer.Ordinal);
+        directlyUsable.UnionWith(stateTextures.Values);
+
         return Result<GlSamplerSlots, ShaderError>.Ok(
             new GlSamplerSlots(explicitSlots, CollectReservedSamplerRegisters(tokens))
             {
@@ -2080,7 +2086,9 @@ public sealed partial class FxPreParser
                 LegacySamplerTextures = legacySamplerTextures,
                 EntryPointInterpolants = GlEntryPointInterpolantScanner.Scan(tokens),
                 ExplicitTextureRegisters = CollectTextureRegisters(tokens),
-                ModernMethodTextures = CollectMethodObjects(tokens, legacyTextures),
+                ModernMethodTextures = CollectMethodObjects(tokens, directlyUsable),
+                ValueUseTextures = CollectValueUses(tokens, directlyUsable),
+                StateTextures = stateTextures,
             });
     }
 
@@ -2109,6 +2117,127 @@ public sealed partial class FxPreParser
             }
         }
         return found;
+    }
+
+    /// <summary>
+    /// Sampler -> the texture its state block names, for every <c>name [: register(…)] = sampler_state
+    /// { … Texture = &lt;T&gt; … }</c> and brace form <c>name [: register(…)] { … }</c> in
+    /// <paramref name="tokens"/> (the lexer drops the ':'). A sampler named twice keeps its last
+    /// texture; one whose name cannot be found before its block is skipped.
+    /// </summary>
+    private static Dictionary<string, string> CollectStateTextures(IReadOnlyList<Token> tokens)
+    {
+        var found = new Dictionary<string, string>(StringComparer.Ordinal);
+        var code = new List<Token>(tokens.Count);
+        foreach (Token t in tokens)
+        {
+            if (t.Kind is not (TokenKind.LineComment or TokenKind.BlockComment or TokenKind.Preprocessor or TokenKind.EOF))
+                code.Add(t);
+        }
+        for (int i = 0; i + 2 < code.Count; i++)
+        {
+            if (code[i].Kind != TokenKind.Identifier || !string.Equals(code[i].Text, "Texture", StringComparison.OrdinalIgnoreCase)
+                || code[i + 1].Kind != TokenKind.Equals)
+            {
+                continue;
+            }
+            int k = i + 2;
+            if (code[k].Kind is TokenKind.LAngle or TokenKind.LParen)
+                k++;
+            if (k >= code.Count || code[k].Kind != TokenKind.Identifier)
+                continue;
+            string texture = code[k].Text;
+
+            // The '{' that opens the block, then the sampler's name before it.
+            int open = i - 1, depth = 0;
+            for (; open >= 0; open--)
+            {
+                if (code[open].Kind == TokenKind.RBrace) depth++;
+                else if (code[open].Kind == TokenKind.LBrace && depth-- == 0) break;
+            }
+            int n = open - 1;
+            if (n >= 0 && code[n].Kind == TokenKind.Identifier && string.Equals(code[n].Text, "sampler_state", StringComparison.OrdinalIgnoreCase))
+            {
+                n--;
+                if (n < 0 || code[n].Kind != TokenKind.Equals)
+                    continue;
+                n--;
+            }
+            if (n >= 0 && code[n].Kind == TokenKind.RParen)
+            {
+                while (n >= 0 && code[n].Kind != TokenKind.LParen) n--;
+                n -= 2; // '(' and 'register'
+            }
+            if (n >= 1 && code[n].Kind == TokenKind.Identifier && code[n - 1].Kind == TokenKind.Identifier
+                && SamplerTypeKeywords.Contains(code[n - 1].Text))
+            {
+                found[code[n].Text] = texture;
+            }
+        }
+        return found;
+    }
+
+    /// <summary>
+    /// The names in <paramref name="textures"/> the source uses as a VALUE (issue #447): every
+    /// reference but a declaration (after a <c>texture*</c> type, a template's <c>&gt;</c>, or a
+    /// <c>,</c> at global scope outside any bracket, a declarator list), the binding of a state block
+    /// (<c>Texture = &lt;T&gt;</c>, <c>Texture = (T)</c>, <c>Texture = T</c>, <c>Texture[0] = &lt;T&gt;</c>), the
+    /// object of a method call (<see cref="CollectMethodObjects"/>) and a member (<c>x.T</c>). See
+    /// <see cref="GlSamplerSlots.ValueUseTextures"/>.
+    /// </summary>
+    private static HashSet<string> CollectValueUses(IReadOnlyList<Token> tokens, IReadOnlySet<string> textures)
+    {
+        var found = new HashSet<string>(StringComparer.Ordinal);
+        var code = new List<Token>(tokens.Count);
+        foreach (Token t in tokens)
+        {
+            if (t.Kind is not (TokenKind.LineComment or TokenKind.BlockComment or TokenKind.Preprocessor or TokenKind.EOF))
+                code.Add(t);
+        }
+        int braces = 0, parens = 0;
+        for (int i = 0; i < code.Count; i++)
+        {
+            Token t = code[i];
+            switch (t.Kind)
+            {
+                case TokenKind.LBrace: braces++; continue;
+                case TokenKind.RBrace: braces = Math.Max(0, braces - 1); continue;
+                case TokenKind.LParen: parens++; continue;
+                case TokenKind.RParen: parens = Math.Max(0, parens - 1); continue;
+            }
+            if (t.Kind != TokenKind.Identifier || !textures.Contains(t.Text))
+                continue;
+            Token? prev = i > 0 ? code[i - 1] : null;
+            if (prev is { Kind: TokenKind.Dot })
+                continue; // a member of something else
+            if (i + 3 < code.Count && code[i + 1].Kind == TokenKind.Dot && code[i + 2].Kind == TokenKind.Identifier
+                && code[i + 3].Kind == TokenKind.LParen)
+            {
+                continue; // a method call: CollectMethodObjects
+            }
+            bool declaration =
+                (prev is { Kind: TokenKind.Identifier } && prev.Text.StartsWith("texture", StringComparison.OrdinalIgnoreCase))
+                || prev is { Kind: TokenKind.RAngle } && i + 1 < code.Count && code[i + 1].Kind is TokenKind.Semicolon or TokenKind.Identifier or TokenKind.LAngle or TokenKind.Comma
+                || (prev is { Kind: TokenKind.Comma } && braces == 0 && parens == 0);
+            if (declaration || IsStateTextureBinding(code, i))
+                continue;
+            found.Add(t.Text);
+        }
+        return found;
+
+        // `Texture = <T>`, `Texture = (T)`, `Texture = T`, `Texture[0] = <T>` (the lexer drops '[' and ']').
+        static bool IsStateTextureBinding(List<Token> code, int i)
+        {
+            int k = i - 1;
+            if (k >= 0 && code[k].Kind is TokenKind.LAngle or TokenKind.LParen)
+                k--;
+            if (k < 0 || code[k].Kind != TokenKind.Equals)
+                return false;
+            k--;
+            if (k >= 0 && code[k].Kind == TokenKind.Number)
+                k--;
+            return k >= 0 && code[k].Kind == TokenKind.Identifier && string.Equals(code[k].Text, "Texture", StringComparison.OrdinalIgnoreCase);
+        }
     }
 
     /// <summary>

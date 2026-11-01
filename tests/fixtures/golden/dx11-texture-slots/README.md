@@ -53,6 +53,15 @@ sampler declared first (`N06`). fxc gives legacy SAMPLER slots in declaration or
 backends' native RDEF already agrees; the record must take the native sampler's slot, not its
 texture's.
 
+`M10`, `M18`, `M20`, `M21` and `I01`..`I09` (2026-10-31, issue #447): a legacy sampler's texture
+also used as a value (an index in a global initializer, a `static Texture2D` alias, an argument:
+`mgfxc` gives it a second record, so these warn), a declarator list and a `Texture = (Tb)`
+binding that are not such uses (`M21`, no warning), and legacy samplers declared only in an
+`#include` (`declAB.fxh`, `declState.fxh` beside them), which the backend compiles natively:
+read in reverse (`I01`), behind a condition (`I02`), in a global initializer (`I07`), and a
+`sampler_state` sampler whose texture is also loaded directly (`I08`, `I09`). They were never
+checked before, silently.
+
 What they pin (fxc's rule, per compiled shader): every explicit `register(tN)` on a `t`-register
 declaration takes `tN` out of circulation even when nothing reads the resource, and a modern
 resource read directly keeps it; then every legacy sampler's texture in the order the shader FIRST

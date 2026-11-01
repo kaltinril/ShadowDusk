@@ -76,6 +76,26 @@ public sealed record GlSamplerSlots(
     /// text, so the DirectX 11 texture slot assignment refuses (<c>SD0230</c>) for these.
     /// </summary>
     internal IReadOnlySet<string> ModernMethodTextures { get; init; } = new HashSet<string>(StringComparer.Ordinal);
+
+    /// <summary>
+    /// The <see cref="LegacyTextures"/> the source ALSO uses as a VALUE (issue #447): any reference
+    /// other than a declaration, the <c>Texture = &lt;T&gt;</c> / <c>(T)</c> binding of a state block
+    /// and the object of a method call (<see cref="ModernMethodTextures"/>), such as an index
+    /// (<c>static float4 G = Tb[int2(0, 0)];</c>), an assignment (<c>static Texture2D Tc = Tb;</c>)
+    /// or an argument. fxc gives that use a texture record of its own (<c>mgfxc</c> 3.8.4.1
+    /// DirectX_11: <c>A@t0 Tb@t1 Tb@t2</c>), which the SM4 rewrite's one <c>Texture2D</c> cannot
+    /// give, so the DirectX 11 texture slot assignment refuses (<c>SD0230</c>) for these.
+    /// </summary>
+    internal IReadOnlySet<string> ValueUseTextures { get; init; } = new HashSet<string>(StringComparer.Ordinal);
+
+    /// <summary>
+    /// Every legacy sampler whose state block names a texture (<c>Texture = &lt;T&gt;</c>), as the
+    /// preprocessed view spells it, sampler -> texture, whether or not the rewrite reached the sampler
+    /// (one declared in an <c>#include</c> or through a macro is compiled natively under its own name,
+    /// issue #447). <see cref="ModernMethodTextures"/> and <see cref="ValueUseTextures"/> cover these
+    /// textures too, so a native sampler's texture used directly is refused like a rewritten one's.
+    /// </summary>
+    internal IReadOnlyDictionary<string, string> StateTextures { get; init; } = new Dictionary<string, string>(StringComparer.Ordinal);
 }
 
 /// <summary>An explicit <c>t</c> register on a declaration: name, register, and the stage
