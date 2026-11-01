@@ -22,4 +22,7 @@
          drivers draw too, so the three targets render the identical picture. -->
     <Compile Include="..\SharedLegacyLod\LegacyLodScene.cs" />
   </ItemGroup>
+
+  <Import Project="..\MonoGameVersion.targets" />
+
 </Project>

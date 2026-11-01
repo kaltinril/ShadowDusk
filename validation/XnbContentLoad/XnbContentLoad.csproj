@@ -17,4 +17,7 @@
   <ItemGroup>
     <ProjectReference Include="..\..\src\ShadowDusk.Compiler\ShadowDusk.Compiler.csproj" />
   </ItemGroup>
+
+  <Import Project="..\MonoGameVersion.targets" />
+
 </Project>

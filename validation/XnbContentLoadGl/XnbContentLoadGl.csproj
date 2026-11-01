@@ -23,4 +23,7 @@
   <ItemGroup>
     <Compile Include="..\XnbContentLoad\XnbContentLoadDriver.cs" />
   </ItemGroup>
+
+  <Import Project="..\MonoGameVersion.targets" />
+
 </Project>

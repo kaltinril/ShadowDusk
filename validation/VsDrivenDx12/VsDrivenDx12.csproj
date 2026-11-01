@@ -42,4 +42,6 @@
     <Compile Include="..\..\tests\ShadowDusk.Integration.Tests\DirectX12ShaderCodeReader.cs" Link="DirectX12ShaderCodeReader.cs" />
   </ItemGroup>
 
+  <Import Project="..\MonoGameVersion.targets" />
+
 </Project>

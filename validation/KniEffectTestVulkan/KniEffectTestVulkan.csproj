@@ -28,4 +28,6 @@
     <Compile Include="..\SharedKniEffectTest\*.cs" />
   </ItemGroup>
 
+  <Import Project="..\MonoGameVersion.targets" />
+
 </Project>

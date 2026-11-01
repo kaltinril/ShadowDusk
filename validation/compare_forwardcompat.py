@@ -19,7 +19,7 @@ attributable solely to the MonoGame runtime. The matrix proves two things:
 
 Usage:
   python compare_forwardcompat.py --versions 3.8.1.263 3.8.2.1105 3.8.5 [--tolerance N] [--vs-baseline]
-  (--versions defaults to the full proven range 3.8.1.263 .. 3.8.5; the first entry is the
+  (--versions defaults to the full proven range 3.8.1.263 .. 3.8.6; the first entry is the
    forward-compat reference floor, i.e. the OLDEST runtime whose loader accepts MGFX v10)
 Requires: pillow, numpy   (pip install pillow numpy)
 """
@@ -96,7 +96,7 @@ def vdir(version):
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--versions", nargs="+",
-                    default=["3.8.1.263", "3.8.1.303", "3.8.2.1105", "3.8.3", "3.8.4", "3.8.4.1", "3.8.5"],
+                    default=["3.8.1.263", "3.8.1.303", "3.8.2.1105", "3.8.3", "3.8.4", "3.8.4.1", "3.8.5", "3.8.5.1", "3.8.6"],
                     help="MonoGame versions in the matrix; the FIRST is the forward-compat reference "
                          "floor (the oldest runtime that accepts MGFX v10)")
     ap.add_argument("--tolerance", type=int, default=4,

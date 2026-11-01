@@ -1,0 +1,154 @@
+{
+  "version": 1,
+  "dependencies": {
+    "net9.0-android35.0": {
+      "Microsoft.NET.ILLink.Tasks": {
+        "type": "Direct",
+        "requested": "[9.0.20, )",
+        "resolved": "9.0.20",
+        "contentHash": "oPFydtjCgow3DXnL8z5gPbq3R1zGvBpcypgRhW172Hn8asJcI8oy7isudAnAAALIWyK+uRWCDP+/+om3s0PZHA=="
+      },
+      "MonoGame.Framework.Android": {
+        "type": "Direct",
+        "requested": "[3.8.6, )",
+        "resolved": "3.8.6",
+        "contentHash": "goW96+P1PEu/wZezlEBBJSm+xgoX3Wh6NVamewX3Gog0tTM+QUuCVR76CNRTVNVwQ+QSuyaEZT2de89FowRpHA==",
+        "dependencies": {
+          "MonoGame.Library.OpenAL": "1.24.3.2"
+        }
+      },
+      "Silk.NET.SPIRV.Cross.Native": {
+        "type": "Direct",
+        "requested": "[2.23.0, )",
+        "resolved": "2.23.0",
+        "contentHash": "pY4LmIE8nYXkfCgExxksYlnYZZ4D3/AW13XNcpyp0jJDTkCpDsXL0nLOX7CM7tPS6xvkiERRd+Do2zegbl7Xtw=="
+      },
+      "Vortice.Dxc": {
+        "type": "Direct",
+        "requested": "[3.3.4, )",
+        "resolved": "3.3.4",
+        "contentHash": "Q+JJzn96ZKaLQFEhLRFtWau0/KxORtREpP8FTRdKN0luIdrTZIARto7OESKpOGXl3idIGP/jH8YQIupNzaR5EQ==",
+        "dependencies": {
+          "SharpGen.Runtime": "2.1.2-beta",
+          "SharpGen.Runtime.COM": "2.1.2-beta"
+        }
+      },
+      "MonoGame.Library.OpenAL": {
+        "type": "Transitive",
+        "resolved": "1.24.3.2",
+        "contentHash": "nGRsXQXs+NSUC3C5w90hFQfyKdZPpBnHnyg2w+Dw/2pUH7s+CoRWTJNYbzzdJf3+aeUvfvG4rTbFvMKDDj5olA=="
+      },
+      "SharpGen.Runtime": {
+        "type": "Transitive",
+        "resolved": "2.1.2-beta",
+        "contentHash": "nqZAjfEG1jX1ivvdZLsi6Pkt0DiOJyuOgRgldNFsmjXFPhxUbXQibofLSwuDZidL2kkmtTF8qLoRIeqeVdXgYw=="
+      },
+      "SharpGen.Runtime.COM": {
+        "type": "Transitive",
+        "resolved": "2.1.2-beta",
+        "contentHash": "HBCrb6HfnUWx9v5/GjJeBr5DuodZLnHlFQQYXPrQs1Hbe1c6Wd0uCXf+SJp4hW8fQNxjXEu0FgiyHGlA/SRzRw==",
+        "dependencies": {
+          "SharpGen.Runtime": "2.1.2-beta"
+        }
+      },
+      "Vortice.D3DCompiler": {
+        "type": "Transitive",
+        "resolved": "3.3.4",
+        "contentHash": "G0yAN1us091ulIzPfMVJeJf8JX3Tu/Wu0l4zip4HPLfVUWWxsBJF0eaEdwSPrUyz97LEG6zjHruL4sZoNRBHcA==",
+        "dependencies": {
+          "SharpGen.Runtime": "2.1.2-beta",
+          "SharpGen.Runtime.COM": "2.1.2-beta",
+          "Vortice.DirectX": "3.3.4",
+          "Vortice.Mathematics": "1.7.2"
+        }
+      },
+      "Vortice.DirectX": {
+        "type": "Transitive",
+        "resolved": "3.3.4",
+        "contentHash": "HWvIGYz8XtWZpJW8xGYq5gex/HUPf5u3kDY7w/5WLCXzuR+hqLB7p6tInYePnuVLvfuI/rKMMhlzmnceoP3tIw==",
+        "dependencies": {
+          "SharpGen.Runtime": "2.1.2-beta",
+          "SharpGen.Runtime.COM": "2.1.2-beta",
+          "Vortice.Mathematics": "1.7.2"
+        }
+      },
+      "Vortice.Mathematics": {
+        "type": "Transitive",
+        "resolved": "1.7.2",
+        "contentHash": "WUUzB3MowHdOqNfSMAms5Ovra+SKgLC4ttH1w75ra3srDGctebSg+aywm7hLdvDn592ydgdbOJN11JKsyAcX+A=="
+      },
+      "shadowdusk.compiler": {
+        "type": "Project",
+        "dependencies": {
+          "ShadowDusk.Core": "[0.23.0, )",
+          "ShadowDusk.GLSL": "[0.23.0, )",
+          "ShadowDusk.HLSL": "[0.23.0, )"
+        }
+      },
+      "shadowdusk.core": {
+        "type": "Project"
+      },
+      "shadowdusk.glsl": {
+        "type": "Project",
+        "dependencies": {
+          "ShadowDusk.Core": "[0.23.0, )",
+          "Silk.NET.SPIRV.Cross.Native": "[2.23.0, )"
+        }
+      },
+      "shadowdusk.hlsl": {
+        "type": "Project",
+        "dependencies": {
+          "ShadowDusk.Core": "[0.23.0, )",
+          "Vortice.D3DCompiler": "[3.3.4, )",
+          "Vortice.Dxc": "[3.3.4, 3.3.4]"
+        }
+      }
+    },
+    "net9.0-android35.0/android-arm64": {
+      "Silk.NET.SPIRV.Cross.Native": {
+        "type": "Direct",
+        "requested": "[2.23.0, )",
+        "resolved": "2.23.0",
+        "contentHash": "pY4LmIE8nYXkfCgExxksYlnYZZ4D3/AW13XNcpyp0jJDTkCpDsXL0nLOX7CM7tPS6xvkiERRd+Do2zegbl7Xtw=="
+      },
+      "Vortice.Dxc": {
+        "type": "Direct",
+        "requested": "[3.3.4, )",
+        "resolved": "3.3.4",
+        "contentHash": "Q+JJzn96ZKaLQFEhLRFtWau0/KxORtREpP8FTRdKN0luIdrTZIARto7OESKpOGXl3idIGP/jH8YQIupNzaR5EQ==",
+        "dependencies": {
+          "SharpGen.Runtime": "2.1.2-beta",
+          "SharpGen.Runtime.COM": "2.1.2-beta"
+        }
+      },
+      "MonoGame.Library.OpenAL": {
+        "type": "Transitive",
+        "resolved": "1.24.3.2",
+        "contentHash": "nGRsXQXs+NSUC3C5w90hFQfyKdZPpBnHnyg2w+Dw/2pUH7s+CoRWTJNYbzzdJf3+aeUvfvG4rTbFvMKDDj5olA=="
+      }
+    },
+    "net9.0-android35.0/android-x64": {
+      "Silk.NET.SPIRV.Cross.Native": {
+        "type": "Direct",
+        "requested": "[2.23.0, )",
+        "resolved": "2.23.0",
+        "contentHash": "pY4LmIE8nYXkfCgExxksYlnYZZ4D3/AW13XNcpyp0jJDTkCpDsXL0nLOX7CM7tPS6xvkiERRd+Do2zegbl7Xtw=="
+      },
+      "Vortice.Dxc": {
+        "type": "Direct",
+        "requested": "[3.3.4, )",
+        "resolved": "3.3.4",
+        "contentHash": "Q+JJzn96ZKaLQFEhLRFtWau0/KxORtREpP8FTRdKN0luIdrTZIARto7OESKpOGXl3idIGP/jH8YQIupNzaR5EQ==",
+        "dependencies": {
+          "SharpGen.Runtime": "2.1.2-beta",
+          "SharpGen.Runtime.COM": "2.1.2-beta"
+        }
+      },
+      "MonoGame.Library.OpenAL": {
+        "type": "Transitive",
+        "resolved": "1.24.3.2",
+        "contentHash": "nGRsXQXs+NSUC3C5w90hFQfyKdZPpBnHnyg2w+Dw/2pUH7s+CoRWTJNYbzzdJf3+aeUvfvG4rTbFvMKDDj5olA=="
+      }
+    }
+  }
+}

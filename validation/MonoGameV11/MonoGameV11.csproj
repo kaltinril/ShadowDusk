@@ -45,4 +45,6 @@
     <Compile Include="..\Shared\ReservedWord\ReservedWordProbe.cs" />
   </ItemGroup>
 
+  <Import Project="..\MonoGameVersion.targets" />
+
 </Project>

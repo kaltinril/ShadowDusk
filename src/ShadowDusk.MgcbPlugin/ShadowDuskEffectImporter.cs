@@ -45,7 +45,12 @@ public sealed class ShadowDuskEffectImporter : ContentImporter<EffectContent>
 
         return new EffectContent
         {
-            Identity   = new ContentIdentity(fullPath, "ShadowDusk"),
+            // The three-argument constructor, never the two-argument one: MonoGame 3.8.6 made
+            // ContentIdentity a primary-constructor class and removed (), (string) and
+            // (string, string), so a call compiled against the 3.8.2.1105 floor threw
+            // MissingMethodException inside every 3.8.6 content build. (string, string, string)
+            // exists on every supported version, 3.8.2.1105 through 3.8.6 (Phase 69).
+            Identity   = new ContentIdentity(fullPath, "ShadowDusk", null),
             EffectCode = File.ReadAllText(fullPath),
         };
     }

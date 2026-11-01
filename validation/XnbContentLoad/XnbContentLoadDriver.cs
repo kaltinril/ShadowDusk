@@ -424,9 +424,29 @@ internal sealed class ContentLoadRenderer : Game
         Directory.CreateDirectory(_outDir);
 
         // Two managers, two roots, same asset names - so each arm is loaded exactly the way a
-        // consumer's game loads it, by name, with no path trickery.
-        _referenceContent  = new ContentManager(Services, _referenceRoot);
-        _shadowDuskContent = new ContentManager(Services, _shadowDuskRoot);
+        // consumer's game loads it, by name, with no path trickery. Each root is a RELATIVE
+        // folder beside the executable, as a game's "Content" is: MonoGame's native runtimes
+        // (DesktopGL4, Phase 69) refuse an absolute RootDirectory ("Opening stream error"), and
+        // the classic runtimes load a relative root the same way.
+        _referenceContent  = new ContentManager(Services, StageBesideExecutable(_referenceRoot, "reference"));
+        _shadowDuskContent = new ContentManager(Services, StageBesideExecutable(_shadowDuskRoot, "shadowdusk"));
+    }
+
+    /// <summary>Copies a built content root to xnb-content/&lt;arm&gt; beside the executable; returns that relative root.</summary>
+    private static string StageBesideExecutable(string builtRoot, string arm)
+    {
+        string relative = Path.Combine("xnb-content", arm);
+        string staged = Path.Combine(AppContext.BaseDirectory, relative);
+        if (Directory.Exists(staged))
+            Directory.Delete(staged, recursive: true);
+        foreach (string file in Directory.GetFiles(builtRoot, "*", SearchOption.AllDirectories))
+        {
+            string target = Path.Combine(staged, Path.GetRelativePath(builtRoot, file));
+            Directory.CreateDirectory(Path.GetDirectoryName(target)!);
+            File.Copy(file, target);
+        }
+
+        return relative;
     }
 
     protected override void Draw(GameTime gameTime)

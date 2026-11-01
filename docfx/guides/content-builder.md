@@ -13,6 +13,12 @@ the same source files; only the packaging differs. The plugin is a tools-only pa
 everything in one directory it can `/reference:`), which cannot be referenced from C# — so the
 Content Builder gets its own, library-shaped package.
 
+
+> **MonoGame 3.8.6:** use a ShadowDusk release newer than 0.23.0. MonoGame 3.8.6 removed a constructor
+> (`ContentIdentity(string, string)`) that the 0.23.0 importer calls, so with 0.23.0 every `.fx` fails with
+> `MissingMethodException`. Until you can update, MonoGame's own `EffectImporter` with the ShadowDusk processor
+> works on 3.8.6. Newer releases are checked against every MonoGame content pipeline from 3.8.2.1105 to 3.8.6.
+
 ## Setup
 
 In your Content Builder project (the `MonoGame.ContentBuilder.CSharp` template, short name `mgcb`):
@@ -102,7 +108,8 @@ formatter. The asset fails; nothing is silently swallowed.
 
 ## Is it really ShadowDusk, and does it really load?
 
-Checked, not claimed. `validation/ContentBuilder` runs a **real** MonoGame 3.8.5 `ContentBuilder`
+Checked, not claimed. `validation/ContentBuilder` runs a **real** MonoGame 3.8.5 `ContentBuilder` (and, with
+`-p:MonoGameVersion=3.8.6`, a real 3.8.6 one)
 subclass over the fixture set with two content roots — MonoGame's stock pair and ShadowDusk's — and
 asserts that the ShadowDusk `.xnb` payload is **byte-for-byte** the ShadowDusk CLI's, that the `.xnb`
 envelope is byte-for-byte the stock build's, that the payloads differ, and then loads **both** through a

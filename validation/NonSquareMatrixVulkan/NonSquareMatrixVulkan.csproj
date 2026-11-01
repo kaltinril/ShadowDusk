@@ -29,4 +29,6 @@
     <Compile Include="..\SharedNonSquareMatrix\*.cs" />
   </ItemGroup>
 
+  <Import Project="..\MonoGameVersion.targets" />
+
 </Project>

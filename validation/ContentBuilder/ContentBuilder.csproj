@@ -34,8 +34,16 @@
     <!-- The stock DesktopVK/WindowsDX12 passes start `dxc`. This package's build/ targets copy
          dxc.exe next to the harness only for a DIRECT reference; transitively it is never
          copied and the stock arm fails unless some other dxc happens to be on PATH. -->
-    <PackageReference Include="MonoGame.Tool.Dxc" Version="1.8.2505.11" />
+    <PackageReference Include="MonoGame.Tool.Dxc" Version="$(MonoGameToolDxcVersion)" />
   </ItemGroup>
+
+  <!-- Phase 69: -p:MonoGameVersion=3.8.6 builds the gate on the 3.8.6 Content Builder
+       (MonoGameVersion.targets moves the pipeline and WindowsDX packages). Each release's
+       template pins its own DXC tool package; 3.8.6's moved to 1.9.2607.*. -->
+  <PropertyGroup>
+    <MonoGameToolDxcVersion Condition="'$(MonoGameVersion)' == '3.8.6'">1.9.2607.1</MonoGameToolDxcVersion>
+    <MonoGameToolDxcVersion Condition="'$(MonoGameToolDxcVersion)' == ''">1.8.2505.11</MonoGameToolDxcVersion>
+  </PropertyGroup>
 
   <ItemGroup>
     <!-- The MGFX v11 source-file reader/rewriter (issue #274), shared with validation/MgcbPlugin. -->
@@ -46,5 +54,7 @@
     <!-- The thing under test: the LIBRARY shape, not the plugin. -->
     <ProjectReference Include="..\..\src\ShadowDusk.ContentPipeline\ShadowDusk.ContentPipeline.csproj" />
   </ItemGroup>
+
+  <Import Project="..\MonoGameVersion.targets" />
 
 </Project>

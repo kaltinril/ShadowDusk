@@ -109,4 +109,6 @@
     </AndroidNativeLibrary>
   </ItemGroup>
 
+  <Import Project="..\MonoGameVersion.targets" />
+
 </Project>

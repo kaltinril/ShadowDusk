@@ -53,7 +53,7 @@ MonoGame's stock content pipeline (`MGCB`) compiles `.fx` with the same effect c
 | Consumer runtime / backend | Shader Language | Compiler Target |
 |---|---|---|
 | DirectX (Windows) | HLSL | vkd3d-shader → DXBC (SM5) |
-| OpenGL / DesktopGL | GLSL | DXC → SPIR-V → SPIRV-Cross → GLSL |
+| OpenGL / DesktopGL (and MonoGame 3.8.6's native DesktopGL4, which loads the same `.mgfx`) | GLSL | DXC → SPIR-V → SPIRV-Cross → GLSL |
 | DirectX 12 *(Phase 54 — **rung 4 proven** for MonoGame `WindowsDX12`, PS/SpriteBatch + VS-driven/Apos.Shapes corpora; KNI ships no DX12 platform)* | HLSL | DXC → SM6 DXIL (direct, no `-spirv`) |
 | Metal (macOS / iOS) *(not yet implemented)* | MSL | DXC → SPIR-V → SPIRV-Cross → MSL |
 | Vulkan *(Phase 32 — **rung 4 proven** for MonoGame `DesktopVK`; KNI ships no Vulkan platform)* | SPIR-V | DXC → SPIR-V (direct) |

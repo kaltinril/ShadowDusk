@@ -393,6 +393,33 @@ jobs:
           xvfb-run -a dotnet run --project validation/Candidate -c Release --no-build
           python validation/compare.py
 
+      # Phase 69: the core of this lane again on MonoGame 3.8.6, the newest release, built with
+      # -p:MonoGameVersion=3.8.6 (validation/MonoGameVersion.targets: own lock file, and
+      # MonoGameVersionGuard exits 3 unless 3.8.6 actually loaded). Last in the job on purpose: it
+      # rebuilds these drivers into the same bin, so every --no-build step above runs the pinned arm
+      # first. The Windows render gate runs the full newer-MonoGame block (run-windows-render-gates.ps1).
+      # Not VsDriven: CI never runs it for the pinned arm either, and on llvmpipe its 3.8.6 build
+      # segfaulted (exit 139) after the baseline render (validation-matrix section 7). Not
+      # VertexSemanticsGl yet: on Mesa it expects the strict driver to refuse the non-square-matrix
+      # cases (issue #453) WITH Mesa's own error text, which MonoGame 3.8.6 no longer puts in its
+      # exception message. It comes back once #453 removes those refusals.
+      - name: MonoGame 3.8.6 arm (GL corpus + pixel-diff, KNI EffectTest, initializer defaults)
+        if: ${{ !cancelled() }}
+        env:
+          LIBGL_ALWAYS_SOFTWARE: "1"
+          SHADOWDUSK_REQUIRE_GL: "1"
+        run: |
+          set -e
+          mg=-p:MonoGameVersion=3.8.6
+          xvfb-run -a dotnet run --project validation/Baseline -c Release $mg
+          xvfb-run -a dotnet run --project validation/Candidate -c Release $mg
+          python validation/compare.py
+          for proj in KniEffectTestGl InitializerDefaultsGl; do
+            echo "::group::$proj (MonoGame 3.8.6)"
+            xvfb-run -a dotnet run --project "validation/$proj" -c Release $mg
+            echo "::endgroup::"
+          done
+
       - name: Upload render outputs (debug)
         if: always()
         uses: actions/upload-artifact@v7
@@ -697,6 +724,34 @@ jobs:
           if-no-files-found: ignore
           retention-days: 7
 
+      # Phase 69: the core of this lane again on MonoGame 3.8.6, the newest release, built with
+      # -p:MonoGameVersion=3.8.6 (validation/MonoGameVersion.targets: own lock file, and
+      # MonoGameVersionGuard exits 3 unless 3.8.6 actually loaded). Last in the job on purpose: it
+      # rebuilds these drivers into the same bin, so every --no-build step above runs the pinned arm
+      # first. The Windows render gate runs the full newer-MonoGame block (run-windows-render-gates.ps1).
+      - name: MonoGame 3.8.6 arm (WindowsDX and WindowsDX12 corpora vs mgfxc, KNI EffectTest on DX11 and DX12, on WARP)
+        if: ${{ !cancelled() }}
+        env:
+          SHADOWDUSK_DX_WARP: "1"
+        run: |
+          $mg = '-p:MonoGameVersion=3.8.6'
+          dotnet run --project validation/BaselineDx -c Release $mg
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
+          dotnet run --project validation/CandidateDx -c Release $mg
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
+          python validation/compare_dx.py
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
+          dotnet run --project validation/BaselineDx12 -c Release $mg
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
+          dotnet run --project validation/CandidateDx12 -c Release $mg
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
+          python validation/compare_dx12.py
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
+          dotnet run --project validation/KniEffectTestDx -c Release $mg
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
+          dotnet run --project validation/KniEffectTestDx12 -c Release $mg
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
+
       - name: Upload render outputs (debug)
         if: always()
         uses: actions/upload-artifact@v7
@@ -918,6 +973,22 @@ jobs:
         env:
           SHADOWDUSK_VK_CONTROL: whole-file-pairing
         run: validation/run-with-vk-validation.sh control-whole-file-pairing --expect-red 'CONTROL-DETECTED' -- xvfb-run -a dotnet run --project validation/VsDrivenVulkan -c Release --no-build -- regslots
+
+      # Phase 69: the core of this lane again on MonoGame 3.8.6, the newest release, built with
+      # -p:MonoGameVersion=3.8.6 (validation/MonoGameVersion.targets: own lock file, and
+      # MonoGameVersionGuard exits 3 unless 3.8.6 actually loaded). Last in the job on purpose: it
+      # rebuilds these drivers into the same bin, so every --no-build step above runs the pinned arm
+      # first. The Windows render gate runs the full newer-MonoGame block (run-windows-render-gates.ps1).
+      - name: MonoGame 3.8.6 arm (Vulkan VS rig vs mgfxc, PS corpus, KNI EffectTest; real DesktopVK under the validation layer)
+        if: ${{ !cancelled() }}
+        run: |
+          set -e
+          mg=-p:MonoGameVersion=3.8.6
+          validation/run-with-vk-validation.sh vsdriven-3.8.6 -- xvfb-run -a dotnet run --project validation/VsDrivenVulkan -c Release $mg
+          validation/run-with-vk-validation.sh candidate-3.8.6 -- xvfb-run -a dotnet run --project validation/CandidateVulkan -c Release $mg
+          xvfb-run -a dotnet run --project validation/BaselineVulkan -c Release $mg || echo "BaselineVulkan best-effort (upstream mgfxc bug), not scored"
+          python validation/compare_vulkan.py
+          validation/run-with-vk-validation.sh kni-effecttest-3.8.6 -- xvfb-run -a dotnet run --project validation/KniEffectTestVulkan -c Release $mg
 
       - name: Upload render outputs + validation-layer logs (debug)
         if: always()

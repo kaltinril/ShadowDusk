@@ -16,4 +16,7 @@
   <ItemGroup>
     <Compile Include="..\SharedInitializerDefaults\*.cs" />
   </ItemGroup>
+
+  <Import Project="..\MonoGameVersion.targets" />
+
 </Project>

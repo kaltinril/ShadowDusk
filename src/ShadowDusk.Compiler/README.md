@@ -48,7 +48,7 @@ Every target compiles on every desktop OS with deterministic output — the same
 
 ### Output format
 
-By default you get **MGFX v10** (`.mgfx`), which loads on every MonoGame from 3.8.1.263 (the measured floor) through 3.8.5, plus KNI. You never set a flag to get correct output. (`DirectX12` and `Vulkan` exist only on MonoGame 3.8.5+, so those two targets always emit v11.)
+By default you get **MGFX v10** (`.mgfx`), which loads on every MonoGame from 3.8.1.263 (the measured floor) through 3.8.6, plus KNI. You never set a flag to get correct output. (`DirectX12` and `Vulkan` exist only on MonoGame 3.8.5+, so those two targets always emit v11.)
 
 Targeting a newer runtime? Two optional formats load and render exactly like v10:
 

@@ -21,4 +21,7 @@
     <Compile Include="..\Shared\VsEffectImageRenderer.cs" />
     <Compile Include="..\SharedDx\AposGalleryRenderer.cs" />
   </ItemGroup>
+
+  <Import Project="..\MonoGameVersion.targets" />
+
 </Project>

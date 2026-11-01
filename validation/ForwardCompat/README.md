@@ -2,8 +2,8 @@
 
 Proves ShadowDusk's **existing, unchanged** v10 OpenGL `.mgfx` output
 **loads into a real `Effect` and renders pixel-identically on every MonoGame
-version that can load it** — currently **seven consecutive releases, 3.8.1.263
-through 3.8.5** — with **zero consumer action**.
+version that can load it** — currently **nine consecutive releases, 3.8.1.263
+through 3.8.6** — with **zero consumer action**.
 
 This is validation-only. It does **not** change the product:
 
@@ -60,26 +60,28 @@ MonoGame ships. The first entry is the forward-compat reference floor — the *o
 runtime that accepts MGFX v10 (see the floor measurement below); prepending anything
 older than `3.8.1.263` will fail for a real MonoGame reason.
 
-## Result — the FULL supported range (swept 2026-07-28, Windows DesktopGL)
+## Result — the FULL supported range (swept 2026-10-31, Windows DesktopGL)
 
 ShadowDusk compiler unchanged; the **same v10 `.mgfx` bytes** in every cell (one compile
-per shader, then seven runtimes load those identical bytes). `tolerance = 4/255`. Every
+per shader, then nine runtimes load those identical bytes). `tolerance = 4/255`. Every
 loaded runtime was confirmed by the integrity guard.
 
-**7 versions × 10 shaders = 70 renders, all green.**
+**9 versions × 10 shaders = 90 renders, all green.** (First swept 2026-07-28 with seven
+releases; 3.8.5.1 and 3.8.6 were added 2026-10-31, and the 3.8.6 cell loaded
+`MonoGame.Framework 3.8.6+c610a529`.)
 
-| Shader     | 3.8.1.263 (floor) | 3.8.1.303 | 3.8.2.1105 | 3.8.3 | 3.8.4 | 3.8.4.1 | 3.8.5 | each vs floor | each vs mgfxc golden |
-|------------|:---:|:---:|:---:|:---:|:---:|:---:|:---:|:-------------:|:--------------------:|
-| Grayscale  | OK | OK | OK | OK | OK | OK | OK | MATCH (maxΔ 0) | MATCH (maxΔ 0) |
-| Invert     | OK | OK | OK | OK | OK | OK | OK | MATCH (maxΔ 0) | MATCH (maxΔ 0) |
-| TintShader | OK | OK | OK | OK | OK | OK | OK | MATCH (maxΔ 0) | MATCH (maxΔ 0) |
-| Sepia      | OK | OK | OK | OK | OK | OK | OK | MATCH (maxΔ 0) | MATCH (maxΔ 0) |
-| Saturate   | OK | OK | OK | OK | OK | OK | OK | MATCH (maxΔ 0) | MATCH (maxΔ 0) |
-| Pixelated  | OK | OK | OK | OK | OK | OK | OK | MATCH (maxΔ 0) | MATCH (maxΔ 0) |
-| Scanlines  | OK | OK | OK | OK | OK | OK | OK | MATCH (maxΔ 0) | MATCH (maxΔ 1) |
-| Fading     | OK | OK | OK | OK | OK | OK | OK | MATCH (maxΔ 0) | MATCH (maxΔ 0) |
-| Dots       | OK | OK | OK | OK | OK | OK | OK | MATCH (maxΔ 0) | MATCH (maxΔ 1) |
-| Dissolve   | OK | OK | OK | OK | OK | OK | OK | MATCH (maxΔ 0) | MATCH (maxΔ 0) |
+| Shader     | 3.8.1.263 (floor) | 3.8.1.303 | 3.8.2.1105 | 3.8.3 | 3.8.4 | 3.8.4.1 | 3.8.5 | 3.8.5.1 | 3.8.6 | each vs floor | each vs mgfxc golden |
+|------------|:---:|:---:|:---:|:---:|:---:|:---:|:---:|:---:|:---:|:-------------:|:--------------------:|
+| Grayscale  | OK | OK | OK | OK | OK | OK | OK | OK | OK | MATCH (maxΔ 0) | MATCH (maxΔ 0) |
+| Invert     | OK | OK | OK | OK | OK | OK | OK | OK | OK | MATCH (maxΔ 0) | MATCH (maxΔ 0) |
+| TintShader | OK | OK | OK | OK | OK | OK | OK | OK | OK | MATCH (maxΔ 0) | MATCH (maxΔ 0) |
+| Sepia      | OK | OK | OK | OK | OK | OK | OK | OK | OK | MATCH (maxΔ 0) | MATCH (maxΔ 0) |
+| Saturate   | OK | OK | OK | OK | OK | OK | OK | OK | OK | MATCH (maxΔ 0) | MATCH (maxΔ 0) |
+| Pixelated  | OK | OK | OK | OK | OK | OK | OK | OK | OK | MATCH (maxΔ 0) | MATCH (maxΔ 0) |
+| Scanlines  | OK | OK | OK | OK | OK | OK | OK | OK | OK | MATCH (maxΔ 0) | MATCH (maxΔ 1) |
+| Fading     | OK | OK | OK | OK | OK | OK | OK | OK | OK | MATCH (maxΔ 0) | MATCH (maxΔ 0) |
+| Dots       | OK | OK | OK | OK | OK | OK | OK | OK | OK | MATCH (maxΔ 0) | MATCH (maxΔ 1) |
+| Dissolve   | OK | OK | OK | OK | OK | OK | OK | OK | OK | MATCH (maxΔ 0) | MATCH (maxΔ 0) |
 
 One build of the output renders **pixel-identically on every MonoGame release that can
 load it** (max per-channel delta **0** between runtimes), and every cell stays within
@@ -94,7 +96,7 @@ this harness against it:
 | MonoGame | v10 `.mgfx` loads + renders? |
 |---|---|
 | 3.8.0.1641 | ❌ **0/10** — `new Effect()` throws *"This MGFX effect seems to be for a newer release of MonoGame."* Its loader predates MGFX v10. |
-| **3.8.1.263 → 3.8.5** (7 releases) | ✅ **10/10 each**, all pixel-identical |
+| **3.8.1.263 → 3.8.6** (9 releases) | ✅ **10/10 each**, all pixel-identical |
 
 So **3.8.1.263 is the true floor** and is the matrix's forward-compat reference. 3.8.0's
 rejection is a real MonoGame version boundary, not a ShadowDusk defect — it is recorded
@@ -107,13 +109,17 @@ number someone once picked.
 > `ShadowDusk.*` package depends on MonoGame at all. The product's actual commitment is
 > the **output format (MGFX v10)**, and this matrix is what establishes its range.
 
-## Version landscape (verified live 2026-07-28 against nuget.org)
+## Version landscape (verified live 2026-10-31 against nuget.org)
 
 - Stable DesktopGL releases: 3.5.0.1678, 3.5.1.1679, 3.6.0.1625, 3.7.0.1708, 3.7.1.189,
-  3.8.0.1641, 3.8.1.263, 3.8.1.303, 3.8.2.1105, 3.8.3, 3.8.4, 3.8.4.1, **3.8.5**.
+  3.8.0.1641, 3.8.1.263, 3.8.1.303, 3.8.2.1105, 3.8.3, 3.8.4, 3.8.4.1, 3.8.5, 3.8.5.1,
+  **3.8.6**.
   3.7.x and older are pre-`net8.0`-era and out of scope; 3.8.0 is the measured
   floor-minus-one above; everything from 3.8.1.263 up is in the matrix.
-- **3.8.5** — shipped **STABLE 2026-07-15**, latest on nuget.org, in the matrix since
+- **3.8.6** — shipped **STABLE 2026-10-08**, latest on nuget.org, in the matrix since
+  2026-10-31 (with 3.8.5.1, 2026-08-14). Like 3.8.5, it needed only the version string.
+  The full 3.8.6 support sweep is [Phase 69](../../plan/DONE/PHASE-69-monogame-3.8.6-support.md).
+- **3.8.5** — shipped **STABLE 2026-07-15**, in the matrix since
   2026-07-28. The classic `MonoGame.Framework.DesktopGL` package continues at 3.8.5, so
   this harness needed no structural change — only the version string. Source-verified
   that its loader accepts the MGFX range `[10, 11]` (it adds `MGFXMinVersion = 10`), and

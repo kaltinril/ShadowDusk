@@ -230,13 +230,18 @@ ShadowDusk/
 │                                  #   GL texture breadth (TextureBreadthValidation: cube + 3D texture render,
 │                                  #     in-process assert, Linux GL CI lane),
 │                                  #   forward compat (ForwardCompat: the SAME v10 bytes rendered on seven
-│                                  #     MonoGame releases, 3.8.1.263 (the measured floor) to 3.8.5
+│                                  #     MonoGame releases, 3.8.1.263 (the measured floor) to 3.8.6
 │                                  #     + compare_forwardcompat.py, run-forwardcompat.ps1),
 │                                  #   shared source linked into the drivers (not projects): Shared/ (GL
 │                                  #     renderers + shader inputs), SharedDx/ (DX renderers, headless
 │                                  #     rasterizer, Apos.Shapes gallery renderer), SharedLegacyLod/ (the
 │                                  #     tex2Dlod/tex2Dbias/tex2Dproj + MonoGame VTF scene the DX11, DX12
 │                                  #     and Vulkan drivers all draw)
+│                                  #   MonoGameVersion.targets (Phase 69): imported by every MonoGame driver;
+│                                  #     -p:MonoGameVersion=<v> builds it against another MonoGame release
+│                                  #     (own packages.<v>.lock.json), -p:MonoGameDesktopGL4=true moves a GL
+│                                  #     driver onto 3.8.6's native DesktopGL4 runtime; SharedMonoGameVersion/
+│                                  #     holds the guard that fails a run whose loaded MonoGame does not match
 │                                  #   + the compare_*.py oracles. See docs/validation-matrix.md §6.
 │                                  #   Two entries here are NOT render proofs:
 │                                  #     MgcbPlugin runs a real `dotnet mgcb` content build through the MGCB

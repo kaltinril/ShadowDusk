@@ -14,6 +14,12 @@ Windows SDK, on Linux, macOS, and Windows alike.
 > over `MonoGame.Framework.Content.Pipeline` and has no external-tool seam either. The plugin below
 > is the real integration.
 
+
+> **MonoGame 3.8.6:** use a ShadowDusk release newer than 0.23.0. MonoGame 3.8.6 removed a constructor
+> (`ContentIdentity(string, string)`) that the 0.23.0 importer calls, so with 0.23.0 every `.fx` fails with
+> `MissingMethodException`. Until you can update, MonoGame's own `EffectImporter` with the ShadowDusk processor
+> works on 3.8.6. Newer releases are checked against every MonoGame content pipeline from 3.8.2.1105 to 3.8.6.
+
 ## Setup
 
 ```sh

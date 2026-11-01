@@ -130,6 +130,26 @@
           CopyToOutputDirectory="PreserveNewest"
           Link="foreign-dxc/1.9/%(RecursiveDir)%(Filename)%(Extension)" />
   </ItemGroup>
+  <!-- Phase 69: every MonoGame content-pipeline release the plugin must bind against, for
+       ContentPipelineApiBindingTests. MonoGame 3.8.6 removed ContentIdentity(string, string),
+       and a plugin compiled against the 3.8.2.1105 floor threw MissingMethodException inside
+       every 3.8.6 content build; nothing under dotnet test could see it. The floor is already a
+       dependency; the others are PackageDownloads (no dependency, 0.5 to 1.2 MB each). A new
+       MonoGame release is appended here AND to ContentPipelineApiBindingTests.Versions. -->
+  <ItemGroup Label="Content pipeline releases (API binding check)">
+    <PackageDownload Include="MonoGame.Framework.Content.Pipeline" Version="[3.8.4.1];[3.8.5];[3.8.5.1];[3.8.6]" />
+  </ItemGroup>
+  <PropertyGroup Condition="'$(NuGetPackageRoot)' != ''">
+    <ContentPipelinePackages>$([MSBuild]::EnsureTrailingSlash('$(NuGetPackageRoot)'))monogame.framework.content.pipeline/</ContentPipelinePackages>
+  </PropertyGroup>
+  <ItemGroup Condition="'$(ContentPipelinePackages)' != ''">
+    <None Include="$(ContentPipelinePackages)3.8.2.1105/lib/*/MonoGame.Framework.Content.Pipeline.dll" CopyToOutputDirectory="PreserveNewest" Link="content-pipeline/3.8.2.1105/%(Filename)%(Extension)" />
+    <None Include="$(ContentPipelinePackages)3.8.4.1/lib/*/MonoGame.Framework.Content.Pipeline.dll"   CopyToOutputDirectory="PreserveNewest" Link="content-pipeline/3.8.4.1/%(Filename)%(Extension)" />
+    <None Include="$(ContentPipelinePackages)3.8.5/lib/*/MonoGame.Framework.Content.Pipeline.dll"     CopyToOutputDirectory="PreserveNewest" Link="content-pipeline/3.8.5/%(Filename)%(Extension)" />
+    <None Include="$(ContentPipelinePackages)3.8.5.1/lib/*/MonoGame.Framework.Content.Pipeline.dll"   CopyToOutputDirectory="PreserveNewest" Link="content-pipeline/3.8.5.1/%(Filename)%(Extension)" />
+    <None Include="$(ContentPipelinePackages)3.8.6/lib/*/MonoGame.Framework.Content.Pipeline.dll"     CopyToOutputDirectory="PreserveNewest" Link="content-pipeline/3.8.6/%(Filename)%(Extension)" />
+  </ItemGroup>
+
   <!-- Issue #362: the directory the glob above probed, stamped into the assembly so a
        "DXC 1.9 fixture is missing" failure names where the build looked (ForeignDxc.cs). -->
   <ItemGroup>

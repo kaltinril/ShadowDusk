@@ -28,4 +28,7 @@
          record, the same way the in-suite tests do. -->
     <Compile Include="..\..\tests\ShadowDusk.Integration.Tests\MgfxBlobReader.cs" Link="MgfxBlobReader.cs" />
   </ItemGroup>
+
+  <Import Project="..\MonoGameVersion.targets" />
+
 </Project>

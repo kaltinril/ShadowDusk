@@ -19,4 +19,7 @@
     <Compile Include="..\SharedDx\DxEffectImageRenderer.cs" />
     <Compile Include="..\SharedDx\DxHeadlessRasterizer.cs" />
   </ItemGroup>
+
+  <Import Project="..\MonoGameVersion.targets" />
+
 </Project>

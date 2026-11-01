@@ -38,4 +38,6 @@
     <Compile Include="..\SharedDx\DxHeadlessRasterizer.cs" />
   </ItemGroup>
 
+  <Import Project="..\MonoGameVersion.targets" />
+
 </Project>

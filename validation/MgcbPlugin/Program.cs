@@ -83,6 +83,9 @@ internal static class Program
     /// <summary>The second MGCB arm. Fetched by the csproj's <c>PackageDownload</c> into the NuGet cache.</summary>
     private const string Mgcb385 = "3.8.5";
 
+    /// <summary>The third MGCB arm (Phase 69): the same cases as the 3.8.5 arm on the real <c>dotnet-mgcb</c> 3.8.6.</summary>
+    private const string Mgcb386 = "3.8.6";
+
     /// <summary>One gate case.</summary>
     /// <param name="Fixture">The corpus shader.</param>
     /// <param name="Platform">MGCB <c>/platform:</c>.</param>
@@ -132,6 +135,17 @@ internal static class Program
         new("Grayscale.fx",               "WindowsDX12", "DirectX_12", Mgcb385, MustNotEqualProfile: "DirectX_11", ExpectV11: true),
         new("VsTransformColorTexture.fx", "WindowsDX12", "DirectX_12", Mgcb385, ExpectV11: true),
         new("VertexAndPixel.fx",          "WindowsDX12", "DirectX_12", Mgcb385, StockArm: false, MustNotEqualProfile: "DirectX_11", ExpectV11: true),
+
+        // Arm 3 (Phase 69): the real dotnet-mgcb 3.8.6, the same eight cases as arm 2. A new MGCB
+        // release is a new arm beside the old ones, never a replacement.
+        new("Grayscale.fx",               "DesktopGL",   "OpenGL",     Mgcb386),
+        new("Grayscale.fx",               "Web",         "OpenGL",     Mgcb386),
+        new("Grayscale.fx",               "DesktopVK",   "Vulkan",     Mgcb386, MustNotEqualProfile: "OpenGL",     PlatformByte: 'V', ExpectV11: true),
+        new("VsTransformColorTexture.fx", "DesktopVK",   "Vulkan",     Mgcb386, PlatformByte: 'V', ExpectV11: true),
+        new("VertexAndPixel.fx",          "DesktopVK",   "Vulkan",     Mgcb386, StockArm: false, MustNotEqualProfile: "OpenGL",     PlatformByte: 'V', ExpectV11: true),
+        new("Grayscale.fx",               "WindowsDX12", "DirectX_12", Mgcb386, MustNotEqualProfile: "DirectX_11", ExpectV11: true),
+        new("VsTransformColorTexture.fx", "WindowsDX12", "DirectX_12", Mgcb386, ExpectV11: true),
+        new("VertexAndPixel.fx",          "WindowsDX12", "DirectX_12", Mgcb386, StockArm: false, MustNotEqualProfile: "DirectX_11", ExpectV11: true),
     ];
 
     private static int Main()
@@ -152,6 +166,7 @@ internal static class Program
         string repoRoot   = FindRepoRoot();
         string mgcbPinned = LocateMgcb(repoRoot, version: null);
         string mgcb385    = LocateMgcb(repoRoot, Mgcb385);
+        string mgcb386    = LocateMgcb(repoRoot, Mgcb386);
         string plugin     = LocateNewest(Path.Combine(repoRoot, "src", "ShadowDusk.MgcbPlugin", "bin"),
                                          "ShadowDusk.MgcbPlugin.dll");
         string cli        = LocateNewest(Path.Combine(repoRoot, "src", "ShadowDusk.Cli", "bin"),
@@ -160,6 +175,7 @@ internal static class Program
 
         Console.WriteLine($"mgcb (manifest) : {mgcbPinned}");
         Console.WriteLine($"mgcb {Mgcb385}      : {mgcb385}");
+        Console.WriteLine($"mgcb {Mgcb386}      : {mgcb386}");
         Console.WriteLine($"plugin          : {plugin}");
         Console.WriteLine($"cli             : {cli}");
         Console.WriteLine();
@@ -178,7 +194,13 @@ internal static class Program
         {
             foreach (Case c in Cases)
             {
-                string mgcb  = c.MgcbVersion is null ? mgcbPinned : mgcb385;
+                string mgcb  = c.MgcbVersion switch
+                {
+                    null    => mgcbPinned,
+                    Mgcb385 => mgcb385,
+                    Mgcb386 => mgcb386,
+                    _       => throw new InvalidOperationException($"no MGCB located for {c.MgcbVersion}"),
+                };
                 string label = $"{c.Fixture} /platform:{c.Platform} (mgcb {c.MgcbVersion ?? "manifest"})";
                 try
                 {
