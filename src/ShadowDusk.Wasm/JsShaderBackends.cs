@@ -79,6 +79,12 @@ internal sealed class JsDxcShaderCompiler : IDxcShaderCompiler
         // does not make it: the source is compiled exactly as written. Its DXC build does not crash
         // on a redeclared entry; it fails the compile ("generated SPIR-V is invalid: 2 Entry points
         // cannot share the same name"), which is relabelled SD0236 below with DXC's text kept.
+        //
+        // The desktop's refusal of a '#pragma pack_matrix' argument DXC rejects (issue #452,
+        // SD0241) applies here too, so both hosts answer the same.
+        if (DxcPackMatrixGuard.Check(request.HlslSource, request.SourceFileName, request.Macros) is { } packMatrixError)
+            return Result<PlatformBlob, ShaderError>.Fail(packMatrixError);
+
         try
         {
             byte[] spirv = DxcInterop.CompileToSpirv(request.HlslSource, arguments.ToArray());

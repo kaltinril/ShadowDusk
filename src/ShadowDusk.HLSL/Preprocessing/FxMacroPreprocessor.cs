@@ -35,7 +35,7 @@ namespace ShadowDusk.HLSL.Preprocessing;
 /// error carrying the file and line, never a guess. Callers only surface that error for source
 /// DXC itself accepted, so a genuinely malformed shader still reports DXC's own diagnostic.</para>
 /// </summary>
-internal sealed class FxMacroPreprocessor
+internal sealed partial class FxMacroPreprocessor
 {
     /// <summary>The registered diagnostic code for "the preprocessed view could not be built".</summary>
     public const string ErrorCode = "SD0009";
@@ -466,6 +466,9 @@ internal sealed class FxMacroPreprocessor
                             // code generation, and an '#error' must still stop the compile.
                             if (_compilerInput)
                                 EmitDirectiveVerbatim(output, physicalLine, logical);
+                            if (_guardMode && directive == "pragma" &&
+                                NotePragma(rest, logical, physicalLine, lineNo) is { } pragmaError) // issue #452
+                                return Result<string, ShaderError>.Fail(pragmaError);
                             break;
                         case "include":
                             return Fail(lineNo,
@@ -639,6 +642,8 @@ internal sealed class FxMacroPreprocessor
                 !_macros.TryGetValue(t.Text, out Macro? macro) ||
                 t.Hide.Contains(t.Text))
             {
+                if (_guardMode)
+                    NoteBlockedName(t, stack, file, line); // issue #449
                 output.Add(t);
                 continue;
             }

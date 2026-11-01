@@ -653,6 +653,10 @@ internal sealed class CompilationPipeline
         // mgfxc's refusal.
         bool enforceDx11Floor = directX;
         bool kniDirectXFloor = directX && effectiveContainer == EffectContainer.Knifx;
+        // A KNIFX container on OpenGL refuses SM6 profiles the way KNI's own pipeline does (issue
+        // #439): the shader model it records is checked by KNI's runtime against the graphics
+        // profile's ceiling (5.0 at FL11_x), so a 6.0 body never loads on any profile.
+        bool kniOpenGlNoSm6 = options.Target == PlatformTarget.OpenGL && effectiveContainer == EffectContainer.Knifx;
         // A profile a macro produced is validated through the macro name the author wrote, so DXC
         // expands it with -P as before issue #407. (The Android emulator hangs the first SPIR-V
         // compile after the corpus' effects stop making those -P calls: a DXC-spawned thread is
@@ -671,7 +675,7 @@ internal sealed class CompilationPipeline
                         dxcCompiler, macros, preprocessed, sourceFileName,
                         profileExpansionCache, enforceStagePrefix: true, cancellationToken,
                         enforceDirectX11Floor: enforceDx11Floor, entryPoint: pass.VertexEntryPoint,
-                        kniDirectXFloor: kniDirectXFloor);
+                        kniDirectXFloor: kniDirectXFloor, kniOpenGlNoSm6: kniOpenGlNoSm6);
                     if (v is { } vErr)
                         return Fail(vErr);
                 }
@@ -683,7 +687,7 @@ internal sealed class CompilationPipeline
                         dxcCompiler, macros, preprocessed, sourceFileName,
                         profileExpansionCache, enforceStagePrefix: true, cancellationToken,
                         enforceDirectX11Floor: enforceDx11Floor, entryPoint: pass.PixelEntryPoint,
-                        kniDirectXFloor: kniDirectXFloor);
+                        kniDirectXFloor: kniDirectXFloor, kniOpenGlNoSm6: kniOpenGlNoSm6);
                     if (p is { } pErr)
                         return Fail(pErr);
                 }
@@ -2011,7 +2015,8 @@ internal sealed class CompilationPipeline
         CancellationToken cancellationToken,
         bool enforceDirectX11Floor = false,
         string? entryPoint = null,
-        bool kniDirectXFloor = false)
+        bool kniDirectXFloor = false,
+        bool kniOpenGlNoSm6 = false)
     {
         // A missing profile cannot be validated (and never reaches a compile with a real
         // target) — leave the existing SM3 fallback behavior untouched.
@@ -2022,7 +2027,8 @@ internal sealed class CompilationPipeline
         // (IsKnownProfile is case-insensitive, so the lowercased form is fine here.)
         if (FxPreParser.IsKnownProfile(profile))
             return ResolvedProfileChecks(
-                profile, stage, span, sourceFileName, enforceStagePrefix, enforceDirectX11Floor, entryPoint, kniDirectXFloor);
+                profile, stage, span, sourceFileName, enforceStagePrefix, enforceDirectX11Floor, entryPoint, kniDirectXFloor,
+                kniOpenGlNoSm6);
 
         // Profile-SHAPED but NOT a known profile (e.g. 'ps_9_9', 'ps_2_5'): unconditionally
         // invalid — no macro could rescue a literal that already looks like a profile — so
@@ -2053,7 +2059,8 @@ internal sealed class CompilationPipeline
 
         if (expanded is not null && FxPreParser.IsKnownProfile(expanded))
             return ResolvedProfileChecks(
-                expanded, stage, span, sourceFileName, enforceStagePrefix, enforceDirectX11Floor, entryPoint, kniDirectXFloor);
+                expanded, stage, span, sourceFileName, enforceStagePrefix, enforceDirectX11Floor, entryPoint, kniDirectXFloor,
+                kniOpenGlNoSm6);
 
         return ProfileError(profile, span, sourceFileName);
     }
@@ -2064,7 +2071,8 @@ internal sealed class CompilationPipeline
     /// profile floor (<c>SD0015</c>). Stage prefix runs first because it is the more
     /// specific diagnosis of the same token — a <c>ps_*</c> in a <c>VertexShader</c> slot
     /// is a slot error, not a shader-model one (mgfxc conflates the two and reports its
-    /// floor message for both).
+    /// floor message for both). A KNIFX container on OpenGL refuses SM6 (also <c>SD0015</c>,
+    /// <see cref="KniOpenGlSm6Check"/>).
     /// </summary>
     private static ShaderError? ResolvedProfileChecks(
         string knownProfile,
@@ -2074,11 +2082,15 @@ internal sealed class CompilationPipeline
         bool enforceStagePrefix,
         bool enforceDirectX11Floor,
         string? entryPoint,
-        bool kniDirectXFloor)
+        bool kniDirectXFloor,
+        bool kniOpenGlNoSm6 = false)
     {
         ShaderError? stagePrefix = StagePrefixCheck(knownProfile, stage, span, sourceFileName, enforceStagePrefix);
         if (stagePrefix is not null)
             return stagePrefix;
+
+        if (kniOpenGlNoSm6)
+            return KniOpenGlSm6Check(knownProfile, stage, span, sourceFileName, entryPoint);
 
         if (!enforceDirectX11Floor)
             return null;
@@ -2283,6 +2295,38 @@ internal sealed class CompilationPipeline
                      $"profiles such as {prefix}_6_0 are refused too). Use the standard " +
                      "'#if OPENGL … #else …' header so the DirectX arm defines " +
                      "VS_SHADERMODEL/PS_SHADERMODEL as the *_4_0_level_9_1 pair");
+    }
+
+    /// <summary>
+    /// The SM6 refusal for a KNIFX container on OpenGL (issue #439, owner decision: refuse as KNI
+    /// does). The desktop GL body records the profile's shader model (<see cref="KnifxShaderModel"/>),
+    /// and KNI's GL runtime throws "Shader model 6.0 is not supported by the current graphics profile"
+    /// for any recorded version above the profile's ceiling (Reach 2.0 … FL11_x 5.0;
+    /// <c>Platforms/Graphics/.GL/Shader/ConcreteShader.cs</c>, KNI 4.2.9001 to main), so an SM6 pass
+    /// built an effect that never loads. KNI's own GL effect processor refuses SM6 profiles as invalid
+    /// (<c>ShaderVersion.ParseShaderModel</c> only reads <c>_1</c>–<c>_5</c>). Every other profile keeps
+    /// what it records today.
+    /// </summary>
+    private static ShaderError? KniOpenGlSm6Check(
+        string knownProfile, ShaderStage stage, SourceSpan? span, string sourceFileName, string? entryPoint)
+    {
+        if (KnifxShaderModel.Parse(knownProfile).Major < 6)
+            return null;
+
+        string stageWord = stage == ShaderStage.Vertex ? "vertex" : "pixel";
+        string prefix    = stage == ShaderStage.Vertex ? "vs" : "ps";
+        string named     = entryPoint is null ? string.Empty : $" (the {stageWord} shader '{entryPoint}')";
+        return new ShaderError(
+            File: sourceFileName,
+            Line: span?.StartLine ?? 0,
+            Column: span?.StartColumn ?? 0,
+            Code: "SD0015",
+            Message: $"compile target '{knownProfile}'{named} is a Shader Model 6 profile, which the KNIFX container " +
+                     "on OpenGL cannot carry: KNI's own effect processor refuses SM6 profiles, and KNI's runtime " +
+                     "refuses a shader that records shader model 6.0 on every graphics profile (the highest it " +
+                     $"accepts is 5.0, at FL11_0). The OpenGL output does not depend on the SM4+ profile, so use " +
+                     $"{prefix}_4_0_level_9_1 (Reach), {prefix}_4_0_level_9_3 (HiDef), {prefix}_4_0, {prefix}_4_1 " +
+                     $"or {prefix}_5_0, or {prefix}_2_0/{prefix}_3_0");
     }
 
     /// <summary>

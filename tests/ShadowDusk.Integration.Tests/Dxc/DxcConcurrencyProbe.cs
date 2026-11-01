@@ -60,6 +60,10 @@ public static class DxcConcurrencyProbe
             return NativeStack.DeepShaderProbe.Run(args[1..]);
         if (args.Length > 0 && args[0] == EntryPointRedeclarationProbe.ProbeArgument)
             return EntryPointRedeclarationProbe.Run(args[1..]);
+        if (args.Length > 0 && args[0] == DxcPackMatrixProbe.ProbeArgument)
+            return DxcPackMatrixProbe.Run(args[1..]);
+        if (args.Length > 0 && args[0] == Vkd3d.Vkd3dInputGuardProbe.ProbeArgument)
+            return Vkd3d.Vkd3dInputGuardProbe.Run(args[1..]);
         if (args.Length == 0 || args[0] != ProbeArgument)
             return 0;
 

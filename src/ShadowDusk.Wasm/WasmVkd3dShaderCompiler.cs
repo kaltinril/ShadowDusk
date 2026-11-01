@@ -100,6 +100,12 @@ internal sealed class WasmVkd3dShaderCompiler : IDxbcShaderCompiler
         // request.HlslSource with the directives in it; vkd3d ignored them for the bytes but
         // printed one fixme line per directive to the console. The shim and the WASM wrapper
         // forward the bytes untouched. Never transform the source here.
+        //
+        // Before it: the desktop's refusal of a source vkd3d cannot survive (issues #448, #449), so a
+        // compile the desktop refuses is refused here too, never handed to the WASM module.
+        if (Vkd3dCompileContract.CheckSource(request.HlslSource, request.SourceFileName) is { } refused)
+            return Result<PlatformBlob, ShaderError>.Fail(refused);
+
         string vkd3dSource = Vkd3dCompileContract.PrepareSource(request.HlslSource);
 
         // The relocation probe (issue #202) for BOTH outcomes below: a failing compile's
