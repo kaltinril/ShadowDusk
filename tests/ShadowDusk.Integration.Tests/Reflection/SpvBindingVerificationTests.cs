@@ -9,6 +9,10 @@ using Xunit;
 
 namespace ShadowDusk.Integration.Tests.Reflection;
 
+// SpvReflectionVerifier is [Obsolete] (issue #429) and kept for one more release; these tests pin its
+// current no-op behaviour until it is removed.
+#pragma warning disable CS0618
+
 [Trait("Category", "Integration")]
 [Trait("Platform", "OpenGL")]
 public sealed class SpvBindingVerificationTests
