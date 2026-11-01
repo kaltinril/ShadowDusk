@@ -17,9 +17,12 @@ namespace ShadowDusk.Integration.Tests.Vkd3d;
 /// </summary>
 /// <remarks>
 /// Selected by <see cref="ProbeArgument"/> from <c>DxcConcurrencyProbe.Main</c>:
-/// <c>--vkd3d-input-guard-probe &lt;DirectX|Fna|d3dcompiler|raw-void-cast&gt;</c>. <c>d3dcompiler</c>
-/// compiles the DirectX cases with the d3dcompiler_47 oracle (Windows). <c>raw-void-cast</c> is the
-/// positive control: the same pinned vkd3d called with no guard, which must still crash.
+/// <c>--vkd3d-input-guard-probe &lt;DirectX|Fna|d3dcompiler|raw-void-cast|raw-self-macro&gt; [void|macro]</c>:
+/// the cast-to-void cases (<see cref="Cases"/>, the default) or the self-referential macro cases
+/// of issue #449 (<see cref="MacroCases"/>), which made vkd3d's preprocessor run forever.
+/// <c>d3dcompiler</c> compiles the DirectX cases with the d3dcompiler_47 oracle (Windows).
+/// <c>raw-void-cast</c> and <c>raw-self-macro</c> are the positive controls: the same pinned vkd3d
+/// called with no guard, which must still crash, or still not return.
 /// </remarks>
 public static class Vkd3dInputGuardProbe
 {
@@ -60,6 +63,39 @@ public static class Vkd3dInputGuardProbe
         new("void-in-unused-macro", "#define DISCARD(e) (void)(e)\n" + Ps + " {\n    return float4(uv, 0, 1);\n}\n"),
     ];
 
+    private const string PsColor = "float4 PS(float4 c : COLOR0) : COLOR0";
+
+    /// <summary>
+    /// The issue #449 cases. Unguarded, every refused one ran until the watchdog killed it
+    /// (vkd3d's preprocessor inside one <c>vkd3d_shader_compile</c> call), on FNA and on a
+    /// DirectX 11 (<c>ps_4_0</c>) copy alike.
+    /// </summary>
+    public static IReadOnlyList<Case> MacroCases { get; } =
+    [
+        // The reported probes: the entry point's own name defined as a macro naming itself.
+        new("fn-self-entry", "#define PS(x) PS(x)\nfloat4 PS(float4 c : COLOR0) : COLOR0;\nfloat4 PS(float4 c : COLOR0) : COLOR0 { return c * 0.5; }\n"),
+        new("obj-self-entry", "#define PS PS\nfloat4 PS(float4 c : COLOR0) : COLOR0;\nfloat4 PS(float4 c : COLOR0) : COLOR0 { return c * 0.5; }\n"),
+        new("fn-self", "#define F(x) F(x)\nfloat F(float x) { return x * 2; }\n" + PsColor + " {\n    return c * F(0.5);\n}\n"),
+        new("obj-self-identifier", "#define K K\nstatic const float K = 0.5;\n" + PsColor + " {\n    return c * K;\n}\n"),
+        new("obj-self-call", "#define G G\nfloat G(float x) { return x; }\n" + PsColor + " {\n    return c * G(0.5);\n}\n"),
+        new("fn-mutual", "#define A(x) B(x)\n#define B(x) A(x)\nfloat A(float x) { return x; }\n" + PsColor + " {\n    return c * A(0.5);\n}\n"),
+        new("obj-mutual", "#define A B\n#define B A\nstatic const float A = 0.5;\n" + PsColor + " {\n    return c * A;\n}\n"),
+        new("obj-to-fn", "#define F G\n#define G(x) F(x)\nfloat G(float v) { return v; }\n" + PsColor + " {\n    return c * G(0.5);\n}\n"),
+        new("obj-self-in-if", "#define X X\n#if X\nstatic const float K = 2;\n#else\nstatic const float K = 1;\n#endif\n" + PsColor + " { return c * K; }\n"),
+        // Controls vkd3d finishes on (measured), which must still compile.
+        new("fn-self-unused", "#define F(x) F(x)\n" + PsColor + " { return c * 0.5; }\n"),
+        new("fn-self-name-without-call", "#define F(x) (x + F)\nstatic const float F = 1;\n" + PsColor + " { return c * F(0.5); }\n"),
+        new("fn-name-from-argument", "#define ID(x) x\n" + PsColor + " { return c * ID(ID)(0.5); }\n"),
+        new("obj-self-ifdef", "#define X X\n#ifdef X\nstatic const float K = 2;\n#else\nstatic const float K = 1;\n#endif\n" + PsColor + " { return c * K; }\n"),
+        new("obj-self-dead", "#define X X\n#if 0\nstatic const float X = 2;\n#endif\n" + PsColor + " { return c; }\n"),
+        new("nested-call", "#define F(x) ((x) + 1)\n" + PsColor + " { return c * F(F(0.5)); }\n"),
+        new("alias", "#define F G\nfloat G(float x) { return x; }\n" + PsColor + " { return c * F(0.5); }\n"),
+    ];
+
+    /// <summary>The plain HLSL the raw hang control hands vkd3d.</summary>
+    public const string RawSelfMacroSource =
+        "#define K K\nstatic const float K = 0.5;\nfloat4 PS(float4 c : COLOR0) : SV_Target { return c * K; }\n";
+
     /// <summary>The source of a case on a target (the technique names the target's profile).</summary>
     public static string Effect(Case c, string target) =>
         c.Body + $"technique T {{ pass P0 {{ PixelShader = compile {(target == "Fna" ? "ps_3_0" : "ps_4_0")} PS(); }} }}\n";
@@ -71,17 +107,22 @@ public static class Vkd3dInputGuardProbe
     /// <summary>Runs the probe; see the class remarks for the argument.</summary>
     public static int Run(string[] args)
     {
-        if (args.Length != 1)
+        if (args.Length is not (1 or 2))
         {
-            Console.Error.WriteLine($"usage: {ProbeArgument} <DirectX|Fna|d3dcompiler|raw-void-cast>");
+            Console.Error.WriteLine($"usage: {ProbeArgument} <DirectX|Fna|d3dcompiler|raw-void-cast|raw-self-macro> [void|macro]");
             return 64;
         }
 
         string target = args[0];
         if (target == "raw-void-cast")
             return RunRaw(RawVoidCastSource);
+        if (target == "raw-self-macro")
+            return RunRaw(RawSelfMacroSource);
+        // Measurement aid: a plain HLSL file (entry PS, ps_4_0) through the unguarded call.
+        if (target == "raw-file" && args.Length == 2)
+            return RunRaw(File.ReadAllText(args[1]));
 
-        foreach (Case c in Cases)
+        foreach (Case c in args.Length == 2 && args[1] == "macro" ? MacroCases : Cases)
         {
             Console.WriteLine($"{VerdictPrefix}{c.Name} START");
             Console.Out.Flush();

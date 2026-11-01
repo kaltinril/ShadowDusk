@@ -634,6 +634,8 @@ internal sealed partial class FxMacroPreprocessor
                 !_macros.TryGetValue(t.Text, out Macro? macro) ||
                 t.Hide.Contains(t.Text))
             {
+                if (_guardMode)
+                    NoteBlockedName(t, stack, file, line); // issue #449
                 output.Add(t);
                 continue;
             }

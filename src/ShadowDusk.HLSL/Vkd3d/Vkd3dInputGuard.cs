@@ -9,7 +9,8 @@ namespace ShadowDusk.HLSL.Vkd3d;
 /// <summary>
 /// Source shapes the pinned vkd3d-shader cannot survive, refused with a registered diagnostic
 /// before any host hands the source to <c>vkd3d_shader_compile</c>. One native call cannot be
-/// interrupted, and a fault inside it ends the consumer's whole process, so these are decided in
+/// interrupted, and a fault inside it ends the consumer's whole process (a hang never returns
+/// the compile at all), so these are decided in
 /// managed code on the preprocessed view (dead <c>#if</c> branches dropped, macros expanded), and
 /// identically on the desktop and the browser host (<see cref="Vkd3dCompileContract.CheckSource"/>).
 /// </summary>
@@ -23,6 +24,9 @@ internal static class Vkd3dInputGuard
 {
     /// <summary>A cast to <c>void</c> (issue #448).</summary>
     public const string VoidCastCode = "SD0239";
+
+    /// <summary>A macro that expands to itself, which vkd3d's preprocessor never returns on (issue #449).</summary>
+    public const string SelfReferenceCode = "SD0240";
 
     private sealed record Verdict(string SourceFileName, ShaderError? Error);
 
@@ -44,13 +48,16 @@ internal static class Vkd3dInputGuard
 
     private static ShaderError? Decide(string hlslSource, string sourceFileName)
     {
+        Result<FxMacroPreprocessor.InputGuardView, ShaderError> view =
+            FxMacroPreprocessor.ProcessForInputGuards(hlslSource, sourceFileName);
+
+        if (view.IsSuccess && view.Value.SelfReference is { } selfReference)
+            return SelfReferenceError(selfReference, hlslSource, sourceFileName);
+
         // Cheap gate: no 'void' token anywhere, so no macro can produce a cast to it either
         // (short of pasting the word together, which nobody writes).
         if (!ContainsWord(hlslSource, "void"))
             return null;
-
-        Result<FxMacroPreprocessor.InputGuardView, ShaderError> view =
-            FxMacroPreprocessor.ProcessForInputGuards(hlslSource, sourceFileName);
 
         // A source the managed preprocessor cannot read (SD0009) is still vkd3d's to judge, as
         // before; the casts are then looked for in the written text, outside comments and
@@ -72,6 +79,26 @@ internal static class Vkd3dInputGuard
                      "and the pinned vkd3d-shader that compiles the DirectX 11 and FNA targets crashes the whole " +
                      "process on it, so ShadowDusk refuses it before compiling. Drop the cast: an expression " +
                      "statement's value is discarded anyway.");
+    }
+
+    private static ShaderError SelfReferenceError(
+        FxMacroPreprocessor.BlockedSelfReference selfReference, string hlslSource, string sourceFileName)
+    {
+        // Inside a directive (an #if) the token has no physical line of its own: the directive's
+        // author position, which the preprocessor already followed through the #line directives.
+        (string file, int line) = selfReference.PhysicalLine > 0
+            ? new SourceLineMap(hlslSource, sourceFileName).Resolve(selfReference.PhysicalLine)
+            : (selfReference.File, selfReference.Line);
+        return new ShaderError(
+            File: file,
+            Line: line,
+            Column: 0,
+            Code: SelfReferenceCode,
+            Message: $"macro '{selfReference.Name}' expands to itself here (a self-referential or mutually recursive " +
+                     "macro). C stops the expansion at the repeated name, and fxc/mgfxc compile it, but the " +
+                     "preprocessor of the pinned vkd3d-shader that compiles the DirectX 11 and FNA targets never " +
+                     "returns on it, so ShadowDusk refuses it rather than hang. Rename the macro or the name it " +
+                     $"expands to so that '{selfReference.Name}' does not expand to itself.");
     }
 
     private static bool ContainsWord(string text, string word)

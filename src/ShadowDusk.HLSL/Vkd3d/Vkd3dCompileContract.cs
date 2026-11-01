@@ -76,7 +76,9 @@ internal static class Vkd3dCompileContract
     /// <summary>
     /// The refusal EVERY host returns, before any native call, for a source the pinned
     /// vkd3d-shader cannot survive (<see cref="Vkd3dInputGuard"/>): a cast to <c>void</c>, which
-    /// crashes the process (issue #448, <c>SD0239</c>). Null when vkd3d may compile it. Decided
+    /// crashes the process (issue #448, <c>SD0239</c>), and a macro that expands to itself, which
+    /// vkd3d's preprocessor never returns on (issue #449, <c>SD0240</c>). Null when vkd3d may
+    /// compile it. Decided
     /// on the request's own <c>HlslSource</c>, never on the prepared text, and it changes nothing
     /// vkd3d is given.
     /// </summary>

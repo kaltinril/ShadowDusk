@@ -78,6 +78,36 @@ public sealed class Vkd3dInputGuardTests
         (error.File, error.Line).ShouldBe(("helpers.fxh", 2));
     }
 
+    [Theory]
+    [InlineData("#define X X\nfloat F() {\n  return X;\n}", "X", 3)]
+    [InlineData("#define F(x) F(x)\nfloat F(float v) { return v; }", "F", 2)]
+    [InlineData("#define A(x) B(x)\n#define B(x) A(x)\n\nfloat A(float v) { return v; }", "A", 4)]
+    [InlineData("#define A B\n#define B A\nstatic const float A = 1;", "A", 3)]
+    [InlineData("#define F G\n#define G(x) F(x)\nfloat G(float v) { return v; }", "G", 3)]
+    [InlineData("#define X X\n#if X\n#endif\nfloat F() { return 1; }", "X", 2)]
+    public void AMacroThatExpandsToItself_IsRefusedWithSD0240(string source, string name, int line)
+    {
+        ShaderError error = Check(source).ShouldNotBeNull();
+
+        error.Code.ShouldBe(Vkd3dInputGuard.SelfReferenceCode);
+        error.Line.ShouldBe(line);
+        error.Message.ShouldContain($"macro '{name}'", Case.Sensitive);
+    }
+
+    [Theory]
+    [InlineData("#define X X\nfloat F() { return 1; }")]                           // never used
+    [InlineData("#define X X\n#ifdef X\n#endif\nfloat F() { return 1; }")]          // #ifdef does not expand
+    [InlineData("#define X X\n#if 0\nfloat X;\n#endif\nfloat F() { return 1; }")]  // only in a dead branch
+    [InlineData("#define F(x) F(x)\nfloat F;")]                                    // function-like, no call
+    [InlineData("#define F(x) (x + F)\nstatic const float F = 1;\nfloat G() { return F(2); }")]
+    [InlineData("#define ID(x) x\nfloat G(float v) { return ID(ID)(v); }")]          // '(' from after the expansion
+    [InlineData("#define F(x) ((x) + 1)\nfloat G() { return F(F(1)); }")]
+    [InlineData("#define F G\nfloat G(float v) { return F(v); }")]
+    public void AMacroVkd3dExpandsAndFinishes_IsLeftToVkd3d(string source)
+    {
+        Check(source).ShouldBeNull();
+    }
+
     [Fact]
     public void ASourceTheManagedPreprocessorCannotRead_IsStillScannedAsWritten()
     {
