@@ -126,17 +126,14 @@ public static class KniEffectTestProbe
     // parameter, OpenGL BINORMAL/TANGENT vertex inputs (SD0210), tex2Dlod (FX0012), Vulkan
     // ignoring an explicit register(tN) (whose rows read "centre (0,0,0,0)"). Fixed and flipped to
     // GATE (2026-10-31): a vertex shader output declared `: POSITION0` not mapped to SV_Position on
-    // WindowsDX12 and DesktopVK (issue #446; `VertexTextureTex2Dlod`).
+    // WindowsDX12 and DesktopVK (issue #446; `VertexTextureTex2Dlod`), and DeferredBasicEffect on a
+    // strict GL driver (issue #453, SD0403: its VS declared a non-square mat3x4, now held as a padded
+    // mat4 by the GLSL rewrite's Rule 17).
 
     /// <summary>What each listed bug's failure looks like in a row's detail (any one must appear).</summary>
     private static readonly Dictionary<string, string[]> KnownSignatures = new(StringComparer.Ordinal)
     {
-        [KfStrictGlNonSquare] = ["Shader Compilation Failed"],
     };
-
-    // A known gap, not a bug fixed elsewhere: on a strict GL driver the row must still fail, as above.
-    private const string KfStrictGlNonSquare =
-        "known gap (SD0403, issue #453, docs/validation-matrix.md section 7): ShadowDusk's GLSL for DeferredBasicEffect's VS declares a non-square `mat3x4` (the (float3x3)World cast), which the versionless MonoGame/KNI GL dialect cannot; a strict GL front end (Mesa, Apple, ANGLE) refuses it when KNI compiles the shaders at Effect load, a lenient one accepts it; mgfxc's build loads on both (the compile warns SD0403)";
 
     // Informational reasons.
     private const string InfoRuntimeOnly =
@@ -218,8 +215,7 @@ public static class KniEffectTestProbe
                 if (dx11) return new(Kind.Info, InfoDx11FxcTextureSlots);
                 if (rt == "mg-dx12") return new(Kind.Info, InfoDx12LegacyColorStruct);
                 if (rt == "mg-vk") return new(Kind.Info, InfoVulkanLegacyColorStruct);
-                // KNI compiles the GL shaders at Effect load; MonoGame only at link, which this case never reaches.
-                if (rt == "kni-gl" && strictGl) known.Add(KfStrictGlNonSquare);
+                // GATE on every GL driver, strict ones included (issue #453 fixed).
                 break;
 
             case "OldSyntax_t0t1" or "OldSyntax_t1t0" when check == "render" && gl && strictGl:
@@ -464,10 +460,6 @@ public static class KniEffectTestProbe
             return t;
         }
 
-        // The SD0403 gap row fails "the expected way" only when its own compile really warned SD0403.
-        var warnedSd0403 = builds.Where(b => !b.IsControl && b.Warnings.Any(w => w.StartsWith("SD0403:", StringComparison.Ordinal)))
-            .Select(b => (b.Case.Id, b.Arm)).ToHashSet();
-
         foreach (Row r in rows.Where(r => r.ControlName is null))
         {
             Expectation e = Classify(cfg.Runtime, r.Case, r.Arm, r.Check, strictGl);
@@ -479,8 +471,7 @@ public static class KniEffectTestProbe
                     if (r.Pass) gatePass++; else gateFail++;
                     break;
                 case Kind.KnownFail:
-                    bool expectedWay = !r.Pass && (e.Signatures ?? []).Any(s => r.Detail.Contains(s, StringComparison.Ordinal))
-                        && (!e.Reason.Contains(KfStrictGlNonSquare, StringComparison.Ordinal) || warnedSd0403.Contains((r.Case, r.Arm)));
+                    bool expectedWay = !r.Pass && (e.Signatures ?? []).Any(s => r.Detail.Contains(s, StringComparison.Ordinal));
                     verdict = r.Pass ? "KNOWN-FAIL  PASS   <-- UNEXPECTED PASS: flip this row to GATE in KniEffectTestProbe.Classify"
                         : expectedWay ? "KNOWN-FAIL  fail"
                         : "KNOWN-FAIL  FAIL   <-- FAILS FOR ANOTHER REASON than its listed bug (expected one of: " + string.Join(" / ", e.Signatures ?? []) + ")";

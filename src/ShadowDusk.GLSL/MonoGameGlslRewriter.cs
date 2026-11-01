@@ -861,6 +861,7 @@ public static class MonoGameGlslRewriter
             body = LowerBoundedHeaderlessForLoop(body); // Rule 13 (issue #138, shape 1)
             body = LowerTruncToSignFloorAbs(body);      // Rule 15 (Apos.Shapes #34)
             body = ReduceTrigArguments(body);           // Rule 16 (issue #215): sin/cos/tan
+            body = NonSquareMatrixLowering.Lower(body); // Rule 17 (issue #453): non-square matrices
 
             // Phase 43 F3: inject mgfxc/MojoShader's runtime posFixup contract.
             // SPIRV-Cross's FlipVertexY is OFF (see SpirvCrossGlslTranspiler), so the
@@ -1115,6 +1116,11 @@ public static class MonoGameGlslRewriter
         // Rule 16 (issue #215): explicit range reduction before every sin()/cos()/tan().
         // See ReduceTrigArguments for the scheme and the measured error budget.
         body = ReduceTrigArguments(body);
+
+        // Rule 17 (issue #453): hold every non-square matrix (a SPIRV-Cross truncation local, or
+        // Rule 4c's own non-square interpolant rebuild) as a zero-padded square matN. The
+        // versionless dialect has no non-square types; see NonSquareMatrixLowering.
+        body = NonSquareMatrixLowering.Lower(body);
 
         // ---- Assemble final output: precision header + #define block + body. ----
         // The fragment-output `#define` aliases are emitted here, AFTER all Pass-2

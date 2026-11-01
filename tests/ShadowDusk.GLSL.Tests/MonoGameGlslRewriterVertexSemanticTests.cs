@@ -200,7 +200,10 @@ void main()
 """;
         string glsl = MonoGameGlslRewriter.Rewrite(vs, ShaderStage.Vertex, null, ColumnMajor("TEXCOORD1")).Glsl;
 
-        glsl.ShouldContain("mat2x4 vs_oT1_mat;", Case.Sensitive);
+        // Held as a zero-padded mat4 (Rule 17, issue #453): the versionless dialect has no mat2x4.
+        glsl.ShouldContain("mat4 vs_oT1_mat;", Case.Sensitive);
+        glsl.ShouldContain("vs_oT1_mat = mat4(vs_v0, vs_v0.wzyx, vec4(0.0), vec4(0.0));", Case.Sensitive);
+        glsl.ShouldNotContain("mat2x4", Case.Sensitive);
         glsl.ShouldContain("vTexCoord1.xy = vec2(vs_oT1_mat[0][0], vs_oT1_mat[1][0]);", Case.Sensitive);
         glsl.ShouldContain("vTexCoord4.xy = vec2(vs_oT1_mat[0][3], vs_oT1_mat[1][3]);", Case.Sensitive);
         glsl.ShouldNotContain("vTexCoord5", Case.Sensitive);
