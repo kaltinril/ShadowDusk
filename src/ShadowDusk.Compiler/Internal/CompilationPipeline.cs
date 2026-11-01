@@ -789,6 +789,12 @@ internal sealed class CompilationPipeline
         IReadOnlyDictionary<string, EntryPointMatrixInterpolants>? glEntryInterpolants = null;
         IReadOnlyDictionary<string, int> legacySamplerRegisters = new Dictionary<string, int>(StringComparer.Ordinal);
         DxTextureSlotInputs? dxTextureSlots = null;
+        // Issue #447: DirectX 11 compiles a legacy sampler the raw pre-parse never saw (declared in
+        // an #include or through a macro, or read only through a macro) natively, and its texture
+        // slots were never checked, silently. The compiler's own input, includes inlined, still
+        // spells legacy sampler syntax then (the rewrite removes what it reached), so its texture
+        // slots go through the same check, which keys such a sampler by its own name.
+        bool directXNativeLegacy = directX && FxPreParser.MentionsLegacySamplerSyntax(preprocessed.Text);
         if (options.Target == PlatformTarget.OpenGL)
         {
             // A recovery pass (issue #308) has the flattened raw source in hand already, and its
@@ -824,7 +830,8 @@ internal sealed class CompilationPipeline
         else if (fxParsed.Samplers.Select(s => s.Name)
                      .Concat(fxParsed.SynthesizedSamplerTextures.Keys)
                      .Distinct(StringComparer.Ordinal)
-                     .Skip(directX ? 0 : 1).Any())
+                     .Skip(directX ? 0 : 1).Any()
+                 || directXNativeLegacy)
         {
             // The other targets need the same preprocessed view for one thing only: two legacy
             // samplers on one explicit register (SD0227, below). It is read only when two legacy
@@ -846,16 +853,19 @@ internal sealed class CompilationPipeline
                 // with them pinned. Left null on every other target and for an effect with no
                 // legacy sampler, so those bytes cannot move. The evaluation order is read from
                 // the source (HlslReadOrder), the same on every backend and host.
-                if (directX && view.Value.LegacySamplerTextures.Count > 0)
+                if (directX && (view.Value.LegacySamplerTextures.Count > 0 || directXNativeLegacy))
                 {
                     dxTextureSlots = new DxTextureSlotInputs(
                         new HashSet<string>(view.Value.LegacySamplerTextures.Values, StringComparer.Ordinal),
                         view.Value.LegacySamplerTextures,
                         view.Value.ExplicitTextureRegisters,
-                        view.Value.ModernMethodTextures);
+                        view.Value.ModernMethodTextures,
+                        view.Value.ValueUseTextures,
+                        view.Value.StateTextures,
+                        fxParsed.SamplerParameterTextures);
                 }
             }
-            else if (directX && fxParsed.LegacySamplerTextures.Count > 0)
+            else if (directX && (fxParsed.LegacySamplerTextures.Count > 0 || directXNativeLegacy))
             {
                 // Fail loudly: without the view the DirectX 11 texture slots cannot be checked.
                 runWarnings.Add(new ShaderError(
@@ -1615,10 +1625,19 @@ internal sealed class CompilationPipeline
                         // mgfxc's record carries the sampler's own DXBC binding, which is not the
                         // texture's when a register or a modern SamplerState moved it). Otherwise
                         // slot first (the 1:1 modern shape), then the sole shared sampler.
+                        // A legacy sampler the rewrite did not reach (read through a macro, declared
+                        // through one or in an #include) is compiled natively: its RDEF texture and
+                        // sampler both carry the SAMPLER's name, which no modern pair can (HLSL has
+                        // one namespace for both), and its sampler slot is fxc's own (issue #441:
+                        // mgfxc A s0, B s1 for `sampler2D A; sampler2D B;` read B first through a
+                        // macro, and both backends' RDEF agree). Joined by that name before the
+                        // fallback below, which took the TEXTURE slot and could put two samplers'
+                        // records on one sampler slot.
                         SamplerReflection? legacySamp = directX
                             ? samplerRefs.FirstOrDefault(s =>
-                                legacySamplerTextureView.TryGetValue(s.Name, out string? t)
-                                && string.Equals(t, tex.Name, StringComparison.Ordinal))
+                                  legacySamplerTextureView.TryGetValue(s.Name, out string? t)
+                                  && string.Equals(t, tex.Name, StringComparison.Ordinal))
+                              ?? samplerRefs.FirstOrDefault(s => string.Equals(s.Name, tex.Name, StringComparison.Ordinal))
                             : null;
                         SamplerReflection? matchedSamp =
                             legacySamp
@@ -3561,7 +3580,10 @@ internal sealed class CompilationPipeline
         IReadOnlySet<string> LegacyTextures,
         IReadOnlyDictionary<string, string> LegacySamplerTextures,
         IReadOnlyList<ExplicitTextureRegister> ExplicitRegisters,
-        IReadOnlySet<string> ModernMethodTextures)
+        IReadOnlySet<string> ModernMethodTextures,
+        IReadOnlySet<string> ValueUseTextures,
+        IReadOnlyDictionary<string, string> StateTextures,
+        IReadOnlyDictionary<string, IReadOnlyList<string>> SamplerParameterTextures)
     {
         private string? _cachedText;
         private Result<string, ShaderError>? _cachedView;
@@ -3612,9 +3634,6 @@ internal sealed class CompilationPipeline
         DxTextureSlotInputs inputs,
         CancellationToken ct)
     {
-        if (inputs.LegacyTextures.Count == 0)
-            return null;
-
         string described = "";
         ShaderError Unplaced(string why) => new(
             File: request.SourceFileName,
@@ -3660,15 +3679,27 @@ internal sealed class CompilationPipeline
         // (`Tb.GetDimensions`, `Tb.Load`, even `Tb.Sample`): fxc gives that use a texture record of
         // its own, numbered apart (mgfxc A@t0 Tb@t1 Tb@t2, measured), and in the compiled text the
         // rewrite's `Tb.Sample(SB, uv)` reads look the same as the author's.
-        string? modern = present.Where(inputs.ModernMethodTextures.Contains).Order(StringComparer.Ordinal).FirstOrDefault();
+        // A natively compiled sampler (keyed by its own name) stands for the texture its state block
+        // names (issue #447).
+        string Direct(string key) => nativeSamplers.Contains(key) && inputs.StateTextures.TryGetValue(key, out string? t) ? t : key;
+        string? modern = present.Select(Direct).Where(inputs.ModernMethodTextures.Contains).Order(StringComparer.Ordinal).FirstOrDefault();
         if (modern is not null)
         {
             return (null, Unplaced($"the legacy sampler's texture '{modern}' is also used through a method call of its own " +
                                    "(GetDimensions, Load, Sample, ...), which fxc gives a texture record of its own"));
         }
+        // Issue #447: the same for any other direct use, outside a function body too (an index, an
+        // assignment, an argument): mgfxc A@t0 Tb@t1 Tb@t2 where the rewrite has one Tb record.
+        string? value = present.Select(Direct).Where(inputs.ValueUseTextures.Contains).Order(StringComparer.Ordinal).FirstOrDefault();
+        if (value is not null)
+        {
+            return (null, Unplaced($"the legacy sampler's texture '{value}' is also used directly as a value (indexed, assigned " +
+                                   "or passed), which fxc gives a texture record of its own"));
+        }
 
         IReadOnlyList<string>? reads = HlslReadOrder.FirstReads(
-            view.Value, request.EntryPoint, inputs.LegacyTextures, inputs.LegacySamplerTextures, present, out string? refusal);
+            view.Value, request.EntryPoint, inputs.LegacyTextures, inputs.LegacySamplerTextures, present, out string? refusal,
+            inputs.SamplerParameterTextures);
         if (reads is null)
             return (null, Unplaced($"the evaluation order of the reads is not certain ({refusal})"));
         var readOrder = new List<string>();
@@ -3694,7 +3725,11 @@ internal sealed class CompilationPipeline
             return null;
 
         described = " (" + string.Join(", ", plan.OrderBy(p => p.Value).Select(p => $"{p.Key} t{p.Value}")) + ")";
-        string? pinnedText = DxTextureSlotOrder.Pin(request.HlslSource, plan);
+        // A natively compiled legacy sampler (its RDEF texture carries the sampler's own name) has no
+        // texture declaration to pin; it takes the slot the pinned resources leave, checked below.
+        var natives = new HashSet<string>(
+            bindings.Select(b => b.Name).Where(n => nativeSamplers.Contains(n) && !inputs.LegacyTextures.Contains(n)), StringComparer.Ordinal);
+        string? pinnedText = DxTextureSlotOrder.Pin(request.HlslSource, plan, natives);
         if (pinnedText is null)
             return (null, Unplaced("a declaration could not be given an explicit register (declared through a macro or in an #include, in a declarator list, as an array, or with an annotation)"));
 

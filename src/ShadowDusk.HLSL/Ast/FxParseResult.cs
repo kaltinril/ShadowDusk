@@ -126,6 +126,17 @@ public sealed record FxParseResult
     /// definition (the helper's own placement) is left as the compiler wrote it.
     /// </summary>
     public IReadOnlyList<RestructuredHelperDefinition> RestructuredHelpers { get; init; } = [];
+
+    /// <summary>
+    /// Function name -> the TEXTURE parameters the SM4 rewrite gave it, one per legacy sampler
+    /// parameter (issue #443): <c>float4 F(sampler2D s, float2 uv)</c> became
+    /// <c>float4 F(Texture2D s_SDTexture, SamplerState s, float2 uv)</c>, and each call
+    /// <c>F(B, uv)</c> became <c>F(B_SDTexture, B, uv)</c>, so <c>s_SDTexture</c> is listed for
+    /// <c>F</c>. The DirectX 11 texture-slot walk binds such a parameter to the texture passed to
+    /// it; any other texture passed as a value is refused there. Empty when nothing was rewritten.
+    /// </summary>
+    internal IReadOnlyDictionary<string, IReadOnlyList<string>> SamplerParameterTextures { get; init; } =
+        new Dictionary<string, IReadOnlyList<string>>(StringComparer.Ordinal);
 }
 
 /// <summary>One helper a <c>tex2Dlod</c>-family call was rewritten to; see <see cref="FxParseResult.RestructuredHelpers"/>.</summary>

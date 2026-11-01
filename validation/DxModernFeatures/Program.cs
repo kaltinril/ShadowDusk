@@ -215,6 +215,14 @@ var slotCases = new TextureSlotCase[]
     // Evaluation order where vkd3d swaps the operands of '>' and '<=' (LESS(b, a), GEQUAL(b, a)).
     new("ZZ_GreaterThanReview", new() { ["B"] = TextureSlotHarness.Green }, ControlParameter: "B"),
     new("G04_Le", new() { ["SB"] = TextureSlotHarness.Blue }, ControlParameter: "SB"),
+    // Issue #443: a legacy sampler passed to a function's sampler2D parameter (K13), also read
+    // directly (K14: vkd3d refused it with E5005, d3dcompiler_47 gave B two records), and passed
+    // on to a second function (K40). B (passed first) is on t0, under the sprite.
+    new("K13_SamplerParam", new() { ["A"] = TextureSlotHarness.Green }, ControlParameter: "A"),
+    new("K14_PassedAndRead", new() { ["A"] = TextureSlotHarness.Green }, ControlParameter: "A"),
+    new("K40_NestedPass", new() { ["B"] = TextureSlotHarness.Green }, ControlParameter: "B"),
+    // Issue #441: samplers read through a macro, compiled natively by the backend.
+    new("N01_MacroRead", new() { ["A"] = TextureSlotHarness.Green }, ControlParameter: "A"),
 };
 // Each shape through BOTH DXBC backends: the default vkd3d and the public d3dcompiler_47 oracle
 // option (whose own instruction stream is scheduled, so the slot check reads the order from the source).
