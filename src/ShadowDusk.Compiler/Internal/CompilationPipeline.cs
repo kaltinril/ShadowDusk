@@ -706,31 +706,36 @@ internal sealed class CompilationPipeline
         var vulkanSources = new Dictionary<(string, ShaderStage), PreprocessedSource>();
         // The lines an untaken #if drops from the text DXC compiles, and the macro-expanded view the
         // rewrite reads each function's calls from, both from the managed preprocessor with this
-        // compile's macros (they head the flattened text). Unknown (null) when the view cannot be
-        // built or a conditional tests a macro only DXC defines (the view may then not be the code DXC
-        // compiles, and the preprocessed retry that backs the per-shader pairing is unavailable too):
-        // the rewrite then pairs over the whole file, every line and every function counting, as the
+        // compile's macros (they head the flattened text) and the values DXC was measured to predefine
+        // for this stage's Vulkan compile (issue #442: __HLSL_VERSION, __spirv__, __SHADER_TARGET_*,
+        // ...; DxcSpirvPredefinedMacros), so a conditional on one of those is evaluated as DXC does.
+        // Per stage: __SHADER_TARGET_STAGE differs. Unknown (null) when the view cannot be built or a
+        // conditional tests a macro DXC defines with no host-independent measured value
+        // (__DXC_VERSION_*, __GNUC__, __LINE__, ...; the view may then not be the code DXC compiles,
+        // and the preprocessed retry that backs the per-shader pairing is unavailable too): the
+        // rewrite then pairs over the whole file, every line and every function counting, as the
         // released rewrite did.
-        (IReadOnlySet<int> Lines, string View)? vulkanLiveCode = null;
-        bool vulkanLiveCodeRead = false;
+        var vulkanLiveCode = new Dictionary<ShaderStage, (IReadOnlySet<int> Lines, string View)?>();
         // Keyed by stage too: a vertex shader has fewer texture slots than a pixel shader
         // (VulkanTextureSamplerBindingRewriter.MaxVertexTextureSlots), and no alias goes past them.
         PreprocessedSource VulkanShaderSource(string entryPoint, ShaderStage stage)
         {
             if (vulkanSources.TryGetValue((entryPoint, stage), out PreprocessedSource? cached))
                 return cached;
-            if (!vulkanLiveCodeRead)
+            if (!vulkanLiveCode.TryGetValue(stage, out (IReadOnlySet<int> Lines, string View)? liveCode))
             {
-                vulkanLiveCodeRead = true;
-                var skipped = ShadowDusk.HLSL.Preprocessing.FxMacroPreprocessor.SkippedLines(preprocessed.Text, sourceFileName);
-                if (skipped.IsSuccess && skipped.Value.PredefinedMacroUse is null)
-                    vulkanLiveCode = (skipped.Value.Lines, skipped.Value.View);
+                var skipped = ShadowDusk.HLSL.Preprocessing.FxMacroPreprocessor.SkippedLines(
+                    preprocessed.Text, sourceFileName, ShadowDusk.HLSL.Preprocessing.DxcSpirvPredefinedMacros.Vulkan(stage));
+                liveCode = skipped.IsSuccess && skipped.Value.PredefinedMacroUse is null
+                    ? (skipped.Value.Lines, skipped.Value.View)
+                    : null;
+                vulkanLiveCode[stage] = liveCode;
             }
             IReadOnlyList<VulkanTextureSamplerBindingRewriter.Alias> aliases;
             int textureSlots = stage == ShaderStage.Vertex
                 ? VulkanTextureSamplerBindingRewriter.MaxVertexTextureSlots
                 : VulkanTextureSamplerBindingRewriter.MaxPixelTextureSlots;
-            string text = vulkanLiveCode is { } live
+            string text = liveCode is { } live
                 ? VulkanTextureSamplerBindingRewriter.Rewrite(preprocessed.Text, entryPoint, live.Lines, live.View, out aliases, textureSlots)
                 : VulkanTextureSamplerBindingRewriter.Rewrite(preprocessed.Text, entryPoint: null, skippedLines: null, out aliases, textureSlots);
             foreach (var alias in aliases)
