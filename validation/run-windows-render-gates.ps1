@@ -737,8 +737,7 @@ foreach ($mg in $newerMonoGame) {
     }
     foreach ($arm in $arms) {
         $props = @()
-        # A GL driver without a GL context must fail here, never soft-skip as a pass.
-        $lines = @("`$env:SHADOWDUSK_REQUIRE_GL = '1'") + @(foreach ($cmd in $arm[1..($arm.Count - 1)]) {
+        $lines = @(foreach ($cmd in $arm[1..($arm.Count - 1)]) {
             if ($cmd -is [string] -and $cmd.StartsWith('props:')) {
                 $props += $cmd.Substring(6)
             } elseif ($cmd -is [string] -and $cmd.StartsWith('build:')) {
@@ -755,7 +754,11 @@ foreach ($mg in $newerMonoGame) {
             }
         })
         # [scriptblock]::Create, not GetNewClosure(): a closure runs in a module scope that cannot see Invoke-Checked.
-        $newerGates.Add(@{ Name = $arm[0]; Action = [scriptblock]::Create($lines -join "`n") })
+        # A GL driver without a GL context must fail here, never soft-skip as a pass; the variable is
+        # removed afterwards, as the SkiaVsKni gate does, so it never leaks into the caller's session.
+        $body = "`$env:SHADOWDUSK_REQUIRE_GL = '1'`ntry {`n" + ($lines -join "`n") +
+            "`n} finally { Remove-Item Env:SHADOWDUSK_REQUIRE_GL -ErrorAction SilentlyContinue }"
+        $newerGates.Add(@{ Name = $arm[0]; Action = [scriptblock]::Create($body) })
     }
 }
 if ($NewerMonoGameOnly) { $gates.Clear() }

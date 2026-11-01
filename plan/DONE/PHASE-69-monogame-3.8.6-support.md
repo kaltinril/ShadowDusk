@@ -75,7 +75,8 @@ The three-argument constructor exists on every release from 3.8.2.1105 to 3.8.6.
 **Guard:** `tests/ShadowDusk.Integration.Tests/MgcbPlugin/ContentPipelineApiBindingTests.cs` loads each
 supported `MonoGame.Framework.Content.Pipeline` release (3.8.2.1105, 3.8.4.1, 3.8.5, 3.8.5.1, 3.8.6;
 PackageDownloads of 0.5 to 1.2 MB) into its own collectible load context with a second copy of the
-plugin and resolves every member reference. Mutation-checked: with the old call it fails on 3.8.6 only,
+plugin, resolves every member reference (exactly 17 into the pipeline, pinned so a silently skipped member
+fails), loads every plugin type and constructs the importer and processor there. Mutation-checked: with the old call it fails on 3.8.6 only,
 naming `ContentIdentity..ctor(System.String, System.String)`; with the fix 6/6 pass.
 
 **End to end:** the MGCB plugin gate (`validation/MgcbPlugin`) gained a `dotnet-mgcb` 3.8.6 arm (the same
@@ -133,7 +134,9 @@ non-square type; no other post-1.10 GLSL feature appears anywhere in the corpus.
 avoids the types, so it is unaffected. `validation/VertexSemanticsGl` and `validation/KniEffectTestGl`
 abort on DesktopGL4 and stay out of its arm. Fixing it is a GLSL rewrite rule that changes the OpenGL
 bytes of every shader containing such a matrix (classic consumers too), so it is an owner decision and
-its own fully gated change, not part of this phase. Registered in `docs/validation-matrix.md` §7.
+its own fully gated change, not part of this phase. It is the same root cause as [issue #453](https://github.com/kaltinril/ShadowDusk/issues/453) (a `(float3x3)` cast
+emitting `mat3x4`, which strict drivers reject), so fixing that issue closes this gap. Registered in
+`docs/validation-matrix.md` §7.
 
 ## 4. Android
 
@@ -146,7 +149,8 @@ temporary file failed", the same transient Windows file lock Phase 52 F2 recorde
 
 - DesktopGL4 + GLSL non-square matrices: `docs/validation-matrix.md` §7, `project_facts.md`.
 - DesktopGL4 on Linux/Mesa (core profile, version-less GLSL): unmeasured, §7.
-- The newer-MonoGame arms run in the Windows render gate (the pre-merge/pre-release bar), not in CI: §7.
+- CI (`validation-render.yml`) runs the core of the 3.8.6 block at the end of its GL, DX and Vulkan jobs; the
+  rest of the block and the DesktopGL4 arm run only in the Windows render gate: §7.
 - Upstream: MonoGame PR #9050 removed public constructors in a patch release; worth an issue upstream.
 
 ## 6. Definition of Done

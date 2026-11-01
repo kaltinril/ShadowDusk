@@ -50,8 +50,20 @@ public sealed class ContentPipelineApiBindingTests
         Assembly plugin = context.LoadFromAssemblyPath(typeof(ShadowDuskEffectImporter).Assembly.Location);
         Module module = plugin.ManifestModule;
 
+        // Every plugin type must load in this release, and the importer and processor must construct: a
+        // new abstract member on ContentImporter/ContentProcessor, or a changed signature of the one we
+        // override, is a TypeLoadException inside mgcb that no member reference shows.
+        Should.NotThrow(() => plugin.GetTypes(), $"a plugin type does not load against MonoGame {version}'s content pipeline");
+        foreach (string name in new[] { "ShadowDusk.ContentPipeline.ShadowDuskEffectImporter", "ShadowDusk.ContentPipeline.ShadowDuskEffectProcessor" })
+        {
+            Type type = plugin.GetType(name, throwOnError: true)!;
+            type.BaseType!.Assembly.ShouldBeSameAs(pipeline, $"{name} derives from a pipeline type of another load context");
+            Activator.CreateInstance(type).ShouldNotBeNull($"{name} did not construct on MonoGame {version}");
+        }
+
         var missing = new List<string>();
-        int checkedMonoGame = 0;
+        int checkedPipeline = 0;
+        var otherMonoGame = new List<string>();
         foreach (MemberReferenceHandle handle in MemberReferences(plugin.Location))
         {
             MemberInfo? member;
@@ -73,25 +85,33 @@ public sealed class ContentPipelineApiBindingTests
             }
 
             Assembly? declaring = member?.DeclaringType?.Assembly;
-            if (declaring?.GetName().Name?.StartsWith("MonoGame.Framework", StringComparison.Ordinal) == true)
+            string? declaringName = declaring?.GetName().Name;
+            if (declaringName == pipeline.GetName().Name)
             {
-                if (declaring.GetName().Name == pipeline.GetName().Name)
-                {
-                    // Bound to THIS release's pipeline, not the floor the test process loaded.
-                    declaring.ShouldBeSameAs(pipeline, $"{member} bound to a pipeline from another load context");
-                }
-
-                checkedMonoGame++;
+                // Bound to THIS release's pipeline, not the floor the test process loaded.
+                declaring.ShouldBeSameAs(pipeline, $"{member} bound to a pipeline from another load context");
+                checkedPipeline++;
+            }
+            else if (declaringName?.StartsWith("MonoGame.", StringComparison.Ordinal) == true)
+            {
+                otherMonoGame.Add($"{declaringName}: {member}");
             }
         }
 
         missing.ShouldBeEmpty(
             $"the plugin calls MonoGame members that MonoGame {version}'s content pipeline does not have; a consumer on that "
             + "release gets MissingMethodException from mgcb or the Content Builder");
-        // 17 MonoGame members were measured on 2026-10-31 (importer, processor, attributes, context, logger).
-        // A much lower count means members stopped being checked, not that the plugin got smaller.
-        checkedMonoGame.ShouldBeGreaterThanOrEqualTo(10);
+        // Only the pipeline assembly is loaded per release; a member of MonoGame.Framework itself would
+        // resolve against the test process's copy and prove nothing. None is called today; extend the
+        // context (the matching MonoGame.Framework) before calling one.
+        otherMonoGame.ShouldBeEmpty("the plugin now calls MonoGame members outside the content pipeline, which this check does not cover per release");
+        // Pinned to the count measured on 2026-10-31, so a member that silently stops being checked fails
+        // here. A plugin change that adds or removes a pipeline call updates this number on purpose.
+        checkedPipeline.ShouldBe(ExpectedPipelineMembers, $"pipeline members checked on MonoGame {version}");
     }
+
+    /// <summary>The plugin's member references into <c>MonoGame.Framework.Content.Pipeline</c> (measured 2026-10-31).</summary>
+    private const int ExpectedPipelineMembers = 17;
 
     /// <summary>
     /// Positive control: the check really sees each release. 3.8.6 has no
