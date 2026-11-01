@@ -55,7 +55,7 @@ jobs:
             rid: android-x64
     steps:
       - name: Checkout
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
 
       - name: Install NDK r27c, CMake 3.31.6 and Ninja
         run: |
@@ -94,12 +94,12 @@ jobs:
     timeout-minutes: 20
     steps:
       - name: Download all copies
-        uses: actions/download-artifact@v7
+        uses: actions/download-artifact@v8
         with:
           path: copies
 
       - name: Checkout (for the pins in tools/restore.sh)
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
         with:
           path: repo
 
