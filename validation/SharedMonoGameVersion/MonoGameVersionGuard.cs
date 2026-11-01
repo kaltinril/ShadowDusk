@@ -42,7 +42,21 @@ internal static class MonoGameVersionGuard
             Environment.Exit(3);
         }
 
-        Console.WriteLine($"[MonoGameVersionGuard] MonoGame {loaded} (requested {expected})");
+        // -p:MonoGameDesktopGL4=true: the native runtime's managed MonoGame.Framework is the
+        // netstandard2.1 build (MonoGame.Framework.Native); the classic DesktopGL one is net8.0.
+        string? platform = typeof(MonoGameVersionGuard).Assembly
+            .GetCustomAttributes<AssemblyMetadataAttribute>()
+            .FirstOrDefault(a => a.Key == "ExpectedMonoGamePlatform")?.Value;
+        string frameworkTarget = framework.GetCustomAttribute<System.Runtime.Versioning.TargetFrameworkAttribute>()?.FrameworkName ?? "<unknown>";
+        if (platform == "DesktopGL4" && !frameworkTarget.StartsWith(".NETStandard", StringComparison.Ordinal))
+        {
+            Console.Error.WriteLine(
+                $"[MonoGameVersionGuard] FAIL: built for DesktopGL4, but the loaded MonoGame.Framework targets {frameworkTarget}, " +
+                "not the netstandard2.1 MonoGame.Framework.Native build.");
+            Environment.Exit(3);
+        }
+
+        Console.WriteLine($"[MonoGameVersionGuard] MonoGame {loaded} (requested {expected}{(platform is null ? "" : ", " + platform)}; {frameworkTarget})");
     }
 
     /// <summary><c>3.8.6</c> and <c>3.8.6.0</c> are the same release.</summary>

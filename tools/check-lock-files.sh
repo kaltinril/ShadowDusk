@@ -10,7 +10,9 @@
 # Versioned lock files are restored with the version as BOTH -p:KniVersion and -p:MonoGameVersion:
 # packages.<KniVersion>.lock.json (the KNI drivers, validation/KniXnbContentLoad) and, since Phase 69,
 # packages.<MonoGameVersion>.lock.json (a driver's newer-MonoGame arm, validation/MonoGameVersion.targets).
-# A project reads only the property it uses, so passing both is safe. Projects whose prerequisites are not present on
+# A project reads only the property it uses, so passing both is safe.
+# packages.desktopgl4-<MonoGameVersion>.lock.json is a driver's DesktopGL4 arm and is restored with
+# -p:MonoGameVersion=<version> -p:MonoGameDesktopGL4=true. Projects whose prerequisites are not present on
 # this host are reported as SKIP, never silently passed:
 #   - net*-android projects need the android workload;
 #   - validation/FnaValidation needs the external/FNA checkout (restore-fna.ps1).
@@ -36,7 +38,12 @@ while IFS= read -r lock; do
   name=$(basename "$lock")
   if [ "$name" != "packages.lock.json" ]; then
     v=${name#packages.}; v=${v%.lock.json}
-    extra=("-p:KniVersion=$v" "-p:MonoGameVersion=$v")
+    if [[ "$v" == desktopgl4-* ]]; then
+      # A driver's DesktopGL4 arm (Phase 69): packages.desktopgl4-<MonoGameVersion>.lock.json.
+      extra=("-p:MonoGameVersion=${v#desktopgl4-}" "-p:MonoGameDesktopGL4=true")
+    else
+      extra=("-p:KniVersion=$v" "-p:MonoGameVersion=$v")
+    fi
   fi
   # EnableWindowsTargeting lets a Linux/macOS host restore the net*-windows drivers.
   if out=$(dotnet restore "$proj" --locked-mode -p:EnableWindowsTargeting=true ${extra[@]+"${extra[@]}"} 2>&1); then

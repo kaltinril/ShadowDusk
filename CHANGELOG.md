@@ -20,9 +20,22 @@ that loads and renders identically to `mgfxc`'s in the real MonoGame/KNI runtime
   console warning; 4.2.x rejects v12. Flipping the default is tracked in issue #456. `KnifxWriterOptions` gains a
   `Version` (11 or 12; anything else is `SD0030`). Measured in real KNI via `validation/KniXnbContentLoad`: 4.3.9001 loads v12 with no "older version" warning and renders maxd 0 vs mgcb on all 4 fixtures; 4.2.9001 rejects it ("seems to be for a newer version of KNI").
 
+- **MonoGame 3.8.6 (stable 2026-10-08) is validated ([Phase 69](plan/DONE/PHASE-69-monogame-3.8.6-support.md)).** The unchanged
+  output renders on 3.8.6 on DesktopGL, WindowsDX, WindowsDX12 and DesktopVK in the real engine; the v10 forward-compat
+  matrix now covers nine releases, 3.8.1.263 to 3.8.6, pixel-identical on every one. 3.8.6's new native OpenGL 4.1
+  runtime (`DesktopGL4`) loads and renders ShadowDusk's OpenGL output identically to classic DesktopGL, except a shader
+  whose GLSL holds a non-square matrix (for example a `mul(float3, float4x4)`), which DesktopGL4's core-profile compile
+  aborts on (`docs/validation-matrix.md` section 7). No default changed: MGFX v10 stays the OpenGL/DirectX 11 output.
+
 ### Changed
 
 ### Fixed
+
+- **The content importer failed every MonoGame 3.8.6 content build.** MonoGame 3.8.6 removed
+  `ContentIdentity(string, string)`, which `ShadowDuskEffectImporter` called, so `ShadowDusk.MgcbPlugin` under
+  `dotnet mgcb` 3.8.6 and `ShadowDusk.ContentPipeline` in a 3.8.6 Content Builder threw `MissingMethodException`
+  for every `.fx`. The importer now calls the constructor every MonoGame release from 3.8.2.1105 to 3.8.6 has, and a
+  test resolves every MonoGame member the plugin calls against each supported content-pipeline release.
 
 ## [0.23.0] - 2026-10-29
 

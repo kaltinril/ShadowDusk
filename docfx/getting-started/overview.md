@@ -36,7 +36,7 @@ Every shape implements the same <xref:ShadowDusk.Core.IShaderCompiler> interface
 
 | Backend | Output | Status |
 |---|---|---|
-| OpenGL / DesktopGL | GLSL `.mgfx` | Supported |
+| OpenGL / DesktopGL (incl. MonoGame 3.8.6 DesktopGL4) | GLSL `.mgfx` | Supported (DesktopGL4: except a GLSL non-square matrix) |
 | DirectX 11 | DXBC `.mgfx` | Supported |
 | WebGL (KNI browser) | GLSL `.mgfx` | Supported |
 | Android (on-device) | GLSL `.mgfx` | Supported (byte-identical to the desktop build) |

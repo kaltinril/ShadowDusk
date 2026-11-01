@@ -118,7 +118,7 @@ number someone once picked.
   floor-minus-one above; everything from 3.8.1.263 up is in the matrix.
 - **3.8.6** — shipped **STABLE 2026-10-08**, latest on nuget.org, in the matrix since
   2026-10-31 (with 3.8.5.1, 2026-08-14). Like 3.8.5, it needed only the version string.
-  The full 3.8.6 support sweep is [Phase 69](../../plan/PHASE-69-monogame-3.8.6-support.md).
+  The full 3.8.6 support sweep is [Phase 69](../../plan/DONE/PHASE-69-monogame-3.8.6-support.md).
 - **3.8.5** — shipped **STABLE 2026-07-15**, in the matrix since
   2026-07-28. The classic `MonoGame.Framework.DesktopGL` package continues at 3.8.5, so
   this harness needed no structural change — only the version string. Source-verified

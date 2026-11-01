@@ -21,7 +21,7 @@
 
   <PropertyGroup Condition="'$(MonoGameVersion)' != ''">
     <NuGetLockFilePath>packages.$(MonoGameVersion).lock.json</NuGetLockFilePath>
-    <_SdMonoGamePackages>MonoGame.Framework.DesktopGL;MonoGame.Framework.WindowsDX;MonoGame.Framework.Native;MonoGame.Runtime.Windows.DX12;MonoGame.Runtime.Windows.Vulkan;MonoGame.Runtime.Linux.Vulkan;MonoGame.Framework.Content.Pipeline</_SdMonoGamePackages>
+    <_SdMonoGamePackages>MonoGame.Framework.DesktopGL;MonoGame.Framework.WindowsDX;MonoGame.Framework.Native;MonoGame.Runtime.Windows.DX12;MonoGame.Runtime.Windows.Vulkan;MonoGame.Runtime.Linux.Vulkan;MonoGame.Framework.Content.Pipeline;MonoGame.Framework.Android</_SdMonoGamePackages>
   </PropertyGroup>
 
   <ItemGroup Condition="'$(MonoGameVersion)' != '' and '$(ManagePackageVersionsCentrally)' == 'true'">
@@ -36,6 +36,42 @@
     <AssemblyMetadata Include="ExpectedMonoGameVersion" Value="$(MonoGameVersion)" />
     <Compile Include="$(MSBuildThisFileDirectory)SharedMonoGameVersion\MonoGameVersionGuard.cs"
              Link="SharedMonoGameVersion\MonoGameVersionGuard.cs" />
+  </ItemGroup>
+
+  <!-- Phase 69: -p:MonoGameDesktopGL4=true (with -p:MonoGameVersion=3.8.6 or newer) runs a
+       DesktopGL driver on MonoGame's native OpenGL 4.1-core runtime instead of the classic
+       managed DesktopGL one. DesktopGL4 loads the same OpenGL-profile .mgfx, so the driver's
+       code is unchanged; only the runtime package moves (MonoGame.Framework.Native plus
+       MonoGame.Runtime.<OS>.DesktopGL4). Its own lock file:
+       packages.desktopgl4-<version>.lock.json. The guard then also requires the native
+       framework assembly, so a classic DesktopGL build cannot pass as this arm. -->
+  <Target Name="_SdRequireVersionForDesktopGL4" BeforeTargets="CollectPackageReferences"
+          Condition="'$(MonoGameDesktopGL4)' == 'true' and '$(MonoGameVersion)' == ''">
+    <Error Text="-p:MonoGameDesktopGL4=true needs -p:MonoGameVersion (3.8.6 or newer; DesktopGL4 first shipped in 3.8.6)." />
+  </Target>
+
+  <PropertyGroup Condition="'$(MonoGameDesktopGL4)' == 'true' and '$(MonoGameVersion)' != ''">
+    <NuGetLockFilePath>packages.desktopgl4-$(MonoGameVersion).lock.json</NuGetLockFilePath>
+    <MonoGamePlatform>DesktopGL4</MonoGamePlatform>
+  </PropertyGroup>
+
+  <ItemGroup Condition="'$(MonoGameDesktopGL4)' == 'true' and '$(MonoGameVersion)' != ''">
+    <PackageReference Remove="MonoGame.Framework.DesktopGL" />
+    <AssemblyMetadata Include="ExpectedMonoGamePlatform" Value="DesktopGL4" />
+  </ItemGroup>
+
+  <ItemGroup Condition="'$(MonoGameDesktopGL4)' == 'true' and '$(MonoGameVersion)' != '' and '$(ManagePackageVersionsCentrally)' == 'true'">
+    <PackageVersion Include="MonoGame.Runtime.Windows.DesktopGL4" Version="$(MonoGameVersion)" />
+    <PackageVersion Include="MonoGame.Runtime.Linux.DesktopGL4" Version="$(MonoGameVersion)" />
+    <PackageReference Include="MonoGame.Framework.Native" VersionOverride="$(MonoGameVersion)" />
+    <PackageReference Include="MonoGame.Runtime.Windows.DesktopGL4" />
+    <PackageReference Include="MonoGame.Runtime.Linux.DesktopGL4" />
+  </ItemGroup>
+
+  <ItemGroup Condition="'$(MonoGameDesktopGL4)' == 'true' and '$(MonoGameVersion)' != '' and '$(ManagePackageVersionsCentrally)' != 'true'">
+    <PackageReference Include="MonoGame.Framework.Native" Version="$(MonoGameVersion)" />
+    <PackageReference Include="MonoGame.Runtime.Windows.DesktopGL4" Version="$(MonoGameVersion)" />
+    <PackageReference Include="MonoGame.Runtime.Linux.DesktopGL4" Version="$(MonoGameVersion)" />
   </ItemGroup>
 
 </Project>

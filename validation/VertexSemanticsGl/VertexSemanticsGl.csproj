@@ -17,4 +17,7 @@
   <ItemGroup>
     <Compile Include="..\SharedVertexSemantics\*.cs" />
   </ItemGroup>
+
+  <Import Project="..\MonoGameVersion.targets" />
+
 </Project>

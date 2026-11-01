@@ -686,7 +686,7 @@ foreach ($mg in $newerMonoGame) {
     $p = "-p:MonoGameVersion=$mg"
     # Each entry: gate name, then the commands (dotnet run args, 'py:<script>' or 'build:<project>';
     # a leading '?' marks a best-effort command whose exit code is not part of the gate, as in the
-    # Vulkan block). The MGCB plugin gate is not here: it runs every dotnet-mgcb version in one
+    # Vulkan block; 'props:<msbuild property>' adds a property to every dotnet run that follows). The MGCB plugin gate is not here: it runs every dotnet-mgcb version in one
     # process (validation/MgcbPlugin, a 3.8.6 arm since Phase 69).
     $arms = [System.Collections.Generic.List[object]]::new()
     $arms.Add(@("MonoGame $mg WindowsDX corpus (vkd3d + d3dcompiler arms vs mgfxc golden)",
@@ -703,6 +703,19 @@ foreach ($mg in $newerMonoGame) {
     $arms.Add(@("MonoGame $mg DesktopGL initializer defaults + KNI EffectTest + XNB Content.Load + Apos.Shapes + MGFX v11",
         @('validation/InitializerDefaultsGl'), @('validation/KniEffectTestGl'),
         @('validation/XnbContentLoadGl'), @('validation/VsDriven', '--', 'apos'), @('validation/MonoGameV11')))
+    # 3.8.6 changed how managed DesktopGL masks MRT draw buffers (MonoGame #9509), hence the MRT driver.
+    $arms.Add(@("MonoGame $mg DesktopGL VS rig + vertex semantics + MRT + sampler pairs + sampler register order",
+        @('validation/VsDriven'), @('validation/VertexSemanticsGl'), @('validation/DeferredSpriteMrtGl'),
+        @('validation/SamplerPairsGl'), @('validation/SamplerRegisterOrderGl')))
+    # DesktopGL4 (MonoGame 3.8.6+): the native OpenGL 4.1-core runtime, which loads the same OpenGL
+    # .mgfx. Not VertexSemanticsGl or KniEffectTestGl: a GLSL non-square matrix (mat3x4/mat4x3) aborts
+    # DesktopGL4's core-profile compile of version-less GLSL (docs/validation-matrix.md section 7).
+    $arms.Add(@("MonoGame $mg DesktopGL4 (native GL 4.1 core): corpus + VS rig + Apos.Shapes + MRT + sampler pairs/order + initializer defaults + XNB + MGFX v11",
+        'props:-p:MonoGameDesktopGL4=true',
+        @('validation/Baseline'), @('validation/Candidate'), 'py:validation/compare.py',
+        @('validation/VsDriven'), @('validation/VsDriven', '--', 'apos'), @('validation/DeferredSpriteMrtGl'),
+        @('validation/SamplerPairsGl'), @('validation/SamplerRegisterOrderGl'), @('validation/InitializerDefaultsGl'),
+        @('validation/XnbContentLoadGl'), @('validation/MonoGameV11')))
     # The Content Builder gate's newer arm also moves its DXC tool package (ContentBuilder.csproj).
     $arms.Add(@("MonoGame $mg Content Builder (ShadowDusk.ContentPipeline pair vs stock pair, real ContentBuilder + Content.Load<Effect>)",
         'build:src/ShadowDusk.Cli/ShadowDusk.Cli.csproj', @('validation/ContentBuilder')))
@@ -723,20 +736,24 @@ foreach ($mg in $newerMonoGame) {
             @('validation/KniEffectTestVulkan'), @('validation/SlangFullCorpusVulkan')))
     }
     foreach ($arm in $arms) {
-        $lines = foreach ($cmd in $arm[1..($arm.Count - 1)]) {
-            if ($cmd -is [string] -and $cmd.StartsWith('build:')) {
+        $props = @()
+        # A GL driver without a GL context must fail here, never soft-skip as a pass.
+        $lines = @("`$env:SHADOWDUSK_REQUIRE_GL = '1'") + @(foreach ($cmd in $arm[1..($arm.Count - 1)]) {
+            if ($cmd -is [string] -and $cmd.StartsWith('props:')) {
+                $props += $cmd.Substring(6)
+            } elseif ($cmd -is [string] -and $cmd.StartsWith('build:')) {
                 "Invoke-Checked 'dotnet' @('build', '$($cmd.Substring(6))', '-c', 'Release')"
             } elseif ($cmd -is [string]) {
                 "Invoke-Checked 'python' @('$($cmd.Substring(3))')"
             } else {
                 $project = $cmd[0]; $bestEffort = $project.StartsWith('?')
                 if ($bestEffort) { $project = $project.Substring(1) }
-                $runArgs = @('run', '--project', $project, '-c', 'Release', $p)
+                $runArgs = @('run', '--project', $project, '-c', 'Release', $p) + $props
                 if ($cmd.Count -gt 1) { $runArgs += $cmd[1..($cmd.Count - 1)] }
                 $quoted = ($runArgs | ForEach-Object { "'$_'" }) -join ', '
                 if ($bestEffort) { "& dotnet @($quoted)" } else { "Invoke-Checked 'dotnet' @($quoted)" }
             }
-        }
+        })
         # [scriptblock]::Create, not GetNewClosure(): a closure runs in a module scope that cannot see Invoke-Checked.
         $newerGates.Add(@{ Name = $arm[0]; Action = [scriptblock]::Create($lines -join "`n") })
     }

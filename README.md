@@ -71,7 +71,7 @@ ShadowDusk works with **MonoGame, KNI, and FNA** across these graphics backends.
 
 | Backend             | Output         | Status       |
 |---------------------|----------------|--------------|
-| OpenGL / DesktopGL  | GLSL `.mgfx`   | Supported    |
+| OpenGL / DesktopGL (incl. MonoGame 3.8.6 DesktopGL4, see below) | GLSL `.mgfx`   | Supported    |
 | DirectX 11          | DXBC `.mgfx`   | Supported    |
 | WebGL (KNI browser) | GLSL `.mgfx`   | Supported    |
 | Android (on-device) | GLSL `.mgfx`   | Supported (byte-identical to the desktop build) |
@@ -79,6 +79,8 @@ ShadowDusk works with **MonoGame, KNI, and FNA** across these graphics backends.
 | Metal (macOS / iOS) | MSL            | Not yet      |
 | Vulkan (MonoGame)   | SPIR-V `.mgfx` | Supported    |
 | DirectX 12 (MonoGame WindowsDX12) | SM6 DXIL `.mgfx` | Supported |
+
+**MonoGame 3.8.6.** Everything above is render-proven on MonoGame 3.8.6 as well as 3.8.5 and older (the default v10 output on every release from 3.8.1.263 to 3.8.6). 3.8.6's new native OpenGL 4.1 runtime, **DesktopGL4**, loads the same OpenGL `.mgfx` and renders it like DesktopGL, except a shader whose GLSL has a non-square matrix (typically from `mul(float3, float4x4)`), which DesktopGL4 cannot compile yet. The MGCB plugin and the Content Builder library need a ShadowDusk release newer than 0.23.0 on MonoGame 3.8.6 (see the CHANGELOG).
 
 Supported targets are tested end-to-end against the reference compiler (on-device Android via byte-identity: its output is byte-identical to the desktop build, whose renders are proven — the on-device pixel diff is a tracked follow-up). For the exact per-version, per-OS proof status, see the [Validation Matrix](docs/validation-matrix.md). To choose a target (or build a shader-download feature), see the [Choosing a Target](https://kaltinril.github.io/ShadowDusk/guides/choosing-a-target.html) guide. Classic Microsoft XNA 4.0 is out of scope.
 

@@ -7,7 +7,7 @@ When you compile a `.fx`, the choice that changes the output bytes is mostly **w
 Most of the time, picking a target is one question: **which graphics backend does the game run?**
 
 - MonoGame or KNI on **DirectX** (WindowsDX) &rarr; `PlatformTarget.DirectX`
-- MonoGame or KNI on **OpenGL** (DesktopGL), **WebGL**, or **Android** &rarr; `PlatformTarget.OpenGL`
+- MonoGame or KNI on **OpenGL** (DesktopGL, or MonoGame 3.8.6's native **DesktopGL4**), **WebGL**, or **Android** &rarr; `PlatformTarget.OpenGL`
 - **FNA** &rarr; `PlatformTarget.Fna`
 
 That covers the common cases. `GraphicsProfile` (Reach vs HiDef) never changes the target. The rest of this page explains why, plus KNI's newer container and one-shot capability profiles.
@@ -39,7 +39,7 @@ Select the backend with <xref:ShadowDusk.Core.CompilerOptions.Target> (library) 
 
 | Target | `CompilerOptions.Target` | CLI `/Profile:` | Output | Status |
 |---|---|---|---|---|
-| **OpenGL / DesktopGL / WebGL** | `PlatformTarget.OpenGL` | `OpenGL` | `.mgfx`, **GLSL text** (MojoShader dialect) | ✅ Validated |
+| **OpenGL / DesktopGL / WebGL** | `PlatformTarget.OpenGL` | `OpenGL` | `.mgfx`, **GLSL text** (MojoShader dialect) | ✅ Validated (MonoGame 3.8.6 DesktopGL4 loads the same file; a GLSL non-square matrix does not compile there yet) |
 | **DirectX 11 (WindowsDX)** | `PlatformTarget.DirectX` | `DirectX_11` | `.mgfx`, **DXBC binary** (SM5) | ✅ Validated |
 | **FNA** | `PlatformTarget.Fna` | `FNA` | `.fxb`, **D3D9 fx_2_0** (SM ≤ 3) | ✅ Validated |
 | **Metal** | `PlatformTarget.Metal` | — | MSL | ❌ Not implemented ([future](../backends/metal.md)) |

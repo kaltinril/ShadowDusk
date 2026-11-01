@@ -14,4 +14,7 @@
   <ItemGroup>
     <Compile Include="..\Shared\*.cs" />
   </ItemGroup>
+
+  <Import Project="..\MonoGameVersion.targets" />
+
 </Project>
