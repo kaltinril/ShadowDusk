@@ -39,7 +39,7 @@ Select the backend with <xref:ShadowDusk.Core.CompilerOptions.Target> (library) 
 
 | Target | `CompilerOptions.Target` | CLI `/Profile:` | Output | Status |
 |---|---|---|---|---|
-| **OpenGL / DesktopGL / WebGL** | `PlatformTarget.OpenGL` | `OpenGL` | `.mgfx`, **GLSL text** (MojoShader dialect) | ✅ Validated (MonoGame 3.8.6 DesktopGL4 loads the same file; a GLSL non-square matrix does not compile there yet) |
+| **OpenGL / DesktopGL / WebGL** | `PlatformTarget.OpenGL` | `OpenGL` | `.mgfx`, **GLSL text** (MojoShader dialect) | ✅ Validated (MonoGame 3.8.6 DesktopGL4 loads the same file) |
 | **DirectX 11 (WindowsDX)** | `PlatformTarget.DirectX` | `DirectX_11` | `.mgfx`, **DXBC binary** (SM5) | ✅ Validated |
 | **FNA** | `PlatformTarget.Fna` | `FNA` | `.fxb`, **D3D9 fx_2_0** (SM ≤ 3) | ✅ Validated |
 | **Metal** | `PlatformTarget.Metal` | — | MSL | ❌ Not implemented ([future](../backends/metal.md)) |

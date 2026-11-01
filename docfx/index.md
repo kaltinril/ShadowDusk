@@ -38,7 +38,7 @@ FNA  (D3D9 fx_2_0):
 
 | Backend | Output | Status |
 |---|---|---|
-| OpenGL / DesktopGL (incl. MonoGame 3.8.6 DesktopGL4) | GLSL | Validated end-to-end (DesktopGL4: except a GLSL non-square matrix) |
+| OpenGL / DesktopGL (incl. MonoGame 3.8.6 DesktopGL4) | GLSL | Validated end-to-end |
 | DirectX (DX11) | DXBC (SM5) via `vkd3d-shader` (default, cross-platform) / `d3dcompiler_47` (Windows-only oracle, opt-in) | Validated end-to-end |
 | WebGL (XNA Fiddle / KNI browser) | GLSL ES | Validated end-to-end |
 | [Android on-device](guides/on-device-android.md) (MonoGame, KNI) | GLSL | Validated end-to-end (byte-identical to the desktop build) |
