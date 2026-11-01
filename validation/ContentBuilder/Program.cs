@@ -235,7 +235,7 @@ internal static class Program
                                 (v11 ? $" with the source-file string replaced by '{MgfxSourceFile.Stock}'" : string.Empty));
                         }
 
-                        Console.WriteLine($"  PASS  {label}: payload == CLI ({cliBytes.Length} B), envelope == stock 3.8.5 " +
+                        Console.WriteLine($"  PASS  {label}: payload == CLI ({cliBytes.Length} B), envelope == stock {MonoGameRelease.Loaded} " +
                                           $"(stock MGFX v{stock.Payload[4]} {stock.Payload.Length} B, ours v{sd.Payload[4]}){sourceFileNote}");
 
                         if (c.Render)
@@ -253,7 +253,7 @@ internal static class Program
 
             // The rung-4 half: Content.Load<Effect> on MonoGame 3.8.5 WindowsDX, both arms,
             // pixel-identical. Only the Windows pass renders (the host is the DX11 runtime).
-            Console.WriteLine("=== Content.Load<Effect> + render on MonoGame 3.8.5 WindowsDX ===");
+            Console.WriteLine($"=== Content.Load<Effect> + render on MonoGame {MonoGameRelease.Loaded} WindowsDX ===");
             if (renderJobs.Count == 0)
             {
                 failures++;
@@ -286,7 +286,7 @@ internal static class Program
         int assets = Cases.Sum(c => c.Fixtures.Length);
         Console.WriteLine();
         Console.WriteLine(failures == 0
-            ? $"Content Builder gate: all {assets} assets PASSED (real 3.8.5 ContentBuilder, envelope + CLI byte-identity + rung-4 render)"
+            ? $"Content Builder gate: all {assets} assets PASSED (real {MonoGameRelease.Loaded} ContentBuilder, envelope + CLI byte-identity + rung-4 render)"
             : $"Content Builder gate: {failures} failure(s)");
         return failures == 0 ? 0 : 1;
     }
@@ -368,7 +368,7 @@ internal static class Program
         if (!stockDistinct.SequenceEqual(sdDistinct))
         {
             throw new InvalidOperationException(
-                "MGFX v11 source-file field differs from the stock 3.8.5 build: " +
+                $"MGFX v11 source-file field differs from the stock {MonoGameRelease.Loaded} build: " +
                 $"stock [{string.Join(", ", stockDistinct)}] vs ShadowDusk [{string.Join(", ", sdDistinct)}]");
         }
 
@@ -413,7 +413,7 @@ internal static class Program
         }
 
         if (!stockXnb.AsSpan(10, stock.PayloadOffset - 14).SequenceEqual(sdXnb.AsSpan(10, sd.PayloadOffset - 14)))
-            throw new InvalidOperationException("xnb type-reader manifest / shared-resource count / type id differs from the stock 3.8.5 build");
+            throw new InvalidOperationException($"xnb type-reader manifest / shared-resource count / type id differs from the stock {MonoGameRelease.Loaded} build");
 
         if (BitConverter.ToInt32(sdXnb, 6) != sdXnb.Length)
             throw new InvalidOperationException($"file-size field {BitConverter.ToInt32(sdXnb, 6)} != actual length {sdXnb.Length}");
@@ -601,7 +601,7 @@ internal sealed class ContentLoadRenderer : Game
         catch (Exception ex)
         {
             return new RenderOutcome(job.AssetName, false,
-                $"the STOCK 3.8.5 .xnb failed to load: {ex.GetType().Name}: {ex.Message}");
+                $"the STOCK {MonoGameRelease.Loaded} .xnb failed to load: {ex.GetType().Name}: {ex.Message}");
         }
 
         try
@@ -637,7 +637,7 @@ internal sealed class ContentLoadRenderer : Game
                 ? new RenderOutcome(job.AssetName, true,
                     $"Content.Load<Effect> OK on both arms; {stockPixels.Length} px identical")
                 : new RenderOutcome(job.AssetName, false,
-                    $"{differing}/{stockPixels.Length} px differ from the stock 3.8.5 build (max channel delta {maxDelta})");
+                    $"{differing}/{stockPixels.Length} px differ from the stock {MonoGameRelease.Loaded} build (max channel delta {maxDelta})");
         }
         catch (Exception ex)
         {
@@ -673,4 +673,17 @@ internal sealed class ContentLoadRenderer : Game
 
         return pixels;
     }
+}
+
+/// <summary>
+/// The MonoGame release this run loaded (the gate is built for 3.8.5 by default and for newer
+/// releases with -p:MonoGameVersion, Phase 69), for the messages that name the stock build.
+/// </summary>
+internal static class MonoGameRelease
+{
+    public static readonly string Loaded =
+        (typeof(Microsoft.Xna.Framework.Vector2).Assembly
+            .GetCustomAttributes(typeof(System.Reflection.AssemblyInformationalVersionAttribute), false)
+            .Cast<System.Reflection.AssemblyInformationalVersionAttribute>()
+            .FirstOrDefault()?.InformationalVersion ?? "?").Split('+')[0];
 }

@@ -684,8 +684,10 @@ $newerMonoGame = @('3.8.6')
 $newerGates = [System.Collections.Generic.List[object]]::new()
 foreach ($mg in $newerMonoGame) {
     $p = "-p:MonoGameVersion=$mg"
-    # Each entry: gate name, then the commands (dotnet run args, or 'py:<script>'; a leading '?'
-    # marks a best-effort command whose exit code is not part of the gate, as in the Vulkan block).
+    # Each entry: gate name, then the commands (dotnet run args, 'py:<script>' or 'build:<project>';
+    # a leading '?' marks a best-effort command whose exit code is not part of the gate, as in the
+    # Vulkan block). The MGCB plugin gate is not here: it runs every dotnet-mgcb version in one
+    # process (validation/MgcbPlugin, a 3.8.6 arm since Phase 69).
     $arms = [System.Collections.Generic.List[object]]::new()
     $arms.Add(@("MonoGame $mg WindowsDX corpus (vkd3d + d3dcompiler arms vs mgfxc golden)",
         @('validation/BaselineDx'), @('validation/CandidateDx'), 'py:validation/compare_dx.py',
@@ -701,6 +703,9 @@ foreach ($mg in $newerMonoGame) {
     $arms.Add(@("MonoGame $mg DesktopGL initializer defaults + KNI EffectTest + XNB Content.Load + Apos.Shapes + MGFX v11",
         @('validation/InitializerDefaultsGl'), @('validation/KniEffectTestGl'),
         @('validation/XnbContentLoadGl'), @('validation/VsDriven', '--', 'apos'), @('validation/MonoGameV11')))
+    # The Content Builder gate's newer arm also moves its DXC tool package (ContentBuilder.csproj).
+    $arms.Add(@("MonoGame $mg Content Builder (ShadowDusk.ContentPipeline pair vs stock pair, real ContentBuilder + Content.Load<Effect>)",
+        'build:src/ShadowDusk.Cli/ShadowDusk.Cli.csproj', @('validation/ContentBuilder')))
     $arms.Add(@("MonoGame $mg WindowsDX12 corpus + VS rig + Apos.Shapes + texture array + legacy lod",
         @('validation/BaselineDx12'), @('validation/CandidateDx12'), 'py:validation/compare_dx12.py',
         @('validation/VsDrivenDx12'), @('validation/VsDrivenDx12', '--', 'apos'),
@@ -719,7 +724,9 @@ foreach ($mg in $newerMonoGame) {
     }
     foreach ($arm in $arms) {
         $lines = foreach ($cmd in $arm[1..($arm.Count - 1)]) {
-            if ($cmd -is [string]) {
+            if ($cmd -is [string] -and $cmd.StartsWith('build:')) {
+                "Invoke-Checked 'dotnet' @('build', '$($cmd.Substring(6))', '-c', 'Release')"
+            } elseif ($cmd -is [string]) {
                 "Invoke-Checked 'python' @('$($cmd.Substring(3))')"
             } else {
                 $project = $cmd[0]; $bestEffort = $project.StartsWith('?')
