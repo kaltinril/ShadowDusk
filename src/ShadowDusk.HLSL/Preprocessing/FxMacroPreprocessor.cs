@@ -461,6 +461,9 @@ internal sealed partial class FxMacroPreprocessor
                             // code generation, and an '#error' must still stop the compile.
                             if (_compilerInput)
                                 EmitDirectiveVerbatim(output, physicalLine, logical);
+                            if (_guardMode && directive == "pragma" &&
+                                NotePragma(rest, logical, physicalLine, lineNo) is { } pragmaError) // issue #452
+                                return Result<string, ShaderError>.Fail(pragmaError);
                             break;
                         case "include":
                             return Fail(lineNo,
