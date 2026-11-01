@@ -104,7 +104,7 @@ package "3 - TRANSLATION LAYERS  (target selects the branch)" {
 ' ===== 4. WRITERS =====
 package "4 - WRITERS  (serialize ShaderIR + blobs into a container)" {
   rectangle "**MgfxWriter**\nMGFX v10 (default) / v11" as MGW #E7DFC9
-  rectangle "**KnifxWriter**\nKNIFX v11 (KNIF)\nGL-family dir: OpenGL version-dir body\n+ GLES/WebGL raw (0,0) body" as KNW #E7DFC9
+  rectangle "**KnifxWriter**\nKNIFX v11 (default) / v12 (KNIF)\nGL-family dir: OpenGL version-dir body\n+ GLES/WebGL raw (0,0) body" as KNW #E7DFC9
   rectangle "**Fx2EffectWriter**\nD3D9 fx_2_0 (.fxb)" as FXW #E7DFC9
 }
 
@@ -112,7 +112,7 @@ package "4 - WRITERS  (serialize ShaderIR + blobs into a container)" {
 package "5 - OUTPUT CONTAINERS" {
   rectangle "**.mgfx v10**  (sig MGFX, byte 0x0a)\nthe seamless default - loads everywhere" as O_MGFX10 #DCE6DC
   rectangle "**.mgfx v11**  (MGFX, byte 0x0b)\n+2 diagnostic strings" as O_MGFX11 #DCE6DC
-  rectangle "**.knifx**  (sig KNIF, v11)\nKNI's native container" as O_KNIFX #DCE6DC
+  rectangle "**.knifx**  (sig KNIF, v11;\nv12 for KNI 4.3.x)\nKNI's native container" as O_KNIFX #DCE6DC
   rectangle "**.fxb**  (D3D9 fx_2_0)\nFNA effect" as O_FXB #DCE6DC
   rectangle ".mgfx **Vulkan**\n(v11-shaped record,\nprofile byte 80, SPIR-V)" as O_MGFXVK #DCE6DC
   rectangle ".mgfx **DirectX12**\n(profile byte 2, DXIL)" as O_MGFXDX12 #DCE6DC
@@ -125,7 +125,7 @@ package "6 - REAL RUNTIMES  (the bar: loads + renders like mgfxc / fxc)" {
   rectangle "KNI **WebGL**\n(Blazor;\nReach+HiDef)" as R_KNIWEB #D9D9D9
   rectangle "KNI\n**Desktop GL**\n(SDL2)" as R_KNIGL #D9D9D9
   rectangle "KNI\n**Desktop DX11**" as R_KNIDX #D9D9D9
-  rectangle "MonoGame\n**DesktopGL**" as R_MGGL #D9D9D9
+  rectangle "MonoGame\n**DesktopGL**\n(+ DesktopGL4, 3.8.6)" as R_MGGL #D9D9D9
   rectangle "MonoGame\n**DirectX 11**" as R_MGDX #D9D9D9
   rectangle "MonoGame\n**WindowsDX12**" as R_MGDX12 #D9D9D9
   rectangle "MonoGame\n**DesktopVK**\n(Vulkan)" as R_MGVK #D9D9D9

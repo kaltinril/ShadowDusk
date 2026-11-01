@@ -86,14 +86,15 @@ public sealed class DxcTargetsCrossHostByteIdentityTests
     /// DXC's HLSL scalar-replacement pass processes them; on the same source and commit that
     /// order differs by host build, so it is a host-build fact, not one of the 28 commits the
     /// Linux build lacks. Values are this host's canonical digests (see the class remarks),
-    /// re-measured on macos-latest whenever the DXC command line changes (DXIL debug info
-    /// embeds it), last for the <c>-D__TIMESTAMP__</c> define.
+    /// re-measured on macos-latest whenever the DXC command line or this shader's DXC input
+    /// changes (DXIL debug info embeds both), last for issue #446, whose POSITION to
+    /// SV_Position mapping rewrote this shader's vertex output (2026-10-31).
     /// </summary>
     private static readonly Dictionary<string, (string Dxil, string MgfxNormalized)> MacOsDivergences = new(StringComparer.Ordinal)
     {
         ["DirectX12.Debug/ForwardLighting.fx"] = (
-            Dxil: "a221049752469030b6075b320f1aacf75c726e1597228aae1221232d6a5b1f60",
-            MgfxNormalized: "24f6dc7ede4d6f699e6193f4d8fa0fec57339b6579b52234832269365f4b7a71"),
+            Dxil: "c2febb31e6e185c4adfdfb82dc0845be1c0f5c745a7726baa941d4b074091f15",
+            MgfxNormalized: "ec55537764b5c0c1c5431778950b0b3d58909f51db047bfb5fea0f9b4677778d"),
     };
 
     private static string ShadersRoot => Path.Combine(AppContext.BaseDirectory, "fixtures", "shaders");

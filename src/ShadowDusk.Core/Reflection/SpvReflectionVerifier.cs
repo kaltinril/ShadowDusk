@@ -3,10 +3,8 @@
 namespace ShadowDusk.Core.Reflection;
 
 /// <summary>
-/// Cross-checks texture and sampler bind slots against a SPIR-V module, producing a
-/// <see cref="BindingSlotMap"/>. The SPIRV-Cross-backed verification is not yet implemented;
-/// the current implementation returns <see cref="BindingSlotMap.Empty"/> so the reflection
-/// pipeline can still run for DXIL-only use cases.
+/// A placeholder that was meant to cross-check texture and sampler bind slots against a SPIR-V
+/// module. It was never implemented and always returns <see cref="BindingSlotMap.Empty"/>.
 /// </summary>
 /// <remarks>
 /// Obsolete: nothing in ShadowDusk calls it, and it never checked anything. It will be removed in a
@@ -21,8 +19,7 @@ public sealed class SpvReflectionVerifier
     /// <param name="spirvBlob">A complete SPIR-V module.</param>
     /// <param name="ct">A cancellation token.</param>
     /// <returns>
-    /// A <see cref="BindingSlotMap"/>; currently always
-    /// <see cref="BindingSlotMap.Empty"/> until SPIRV-Cross verification lands.
+    /// Always <see cref="BindingSlotMap.Empty"/>.
     /// </returns>
     public Result<BindingSlotMap, ShaderError> GetBindings(
         ReadOnlyMemory<byte> spirvBlob,

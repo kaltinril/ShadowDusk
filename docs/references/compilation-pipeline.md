@@ -604,7 +604,7 @@ enforces every invariant MojoShader relies on (ASCII-only names, square matrices
 declared before the samplers that reference them, and every shader CTAB constant matching an
 effect parameter name exactly). Full spec: `docs/fx2-binary-format.md`.
 
-**KNIFX v11 (KNI)** — `src/ShadowDusk.Core/KnifxWriter.cs`. An additive newer container (signature
+**KNIFX v11 / v12 (KNI)** — `src/ShadowDusk.Core/KnifxWriter.cs`. Version 11 is the default; `KnifxWriterOptions.Version = 12` (`CapabilityProfile.KniGL_4_03`, `--target-runtime kni-knifx-v12`) writes the same body under container version 12, which only KNI 4.3.x loads. An additive newer container (signature
 `KNIF`) carrying the **same** MojoShader-dialect GLSL body as the MGFX path, wrapped in a
 multi-backend directory with packed-integer encoding. The render-state blocks are byte-identical
 to v10 (it reuses the MGFX writer's render-state routine). It is opt-in; the default product

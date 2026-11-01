@@ -193,14 +193,14 @@
                                    envelope matches MGCB's own stock build, and that the payload
                                    differs from stock (i.e. ShadowDusk really compiled it). It is
                                    here because `dotnet test` has no dotnet-mgcb; no GPU needed.
-                                   Phase 63: two MGCB versions (3.8.4.1 + 3.8.5, which renumbered
-                                   TargetPlatform: Web/DesktopVK/WindowsDX12 arms) and a decoy
+                                   Phase 63: several MGCB versions (3.8.4.1, 3.8.5, which renumbered
+                                   TargetPlatform: Web/DesktopVK/WindowsDX12 arms, and 3.8.6 since Phase 69) and a decoy
                                    dxcompiler.dll on the child PATH (pinned-DXC + dxil guard).
                                    Issue #274: on DesktopVK/WindowsDX12 (MGFX v11) the per-shader
                                    source-file string must be the stock build's `<unknown>`, never
                                    the build machine's path; the payload is the CLI's with only
                                    that string replaced; a second-directory build is byte-identical.
-    * Content Builder (3.8.5)    - validation/ContentBuilder: a REAL MonoGame 3.8.5 ContentBuilder
+    * Content Builder (3.8.5; 3.8.6 in the newer-MonoGame block) - validation/ContentBuilder: a REAL MonoGame 3.8.5 ContentBuilder
                                    subclass builds the fixtures through the stock pair AND through
                                    ShadowDusk.ContentPipeline's pair (the library shape, Phase 63),
                                    asserts payload == ShadowDuskCLI and envelope == stock (plus,
@@ -460,8 +460,8 @@ $gates.Add(@{
 # Cheap (seconds, no GPU) and default ON - the failure modes it catches (MGCB stops
 # discovering the plugin; the plugin stops finding its natives inside MGCB's process; MonoGame
 # changes the content contract) are all silent for everyone until a consumer hits them.
-# Since Phase 63 (issue #203) it runs TWO MGCB versions (the manifest 3.8.4.1 and a real 3.8.5,
-# which renumbered TargetPlatform) and puts a decoy dxcompiler.dll first on the plugin-arm
+# Since Phase 63 (issue #203) it runs several MGCB versions (the manifest 3.8.4.1, a real 3.8.5,
+# which renumbered TargetPlatform, and since Phase 69 a real 3.8.6) and puts a decoy dxcompiler.dll first on the plugin-arm
 # child's PATH, so a fallback to an OS-search-path DXC or an unsigned DX12 module fails loudly.
 # Since issue #274 its DesktopVK / WindowsDX12 cases also pin the MGFX v11 source-file string to
 # what MGCB's own stock processor writes, and rebuild from a second directory for identical bytes.
@@ -469,7 +469,7 @@ $gates.Add(@{
 # every v11 case rebuilds under /config:Debug (DebugMode=Auto) for bytes identical to the default
 # build, with stock MGCB's own /config:Debug build checked the same way as the premise.
 $gates.Add(@{
-    Name   = 'MGCB content-processor plugin (Phase 29: real dotnet mgcb build, .xnb payload vs CLI bytes; Phase 63: + dotnet-mgcb 3.8.5 arm for Web/DesktopVK/WindowsDX12 + decoy-PATH DXC guard; issue #274: MGFX v11 source-file string == stock, path-independent .xnb; issue #280: CLI .xnb == plugin payload, /config:Debug Auto == default build like stock)'
+    Name   = 'MGCB content-processor plugin (Phase 29: real dotnet mgcb build, .xnb payload vs CLI bytes; Phase 63: + dotnet-mgcb 3.8.5 arm for Web/DesktopVK/WindowsDX12 + decoy-PATH DXC guard; Phase 69: + dotnet-mgcb 3.8.6 arm; issue #274: MGFX v11 source-file string == stock, path-independent .xnb; issue #280: CLI .xnb == plugin payload, /config:Debug Auto == default build like stock)'
     Action = {
         # The pinned dotnet-mgcb from .config/dotnet-tools.json (idempotent; cached offline).
         Invoke-Checked 'dotnet' @('tool', 'restore')

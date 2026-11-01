@@ -13,7 +13,8 @@ Plain-language definitions of the shader and compiler terms used across these do
 ## Formats and containers
 
 - **MGFX** — MonoGame's compiled-effect format. **v10** is the default ShadowDusk emits and loads on MonoGame 3.8.1.263+ (the measured floor) and KNI; **v11** is a newer optional container for MonoGame 3.8.5+.
-- **KNIFX** — KNI's own newer effect container, an optional target for KNI v4.02+.
+- **KNIFX** — KNI's own newer effect container, an optional target: **v11** for KNI v4.02+, **v12** (`kni-knifx-v12`) for KNI 4.3.x only.
+- **DesktopGL4** — MonoGame 3.8.6's native OpenGL 4.1-core runtime. It loads the same OpenGL `.mgfx` as DesktopGL; ShadowDusk's GL output is render-proven on it.
 - **fx_2_0** — the legacy Direct3D 9 effect format FNA uses (Shader Model 3 and below).
 - **Vulkan / DesktopVK** — MonoGame 3.8.5's Vulkan platform (`DesktopVK`). ShadowDusk's Vulkan target emits a `.mgfx` with **profile byte 80** (matching MonoGame's own `VulkanShaderProfile`) carrying SPIR-V directly; validated end-to-end in a real DesktopVK `Effect`. MonoGame-only — KNI has no Vulkan platform.
 - **DirectX 12 / WindowsDX12** — MonoGame 3.8.5's DirectX 12 platform (`WindowsDX12`). ShadowDusk's DirectX 12 target emits a `.mgfx` with **profile byte 2** carrying DXIL (SM6) directly; validated end-to-end in a real `WindowsDX12` `Effect`. MonoGame-only — KNI has no DirectX 12 platform.

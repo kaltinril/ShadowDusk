@@ -14,7 +14,7 @@ everything in one directory it can `/reference:`), which cannot be referenced fr
 Content Builder gets its own, library-shaped package.
 
 
-> **MonoGame 3.8.6:** use a ShadowDusk release newer than 0.23.0. MonoGame 3.8.6 removed a constructor
+> **MonoGame 3.8.6:** use ShadowDusk 0.24.0 or later. MonoGame 3.8.6 removed a constructor
 > (`ContentIdentity(string, string)`) that the 0.23.0 importer calls, so with 0.23.0 every `.fx` fails with
 > `MissingMethodException`. Until you can update, MonoGame's own `EffectImporter` with the ShadowDusk processor
 > works on 3.8.6. Newer releases are checked against every MonoGame content pipeline from 3.8.2.1105 to 3.8.6.

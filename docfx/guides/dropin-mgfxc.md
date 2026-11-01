@@ -45,7 +45,7 @@ The XNB platform identifier is derived from the profile you already chose:
 
 | `/Profile:` (or `--target-runtime`) | XNB platform byte | Runtimes that accept it |
 |---|---|---|
-| `OpenGL` (`monogame-gl`, `monogame-gl-v11`, `kni-knifx`) | `'d'` (DesktopGL) | MonoGame DesktopGL / Android / iOS / macOS / Web, KNI (every GL platform) |
+| `OpenGL` (`monogame-gl`, `monogame-gl-v11`, `kni-knifx`, `kni-knifx-v12`) | `'d'` (DesktopGL) | MonoGame DesktopGL / Android / iOS / macOS / Web, KNI (every GL platform) |
 | `DirectX_11` (`monogame-dx`) — **the CLI default** | `'w'` (Windows) | MonoGame WindowsDX, KNI WinForms.DX11 |
 | `DirectX_12` | `'G'` | MonoGame WindowsDX12 (3.8.5+) |
 | `Vulkan` | `'V'` | MonoGame DesktopVK (3.8.5+) |

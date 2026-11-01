@@ -6,12 +6,12 @@
          Content Builder), and one namespace keeps the two delivery shapes one type set. The
          ASSEMBLY name and the tools/net8.0/any/ path are untouched - they are the .mgcb
          contract - and MGCB resolves /importer: and /processor: by simple type name, so no
-         consumer .mgcb changes (measured on dotnet-mgcb 3.8.4.1 and 3.8.5 by validation/MgcbPlugin). -->
+         consumer .mgcb changes (measured on dotnet-mgcb 3.8.4.1, 3.8.5 and 3.8.6 by validation/MgcbPlugin). -->
     <RootNamespace>ShadowDusk.ContentPipeline</RootNamespace>
 
     <!-- Single-TFM net8.0 on purpose (like ShadowDusk.Cli). This assembly is loaded by
          MGCB's OWN process via Assembly.LoadFrom, so its TFM must be one every supported
-         MGCB host can load. `dotnet mgcb` is a net8.0 tool at 3.8.2.1105 through 3.8.5, and a
+         MGCB host can load. `dotnet mgcb` is a net8.0 tool at 3.8.2.1105 through 3.8.6, and a
          net8.0 assembly loads on a net10.0 host too - a net10.0 build would not load on the
          net8.0 hosts. -->
 
