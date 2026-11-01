@@ -74,6 +74,16 @@ internal static class Vkd3dCompileContract
         LineDirectivePattern.Replace(hlslSource, string.Empty);
 
     /// <summary>
+    /// The refusal EVERY host returns, before any native call, for a source the pinned
+    /// vkd3d-shader cannot survive (<see cref="Vkd3dInputGuard"/>): a cast to <c>void</c>, which
+    /// crashes the process (issue #448, <c>SD0239</c>). Null when vkd3d may compile it. Decided
+    /// on the request's own <c>HlslSource</c>, never on the prepared text, and it changes nothing
+    /// vkd3d is given.
+    /// </summary>
+    public static ShaderError? CheckSource(string hlslSource, string sourceFileName) =>
+        Vkd3dInputGuard.Check(hlslSource, sourceFileName);
+
+    /// <summary>
     /// Resolves the shader profile for a request: <see cref="D3DCompileRequest.ProfileOverride"/>
     /// when set (the FNA SM ≤ 3 path), otherwise SM5 derived from the stage
     /// (vs_5_0/ps_5_0 — the MonoGame DX11 path).

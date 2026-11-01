@@ -132,6 +132,12 @@ public sealed class Vkd3dShaderCompiler : IDxbcShaderCompiler
         // back through request.HlslSource's directives (issue #202). The browser backend
         // sends the very same prepared string, so the two hosts cannot hand vkd3d different
         // text. Never transform the source here.
+        //
+        // Before it: a source vkd3d cannot survive (a crash or a hang inside one native call)
+        // is refused, the same way on both hosts (Vkd3dCompileContract.CheckSource).
+        if (Vkd3dCompileContract.CheckSource(request.HlslSource, request.SourceFileName) is { } refused)
+            return Result<PlatformBlob, ShaderError>.Fail(refused);
+
         string vkd3dSource = Vkd3dCompileContract.PrepareSource(request.HlslSource);
 
         // On a large-stack worker (issue #306): vkd3d recurses per nesting level too. Measured

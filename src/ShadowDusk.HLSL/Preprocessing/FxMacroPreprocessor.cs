@@ -35,7 +35,7 @@ namespace ShadowDusk.HLSL.Preprocessing;
 /// error carrying the file and line, never a guess. Callers only surface that error for source
 /// DXC itself accepted, so a genuinely malformed shader still reports DXC's own diagnostic.</para>
 /// </summary>
-internal sealed class FxMacroPreprocessor
+internal sealed partial class FxMacroPreprocessor
 {
     /// <summary>The registered diagnostic code for "the preprocessed view could not be built".</summary>
     public const string ErrorCode = "SD0009";
