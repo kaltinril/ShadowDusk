@@ -51,6 +51,11 @@ that loads and renders identically to `mgfxc`'s in the real MonoGame/KNI runtime
   FNA, a cast to `void` (`SD0239`) and a self-referential or recursive macro (`SD0240`) are refused before vkd3d,
   which crashed and hung on them; on the DXC targets an invalid `#pragma pack_matrix` argument is refused (`SD0241`)
   before DXC, which crashed on it.
+- **DirectX 11 legacy samplers (issues #443, #441, #447).** A `sampler2D` passed to a function and also read
+  directly compiles (vkd3d failed with `E5005`; d3dcompiler wrote two records) with one record per sampler, as `mgfxc`
+  does, and such functions now compile on OpenGL, Vulkan and DirectX 12 too; a natively compiled legacy sampler keeps
+  `mgfxc`'s sampler slot (a macro-read sampler had the texture's slot, so one sampler's state applied to another); and
+  a direct legacy texture use or an include-declared sampler warns `SD0230` instead of a silently wrong record.
 - **KNIFX on OpenGL refuses SM6 profiles with `SD0015` (issue #439)**, as KNI's own pipeline does: the 6.0 record it
   wrote could never load on desktop KNI.
 - **The content importer failed every MonoGame 3.8.6 content build.** MonoGame 3.8.6 removed
