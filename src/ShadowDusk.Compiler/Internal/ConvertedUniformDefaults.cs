@@ -130,19 +130,71 @@ internal static class ConvertedUniformDefaults
 
     /// <summary>
     /// GLSL member name to HLSL name for every member of every uniform block that pairs with a
-    /// reflected constant buffer, and every reflected member's HLSL name. A block pairs with the
-    /// reflected buffer whose name it carries (DXC names the struct <c>type.NAME</c> and the
-    /// variable <c>NAME</c>; SPIRV-Cross spells them <c>type_NAME</c> and <c>NAME</c>, punctuation
-    /// replaced) and whose member count it has; failing that, blocks and buffers pair in order when
-    /// every count agrees. A block that pairs with nothing maps nothing.
+    /// reflected constant buffer (<see cref="PairBlocks"/>), and every reflected member's HLSL name.
+    /// A block that pairs with nothing maps nothing.
     /// </summary>
     private static (IReadOnlyDictionary<string, string> HlslNameOf, IReadOnlyList<string> Reflected) PairMembers(
         string glsl, ReadOnlyMemory<byte> spirv)
     {
         var map = new Dictionary<string, string>(StringComparer.Ordinal);
+        if (PairBlocks(glsl, spirv) is not var (blocks, reflected))
+            return (map, []);
+
+        foreach ((IReadOnlyList<string> members, ConstantBufferReflection? buffer) in blocks)
+        {
+            if (buffer is null)
+                continue;
+            for (int m = 0; m < members.Count; m++)
+            {
+                if (members[m].Length > 0)
+                    map[members[m]] = buffer.Variables[m].Name;
+            }
+        }
+        return (map, reflected);
+    }
+
+    /// <summary>
+    /// The HLSL name of every member of every uniform block in SPIRV-Cross's GLSL, block by block
+    /// and member by member in declaration order: the order the MonoGame GL rewriter lays the
+    /// <c>{vs,ps}_uniforms_vec4[]</c> registers out in (issues #438, #440). Positional, never keyed
+    /// by the GLSL spelling: SPIRV-Cross renames a member GLSL cannot take (<c>noise</c> to
+    /// <c>_noise</c>, <c>input</c> to <c>_input_1</c> beside a real <c>_input</c>), and the renamed
+    /// spelling can equal another stage's real parameter, so a name join binds it to the wrong
+    /// one. Null when the SPIR-V cannot be reflected or any block pairs with no reflected buffer;
+    /// the caller then keeps the GLSL names and its name join.
+    /// </summary>
+    /// <param name="glsl">SPIRV-Cross's GLSL, before the rewrite (its uniform blocks intact).</param>
+    /// <param name="spirv">The SPIR-V DXC produced, whose <c>OpMemberName</c>s are the HLSL names.</param>
+    internal static IReadOnlyList<string>? HlslMemberNamesInBlockOrder(string glsl, ReadOnlyMemory<byte> spirv)
+    {
+        if (PairBlocks(glsl, spirv) is not var (blocks, _))
+            return null;
+        var names = new List<string>();
+        foreach ((IReadOnlyList<string> members, ConstantBufferReflection? buffer) in blocks)
+        {
+            if (buffer is null)
+                return null;
+            names.AddRange(buffer.Variables.Select(v => v.Name));
+        }
+        return names;
+    }
+
+    /// <summary>
+    /// Every uniform block of SPIRV-Cross's GLSL in declaration order, with its member names and
+    /// the reflected constant buffer it pairs with (null when none), plus every reflected member's
+    /// HLSL name; null when the SPIR-V cannot be reflected. A block pairs with the reflected buffer
+    /// whose name it carries (DXC names the struct <c>type.NAME</c> and the variable <c>NAME</c>;
+    /// SPIRV-Cross spells them <c>type_NAME</c> and <c>NAME</c>, punctuation replaced) and whose
+    /// member count it has; failing that, blocks and buffers pair in order when every count agrees.
+    /// A paired block's members and its buffer's variables correspond index for index: SPIRV-Cross
+    /// keeps the member order.
+    /// </summary>
+    private static (IReadOnlyList<(IReadOnlyList<string> Members, ConstantBufferReflection? Buffer)> Blocks, IReadOnlyList<string> Reflected)?
+        PairBlocks(string glsl, ReadOnlyMemory<byte> spirv)
+    {
         Result<ReflectedEffect, ShaderError> reflection = new SpirvReflector().Reflect(spirv);
         if (reflection.IsFailure)
-            return (map, []);
+            return null;
 
         IReadOnlyList<ConstantBufferReflection> buffers = reflection.Value.ConstantBuffers;
         var reflected = buffers.SelectMany(b => b.Variables.Select(v => v.Name)).ToList();
@@ -159,9 +211,10 @@ internal static class ConvertedUniformDefaults
             .ToList();
 
         var used = new HashSet<int>();
-        var pairs = new List<(List<string> Glsl, ConstantBufferReflection Buffer)>();
-        foreach (var block in blocks)
+        var paired = new ConstantBufferReflection?[blocks.Count];
+        for (int k = 0; k < blocks.Count; k++)
         {
+            var block = blocks[k];
             int match = -1;
             for (int b = 0; b < buffers.Count && match < 0; b++)
             {
@@ -174,27 +227,18 @@ internal static class ConvertedUniformDefaults
             if (match >= 0)
             {
                 used.Add(match);
-                pairs.Add((block.Members, buffers[match]));
+                paired[k] = buffers[match];
             }
         }
 
-        if (pairs.Count < blocks.Count && blocks.Count == buffers.Count
+        if (paired.Any(b => b is null) && blocks.Count == buffers.Count
             && blocks.Select(b => b.Members.Count).SequenceEqual(buffers.Select(b => b.Variables.Count)))
         {
-            pairs.Clear();
             for (int b = 0; b < blocks.Count; b++)
-                pairs.Add((blocks[b].Members, buffers[b]));
+                paired[b] = buffers[b];
         }
 
-        foreach ((List<string> members, ConstantBufferReflection buffer) in pairs)
-        {
-            for (int m = 0; m < members.Count; m++)
-            {
-                if (members[m].Length > 0)
-                    map[members[m]] = buffer.Variables[m].Name;
-            }
-        }
-        return (map, reflected);
+        return (blocks.Select((b, k) => ((IReadOnlyList<string>)b.Members, paired[k])).ToList(), reflected);
     }
 
     private static string Letters(string name) => new(name.Where(char.IsLetterOrDigit).ToArray());

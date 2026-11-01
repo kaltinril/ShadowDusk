@@ -127,6 +127,12 @@ public sealed class Issue425GlUniformPackingTests
             "_noise + noise * 2 + c",
             [("_noise", 0), ("noise", 1), ("c", 2)],
             ["ps_uniforms_vec4[0]", "ps_uniforms_vec4[1]", "ps_uniforms_vec4[2]"]),
+        // Issue #440: `input` beside a real `_input` is renamed `_input_1`; it was an internal SD0012.
+        ["UnderscoreTwin"] = new(
+            "float _input;\nfloat input;\nfloat4 c;",
+            "float4(_input, input, 0, 1) + c",
+            [("_input", 0), ("input", 1), ("c", 2)],
+            ["ps_uniforms_vec4[0].x", "ps_uniforms_vec4[1].x"]),
     };
 
     public static TheoryData<string> ReservedWordShapes() => new(s_reservedWordShapes.Keys);
@@ -181,32 +187,30 @@ public sealed class Issue425GlUniformPackingTests
     }
 
     /// <summary>
-    /// With two cbuffers the rewriter's merged register order is not reconstructed, so a renamed
-    /// uniform there cannot be proven to map to one parameter: the compile fails loudly with SD0012
-    /// on both reflection sources rather than guessing.
+    /// A renamed uniform in a stage with two cbuffers. It used to fail with SD0012 (the
+    /// declaration-order bridge only proves a single cbuffer); the layout is now paired with DXC's
+    /// SPIR-V member names by position (issues #438, #440), block by block, so it maps on both
+    /// reflection sources.
     /// </summary>
     [Fact]
-    public async Task ReservedWordUniform_InATwoCbufferStage_FailsLoudlyWithSd0012()
+    public async Task ReservedWordUniform_InATwoCbufferStage_MapsByTheSpirvMemberNames()
     {
         string source = PixelSource(new Shape(
             "cbuffer A { float g; float3 noise; };\ncbuffer B { float4 c; };",
             "float4(noise * g, 1) + c", [], []));
 
-        foreach (Func<IShaderReflector>? factory in new Func<IShaderReflector>?[] { null, () => new SpirvReflector() })
-        {
-            using var cts = new CancellationTokenSource(TestBudget.Compile);
-            var result = await new EffectCompiler(reflectorFactory: factory).CompileAsync(source, new CompilerOptions
-            {
-                Target = PlatformTarget.OpenGL,
-                SourceFileName = "Issue425.fx",
-            }, cts.Token);
+        byte[] desktop = await CompileAsync(source);
+        byte[] spirvReflected = await CompileAsync(source, reflectorFactory: () => new SpirvReflector());
 
-            result.IsFailure.ShouldBeTrue();
-            ShaderError error = result.Error.Single(e => e.Severity == ShaderErrorSeverity.Error);
-            error.Code.ShouldBe("SD0012");
-            error.Message.ShouldContain("'_noise'", Case.Sensitive);
-            error.Message.ShouldContain("reserved word", Case.Sensitive);
+        foreach (byte[] bytes in new[] { desktop, spirvReflected })
+        {
+            MgfxBlobReader reader = MgfxBlobReader.Parse(bytes);
+            AssertRegisters(reader, "ps_uniforms_vec4", [("g", 0), ("noise", 1), ("c", 2)]);
+            string glsl = Encoding.UTF8.GetString(reader.Shaders.Single(s => !s.IsVertex).Bytecode);
+            glsl.ShouldContain("uniform vec4 ps_uniforms_vec4[3];", Case.Sensitive);
+            glsl.ShouldContain("ps_uniforms_vec4[1].xyz", Case.Sensitive);
         }
+        spirvReflected.ShouldBe(desktop);
     }
 
     private static string PixelSource(Shape shape) =>

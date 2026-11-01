@@ -237,20 +237,22 @@ public sealed class ConverterUniformDefaultsTests
     /// <summary>
     /// Every SPIRV-Cross rename is paired back to its HLSL global through the SPIR-V member names,
     /// never guessed from the spelling: a double underscore collapsed, a <c>gl_</c> prefix fixed
-    /// up, and a reserved word that clashes with another global's name.
+    /// up, and a reserved word that clashes with another global's name. The MGFX side is compiled
+    /// for OpenGL: the clash used to fail there with an internal SD0012 (issue #440), so it was
+    /// checked against DirectX only.
     /// </summary>
     [Theory]
-    [InlineData("float my__val = 0.5;", "my__val", 0.5f, true)]
-    [InlineData("float gl_Thing = 0.5;", "gl_Thing", 0.5f, true)]
-    [InlineData("float _input = 0.25;\nfloat input = 0.5;", "_input", 0.25f, false)]
-    [InlineData("float _input = 0.25;\nfloat input = 0.5;", "input", 0.5f, false)]
-    public async Task Sksl_SpirvCrossRenames_ArePairedByTheSpirvMemberNames(string declarations, string hlslName, float expected, bool onGl)
+    [InlineData("float my__val = 0.5;", "my__val", 0.5f)]
+    [InlineData("float gl_Thing = 0.5;", "gl_Thing", 0.5f)]
+    [InlineData("float _input = 0.25;\nfloat input = 0.5;", "_input", 0.25f)]
+    [InlineData("float _input = 0.25;\nfloat input = 0.5;", "input", 0.5f)]
+    public async Task Sksl_SpirvCrossRenames_ArePairedByTheSpirvMemberNames(string declarations, string hlslName, float expected)
     {
         string use = string.Join(" + ", Regex.Matches(declarations, @"float (\w+) =").Select(m => m.Groups[1].Value));
         string fx = Fx(declarations, use);
 
         SkslConversion conversion = Sksl(fx);
-        IReadOnlyList<ParameterReflection> mgfx = await MgfxParameters(fx, onGl);
+        IReadOnlyList<ParameterReflection> mgfx = await MgfxParameters(fx, onGl: true);
 
         mgfx.Single(p => p.Name == hlslName).DefaultValue.ShouldBe([expected]);
         conversion.Uniforms.Count(u => u.DefaultValue is { } d && d.SequenceEqual([expected])).ShouldBe(1,

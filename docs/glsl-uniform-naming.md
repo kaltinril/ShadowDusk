@@ -87,6 +87,17 @@ other targets keep the unmodified SPIRV-Cross dialect. The pixel-stage transform
 - The cbuffer is **named `ps_uniforms_vec4`**, with one 16-byte register per free parameter,
   register-aligned by size (SM 3.0 constant-register layout), so `Effect.Parameters[name]
   .SetValue(…)` lands in the right `vec4` slot.
+  - **Each register joins its parameter by the HLSL name, paired by position** (issues #438,
+    #440). SPIRV-Cross renames a member GLSL cannot take (`noise` → `_noise`, `my__val` →
+    `my_val`, `input` → `_input_1` beside a real `_input`), so the rewriter's layout is renamed
+    back from DXC's SPIR-V `OpMemberName`s (the HLSL names): blocks pair with the reflected
+    buffers by name and member count (in order when every count agrees), and members by index,
+    since SPIRV-Cross keeps the member order. A join on the GLSL spelling bound a PS's renamed
+    `noise` to the VS's real `_noise` parameter (`SetValue("noise")` then reached only a dead
+    register) and could not map a rename in a stage with two cbuffers. Only when that pairing
+    declines does the old name join plus the single-cbuffer declaration-order bridge apply,
+    and failing both is `SD0012`. The same pairing gives the SkSL and raylib converters their
+    defaults (issue #435).
 - The per-shader sampler table has **one record per combined (texture, sampler) pair** — the same
   list as the sampler uniforms the emitted GLSL declares. That is the only list that can be
   correct, because the GL runtime resolves each record by its *uniform name*. Each record carries

@@ -1338,13 +1338,15 @@ internal sealed class CompilationPipeline
                 foreach (MonoGameGlslUniform u in layout)
                 {
                     sizeRegisters = Math.Max(sizeRegisters, u.BaseRegister + u.RegisterCount);
-                    // Primary: join by NAME. Every shader that compiles today resolves
-                    // here, so it never reaches the fallback below and its bytes are
-                    // unchanged (the byte-identity corpus stays green by construction).
+                    // Primary: join by NAME. The layout's names are already the HLSL names,
+                    // paired by position from DXC's SPIR-V member names (WithHlslNames,
+                    // issues #438/#440), so a renamed uniform resolves here too and can no
+                    // longer bind to another stage's parameter that shares its GLSL spelling.
                     int paramIndex = IndexOfParam(allParameters, u.Name);
                     if (paramIndex < 0)
                     {
-                        // Fallback (B10): SPIRV-Cross renames a free uniform whose name
+                        // Fallback (B10), reached only when the positional pairing declined
+                        // (a block that pairs with no reflected buffer): SPIRV-Cross renames a free uniform whose name
                         // collides with a GLSL reserved word (e.g. `noise` -> `_noise`,
                         // legal+required GLSL; also underscore runs and collisions), so the
                         // GLSL layout's name no longer
@@ -1369,9 +1371,10 @@ internal sealed class CompilationPipeline
                                      "effect parameter: the GLSL uniform layout and the reflected " +
                                      "parameter list diverged. SPIRV-Cross renames some uniforms " +
                                      "(a GLSL reserved word, noise -> _noise; a run of underscores, " +
-                                     "my__val -> my_val; a name collision, _noise_1); a renamed " +
-                                     "uniform can only be mapped back when the stage's uniforms are " +
-                                     "all loose globals or in one cbuffer, so rename it otherwise"), runWarnings);
+                                     "my__val -> my_val; a name collision, _noise_1), which are " +
+                                     "mapped back through DXC's SPIR-V member names by position; " +
+                                     "here the GLSL uniform blocks did not pair with the SPIR-V " +
+                                     "constant buffers. Please report the shader shape"), runWarnings);
                     paramIndices.Add(paramIndex);
                     paramOffsets.Add((ushort)(u.BaseRegister * 16));
                     backedParamIndices.Add(paramIndex);
@@ -3020,8 +3023,9 @@ internal sealed class CompilationPipeline
                     // The shader's uniform register layout — the pipeline builds the
                     // per-shader {vs,ps}_uniforms_vec4 cbuffer record from THIS, so
                     // the .mgfx offsets and the GLSL indices share one allocation
-                    // (Phase 43 F4/F5/F6).
-                    uniforms = rewritten.Uniforms;
+                    // (Phase 43 F4/F5/F6). Each entry is renamed to its HLSL global by
+                    // POSITION (issues #438, #440), so the join never trusts SPIRV-Cross's spelling.
+                    uniforms = WithHlslNames(rewritten.Uniforms, transpileResult.Value.Text, spirvResult.Value.Bytes);
                     if (stage == ShaderStage.Vertex && rewritten.Attributes.Count > 0)
                     {
                         // Map the rewriter's discovered attributes (vs_v{k} + usage/index)
@@ -3677,6 +3681,28 @@ internal sealed class CompilationPipeline
                 m => $"SamplerState{m.Groups[1].Value}{sampler} : register(s{slot});");
         }
         return text;
+    }
+
+    /// <summary>
+    /// The rewriter's uniform layout with each entry renamed to the HLSL global it is (issues #438,
+    /// #440): paired by POSITION with DXC's SPIR-V member names
+    /// (<see cref="ConvertedUniformDefaults.HlslMemberNamesInBlockOrder"/>), since the rewriter lays
+    /// the registers out block by block, member by member, in the GLSL's declaration order. A
+    /// renamed member (<c>noise</c> to <c>_noise</c>) then joins its own parameter, never another
+    /// stage's that happens to be spelled <c>_noise</c>. When the pairing declines, or its count
+    /// disagrees with the layout's, the layout keeps its GLSL names and the name join plus the
+    /// declaration-order bridge apply as before. A member SPIRV-Cross did not rename keeps its name,
+    /// so every such shader's bytes are unchanged.
+    /// </summary>
+    private static IReadOnlyList<MonoGameGlslUniform> WithHlslNames(
+        IReadOnlyList<MonoGameGlslUniform> layout, string spirvCrossGlsl, ReadOnlyMemory<byte> spirv)
+    {
+        if (layout.Count == 0)
+            return layout;
+        IReadOnlyList<string>? names = ConvertedUniformDefaults.HlslMemberNamesInBlockOrder(spirvCrossGlsl, spirv);
+        if (names is null || names.Count != layout.Count)
+            return layout;
+        return layout.Select((u, k) => u.Name == names[k] ? u : u with { Name = names[k] }).ToList();
     }
 
     private static int IndexOfParam(IReadOnlyList<ParameterReflection> parameters, string name)
