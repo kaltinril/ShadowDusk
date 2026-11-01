@@ -29,7 +29,10 @@ to nuget.org, and attaches self-contained CLI binaries for each RID to a GitHub 
    (`NuGet/login`), so there is no long-lived key to store, rotate, or let expire (nuget.org caps API keys at 30 days and expired every longer-lived key on 2026-11-01, which
    is how the `NUGET_API_KEY` secret this replaced failed the first 0.24.0 push with a 403). On nuget.org: your profile → **Trusted Publishing** → create a policy
    owned by `Kaltinril` with **Repository Owner** `kaltinril`, **Repository** `ShadowDusk`,
-   **Workflow File** `release.yml` (file name only), **Environment** empty. The `user:` in
+   **Workflow File** `release.yml` (file name only), **Environment** empty, scope **Push only
+   new package versions** (glob `ShadowDusk.*`), unlist/relist off. That scope cannot create a
+   package ID: the release that adds an 11th package needs the policy switched to "Push new
+   packages and package versions" for that one run, or the new ID pushed once by hand first. The `user:` in
    `release.yml`'s `NuGet/login` step must be that owner's profile name. A policy on a
    private repo starts "temporarily active" for 7 days and becomes permanent at its first
    successful publish; this repo is public. A 403 at **NuGet Push** now means the policy is
