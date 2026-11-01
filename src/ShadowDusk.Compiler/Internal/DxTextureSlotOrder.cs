@@ -132,7 +132,14 @@ internal static class DxTextureSlotOrder
     /// parameters, <c>cbuffer</c> blocks) is never matched; a declaration in an <c>#if</c> branch the
     /// compile does not take is pinned too, which is harmless.
     /// </summary>
-    public static string? Pin(string text, IReadOnlyDictionary<string, int> plan)
+    /// <param name="text">The compiled source.</param>
+    /// <param name="plan">The slot of each resource.</param>
+    /// <param name="natives">Legacy samplers the backend compiled natively (issue #441: read through a
+    /// macro, or declared in an #include): no texture declaration carries their name, so they cannot be
+    /// pinned and are left to take the slot the others leave them. The caller checks that the pinned
+    /// compile lands exactly on the plan, so a native sampler that does not is a refusal, never a
+    /// guess.</param>
+    public static string? Pin(string text, IReadOnlyDictionary<string, int> plan, IReadOnlySet<string>? natives = null)
     {
         bool[] topLevel = TopLevelCode(text);
         foreach ((string name, int slot) in plan.OrderBy(p => p.Key, StringComparer.Ordinal))
@@ -144,6 +151,8 @@ internal static class DxTextureSlotOrder
                 @"(?::\s*register\s*\(\s*(?:[vp]s\w*\s*,\s*)?[tT]\d+\s*(?:,\s*space\d+\s*)?\)\s*)?(?<end>[;{])");
 
             var anyMatches = any.Matches(text).Where(m => topLevel[m.Index]).ToList();
+            if (anyMatches.Count == 0 && natives is not null && natives.Contains(name))
+                continue;
             if (anyMatches.Count == 0)
                 return null;
             var pinMatches = pinnable.Matches(text).Where(m => topLevel[m.Index]).ToList();

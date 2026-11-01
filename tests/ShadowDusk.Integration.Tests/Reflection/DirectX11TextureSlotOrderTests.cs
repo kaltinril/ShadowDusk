@@ -84,13 +84,13 @@ public sealed class DirectX11TextureSlotOrderTests
     /// <c>Sample</c>, <c>U64</c> <c>SampleLevel</c>, <c>U65</c>, <c>U67</c> the sprite template with
     /// <c>GetDimensions</c>): <c>mgfxc</c> has <c>A@t0 Tb@t1 Tb@t2</c>, ShadowDusk one <c>Tb</c>
     /// record, and these warn <c>SD0230</c> (pre-existing on <c>main</c>, which warned nothing).</item>
-    /// <item><c>A02_DeclListLegacyReverse</c>: <c>sampler2D A, B;</c> gets its SAMPLER slots in
-    /// another order (texture slots match; same on <c>main</c> before this change).</item>
     /// <item><c>A01_TexArrayPlusLegacy</c>: a texture array beside a legacy sampler is not modelled;
     /// the compile warns <c>SD0230</c>.</item>
-    /// <item><c>B02_MacroTexture</c>: legacy samplers a macro declares are compiled natively by the
-    /// backend (the raw pre-parse cannot see them), which names the parameter after the sampler
-    /// and ignores the sampler order; the TEXTURE slots match (pre-existing, <c>project_facts.md</c>).</item>
+    /// <item><c>B02_MacroTexture</c>: legacy <c>sampler_state</c> samplers a macro declares are
+    /// compiled natively by the backend (the raw pre-parse cannot see them), which names the
+    /// parameter after the sampler (<c>ASamp</c>), where <c>mgfxc</c> names it after the texture
+    /// (<c>ATex</c>); the texture and sampler slots match (issue #441 joined the native sampler by
+    /// its RDEF name).</item>
     /// <item><c>K43_PassedLodAndModern</c>: a <c>tex2Dlod</c> read (through a sampler parameter here)
     /// becomes a call of the helper the rewrite defines, which passes the texture as a value; the
     /// walk does not model the helper and warns <c>SD0230</c> (the same for a global sampler).</item>
@@ -101,7 +101,7 @@ public sealed class DirectX11TextureSlotOrderTests
     /// </summary>
     private static readonly HashSet<string> KnownDivergence = new HashSet<string>(StringComparer.Ordinal)
     {
-        "TwoSamplersShareOneTexture", "S13_ModernSampledAndStateNamed", "A02_DeclListLegacyReverse", "A01_TexArrayPlusLegacy",
+        "TwoSamplersShareOneTexture", "S13_ModernSampledAndStateNamed", "A01_TexArrayPlusLegacy",
         "B02_MacroTexture", "K43_PassedLodAndModern",
         "U60_StateTextureGetDimsUsed", "U62_StateTextureLoadFirst", "U63_StateTextureSampleKept", "U64_StateTextureSampleLevelKept",
         "U65_StateTextureGetDimsAfter", "U67_SpriteTemplateGetDims",
@@ -253,6 +253,24 @@ public sealed class DirectX11TextureSlotOrderTests
         Tables(Golden("K14_PassedAndRead")).ShouldHaveSingleItem().ShouldBe("ps: A@t1s0 B@t0s1");
     }
 
+    [Theory]
+    [InlineData("N01_MacroRead", DxbcBackend.Vkd3d)]
+    [InlineData("N01_MacroRead", DxbcBackend.D3DCompiler)]
+    [InlineData("N02_LineContinuedMacroRead", DxbcBackend.Vkd3d)]
+    [InlineData("N02_LineContinuedMacroRead", DxbcBackend.D3DCompiler)]
+    public async Task ASamplerReadThroughAMacro_KeepsItsOwnSamplerSlot(string shape, DxbcBackend backend)
+    {
+        // Issue #441 (probes P06, P18): `sampler2D A; sampler2D B;` read B first through a macro.
+        // The sampler the rewrite does not reach is compiled natively, and the record fell back to
+        // its texture slot: A s1 B s0 (P06), B s0 beside A's s0 (P18). mgfxc 3.8.4.1: A s0, B s1,
+        // which is also what both backends' own RDEF says.
+        if (backend == DxbcBackend.D3DCompiler && !OperatingSystem.IsWindows())
+            return; // the d3dcompiler_47 oracle is Windows-only
+        (MgfxBlobReader subject, _) = await CompileAsync(shape, backend);
+        Tables(subject).ShouldHaveSingleItem().ShouldBe("ps: A@t1s0 B@t0s1");
+        Tables(Golden(shape)).ShouldHaveSingleItem().ShouldBe("ps: A@t1s0 B@t0s1");
+    }
+
     [Fact]
     public async Task BloomCombine_PutsTheSpriteSamplerOnT0()
     {
@@ -316,7 +334,8 @@ public sealed class DirectX11TextureSlotOrderTests
         // `sampler SB = sampler_state { Texture = <TexB>; }` lives in a header the raw pre-parse does
         // not rewrite; the backend compiles it natively and its RDEF texture is named `SB`, while the
         // preprocessed view knows the texture as `TexB`. mgfxc 3.8.4.1: TexB@t0s1 SA@t1s0 (the
-        // sampler slot and the parameter name are a separate, pre-existing native-path gap).
+        // parameter name is a separate, pre-existing native-path gap; the sampler slot is the native
+        // sampler's own, joined by its RDEF name since issue #441).
         const string main = """
             sampler2D SA;
             #include "inc_hdr.fxh"
@@ -340,6 +359,9 @@ public sealed class DirectX11TextureSlotOrderTests
         var slots = r.Samplers.ToDictionary(x => r.Parameters[x.Parameter].Name, x => (int)x.TextureSlot);
         slots.Values.Order().ShouldBe([0, 1]);
         slots["SA"].ShouldBe(1, "the header's SB is read first, so it takes t0 as in mgfxc");
+        var samplerSlots = r.Samplers.ToDictionary(x => r.Parameters[x.Parameter].Name, x => (int)x.SamplerSlot);
+        samplerSlots["SA"].ShouldBe(0, "mgfxc: SA s0, declared first");
+        samplerSlots.Single(p => p.Key != "SA").Value.ShouldBe(1, "mgfxc: the header's sampler on s1 (it fell back to its texture slot, s0, before #441)");
     }
 
     [Fact]

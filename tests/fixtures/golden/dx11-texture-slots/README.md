@@ -44,6 +44,15 @@ function (`K40`), `sampler_state` samplers (`K41`), explicit sampler registers (
 under a branch (`K44`), and a `tex2Dlod` through the parameter beside a modern texture (`K43`,
 which warns: the `tex2Dlod` helper is not walked, for a global sampler either).
 
+`N01`..`N06`, `N08` (2026-10-31, issue #441) read legacy samplers through a macro
+(`#define RD(s,c) tex2D(s,c)`), which the raw pre-parse cannot see, so the backend compiles them
+natively under the sampler's own name: a plain and a line-continued macro (`N01`, `N02`, the
+issue's P06 and P18), one sampler rewritten beside one native (`N03`), beside a modern pair with
+and without a sampler register (`N04`, `N08`), an explicit sampler register (`N05`) and an unused
+sampler declared first (`N06`). fxc gives legacy SAMPLER slots in declaration order, and both
+backends' native RDEF already agrees; the record must take the native sampler's slot, not its
+texture's.
+
 What they pin (fxc's rule, per compiled shader): every explicit `register(tN)` on a `t`-register
 declaration takes `tN` out of circulation even when nothing reads the resource, and a modern
 resource read directly keeps it; then every legacy sampler's texture in the order the shader FIRST

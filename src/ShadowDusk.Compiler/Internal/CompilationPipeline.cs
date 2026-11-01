@@ -1592,10 +1592,19 @@ internal sealed class CompilationPipeline
                         // mgfxc's record carries the sampler's own DXBC binding, which is not the
                         // texture's when a register or a modern SamplerState moved it). Otherwise
                         // slot first (the 1:1 modern shape), then the sole shared sampler.
+                        // A legacy sampler the rewrite did not reach (read through a macro, declared
+                        // through one or in an #include) is compiled natively: its RDEF texture and
+                        // sampler both carry the SAMPLER's name, which no modern pair can (HLSL has
+                        // one namespace for both), and its sampler slot is fxc's own (issue #441:
+                        // mgfxc A s0, B s1 for `sampler2D A; sampler2D B;` read B first through a
+                        // macro, and both backends' RDEF agree). Joined by that name before the
+                        // fallback below, which took the TEXTURE slot and could put two samplers'
+                        // records on one sampler slot.
                         SamplerReflection? legacySamp = directX
                             ? samplerRefs.FirstOrDefault(s =>
-                                legacySamplerTextureView.TryGetValue(s.Name, out string? t)
-                                && string.Equals(t, tex.Name, StringComparison.Ordinal))
+                                  legacySamplerTextureView.TryGetValue(s.Name, out string? t)
+                                  && string.Equals(t, tex.Name, StringComparison.Ordinal))
+                              ?? samplerRefs.FirstOrDefault(s => string.Equals(s.Name, tex.Name, StringComparison.Ordinal))
                             : null;
                         SamplerReflection? matchedSamp =
                             legacySamp
@@ -3632,7 +3641,11 @@ internal sealed class CompilationPipeline
             return null;
 
         described = " (" + string.Join(", ", plan.OrderBy(p => p.Value).Select(p => $"{p.Key} t{p.Value}")) + ")";
-        string? pinnedText = DxTextureSlotOrder.Pin(request.HlslSource, plan);
+        // A natively compiled legacy sampler (its RDEF texture carries the sampler's own name) has no
+        // texture declaration to pin; it takes the slot the pinned resources leave, checked below.
+        var natives = new HashSet<string>(
+            bindings.Select(b => b.Name).Where(n => nativeSamplers.Contains(n) && !inputs.LegacyTextures.Contains(n)), StringComparer.Ordinal);
+        string? pinnedText = DxTextureSlotOrder.Pin(request.HlslSource, plan, natives);
         if (pinnedText is null)
             return (null, Unplaced("a declaration could not be given an explicit register (declared through a macro or in an #include, in a declarator list, as an array, or with an annotation)"));
 
