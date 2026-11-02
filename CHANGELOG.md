@@ -14,9 +14,24 @@ that loads and renders identically to `mgfxc`'s in the real MonoGame/KNI runtime
 
 ### Added
 
+- `SlangCompiler.SlangcTimeout` (default `SlangCompiler.DefaultSlangcTimeout`, 60 seconds;
+  `Timeout.InfiniteTimeSpan` disables it): how long one slangc child process may run before
+  ShadowDusk kills it. See the fix below (issue #469).
+
 ### Changed
 
 ### Fixed
+
+- **`ShadowDusk.Slang`: a slangc that never exits fails the compile as `SD0645` instead of hanging
+  `CompileAsync` forever (issue #469).** The process route waited on the slangc child with a bare
+  `WaitForExit()`, no timeout and no cancellation; the integration concurrency test once sat at its
+  2 minute watchdog on `windows-latest` with 3 of 24 Slang compiles outstanding. A run now has a
+  timeout (`SlangcTimeout`, 60 s by default: a run takes well under a second on a desktop and a few
+  seconds on a starved runner), after which the child and its process tree are killed and the compile
+  fails with `SD0645` naming the run (slangc's path, entry point and stage). The compile's
+  `CancellationToken` kills a running slangc the same way and surfaces as `OperationCanceledException`.
+  The concurrency test's watchdog message now names the Slang compiles in flight, so a recurrence can
+  be told apart from runner slowness. No shader output changes.
 
 ## [0.24.0] - 2026-10-31
 

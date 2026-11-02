@@ -135,7 +135,7 @@ public sealed class SlangHoistedNamePassTests
                 downstream,
                 () => new SlangCompiler.SlangcLocation(null, ScriptedSlangc.FakePath),
                 prepareSlangc: path => path,
-                runSlangc: (_, _, text, arguments) => Run(text, arguments));
+                runSlangc: (_, _, text, arguments, _) => Run(text, arguments));
 
         var result = compiler.Compile(source, Options(PlatformTarget.DirectX));
 

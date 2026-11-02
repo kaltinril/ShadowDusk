@@ -81,10 +81,10 @@ public sealed class SlangHoistedTextureNameTests : IDisposable
                 ? new SlangCompiler.SlangcLocation(reason, null)
                 : new SlangCompiler.SlangcLocation(null, SlangToolPath.Resolve()),
             SlangNativeCache.EnsureRunnableSlangc,
-            (path, directory, text, arguments) =>
+            (path, directory, text, arguments, cancellationToken) =>
             {
                 runs++;
-                return SlangCompiler.RunSlangc(path, directory, text, arguments);
+                return SlangCompiler.RunSlangc(path, directory, text, arguments, SlangCompiler.DefaultSlangcTimeout, cancellationToken);
             });
         var result = compiler.Compile(
             source, new CompilerOptions { Target = target, SourceFileName = "Names.slang", Defines = defines });

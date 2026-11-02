@@ -38,7 +38,7 @@ public sealed class SlangTextureArrayTests
                 ? new SlangCompiler.SlangcLocation(reason, null)
                 : new SlangCompiler.SlangcLocation(null, SlangToolPath.Resolve()),
             SlangNativeCache.EnsureRunnableSlangc,
-            SlangCompiler.RunSlangc);
+            runSlangc: null);
         return compiler.Compile(source, new CompilerOptions { Target = target, SourceFileName = "Arrays.slang" });
     }
 

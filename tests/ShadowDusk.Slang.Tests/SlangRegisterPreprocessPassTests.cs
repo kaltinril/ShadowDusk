@@ -101,7 +101,7 @@ public sealed class SlangRegisterPreprocessPassTests
                 downstream,
                 () => new SlangCompiler.SlangcLocation(null, FakeSlangcPath),
                 prepareSlangc: path => path,
-                runSlangc: (path, _, source, arguments) =>
+                runSlangc: (path, _, source, arguments, _) =>
                 {
                     path.ShouldBe(FakeSlangcPath);
                     return slangc.Run(source, arguments);

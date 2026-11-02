@@ -109,7 +109,8 @@ public sealed class SlangCompilerMergeConflictTests
         public FakeSlangc(IReadOnlyDictionary<string, string> hlslByEntry) => _hlslByEntry = hlslByEntry;
 
         public (int ExitCode, string Stdout, string Stderr) Run(
-            string slangcPath, string workingDirectory, string slangSource, IReadOnlyList<string> arguments)
+            string slangcPath, string workingDirectory, string slangSource, IReadOnlyList<string> arguments,
+            CancellationToken cancellationToken)
         {
             slangcPath.ShouldBe(FakeSlangcPath);
             // The per-entry compile shape of SlangcArguments.Build: '... -entry <name> -stage <stage> -- -'.
