@@ -70,7 +70,7 @@ internal sealed class ScriptedSlangc(
                 downstream,
                 () => new SlangCompiler.SlangcLocation(null, FakePath),
                 prepareSlangc: path => path,
-                runSlangc: (path, _, source, arguments) =>
+                runSlangc: (path, _, source, arguments, _) =>
                 {
                     path.ShouldBe(FakePath);
                     return Run(source, arguments);

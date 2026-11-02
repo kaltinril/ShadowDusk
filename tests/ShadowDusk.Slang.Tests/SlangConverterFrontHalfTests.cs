@@ -46,7 +46,7 @@ public sealed class SlangConverterFrontHalfTests
         new(downstream ?? new RecordingCompiler(),
             () => new SlangCompiler.SlangcLocation(null, FakeSlangcPath),
             prepareSlangc: path => path,
-            runSlangc: (path, _, _, arguments) =>
+            runSlangc: (path, _, _, arguments, _) =>
             {
                 path.ShouldBe(FakeSlangcPath);
                 int entry = arguments.ToList().IndexOf("-entry");
@@ -279,7 +279,7 @@ public sealed class SlangConverterFrontHalfTests
         new(downstream ?? new RecordingCompiler(),
             () => new SlangCompiler.SlangcLocation(null, FakeSlangcPath),
             prepareSlangc: path => path,
-            runSlangc: (_, _, _, arguments) =>
+            runSlangc: (_, _, _, arguments, _) =>
                 arguments.Contains("-entry") ? (0, CombinedSamplerEmission, "")
                 : arguments.Contains("-E") ? (0, CombinedSamplerPreprocessed, "")
                 : throw new InvalidOperationException("unexpected slangc run: " + string.Join(' ', arguments)));

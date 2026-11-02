@@ -48,6 +48,9 @@ public sealed class SlangDxcConcurrencyTests
 
         int slangDone = 0, fxDone = 0;
         var failures = new System.Collections.Concurrent.ConcurrentQueue<string>();
+        // Issue #469: which Slang compile each worker is in, so a hang names the stuck
+        // compile instead of only a count (a real stuck slangc vs a starved runner).
+        var inFlight = new System.Collections.Concurrent.ConcurrentDictionary<int, string>();
 
         static PlatformTarget TargetFor(int w, int i) => ((w + i) & 1) == 0 ? PlatformTarget.OpenGL : PlatformTarget.DirectX;
 
@@ -58,7 +61,9 @@ public sealed class SlangDxcConcurrencyTests
             {
                 int pick = (w + i) % slangSources.Length;
                 var options = new CompilerOptions { Target = TargetFor(w, i), SourceFileName = $"slang{pick}.slang" };
+                inFlight[w] = $"{options.SourceFileName} {options.Target} (iteration {i})";
                 var result = await compiler.CompileAsync(slangSources[pick], options);
+                inFlight.TryRemove(w, out _);
                 if (result.IsFailure)
                     failures.Enqueue($"slang {options.SourceFileName} {options.Target}: " + string.Join("; ", result.Error.Select(e => e.FxcFormattedMessage)));
                 else
@@ -90,8 +95,12 @@ public sealed class SlangDxcConcurrencyTests
         }
         catch (TimeoutException)
         {
+            // A stuck slangc child is no longer a hang here: SlangCompiler kills it after
+            // SlangcTimeout (60 s) and the compile fails as SD0645, which lands in `failures`
+            // below. Reaching this means the hang is in-process (DXC, or the spawn itself).
+            string stuck = inFlight.IsEmpty ? "none" : string.Join(", ", inFlight.Values.OrderBy(v => v, StringComparer.Ordinal));
             throw new ShouldAssertException(
-                $"Slang + .fx compiles hung past 2 min (slang done {slangDone}, fx done {fxDone}): " +
+                $"Slang + .fx compiles hung past 2 min (slang done {slangDone}, fx done {fxDone}; Slang compiles in flight: {stuck}): " +
                 "likely a native deadlock between slangc's process spawn and in-process DXC.");
         }
 

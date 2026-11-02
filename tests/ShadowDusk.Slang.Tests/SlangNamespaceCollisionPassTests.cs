@@ -279,6 +279,6 @@ public sealed class SlangNamespaceCollisionPassTests
                     new ScriptedSlangc.CapturingCompiler(),
                     () => new SlangCompiler.SlangcLocation(null, ScriptedSlangc.FakePath),
                     prepareSlangc: path => path,
-                    runSlangc: (_, _, source, arguments) => Run(source, arguments));
+                    runSlangc: (_, _, source, arguments, _) => Run(source, arguments));
     }
 }

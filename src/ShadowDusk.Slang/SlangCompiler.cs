@@ -99,11 +99,43 @@ public sealed class SlangCompiler
     /// and no preprocess pass can prove whether the author wrote it (issue #292).</summary>
     internal const string RegisterAuthorshipUnprovenCode = "SD0628";
 
+    /// <summary><c>SD0645</c>: the slangc child process did not exit within
+    /// <see cref="SlangcTimeout"/> and was killed (issue #469).</summary>
+    internal const string SlangcTimedOutCode = "SD0645";
+
+    /// <summary>
+    /// The default <see cref="SlangcTimeout"/>: 60 seconds per slangc run. A run takes well
+    /// under a second on a desktop and a few seconds on a starved CI runner (the whole
+    /// Slang test assembly, dozens of runs, took 4 minutes on the slowest measured,
+    /// issue #469), so a run that is still going after a minute is stuck, not slow.
+    /// </summary>
+    public static readonly TimeSpan DefaultSlangcTimeout = TimeSpan.FromSeconds(60);
+
     private readonly IShaderCompiler _downstreamCompiler;
     private readonly Func<SlangcLocation> _locateSlangc;
     private readonly Func<string, string> _prepareSlangc;
-    private readonly SlangcInvoker _runSlangc;
+    private readonly SlangcInvoker? _runSlangc;
     private readonly InProcessSlangc? _inProcessSlangc;
+
+    /// <summary>
+    /// How long one slangc child process may run before ShadowDusk kills it (and its process
+    /// tree) and fails the compile with <c>SD0645</c> (issue #469). Defaults to
+    /// <see cref="DefaultSlangcTimeout"/>; <see cref="Timeout.InfiniteTimeSpan"/> disables the
+    /// limit, and so does any value beyond what a timer can hold (about 24.8 days). Anything
+    /// else that is not positive is refused with <see cref="ArgumentOutOfRangeException"/>. A
+    /// <see cref="CancellationToken"/> passed to a compile also kills a running slangc. Only
+    /// the process route uses it; the in-process (browser) route has no child process.
+    /// </summary>
+    public TimeSpan SlangcTimeout
+    {
+        get => _slangcTimeout;
+        init => _slangcTimeout = value == Timeout.InfiniteTimeSpan || value > TimeSpan.Zero
+            ? value
+            : throw new ArgumentOutOfRangeException(nameof(SlangcTimeout), value,
+                "The slangc timeout must be positive, or Timeout.InfiniteTimeSpan for no limit.");
+    }
+
+    private readonly TimeSpan _slangcTimeout = DefaultSlangcTimeout;
 
     /// <summary>
     /// Where (and whether) this host's slangc is: <see cref="UnsupportedReason"/> is
@@ -137,20 +169,25 @@ public sealed class SlangCompiler
     /// provably independent of whether this host has a slangc at all.
     /// </summary>
     internal SlangCompiler(IShaderCompiler? downstreamCompiler, Func<SlangcLocation> locateSlangc)
-        : this(downstreamCompiler, locateSlangc, SlangNativeCache.EnsureRunnableSlangc, RunSlangc)
+        : this(downstreamCompiler, locateSlangc, SlangNativeCache.EnsureRunnableSlangc, runSlangc: null)
     {
     }
 
     /// <summary>
     /// One slangc process run: <paramref name="arguments"/> is a <see cref="SlangcArguments"/>
     /// list (a per-entry compile or the preprocess-only pass) and the source goes to stdin.
-    /// Shaped exactly like <see cref="RunSlangc(string, string, string, IReadOnlyList{string})"/>.
+    /// Shaped like <see cref="RunSlangc(string, string, string, IReadOnlyList{string}, TimeSpan, CancellationToken)"/>
+    /// without the timeout, which is the compiler's own <see cref="SlangcTimeout"/>: it throws
+    /// <see cref="TimeoutException"/> when the run exceeds it and
+    /// <see cref="OperationCanceledException"/> when <paramref name="cancellationToken"/> is
+    /// cancelled, in both cases after killing the child.
     /// </summary>
     internal delegate (int ExitCode, string Stdout, string Stderr) SlangcInvoker(
         string slangcPath,
         string workingDirectory,
         string slangSource,
-        IReadOnlyList<string> arguments);
+        IReadOnlyList<string> arguments,
+        CancellationToken cancellationToken);
 
     /// <summary>
     /// Test seam (issue #258): <paramref name="prepareSlangc"/> replaces the native-cache
@@ -158,12 +195,15 @@ public sealed class SlangCompiler
     /// post-slangc logic (the per-entry merge and its <c>SD0625</c> rejection, the
     /// <c>.fx</c> assembly) can be driven end to end with canned slangc output. No valid
     /// Slang source reproduces <c>SD0625</c> through real slangc, which is why this exists.
+    /// A null <paramref name="runSlangc"/> is the real process spawn,
+    /// <see cref="RunSlangc(string, string, string, IReadOnlyList{string}, TimeSpan, CancellationToken)"/>
+    /// under this instance's <see cref="SlangcTimeout"/>.
     /// </summary>
     internal SlangCompiler(
         IShaderCompiler? downstreamCompiler,
         Func<SlangcLocation> locateSlangc,
         Func<string, string> prepareSlangc,
-        SlangcInvoker runSlangc)
+        SlangcInvoker? runSlangc)
     {
         _downstreamCompiler = downstreamCompiler ?? new EffectCompiler();
         _locateSlangc = locateSlangc;
@@ -465,7 +505,7 @@ public sealed class SlangCompiler
             cancellationToken.ThrowIfCancellationRequested();
             ShaderError? startError = InvokeSlangc(
                 SlangcArguments.BuildPreprocess(platformMacros, options.Defines),
-                slangSource, sourceName, runnableSlangc, toolDirectory,
+                slangSource, sourceName, runnableSlangc, toolDirectory, cancellationToken,
                 out int exitCode, out string stdout, out string stderr);
             if (startError is not null)
                 return FailFx(startError);
@@ -492,7 +532,7 @@ public sealed class SlangCompiler
             string stage = entry.Stage == SlangStage.Vertex ? "vertex" : "fragment";
             ShaderError? startError = InvokeSlangc(
                 SlangcArguments.Build(platformMacros, options.Defines, entry.Name, stage),
-                slangSource, sourceName, runnableSlangc, toolDirectory,
+                slangSource, sourceName, runnableSlangc, toolDirectory, cancellationToken,
                 out int exitCode, out string stdout, out string stderr);
             if (startError is not null)
                 return FailFx(startError);
@@ -1222,7 +1262,7 @@ public sealed class SlangCompiler
             cancellationToken.ThrowIfCancellationRequested();
             ShaderError? startError = InvokeSlangc(
                 SlangcArguments.BuildPreprocessFiles(platformMacros, defines, includeEntry, files),
-                slangSource, sourceName, runnableSlangc, toolDirectory,
+                slangSource, sourceName, runnableSlangc, toolDirectory, cancellationToken,
                 out int exitCode, out string stdout, out string stderr);
             if (startError is not null)
                 return startError;
@@ -1245,7 +1285,7 @@ public sealed class SlangCompiler
             cancellationToken.ThrowIfCancellationRequested();
             ShaderError? startError = InvokeSlangc(
                 SlangcArguments.BuildPreprocess(platformMacros, defines),
-                slangSource, sourceName, runnableSlangc, toolDirectory,
+                slangSource, sourceName, runnableSlangc, toolDirectory, cancellationToken,
                 out int exitCode, out string stdout, out string stderr);
             if (startError is not null)
                 return startError;
@@ -1260,7 +1300,7 @@ public sealed class SlangCompiler
             cancellationToken.ThrowIfCancellationRequested();
             ShaderError? startError = InvokeSlangc(
                 SlangcArguments.BuildPreprocessFiles(platformMacros, defines, includeEntry: false, [file]),
-                slangSource, sourceName, runnableSlangc, toolDirectory,
+                slangSource, sourceName, runnableSlangc, toolDirectory, cancellationToken,
                 out int exitCode, out string stdout, out string stderr);
             if (startError is not null)
                 return startError;
@@ -1301,7 +1341,8 @@ public sealed class SlangCompiler
     /// <summary>
     /// One slangc run over whichever transport this instance uses, with the output text in
     /// the same form on both (issue #257). Returns an error only when the process could not
-    /// be started at all; a slangc failure is a non-zero <paramref name="exitCode"/>.
+    /// be started at all (<c>SD0622</c>) or ran past <see cref="SlangcTimeout"/> and was
+    /// killed (<c>SD0645</c>); a slangc failure is a non-zero <paramref name="exitCode"/>.
     /// </summary>
     private ShaderError? InvokeSlangc(
         IReadOnlyList<string> arguments,
@@ -1309,6 +1350,7 @@ public sealed class SlangCompiler
         string sourceName,
         string? runnableSlangc,
         string? toolDirectory,
+        CancellationToken cancellationToken,
         out int exitCode,
         out string stdout,
         out string stderr)
@@ -1323,7 +1365,9 @@ public sealed class SlangCompiler
 
         try
         {
-            (exitCode, stdout, stderr) = _runSlangc(runnableSlangc!, toolDirectory!, slangSource, arguments);
+            (exitCode, stdout, stderr) = _runSlangc is { } seam
+                ? seam(runnableSlangc!, toolDirectory!, slangSource, arguments, cancellationToken)
+                : RunSlangc(runnableSlangc!, toolDirectory!, slangSource, arguments, SlangcTimeout, cancellationToken);
             return null;
         }
         catch (System.ComponentModel.Win32Exception ex)
@@ -1335,6 +1379,18 @@ public sealed class SlangCompiler
             return new ShaderError(
                 File: sourceName, Line: 0, Column: 0, Code: "SD0622",
                 Message: $"slangc could not be started ('{runnableSlangc}'): {ex.Message}");
+        }
+        catch (TimeoutException ex)
+        {
+            // Issue #469: slangc ran past SlangcTimeout and was killed. A diagnostic, never a
+            // consumer's CompileAsync hanging forever; the message names the run so a real
+            // hang can be told apart from a starved host.
+            exitCode = -1;
+            stdout = stderr = "";
+            return new ShaderError(
+                File: sourceName, Line: 0, Column: 0, Code: SlangcTimedOutCode,
+                Message: ex.Message + " Raise SlangCompiler.SlangcTimeout if this host is only slow; "
+                    + "if it recurs on a fast host, open an issue with the shader.");
         }
     }
 
@@ -1533,15 +1589,42 @@ public sealed class SlangCompiler
 
     /// <summary>
     /// Runs slangc once with <paramref name="arguments"/> (a <see cref="SlangcArguments"/>
-    /// list): <paramref name="slangSource"/> piped over stdin, stdout and stderr captured line
-    /// by line and re-joined with <c>'\n'</c>.
+    /// list) under <see cref="DefaultSlangcTimeout"/> and no cancellation. See
+    /// <see cref="RunSlangc(string, string, string, IReadOnlyList{string}, TimeSpan, CancellationToken)"/>.
     /// </summary>
     internal static (int ExitCode, string Stdout, string Stderr) RunSlangc(
         string slangcPath,
         string workingDirectory,
         string slangSource,
-        IReadOnlyList<string> arguments)
+        IReadOnlyList<string> arguments) =>
+        RunSlangc(slangcPath, workingDirectory, slangSource, arguments, DefaultSlangcTimeout, CancellationToken.None);
+
+    /// <summary>
+    /// Runs slangc once with <paramref name="arguments"/> (a <see cref="SlangcArguments"/>
+    /// list): <paramref name="slangSource"/> piped over stdin, stdout and stderr captured line
+    /// by line and re-joined with <c>'\n'</c>. The child may run for <paramref name="timeout"/>
+    /// (<see cref="Timeout.InfiniteTimeSpan"/> for no limit); past it, or as soon as
+    /// <paramref name="cancellationToken"/> is cancelled, the child and its process tree are
+    /// killed and this throws <see cref="TimeoutException"/> (naming the run) or
+    /// <see cref="OperationCanceledException"/> (issue #469). A bare <c>WaitForExit()</c> here
+    /// once let a stuck slangc hang a consumer's <c>CompileAsync</c> forever.
+    /// </summary>
+    internal static (int ExitCode, string Stdout, string Stderr) RunSlangc(
+        string slangcPath,
+        string workingDirectory,
+        string slangSource,
+        IReadOnlyList<string> arguments,
+        TimeSpan timeout,
+        CancellationToken cancellationToken)
     {
+        if (timeout != Timeout.InfiniteTimeSpan && timeout <= TimeSpan.Zero)
+            throw new ArgumentOutOfRangeException(nameof(timeout), timeout, "The slangc timeout must be positive or Timeout.InfiniteTimeSpan.");
+        // A timer holds at most int.MaxValue ms (about 24.8 days); anything longer, which a
+        // caller may well spell as TimeSpan.MaxValue, means "no limit", not an overflow.
+        if (timeout != Timeout.InfiniteTimeSpan && timeout.TotalMilliseconds > int.MaxValue)
+            timeout = Timeout.InfiniteTimeSpan;
+        cancellationToken.ThrowIfCancellationRequested();
+
         var psi = new ProcessStartInfo(slangcPath)
         {
             WorkingDirectory       = workingDirectory,
@@ -1578,11 +1661,103 @@ public sealed class SlangCompiler
         process.BeginOutputReadLine();
         process.BeginErrorReadLine();
 
-        process.StandardInput.Write(slangSource);
-        process.StandardInput.Close();
+        // One kill mechanism bounds everything below (the stdin write, the wait and the
+        // reader drain): the limit fires on the compile's cancellation or on the timeout, and
+        // kills the child and everything it spawned. The write matters: it blocks once the
+        // pipe buffer (4 KiB on Windows) is full until the child reads, so a child stuck
+        // before reading stdin, with a source larger than that, would otherwise never reach
+        // a timed wait. Which of the two fired is decided after the wait; `killed` records
+        // that the limit found the child still running, so a child that exited on its own
+        // just as the timer fired is not reported as timed out.
+        using var limit = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        if (timeout != Timeout.InfiniteTimeSpan)
+            limit.CancelAfter(timeout);
+        bool killed = false;
+        using CancellationTokenRegistration killOnLimit = limit.Token.Register(() =>
+        {
+            if (TryKillTree(process))
+                killed = true;
+        });
 
-        process.WaitForExit();
+        try
+        {
+            process.StandardInput.Write(slangSource);
+            process.StandardInput.Close();
+        }
+        catch (IOException)
+        {
+            // The child closed its end of the pipe before reading all of the source: it
+            // exited (or was killed) early, and its exit code, stderr and the checks below
+            // say why. Nothing to add here.
+        }
+
+        // Bounded by the limit above, with a grace period for the kill itself: a kill the OS
+        // refused must not turn the timeout back into the hang it exists to prevent.
+        int rootWaitMilliseconds = timeout == Timeout.InfiniteTimeSpan
+            ? Timeout.Infinite
+            : (int)Math.Min(int.MaxValue, (long)timeout.TotalMilliseconds + KillGraceMilliseconds);
+        bool exited = process.WaitForExit(rootWaitMilliseconds);
+        if (exited)
+        {
+            // The timed WaitForExit can return before the async stdout/stderr readers have
+            // delivered their last lines; the parameterless overload waits for them
+            // (documented Process contract), so the captured text is complete.
+            process.WaitForExit();
+        }
+
+        // WaitForExit returns the moment the child dies, which is while the kill callback is
+        // still inside Kill (measured: `killed` read false right after a kill). Disposing the
+        // registration waits for an in-flight callback, so `killed` is settled before it is
+        // read; the `using` disposal that follows is then a no-op.
+        killOnLimit.Dispose();
+
+        cancellationToken.ThrowIfCancellationRequested();
+        if (killed || !exited)
+        {
+            throw new TimeoutException(
+                $"slangc did not exit within {timeout.TotalSeconds:0.###} s and was killed"
+                + (exited ? "" : $" (it had still not exited {KillGraceMilliseconds / 1000} s after the kill)")
+                + $": '{slangcPath}' {string.Join(' ', arguments)}.");
+        }
 
         return (process.ExitCode, stdout.ToString(), stderr.ToString());
+    }
+
+    /// <summary>How long to wait for a killed slangc to be reaped before giving up on it.</summary>
+    private const int KillGraceMilliseconds = 10_000;
+
+    /// <summary>
+    /// Kills <paramref name="process"/> and everything it spawned. Returns false when the
+    /// child had already exited; true when the kill was issued, whether or not every member
+    /// of the tree could be terminated. Never throws: it runs inside a cancellation callback,
+    /// where an exception would take down the host, and the wait that follows decides what
+    /// to report. A refused kill is not an error here (the bounded wait reports it).
+    /// </summary>
+    private static bool TryKillTree(Process process)
+    {
+        try
+        {
+            if (process.HasExited)
+                return false;
+            process.Kill(entireProcessTree: true);
+            return true;
+        }
+        catch (InvalidOperationException)
+        {
+            // Exited between the check and the kill, or never started.
+            return false;
+        }
+        catch (System.ComponentModel.Win32Exception)
+        {
+            // Exiting as we kill it, or access denied.
+            return true;
+        }
+        catch (AggregateException)
+        {
+            // Kill(entireProcessTree: true) wraps the per-descendant failures in one of these
+            // ("not all processes in the process tree could be terminated"); the root is
+            // typically dead by then.
+            return true;
+        }
     }
 }
