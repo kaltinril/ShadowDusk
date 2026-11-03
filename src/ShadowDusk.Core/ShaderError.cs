@@ -11,6 +11,18 @@ public enum ShaderErrorKind
     IncludeNotFound,
     /// <summary>An <c>#include</c> cycle was detected.</summary>
     CircularInclude,
+    /// <summary>
+    /// The input is not a shader format the called entry point reads (code <c>SD0650</c>). Nothing
+    /// was compiled. A caller that chains several shader loaders can safely hand the input to the
+    /// next one; every other kind is a real error in a recognized shader.
+    /// </summary>
+    UnsupportedInput,
+    /// <summary>
+    /// The input carries the signals of two formats that cannot both be right (code <c>SD0005</c>),
+    /// so no route was picked. This is a real error, not a reason to try another loader: pass a
+    /// name hint with the intended extension, or call the format-specific entry point.
+    /// </summary>
+    AmbiguousInput,
 }
 
 /// <summary>

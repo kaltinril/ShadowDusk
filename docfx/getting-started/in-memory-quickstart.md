@@ -150,3 +150,30 @@ Notes specific to the FNA target:
 ## Reusing the compiler
 
 `EffectCompiler` is cheap to construct and safe to reuse across many `CompileAsync` calls. Pass a `CancellationToken` to bound long compiles.
+
+## Shaders without a file extension
+
+When a shader arrives from a stream, a byte buffer, or a package whose files lost their extensions, let ShadowDusk work out the format from the text. `ShaderConverter` has one auto-detecting method per output kind: `Compile` / `CompileAsync` (MonoGame, KNI, FNA), `ConvertToSksl` (SkiaSharp) and `ConvertToRaylib` (raylib). Each reads an `.fx` effect (a `technique` block) or HLSL-compatible Slang (a `[shader("...")]` entry attribute) and routes it exactly as the format-specific entry point would.
+
+```csharp
+using ShadowDusk.Compiler;
+using ShadowDusk.Core;
+
+var result = ShaderConverter.Compile(new EffectCompiler(), source,
+    new CompilerOptions { Target = PlatformTarget.OpenGL }, nameHint: "Outline");
+
+if (result.IsFailure && result.Error.Any(e => e.Kind == ShaderErrorKind.UnsupportedInput))
+{
+    // Not a format ShadowDusk reads (code SD0650). Nothing was compiled: try another loader.
+}
+else if (result.IsFailure)
+{
+    // A real error in a recognized shader: report it.
+}
+```
+
+- **"Not mine" is a typed result, not an exception.** `ShaderErrorKind.UnsupportedInput` (`SD0650`) means the input was not recognized and nothing ran. Every other failure, including `ShaderErrorKind.AmbiguousInput` (`SD0005`), is a real error to surface.
+- **Cheap check first.** `ShaderConverter.CanConvert(source)` answers with a text scan and no compile. `ShaderFormatDetector.Detect(source)` (in `ShadowDusk.Core`) reports the format itself.
+- **The name is only a hint.** The content decides. An optional `nameHint` is read only for its extension, and only when the content is ambiguous or carries no signal at all.
+- **Valid as both Slang and `.fx`?** A file with a `technique` block is reported and compiled as an `.fx` effect.
+- **GLSL is reported as unsupported here.** ShaderToy-style and plain `void main()` GLSL are recognized, but their converter is the separate `ShadowDusk.ShaderToy` package: call `ShaderToyConverter.Convert` first and pass its `.fx` output in.

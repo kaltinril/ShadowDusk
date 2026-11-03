@@ -147,4 +147,46 @@ public sealed class ReviewRegressionTests
                 "a.glsl", "void mainImage(out vec4 c, in vec2 p) { c = vec4(1); }", InputFormat.Auto)
             .IsSuccess.ShouldBeTrue();
     }
+
+    [Fact]
+    public void InputFormatDetector_DotFx_IsStillAlwaysFx_EvenWithAGlslEntry()
+    {
+        // The CLI's backwards-compat guarantee survives the move of the sniff into Core.
+        InputFormatDetector.Detect(
+                "a.fx", "void mainImage(out vec4 c, in vec2 p) { c = vec4(1); }", InputFormat.Auto)
+            .Value.ShouldBe(InputKind.Fx);
+    }
+
+    [Fact]
+    public void InputFormatDetector_UnknownExtension_SniffsSlangThroughTheLibraryDetector()
+    {
+        // Behavior the shared sniff added: an extensionless Slang file used to be SD0005.
+        InputFormatDetector.Detect(
+                "piped", "[shader(\"fragment\")] float4 P() : SV_Target { return 0; }", InputFormat.Auto)
+            .Value.ShouldBe(InputKind.Slang);
+    }
+
+    [Fact]
+    public void InputFormatDetector_UnknownExtension_HlslMainWithParameters_IsNotAGlslEntry()
+    {
+        // Behavior the shared sniff changed: only a parameterless 'void main()' is the GLSL entry,
+        // so this effect is Fx instead of an SD0005 "both signals" refusal.
+        InputFormatDetector.Detect(
+                "a.txt",
+                "void main(out float4 c : COLOR0) { c = 1; }\ntechnique T { pass P { PixelShader = compile ps_3_0 main(); } }",
+                InputFormat.Auto)
+            .Value.ShouldBe(InputKind.Fx);
+    }
+
+    [Fact]
+    public void InputFormatDetector_UnknownExtension_TechniqueAndMainImage_IsStillSd0005()
+    {
+        var result = InputFormatDetector.Detect(
+            "a.txt",
+            "technique T { pass P { } }\nvoid mainImage(out vec4 c, in vec2 p) { c = vec4(1); }",
+            InputFormat.Auto);
+
+        result.Error.Code.ShouldBe("SD0005");
+        result.Error.Message.ShouldContain("BOTH", Case.Sensitive);
+    }
 }

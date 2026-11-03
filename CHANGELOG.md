@@ -17,8 +17,25 @@ that loads and renders identically to `mgfxc`'s in the real MonoGame/KNI runtime
 - `SlangCompiler.SlangcTimeout` (default `SlangCompiler.DefaultSlangcTimeout`, 60 seconds;
   `Timeout.InfiniteTimeSpan` disables it): how long one slangc child process may run before
   ShadowDusk kills it. See the fix below (issue #469).
+- **Extension-free input detection for the library.** `ShaderFormatDetector.Detect(source, nameHint)`
+  (`ShadowDusk.Core`) reports a shader's format (`FxEffect`, `Slang`, `Glsl`, or `Unknown`, plus
+  `IsAmbiguous`) from its text alone, with a text scan and no compile. `ShaderConverter`
+  (`ShadowDusk.Compiler`) builds on it with one auto-detecting method per output kind:
+  `Compile` / `CompileAsync` (MonoGame, KNI, FNA), `ConvertToSksl` and `ConvertToRaylib`, plus the
+  cheap `CanConvert`. Input those methods do not read fails with the new
+  `ShaderErrorKind.UnsupportedInput` (`SD0650`) and compiles nothing, so a caller that chains
+  shader loaders can tell "not mine" from a real error; ambiguous input fails with the new
+  `ShaderErrorKind.AmbiguousInput` (`SD0005`). A file valid as both Slang and `.fx` (it has a
+  `technique` block) is treated as `.fx`. Every existing entry point is unchanged.
 
 ### Changed
+
+- **CLI: the content sniff for an input with an unrecognized extension is now the library's
+  `ShaderFormatDetector`.** Two results move, both from an `SD0005` refusal to a route: an
+  extensionless Slang file (a `[shader("...")]` attribute) now compiles through the Slang frontend,
+  and an effect with a `technique` block whose HLSL function is named `main` (with parameters) is
+  now an `.fx` instead of "both signals". Only a parameterless `void main()` counts as a GLSL entry.
+  `.fx`, `.glsl`/`.frag`/`.fs`/`.glslf` and `.slang` inputs route exactly as before.
 
 ### Fixed
 
