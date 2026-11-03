@@ -250,6 +250,14 @@ Move the file to `src/ShadowDusk.Core/Frontend/InputFormatDetector.cs`; promote 
 `InputKind`, `InputFormatDetector` to `public`. **Move, do not copy** — a second sniff is a drift
 source. The CLI keeps calling it; its behavior and its `SD0005` message text are unchanged.
 
+> **Done differently (2026-11-03, Gum request):** the sniff now lives in Core as the public
+> `ShaderFormatDetector` (content-first, name only a tie-breaker; Slang recognized by its
+> `[shader(...)]` attribute; a `technique` block wins over Slang), and the CLI's
+> `InputFormatDetector` stays an internal wrapper that keeps extension-first routing and the
+> `SD0005` texts. `ShaderConverter` in `ShadowDusk.Compiler` routes `.fx` and Slang and reports
+> GLSL as `UnsupportedInput` (`SD0650`) until A-2/A-3 give it a ShaderToy frontend. Rule A1
+> (`.fx` extension always wins) holds for the CLI only; see `project_decisions.md`.
+
 **A-2. Define the frontend seam in Core.**
 
 ```csharp

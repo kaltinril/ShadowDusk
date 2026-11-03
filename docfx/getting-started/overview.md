@@ -32,6 +32,8 @@ Every shape implements the same <xref:ShadowDusk.Core.IShaderCompiler> interface
 
 **Slang as an input.** Alongside `.fx` and `.glsl`, the `.fx` pipeline also accepts `.slang` source (the HLSL-compatible subset of [Slang](https://github.com/shader-slang/slang)): a pure managed text transform (`ShadowDusk.Compiler.Slang.SlangFrontend`) converts it to `.fx` text — entry points from Slang's `[shader("vertex")]`/`[shader("fragment")]` attributes, a synthesized technique — before the same faithful pipeline compiles it. That free subset route ships and invokes no Slang toolchain. Genuine Slang (`import`, generics, `interface`s) needs the opt-in `ShadowDusk.Slang` package, which bundles the real `slangc` and hands its HLSL to the same pipeline. There is no `mgfxc` oracle for Slang input (`mgfxc` cannot read Slang at all), so no route through it is `mgfxc`-equivalent.
 
+**Input with no file extension.** `ShadowDusk.Compiler.ShaderConverter` detects the format from the text (`ShadowDusk.Core.ShaderFormatDetector`) and routes an `.fx` effect or HLSL-compatible Slang to the MonoGame/KNI/FNA compiler, the SkSL converter, or the raylib converter. Input it does not read fails with the typed `ShaderErrorKind.UnsupportedInput` (`SD0650`) without compiling anything, so a caller that chains loaders can try the next one. See the [In-Memory Quickstart](in-memory-quickstart.md#shaders-without-a-file-extension).
+
 ## Supported backends
 
 | Backend | Output | Status |
