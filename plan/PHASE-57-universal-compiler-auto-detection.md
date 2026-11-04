@@ -2,7 +2,7 @@
 
 **Track:** Product surface / seamlessness. Additive; no output bytes change.
 
-**Status:** 📋 **Planned / not started** (created 2026-07-30).
+**Status:** 📋 **Planned** (created 2026-07-30). **A-1 done differently 2026-11-03:** public `ShaderFormatDetector` (Core) + `ShaderConverter` (Compiler), `SD0650`/`SD0005`; A-2/A-3 and Area B not started.
 
 **Depends on:** [Phase 46](DONE/PHASE-46-shadertoy-to-fx-conversion-tool.md) (the ShaderToy/GLSL
 converter and its frozen contract), [Phase 47](DONE/PHASE-47-shadertoy-frontend-promotion.md) (the
