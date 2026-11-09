@@ -332,6 +332,10 @@ $gates.Add(@{
     }
 })
 $gates.Add(@{
+    Name   = 'DX12 managed DXIL signature (issue #478: DXIL signed ONLY by DxilContainerHash loads + renders like dxil.dll-signed and the mgfxc golden in real MonoGame 3.8.5 WindowsDX12, D3D12 debug layer on; wrong-hash negative control must be rejected; inconclusive under Windows Developer Mode)'
+    Action = { Invoke-Checked 'dotnet' @('run', '--project', 'validation/ManagedDxilDx12', '-c', 'Release') }
+})
+$gates.Add(@{
     Name   = 'DX12 VS-driven + Apos.Shapes (Phase 54: ShadowDusk custom-VS DX12 effect vs REAL mgfxc DirectX_12 golden, real MonoGame 3.8.5 WindowsDX12)'
     Action = {
         Invoke-Checked 'dotnet' @('run', '--project', 'validation/VsDrivenDx12', '-c', 'Release')
