@@ -14,16 +14,9 @@ DirectX 12 requires MonoGame 3.8.5+ on the consumer's side (the `WindowsDX12` pl
 
 KNI does not ship a DirectX 12 platform, so this target is MonoGame-only, like Vulkan.
 
-## Compile DirectX 12 effects on Windows (`SD0214`)
+## DXIL is signed on every host
 
-**DXIL signing is Windows-only.** DXC's validation-and-signing step runs through `dxil.dll`, which exists only on Windows (it is a no-op on Linux, and macOS ships no `dxil` at all). A `DirectX12` compile on a non-Windows host therefore produces **unsigned DXIL**, which:
-
-- loads only on a machine with **Windows Developer Mode** enabled, and
-- is **rejected by retail D3D12 at pipeline-state creation**.
-
-Same source, same ShadowDusk version, different build host, differently-broken artifact. ShadowDusk does not hide this: a non-Windows DX12 compile emits the **`SD0214`** warning ([`DxcShaderCompiler`](https://github.com/kaltinril/ShadowDusk/blob/main/src/ShadowDusk.HLSL/Dxc/DxcShaderCompiler.cs)) rather than shipping a silently host-dependent output.
-
-Practically: **build your DX12 content on Windows** until cross-platform signing ships. This is the one target where the usual "compile anywhere, get the same bytes" property does not hold; DX11, OpenGL, and FNA are unaffected and remain byte-identical across hosts. Windows on Arm is a Windows host: `dxil.dll` ships for win-arm64 too, and a native arm64 DX12 compile is measured byte-identical (signed) to win-x64's ([issue #286](https://github.com/kaltinril/ShadowDusk/issues/286)).
+Retail D3D12 rejects DXIL whose container hash is zero at pipeline-state creation. DXC signs through `dxil.dll`, which exists only on Windows, so a non-Windows compile used to emit unsigned DXIL (warned as `SD0214`, now retired). ShadowDusk now writes the container hash itself, in managed code, on every host: it is Microsoft's open-sourced retail hash (`DxilHash.cpp`, `ComputeHashRetail`), pinned byte for byte against `dxil.dll`'s over the fixture corpus, and applied only when `dxil.dll` has not already signed the container. A Linux or macOS build produces a loadable DX12 effect. Windows on Arm is unchanged: `dxil.dll` signs there, and a native arm64 DX12 compile is measured byte-identical (signed) to win-x64's ([issue #286](https://github.com/kaltinril/ShadowDusk/issues/286)).
 
 ## Texture arrays reflect as one parameter (`SD0222`)
 

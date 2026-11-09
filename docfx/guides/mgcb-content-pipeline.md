@@ -58,7 +58,7 @@ loads. You never pick a version, a format, or a flag to get correct output.
 | `Windows` | DirectX 11 (DXBC SM5) |
 | `DesktopGL`, `MacOSX`, `iOS`, `Android`, `RaspberryPi`, `Web`, `NativeClient` | OpenGL (GLSL) |
 | `DesktopVK` (MonoGame 3.8.5+) | [Vulkan](../backends/vulkan.md) (SPIR-V) |
-| `WindowsDX12` (MonoGame 3.8.5+) | [DirectX 12](../backends/directx12.md) (DXIL SM6) — build on Windows: DXIL signing needs the Windows-only `dxil.dll`, or the output is unsigned and retail D3D12 rejects it (`SD0214`) |
+| `WindowsDX12` (MonoGame 3.8.5+) | [DirectX 12](../backends/directx12.md) (DXIL SM6), signed on every host |
 | `PlayStation4`, `PlayStation5`, `XboxOne`, `XboxSeries`, `Switch`, `Xbox360`, `Stadia` | not supported — the build fails loudly with `SD0501` rather than emitting an artifact those runtimes cannot load |
 
 The map keys on the platform's **name**, never on the enum's number. MonoGame **renumbered
@@ -88,7 +88,7 @@ a step you must take to get working output.
 | `DebugMode` | `Auto` | Only `Debug` turns shader debug information on. `Auto` and `Optimize` optimize, whatever the content build configuration (`/config:Debug` included), exactly like MonoGame's stock `EffectProcessor`, which never reads the configuration. |
 | `Defines` | *(empty)* | Preprocessor macros in `mgfxc`'s `/Defines:` spelling: `NAME=VALUE` entries separated by `;` or `,`; a bare `NAME` defines it as `1`. Same property name and format as the stock processor, so an existing `/processorParam:Defines=…` carries over unchanged. |
 | `IncludeDirs` | *(empty)* | Extra `#include` search directories, `;`-separated. The including file's own directory is always searched first and needs no entry. Equivalent to the CLI's `/I`. |
-| `ShaderProfile` | *(empty)* | Overrides the target derived from `/platform:`. `DirectX_11`, `DirectX_12`, `OpenGL`, `Vulkan` — needed only on MGCB **before 3.8.5**, whose platform list cannot name [DirectX 12](../backends/directx12.md) or [Vulkan](../backends/vulkan.md); from 3.8.5 `WindowsDX12` and `DesktopVK` derive their target directly. Build DX12 content **on Windows**: DXIL signing needs the Windows-only `dxil.dll`, or the output is unsigned and retail D3D12 rejects it (`SD0214`). |
+| `ShaderProfile` | *(empty)* | Overrides the target derived from `/platform:`. `DirectX_11`, `DirectX_12`, `OpenGL`, `Vulkan` — needed only on MGCB **before 3.8.5**, whose platform list cannot name [DirectX 12](../backends/directx12.md) or [Vulkan](../backends/vulkan.md); from 3.8.5 `WindowsDX12` and `DesktopVK` derive their target directly. DX12 DXIL is signed on every host (the retired `SD0214` warned about the old unsigned output). |
 | `MgfxVersion` | `10` | `11` opts into the newer MGFX container (MonoGame 3.8.5+). |
 | `DxbcBackend` | `vkd3d` | `d3dcompiler` opts into the Windows-only correctness oracle for the DirectX target. |
 

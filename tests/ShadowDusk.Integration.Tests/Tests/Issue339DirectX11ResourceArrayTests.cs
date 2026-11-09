@@ -205,7 +205,7 @@ public sealed class Issue339DirectX11ResourceArrayTests
         var result = await CompileAsync(source, target, "SamplerArray.fx", ct: cts.Token);
 
         result.IsFailure.ShouldBeTrue("mgfxc refuses a sampler array on every profile in its parser; ShadowDusk must not compile what mgfxc never builds");
-        // The one ERROR; a DirectX 12 failure off Windows also carries the SD0214 unsigned-DXIL warnings.
+        // The one ERROR; a DirectX 12 failure may also carry warnings.
         ShaderError error = result.Error.Where(e => e.Severity == ShaderErrorSeverity.Error).ShouldHaveSingleItem();
         error.Code.ShouldBe("SD0224");
         error.Severity.ShouldBe(ShaderErrorSeverity.Error);
@@ -237,7 +237,7 @@ public sealed class Issue339DirectX11ResourceArrayTests
         var result = await CompileAsync(source, target, "TexArr2SampArr.fx", ct: cts.Token);
 
         result.IsFailure.ShouldBeTrue();
-        // The one ERROR; a DirectX 12 failure off Windows also carries the SD0214 unsigned-DXIL warnings.
+        // The one ERROR; a DirectX 12 failure may also carry warnings.
         ShaderError error = result.Error.Where(e => e.Severity == ShaderErrorSeverity.Error).ShouldHaveSingleItem();
         error.Code.ShouldBe("SD0224");
         error.Message.ShouldContain("'TexSampler' is an array of 2 samplers", Case.Sensitive);
@@ -265,7 +265,7 @@ public sealed class Issue339DirectX11ResourceArrayTests
         var result = await CompileAsync(source, target, "SamplerArray1.fx", ct: cts.Token);
 
         result.IsFailure.ShouldBeTrue("a 1-element sampler array is still a shape mgfxc's parser refuses");
-        // The one ERROR; a DirectX 12 failure off Windows also carries the SD0214 unsigned-DXIL warnings.
+        // The one ERROR; a DirectX 12 failure may also carry warnings.
         ShaderError error = result.Error.Where(e => e.Severity == ShaderErrorSeverity.Error).ShouldHaveSingleItem();
         error.Code.ShouldBe("SD0224");
         error.Message.ShouldContain("'S' is a 1-element array of samplers", Case.Sensitive);
@@ -284,7 +284,7 @@ public sealed class Issue339DirectX11ResourceArrayTests
         var result = await CompileAsync(await File.ReadAllTextAsync(fxPath, cts.Token), target, fxPath, ct: cts.Token);
 
         result.IsFailure.ShouldBeTrue();
-        // The one ERROR; a DirectX 12 failure off Windows also carries the SD0214 unsigned-DXIL warnings.
+        // The one ERROR; a DirectX 12 failure may also carry warnings.
         ShaderError error = result.Error.Where(e => e.Severity == ShaderErrorSeverity.Error).ShouldHaveSingleItem();
         error.Code.ShouldBe("SD0224");
         Path.GetFileName(error.File).ShouldBe("SamplerArray2.fx");

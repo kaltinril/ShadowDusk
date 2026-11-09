@@ -50,13 +50,13 @@ release and with `Debug` on. Keys are `Vulkan/`, `Vulkan.Debug/`, `DirectX12/` a
 | `warnings` | The warning list, verbatim. |
 
 **Why DirectX 12 needs a canonical form.** A DXIL container differs by construction off
-Windows: its digest is the `dxil.dll` signature, which only Windows produces (`SD0214`
-elsewhere), and the bitcode embeds DXC's own identity string (`!llvm.ident`, and the debug
+Windows: its digest is a hash of the container, which covers the bitcode below (off Windows the managed retail hash, issue #478),
+and the bitcode embeds DXC's own identity string (`!llvm.ident`, and the debug
 information's `producer`), so the `HASH` part, the PDB name derived from it, the container's
 size, the MGFX record length and the effect key all follow. The canonical form removes exactly
 those, and nothing else: the disassembly minus the `; shader hash:` and `; shader debug name:`
 lines, the `!llvm.ident` node and its string, with every other occurrence of that string
-replaced by a fixed token. The two unsigned-DXIL warnings (`SD0214`, and DXC's own *"DXIL.dll
+replaced by a fixed token. The unsigned-DXIL warnings (the retired `SD0214`, and DXC's own *"DXIL.dll
 not found"*, whose wording itself differs between the Linux and macOS DXC builds) are left out
 of `warnings`/`errors` for the same reason. One printer artifact is undone too: DXC's
 disassembler escapes non-ASCII string bytes according to the locale DXC leaves set, so macOS

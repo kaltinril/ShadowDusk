@@ -20,7 +20,7 @@ ShadowDuskCLI <input.fx> <output.fxb>  /Profile:FNA
 
 Flags mirror `mgfxc` (`/Profile`, `/Debug`, `/I`, `/Defines`, `/DxbcBackend`, `--mgfx-version`), plus `--target-runtime` to pick the backend + format together by name. Run `ShadowDuskCLI --help` for the full list.
 
-> `/Profile:DirectX_12` should be compiled **on Windows**: DXIL signing runs through the Windows-only `dxil.dll`, so a non-Windows DX12 compile emits unsigned DXIL that retail D3D12 rejects (warned as `SD0214`). Other targets are host-independent.
+> `/Profile:DirectX_12` output is signed on every host: `dxil.dll` signs on Windows, and the CLI writes the identical container hash itself elsewhere (the old `SD0214` unsigned-DXIL warning is retired).
 
 ### Direct `.xnb` output
 

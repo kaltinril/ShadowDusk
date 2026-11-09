@@ -35,7 +35,7 @@ A small family of advanced **OpenGL-target** texture intrinsics — **3D-texture
 
 DXC's DXIL validation-and-signing step runs through `dxil.dll`, which is **Windows-only**. A `DirectX12` compile on Linux or macOS therefore emits **unsigned DXIL**: it loads only with Windows Developer Mode enabled, and **retail D3D12 rejects it at pipeline-state creation**.
 
-Unlike the intrinsics gap above, this one does **not** fail at compile time — the compile succeeds and emits the **`SD0214`** warning, so a build that ignores warnings will produce an artifact that is broken only on the consumer's machine. Build DX12 content on Windows until cross-platform signing ships. See [DirectX 12](../backends/directx12.md) for detail. Other targets (DX11, OpenGL, FNA) are unaffected.
+DirectX 12 DXIL is signed on every host (the retired `SD0214` warned about the old unsigned output), so there is no host to avoid. See [DirectX 12](../backends/directx12.md).
 
 ## Vertex-stage texture fetch is rejected on the OpenGL target
 
