@@ -594,14 +594,18 @@ jobs:
 
       # Issue #478: DXIL signed ONLY by ShadowDusk's managed container hash (what a Linux/macOS
       # compile emits) loads and renders identically to dxil.dll's in real MonoGame WindowsDX12, and a
-      # container with a wrong hash is rejected by D3D12 (the negative control). The runner is not in
-      # Windows Developer Mode, which would accept any hash; REQUIRE_STRICT turns that case into a failure.
-      - name: Run managed-DXIL-signature gate (real MonoGame WindowsDX12 on WARP, D3D12 debug layer when installed)
+      # container with a wrong hash is rejected by D3D12 (the negative control). windows-latest ships
+      # with Windows Developer Mode ON (measured), under which D3D12 accepts any DXIL hash, so the step
+      # turns it off first (this runner is a throwaway VM); REQUIRE_STRICT fails the gate if D3D12 still
+      # accepts a wrong hash, i.e. if the control cannot tell right from wrong.
+      - name: Run managed-DXIL-signature gate (real MonoGame WindowsDX12 on WARP, Developer Mode off, D3D12 debug layer when installed)
         if: ${{ !cancelled() }}
         env:
           SHADOWDUSK_DX_WARP: "1"
           SHADOWDUSK_REQUIRE_STRICT_D3D12: "1"
-        run: dotnet run --project validation/ManagedDxilDx12 -c Release --no-build
+        run: |
+          reg add "HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\AppModelUnlock" /v AllowDevelopmentWithoutDevLicense /t REG_DWORD /d 0 /f
+          dotnet run --project validation/ManagedDxilDx12 -c Release --no-build
 
       # Issue #423: non-square matrix parameters Set from C# land in MonoGame's DirectX registers,
       # with the committed real mgfxc 3.8.5 DirectX_11 builds rendered alongside as the reference.

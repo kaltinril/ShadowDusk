@@ -25,17 +25,18 @@ using ShadowDusk.Validation.Dx;
 DxHeadlessRasterizer.PinIfRequested();
 // The strict mode the Apos.Shapes failure (Apostolique/Apos.Shapes#43) was reported under. Only
 // requested when Graphics Tools is installed (D3D12SDKLayers.dll), else device creation could fail.
-bool debugLayer = File.Exists(Path.Combine(Environment.SystemDirectory, "D3D12SDKLayers.dll"));
+bool debugLayer = File.Exists(Path.Combine(Environment.SystemDirectory, "D3D12SDKLayers.dll"))
+    && Environment.GetEnvironmentVariable("SHADOWDUSK_DX12_DEBUG_LAYER") != "0";
 GraphicsAdapter.UseDebugLayers = debugLayer;
 // Windows Developer Mode makes D3D12 accept ANY DXIL container hash (measured: zero and one-bit-wrong
 // both render), so on such a box a successful load proves nothing about the signer. Set by CI, where
 // the box is not in Developer Mode, to turn "inconclusive" into a failure.
-bool developerMode = (Microsoft.Win32.Registry.GetValue(
+bool developerMode = OperatingSystem.IsWindows() && (Microsoft.Win32.Registry.GetValue(
     @"HKEY_LOCAL_MACHINE\SOFTWARE\Microsoft\Windows\CurrentVersion\AppModelUnlock",
     "AllowDevelopmentWithoutDevLicense", 0) as int? ?? 0) != 0;
 bool requireStrict = Environment.GetEnvironmentVariable("SHADOWDUSK_REQUIRE_STRICT_D3D12") == "1";
 const int InconclusiveExit = 3;
-Console.WriteLine($"[managed-dxil] D3D12 debug layer: {(debugLayer ? "on" : "off (Graphics Tools not installed)")}; Windows Developer Mode: {(developerMode ? "ON" : "off")}");
+Console.WriteLine($"[managed-dxil] D3D12 debug layer: {(debugLayer ? "on" : "off")}; Windows Developer Mode: {(developerMode ? "ON" : "off")}");
 
 string mode = args.Length > 0 ? args[0].Trim().ToLowerInvariant() : "default";
 string repoRoot = ShaderInputs.FindRepoRoot();
