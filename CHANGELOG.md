@@ -16,6 +16,12 @@ that loads and renders identically to `mgfxc`'s in the real MonoGame/KNI runtime
 
 ### Changed
 
+### Fixed
+
+## [0.25.1] - 2026-11-09
+
+### Changed
+
 - DirectX 12 DXIL compiled on Linux or macOS is now signed. The container hash (Microsoft's open-sourced retail hash) is computed in managed code, byte-identical to `dxil.dll`'s, and written whenever the hash is zero; a `dxil.dll`-signed container is untouched, so Windows output is unchanged. The `SD0214` unsigned-DXIL warning is retired, and DXC's own "will not be signed" warning is dropped once the blob is signed ([#478](https://github.com/kaltinril/ShadowDusk/issues/478)).
 
 ### Fixed
@@ -4253,7 +4259,8 @@ WASM-capable build — the same pipeline on every host, with no substitute compi
 - **The MGCB content-processor plugin** is a scaffold; the PATH-based `mgfxc` override is the
   shipping MGCB integration path.
 
-[Unreleased]: https://github.com/kaltinril/ShadowDusk/compare/v0.25.0...HEAD
+[Unreleased]: https://github.com/kaltinril/ShadowDusk/compare/v0.25.1...HEAD
+[0.25.1]: https://github.com/kaltinril/ShadowDusk/compare/v0.25.0...v0.25.1
 [0.25.0]: https://github.com/kaltinril/ShadowDusk/compare/v0.24.0...v0.25.0
 [0.24.0]: https://github.com/kaltinril/ShadowDusk/compare/v0.23.0...v0.24.0
 [0.23.0]: https://github.com/kaltinril/ShadowDusk/compare/v0.22.1...v0.23.0
