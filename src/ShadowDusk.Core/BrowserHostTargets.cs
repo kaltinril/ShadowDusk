@@ -53,9 +53,9 @@ internal static class BrowserHostTargets
 
         string targetName = Enum.IsDefined(target) ? target.ToString() : $"value {(int)target}";
         string reason = target == PlatformTarget.DirectX12
-            ? "The in-browser pipeline has no DXIL path: its DXC module is wired to return SPIR-V only, and DX12 output " +
-              "must be validated and signed by dxil.dll, which only exists on Windows. Compile DX12 with " +
-              "the desktop library, the CLI or the MGCB plugin on Windows."
+            ? "The in-browser pipeline has no DXIL path: its DXC module is wired to return SPIR-V only, so " +
+              "no DXIL is produced (the DXIL container hash is computed in managed code now, but the browser DXC " +
+              "module's DXIL output is unproven). Compile DX12 with the desktop library, the CLI or the MGCB plugin."
             : "It is not a PlatformTarget member ShadowDusk defines.";
 
         return new ShaderError(

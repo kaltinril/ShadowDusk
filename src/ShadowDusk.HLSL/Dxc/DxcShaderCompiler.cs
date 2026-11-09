@@ -277,30 +277,17 @@ public sealed class DxcShaderCompiler : IDxcShaderCompiler, IDisposable
             IReadOnlyList<ShaderError> warnings = DxcDiagnosticReformatter.ReformatAsWarnings(
                 errorText, request.SourceFileName);
 
-            // DXIL signing (bug-hunt 2026-07-27 M7): dxil.dll validation/signing runs on
-            // Windows only (this pin's Linux DXC never loads libdxil, and macOS ships no dxil at
-            // all), so a DirectX12 compile on Linux/macOS produces UNSIGNED DXIL. That
-            // loads only on machines with Developer Mode enabled — retail D3D12 rejects
-            // unsigned DXIL at pipeline-state creation. Same source, different build
-            // host, differently-broken artifact: surface it instead of shipping silently.
-            if (request.Platform == PlatformTarget.DirectX12 && !OperatingSystem.IsWindows())
+            // DXIL signing (issue #478, formerly warned SD0214): dxil.dll signs on Windows only, so a
+            // DirectX12 compile elsewhere comes back with an all-zero container hash, which retail
+            // D3D12 rejects at pipeline-state creation. Write the same hash dxil.dll would, in
+            // managed code, on every host. A container dxil.dll already signed (non-zero hash) is
+            // left alone, so the Windows output is unchanged.
+            if (request.Platform == PlatformTarget.DirectX12 && kind == BlobKind.Dxil
+                && DxilContainerHash.SignInPlace(bytes))
             {
-                warnings =
-                [
-                    .. warnings,
-                    new ShaderError(
-                        File: request.SourceFileName,
-                        Line: 0,
-                        Column: 0,
-                        Code: "SD0214",
-                        Message: "DirectX12 DXIL compiled on a non-Windows host is unsigned " +
-                                 "(dxil.dll validation/signing is Windows-only): the .mgfx " +
-                                 "will load only with Windows Developer Mode enabled, and " +
-                                 "retail D3D12 rejects it at pipeline-state creation. " +
-                                 "Compile DirectX12 effects on Windows until cross-platform " +
-                                 "signing ships.",
-                        Severity: ShaderErrorSeverity.Warning),
-                ];
+                // DXC's own "Resulting DXIL will not be signed" warning (no dxil validator bound) is
+                // now false: the blob is signed.
+                warnings = [.. warnings.Where(w => !DxilContainerHash.IsUnsignedNotice(w))];
             }
 
             return Result<PlatformBlob, ShaderError>.Ok(

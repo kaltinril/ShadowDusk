@@ -120,7 +120,7 @@ public sealed class SlangTextureArrayTests
         var result = CompileSlang(source, target);
 
         result.IsFailure.ShouldBeTrue("mgfxc refuses a sampler array on every profile; the Slang route must not compile what the .fx route refuses");
-        // The one ERROR; a DirectX 12 failure off Windows also carries the SD0214 unsigned-DXIL warnings.
+        // The one ERROR; a DirectX 12 failure may also carry warnings.
         ShaderError error = result.Error.Where(e => e.Severity == ShaderErrorSeverity.Error).ShouldHaveSingleItem();
         error.Code.ShouldBe("SD0224");
         error.Message.ShouldContain("'Samplers' is an array of 2 samplers", Case.Sensitive);

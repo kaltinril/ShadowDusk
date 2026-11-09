@@ -202,13 +202,11 @@ public sealed class DirectX12EffectCompilerTests
     }
 
     [Fact]
-    public async Task Compile_WarnsSd0214_ExactlyWhenTheHostCannotSignDxil()
+    public async Task Compile_SignsTheDxilOnEveryHost_AndNoLongerWarnsSd0214()
     {
-        // Deliberately NOT a skip on either host: the assertion FLIPS by platform, so each
-        // CI lane proves its own half. Windows pins the over-fire direction (a signed build
-        // must not carry the warning); the Linux/macOS lanes pin that it fires at all —
-        // which is the direction that matters, and which the developer's Windows render
-        // gate structurally cannot see.
+        // Issue #478: the container hash is written on every host (dxil.dll on Windows, the managed
+        // retail hash elsewhere), so the same assertion holds on every CI lane. A zero hash is what
+        // retail D3D12 rejects at pipeline-state creation.
         using var cts = new CancellationTokenSource(TestBudget.Compile);
 
         var result = await new EffectCompiler().CompileAsync(ParameterizedShader, new CompilerOptions
@@ -220,18 +218,49 @@ public sealed class DirectX12EffectCompilerTests
         result.IsSuccess.ShouldBeTrue(
             result.IsFailure ? string.Join("; ", result.Error.Select(e => $"{e.Code}: {e.Message}")) : "ok");
 
-        bool warned = result.Value.Warnings.Any(w => w.Code == "SD0214");
+        result.Value.Warnings.ShouldNotContain(w => w.Code == "SD0214");
 
-        if (OperatingSystem.IsWindows())
+        foreach (var shader in MgfxBlobReader.Parse(result.Value.Data).Shaders)
         {
-            warned.ShouldBeFalse(
-                "dxil.dll signs the blob on Windows, so warning here would be a false positive");
+            byte[] dxil = DirectX12ShaderCodeReader.Parse(shader.Bytecode).Dxil;
+            dxil.AsSpan(4, 16).ToArray().ShouldNotBe(new byte[16], "the container hash must not be zero");
         }
-        else
+    }
+
+    [Fact]
+    public async Task Compile_DxilHash_MatchesTheRetailHashOverTheFixtureCorpus()
+    {
+        // The oracle (issue #478). On Windows every shader below is signed by the pinned dxil.dll,
+        // so this pins the managed DxilContainerHash byte for byte against Microsoft's signer. On
+        // Linux/macOS the blob carries the managed hash itself, so the same assertion checks the
+        // signing is applied and consistent there.
+        string root = Path.Combine(AppContext.BaseDirectory, "fixtures", "shaders");
+        int checkedShaders = 0;
+
+        foreach (string path in Directory.EnumerateFiles(root, "*.fx", SearchOption.AllDirectories).OrderBy(p => p, StringComparer.Ordinal))
         {
-            warned.ShouldBeTrue(
-                "dxil.dll signing is Windows-only, so this DXIL is unsigned and retail D3D12 "
-                + "rejects it at pipeline-state creation — shipping that silently is the defect");
+            using var cts = new CancellationTokenSource(TestBudget.Compile);
+            var result = await new EffectCompiler().CompileAsync(File.ReadAllText(path), new CompilerOptions
+            {
+                Target = PlatformTarget.DirectX12,
+                SourceFileName = path,
+                AdditionalIncludePaths = [Path.GetDirectoryName(path)!, root],
+            }, cts.Token);
+
+            if (result.IsFailure)
+                continue; // legacy-only shaders DirectX12 refuses are not this test's subject
+
+            foreach (var shader in MgfxBlobReader.Parse(result.Value.Data).Shaders)
+            {
+                byte[] dxil = DirectX12ShaderCodeReader.Parse(shader.Bytecode).Dxil;
+                byte[] expected = new byte[16];
+                ShadowDusk.HLSL.Dxc.DxilContainerHash.Compute(dxil.AsSpan(ShadowDusk.HLSL.Dxc.DxilContainerHash.PrefixLength), expected);
+
+                dxil.AsSpan(4, 16).ToArray().ShouldBe(expected, $"{Path.GetRelativePath(root, path)} shader #{shader.Index}");
+                checkedShaders++;
+            }
         }
+
+        checkedShaders.ShouldBeGreaterThanOrEqualTo(30, "the oracle must run over a real corpus, not vacuously");
     }
 }

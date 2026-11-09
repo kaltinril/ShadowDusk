@@ -62,10 +62,7 @@ Supported targets are tested end-to-end against the reference compiler and rende
 > and FNA produce the same bytes on every OS — ShadowDusk bundles its own native pieces, and the
 > full test suite runs green on all three in CI.
 >
-> **Two carve-outs.** Build **DirectX 12** content on Windows: DXIL validation and signing run
-> through the Windows-only `dxil.dll`, so a non-Windows DX12 compile still succeeds but emits
-> *unsigned* DXIL (warned as `SD0214`) that retail D3D12 rejects at pipeline-state creation — see
-> [DirectX 12](../backends/directx12.md). And a small family of advanced-texture intrinsics
+> **One carve-out.** A small family of advanced-texture intrinsics
 > (`tex3D`, `tex2Dlod`, `tex2Dgrad`) currently fails to compile on the Linux/macOS DXC builds — see
 > [Parameters & Caveats](../guides/parameters-and-caveats.md).
 

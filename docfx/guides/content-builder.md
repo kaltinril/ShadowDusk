@@ -74,7 +74,7 @@ every MonoGame 3.8.1.263+ and KNI runtime loads. You never pick a version, a for
 | `Windows` | DirectX 11 (DXBC SM5) |
 | `DesktopGL`, `MacOSX`, `iOS`, `Android`, `RaspberryPi`, `Web`, `NativeClient` | OpenGL (GLSL) |
 | `DesktopVK` | [Vulkan](../backends/vulkan.md) (SPIR-V) |
-| `WindowsDX12` | [DirectX 12](../backends/directx12.md) (DXIL SM6) — build on Windows: DXIL signing needs the Windows-only `dxil.dll`, or the output is unsigned and retail D3D12 rejects it (`SD0214`) |
+| `WindowsDX12` | [DirectX 12](../backends/directx12.md) (DXIL SM6), signed on every host |
 | `PlayStation4`, `PlayStation5`, `XboxOne`, `XboxSeries`, `Switch`, `Xbox360`, `Stadia` | not supported — the asset fails loudly with `SD0501` |
 
 The map keys on the platform's **name** (what `-p` and `$(MonoGamePlatform)` carry), so it is correct

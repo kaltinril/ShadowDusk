@@ -37,8 +37,9 @@ namespace ShadowDusk.Integration.Tests.Tests;
 /// <item><b>Vulkan</b>: the <c>.mgfx</c> bytes and every SPIR-V module DXC returned, raw.</item>
 /// <item><b>DirectX 12</b>: three keys. <c>mgfx</c> is the raw <c>.mgfx</c> and is asserted only
 /// on Windows: a DXIL container differs by construction on every other host, because (1) its
-/// container digest is the <c>dxil.dll</c> signature, which only Windows produces (unsigned,
-/// <c>SD0214</c>, elsewhere), and (2) the DXIL bitcode embeds the compiler's own identity
+/// container digest is a hash of the container, which covers the bitcode below (issue #478: signed
+/// by the managed retail hash off Windows, byte-identical to <c>dxil.dll</c>'s for the same
+/// container), and (2) the DXIL bitcode embeds the compiler's own identity
 /// string (<c>!llvm.ident</c>, and the debug information's <c>producer</c>), so the <c>HASH</c>
 /// part (a hash of that bitcode), the PDB name derived from it, and the container's size
 /// follow. <c>dxil</c> is a digest of every DXIL container's
@@ -49,8 +50,8 @@ namespace ShadowDusk.Integration.Tests.Tests;
 /// pinned too.</item>
 /// <item>Both: the warning list, and for a fixture that does not compile, its error list. A
 /// fixture that compiles on one host and fails on another is a difference like any other. The
-/// two unsigned-DXIL notices (<c>SD0214</c> and DXC's own) are left out: every non-Windows host
-/// emits them by construction.</item>
+/// unsigned-DXIL notices (the retired <c>SD0214</c> and DXC's own) are left out of the comparison, as
+/// before.</item>
 /// <item>Each target twice: release, and with <see cref="CompilerOptions.Debug"/>.</item>
 /// </list>
 ///

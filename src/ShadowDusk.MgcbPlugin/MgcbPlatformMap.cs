@@ -50,7 +50,7 @@ public static class MgcbPlatformMap
         // MonoGame 3.8.5's new native backends, derived from the platform the consumer already
         // picked (the seamless pattern). Both names exist only on a 3.8.5+ host; on older hosts
         // no value stringifies to them and the ShaderProfile escape hatch is the way to reach
-        // these targets. DirectX 12 output must be built on Windows (DXIL signing, SD0214).
+        // these targets. DirectX 12 DXIL is signed on every host (managed container hash, issue #478).
         ("DesktopVK",    PlatformTarget.Vulkan),
         ("WindowsDX12",  PlatformTarget.DirectX12),
     ];

@@ -16,7 +16,11 @@ that loads and renders identically to `mgfxc`'s in the real MonoGame/KNI runtime
 
 ### Changed
 
+- DirectX 12 DXIL compiled on Linux or macOS is now signed. The container hash (Microsoft's open-sourced retail hash) is computed in managed code, byte-identical to `dxil.dll`'s, and written whenever the hash is zero; a `dxil.dll`-signed container is untouched, so Windows output is unchanged. The `SD0214` unsigned-DXIL warning is retired, and DXC's own "will not be signed" warning is dropped once the blob is signed ([#478](https://github.com/kaltinril/ShadowDusk/issues/478)).
+
 ### Fixed
+
+- Retail D3D12 no longer rejects a DirectX 12 `.mgfx` built off Windows (a zero DXIL container hash failed pipeline-state creation) ([#478](https://github.com/kaltinril/ShadowDusk/issues/478)).
 
 ## [0.25.0] - 2026-11-04
 
