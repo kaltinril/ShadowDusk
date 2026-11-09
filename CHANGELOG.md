@@ -14,6 +14,8 @@ that loads and renders identically to `mgfxc`'s in the real MonoGame/KNI runtime
 
 ### Added
 
+- `validation/ManagedDxilDx12`: DXIL signed only by the managed container hash loads in real MonoGame `WindowsDX12` and renders pixel-identical to the `dxil.dll`-signed build and the `mgfxc` golden (PS corpus and VS rig), with a wrong-hash negative control; in the DX-on-WARP CI job and the Windows render gate script ([#478](https://github.com/kaltinril/ShadowDusk/issues/478)).
+
 ### Changed
 
 ### Fixed
