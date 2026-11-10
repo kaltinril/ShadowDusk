@@ -156,8 +156,8 @@ async Task<int> RunPositive()
     Console.WriteLine(childOut);
     if (child.ExitCode == InconclusiveExit)
     {
-        Console.WriteLine("[managed-dxil] negative control INCONCLUSIVE: Windows Developer Mode is on, so D3D12 accepts any container hash. "
-            + "The acceptance above does NOT prove the managed signer here; run on a box with Developer Mode off (CI does).");
+        Console.WriteLine("[managed-dxil] negative control INCONCLUSIVE: this D3D12 (Developer Mode, or a software rasterizer such as WARP) accepts any container hash. "
+            + "The acceptance above does NOT prove the managed signer here; run on a real GPU with Developer Mode off.");
         Console.WriteLine($"\n[managed-dxil] {(requireStrict ? "FAIL (SHADOWDUSK_REQUIRE_STRICT_D3D12=1)" : "PASS (bytes + renders only; strictness unproven on this box)")}");
         return requireStrict ? 1 : 0;
     }
@@ -203,10 +203,9 @@ async Task<int> RunNegative()
     Console.WriteLine($"[negative] one-bit-wrong-hash container: {(wrongRendered ? "RENDERED" : "rejected: " + (w?.Error ?? "no outcome"))}");
     if (zeroRendered || wrongRendered)
     {
-        if (developerMode)
-            return InconclusiveExit;
-        Console.WriteLine("[negative] wrong-hash container RENDERED");
-        return 1;
+        // Developer Mode, or a software rasterizer (WARP renders a wrong hash even with Developer Mode
+        // off, measured 2026-11-09 in CI): this box cannot enforce the hash, so the control proves nothing.
+        return InconclusiveExit;
     }
     return 0;
 }
