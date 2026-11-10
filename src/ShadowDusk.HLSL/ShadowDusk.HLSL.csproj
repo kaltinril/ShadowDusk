@@ -53,6 +53,7 @@
     <!-- Issue #478: validation/ManagedDxilDx12 signs a deliberately unsigned DX12 .mgfx with DxilContainerHash
          and proves real D3D12 accepts it (and rejects the zero-hash original). -->
     <InternalsVisibleTo Include="ManagedDxilDx12" />
+    <InternalsVisibleTo Include="VsDrivenDx12" />
   </ItemGroup>
 
   <ItemGroup>

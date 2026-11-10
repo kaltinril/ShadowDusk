@@ -32,6 +32,7 @@
     <Compile Include="..\SharedDx\DxEffectImageRenderer.cs" />
     <Compile Include="..\SharedDx\VsDxEffectImageRenderer.cs" />
     <Compile Include="..\SharedDx\AposGalleryRenderer.cs" />
+    <Compile Include="..\SharedDx\DxilContainers.cs" />
     <!-- Mode legacy-lod (tex2Dlod / tex2Dbias / tex2Dproj): the scene the DX11 and Vulkan
          drivers draw too. -->
     <Compile Include="..\SharedLegacyLod\LegacyLodScene.cs" />
