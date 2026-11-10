@@ -441,6 +441,22 @@ var arms = new List<ShadowDusk.Validation.AposGallery.AposGalleryRenderer.Arm>
     new("candidate", UseEmbeddedGolden: false, candidateBytes, candidateErr),
 };
 
+// Issue Apos.Shapes#43 / ShadowDusk#478: the DXIL a non-Windows host emits has a zeroed container
+// hash that retail D3D12 rejects. Reproduce that artifact on this host (zero every DXBC hash, then
+// sign with ShadowDusk's managed DxilContainerHash alone) and render it through the same gallery.
+// Its bytes must equal the dxil.dll-signed candidate, so the managed signer is proven on the real
+// Apos.Shapes shader, not just the corpus.
+bool managedBytesEqual = false;
+if (candidateBytes is not null)
+{
+    byte[] managedBytes = (byte[])candidateBytes.Clone();
+    int zeroed = DxilContainers.ZeroHashes(managedBytes);
+    int signed = DxilContainers.SignAll(managedBytes);
+    managedBytesEqual = zeroed > 0 && signed == zeroed && managedBytes.AsSpan().SequenceEqual(candidateBytes);
+    Console.WriteLine($"[apos-dx12] managed-signed: {zeroed} DXBC container(s) zeroed then managed-signed; bytes == dxil.dll-signed: {(managedBytesEqual ? "yes" : "NO")}");
+    arms.Add(new("candidate-managed", UseEmbeddedGolden: false, managedBytes, null));
+}
+
 // Optional third arm, OFF unless SHADOWDUSK_DX12_PROBE_MGFX names a readable file. It renders an
 // arbitrary externally-supplied .mgfx through the identical gallery, which is how the DX12 1/255
 // delta below was root-caused (2026-07-31): take ShadowDusk's own candidate .mgfx, swap ONLY the
@@ -512,12 +528,14 @@ int CompareToBaseline(string label, int tolerance)
 // since 2026-07-31); before that fix it named the untransformed layout cell, which is why this
 // delta was first recorded against `DrawCircle`/`FillArc` when the pixels are `DrawEllipse`'s.
 int cmp = CompareToBaseline("candidate", tolerance: 1);
+if (caps.ContainsKey("candidate-managed"))
+    cmp |= CompareToBaseline("candidate-managed", tolerance: 1);
 if (caps.ContainsKey("probe"))
     CompareToBaseline("probe", tolerance: 1);
 
 bool allLoaded = game.Outcomes.All(o => o is { Loaded: true, Rendered: true });
-bool allMatch = cmp == 0;
-Console.WriteLine($"\n[apos-dx12] {(allLoaded && allMatch ? "PASS" : "FAIL")} — load+render {(allLoaded ? "2/2" : "<2")}, pixel-match vs golden {(allMatch ? "OK" : "DIVERGED")}.");
+bool allMatch = cmp == 0 && managedBytesEqual;
+Console.WriteLine($"\n[apos-dx12] {(allLoaded && allMatch ? "PASS" : "FAIL")} — load+render {(allLoaded ? "3/3" : "<3")}, pixel-match vs golden {(allMatch ? "OK" : "DIVERGED")}.");
 return (allLoaded && allMatch) ? 0 : 1;
 }
 

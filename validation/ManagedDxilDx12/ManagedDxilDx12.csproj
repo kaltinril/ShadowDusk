@@ -29,6 +29,7 @@
     <Compile Include="..\Shared\ShaderInputs.cs" />
     <Compile Include="..\SharedDx\VsDxEffectImageRenderer.cs" />
     <Compile Include="..\SharedDx\DxHeadlessRasterizer.cs" />
+    <Compile Include="..\SharedDx\DxilContainers.cs" />
   </ItemGroup>
 
   <Import Project="..\MonoGameVersion.targets" />

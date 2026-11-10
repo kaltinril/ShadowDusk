@@ -16,6 +16,8 @@ that loads and renders identically to `mgfxc`'s in the real MonoGame/KNI runtime
 
 - `validation/ManagedDxilDx12`: DXIL signed only by the managed container hash loads in real MonoGame `WindowsDX12` and renders pixel-identical to the `dxil.dll`-signed build and the `mgfxc` golden (PS corpus and VS rig), with a wrong-hash negative control; in the DX-on-WARP CI job and the Windows render gate script ([#478](https://github.com/kaltinril/ShadowDusk/issues/478)).
 
+- `validation/VsDrivenDx12 -- apos` now also renders the real Apos.Shapes DX12 shader signed only by the managed container hash (bytes equal to the `dxil.dll`-signed build, gallery matches the `mgfxc` golden), the exact shader from [Apos.Shapes#43](https://github.com/Apostolique/Apos.Shapes/issues/43).
+
 ### Changed
 
 ### Fixed
