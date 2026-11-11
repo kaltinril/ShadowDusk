@@ -26,6 +26,8 @@
       href: guides/on-device-android.md
     - name: Parameters & Caveats
       href: guides/parameters-and-caveats.md
+    - name: Two-Source HLSL (Vertex + Pixel)
+      href: guides/two-source-hlsl.md
 - name: Architecture
   items:
     - name: The Faithful Pipeline

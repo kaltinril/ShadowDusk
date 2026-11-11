@@ -14,6 +14,27 @@ that loads and renders identically to `mgfxc`'s in the real MonoGame/KNI runtime
 
 ### Added
 
+- **Two-source HLSL input: a vertex shader and a pixel shader as two separate HLSL texts**
+  ([Phase 71](plan/PHASE-71-two-source-hlsl-frontend.md)). `HlslStageCompiler.Compile` /
+  `CompileAsync` / `ValidateAsync` and `HlslStageFrontend.ConvertToFx` (`ShadowDusk.Compiler`) take
+  `HlslStageSources(VertexSource, PixelSource, ...)`: no `technique` block is needed. The frontend is
+  a pure managed text step in front of the unchanged pipeline, like the Slang and ShaderToy ones: it
+  splits each source into its top-level declarations, writes a declaration both make once when the
+  two are identical (ignoring whitespace and comments), rejects a conflicting one, puts a `#line`
+  marker before each declaration so a compile error points at the original file and line, and appends a
+  one-pass technique naming the two entry points. Every target and container works unchanged (MGFX
+  v10/v11, KNIFX v11/v12, FNA, DirectX 11/12, Vulkan), and the result is byte-identical to the same
+  effect written by hand as one `.fx`. The entry points are named by the caller
+  (`VertexEntry` / `PixelEntry`, `main` by default); when both are the same name each is renamed
+  apart (`<name>_VS` / `<name>_PS`), and a name that cannot be renamed safely is refused. New
+  registered codes: `SD0660` (empty source), `SD0661` (entry point not defined), `SD0662` (entry
+  point defined twice), `SD0663` (entry name not safely renamable), `SD0664` (conflicting struct,
+  function, constant or macro), `SD0665` (conflicting constant buffer, texture, sampler or
+  parameter), `SD0666` (unsupported source structure) and `SD0667` (invalid name).
+- **CLI: `--vertex <file> --pixel <file>`** (with `--vertex-entry` / `--pixel-entry`) compiles a
+  vertex and a pixel file as one effect; the only positional argument is then the output file.
+  Misuse is `X0012`. Every other invocation parses exactly as before.
+
 ### Changed
 
 ### Fixed

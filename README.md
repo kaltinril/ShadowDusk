@@ -65,6 +65,23 @@ In the browser, where no process can be spawned, the same pinned slangc runs in 
 
 Same rejection discipline as the built-in subset: a construct real slangc accepts but that has nowhere to land in an `Effect` (a compute/mesh entry point, an SM6-only wave/quad intrinsic on a target that can't represent it) is rejected loudly by name, never silently dropped, and no route through it is `mgfxc`-equivalent either. The optional `ShadowDusk.ShaderToy` package covers a third input, ShaderToy / plain-GLSL fragment shaders.
 
+### Two sources: a vertex shader and a pixel shader
+
+HLSL shaders often live in two files, one per stage, with no `technique` block. The two-source frontend takes them as two texts and compiles them to the same outputs as a single `.fx`. Name the entry points (they default to `main`; two `main`s are renamed apart for you):
+
+```csharp
+var result = await HlslStageCompiler.CompileAsync(
+    new EffectCompiler(),
+    new HlslStageSources(vertexHlsl, pixelHlsl, VertexEntry: "VSMain", PixelEntry: "PSMain"),
+    new CompilerOptions { Target = PlatformTarget.OpenGL });
+```
+
+```sh
+ShadowDuskCLI --vertex Sprite.vs.hlsl --pixel Sprite.ps.hlsl Sprite.mgfx /Profile:OpenGL --vertex-entry VSMain --pixel-entry PSMain
+```
+
+Every target and container works unchanged (MGFX v10/v11, KNIFX, FNA, DirectX 11/12, Vulkan), because the frontend merges the two sources into one effect with a synthesized technique and hands it to the same pipeline: the result is byte-identical to the same effect written by hand as one `.fx`. A declaration both sources make (a struct, a constant buffer, a texture) is written once when identical and rejected when different (`SD0664` / `SD0665`). A compile error points at the original file and line, not at the merged effect. Each source must compile on its own; the merge does not check that. See the [two-source guide](docfx/guides/two-source-hlsl.md).
+
 ## Supported targets
 
 ShadowDusk works with **MonoGame, KNI, and FNA** across these graphics backends. Pick your framework and backend; ShadowDusk emits the right output. SkiaSharp and Raylib-cs are covered separately below the table.

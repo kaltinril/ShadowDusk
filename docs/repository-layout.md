@@ -31,7 +31,9 @@ ShadowDusk/
 │   ├── ShadowDusk.Compiler/      # EffectCompiler : IShaderCompiler + pipeline orchestration —
 │   │                             #   the consumer-facing product NuGet (the in-memory library);
 │   │                             #   also the source-text converters Sksl/ (SkSL) and Raylib/ (raylib
-│   │                             #   glsl330), both on Internal/ModernGlslSeam (the pre-rewriter seam)
+│   │                             #   glsl330), both on Internal/ModernGlslSeam (the pre-rewriter seam),
+│   │                             #   and HlslStages/ (Phase 71): the two-source HLSL frontend, HlslStageFrontend
+│   │                             #   (a vertex text + a pixel text -> one .fx) and HlslStageCompiler, over the unchanged pipeline
 │   ├── ShadowDusk.Slang.Wasm/    # WasmSlangCompiler (issue #257, Phase 67): full Slang in the BROWSER. Runs the pinned slangc
 │   │                             #   in-process as WebAssembly (wwwroot/slangc/, BUILT by .wasm-build/slang-wasm/,
 │   │                             #   gitignored) through SlangCompiler's internal seam, then ShadowDusk.Wasm. Not packed yet.
@@ -92,6 +94,9 @@ ShadowDusk/
 │       │                               #   converter evidence for both Slang routes, issue #253)
 │       │                               #   and slang/ (17 .slang, the Phase 61 Slang input corpus — a separate
 │       │                               #   input language, not .fx; see docs/test-shader-corpus.md §5)
+│       ├── hlsl-stages/                # Phase 71 two-source HLSL fixtures: vertex/pixel pairs (*.vs.hlsl, *.ps.hlsl) and their
+│       │                               #   hand-merged .fx. NOT under shaders/ on purpose: the corpus sweeps and cross-host
+│       │                               #   byte-identity manifests glob shaders/** for *.fx and would pick up the hand-merged files.
 │       ├── issues/                     # Issue-reproduction fixtures by issue number (202/: the reporter's
 │       │                               #   3235-line Apos.Shapes, MIT, for FnaDiagnosticLocationTests). NOT under
 │       │                               #   shaders/ on purpose: the GL/Vulkan/Phase-41 corpus sweeps enumerate

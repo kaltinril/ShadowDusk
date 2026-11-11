@@ -559,4 +559,108 @@ public sealed class ArgumentParserTests
         result.Error.Code.ShouldBe("X0009");
         result.Error.Message.ShouldContain(flag, Case.Sensitive);
     }
+
+    // -------------------------------------------------------------------------
+    // Two-source HLSL input: --vertex / --pixel (+ entry names)
+    // -------------------------------------------------------------------------
+
+    [Fact]
+    public void Parse_VertexAndPixel_TheOnlyPositionalIsTheOutput()
+    {
+        var result = ArgumentParser.Parse(["--vertex", "v.hlsl", "--pixel", "p.hlsl", "Out.mgfx", "/Profile:OpenGL"]);
+
+        result.IsSuccess.ShouldBeTrue();
+        result.Value.IsStagePair.ShouldBeTrue();
+        result.Value.VertexFile.ShouldBe("v.hlsl");
+        result.Value.PixelFile.ShouldBe("p.hlsl");
+        result.Value.OutputFile.ShouldBe("Out.mgfx");
+        result.Value.SourceFile.ShouldBe("v.hlsl");
+        result.Value.VertexEntry.ShouldBe("main");
+        result.Value.PixelEntry.ShouldBe("main");
+        result.Value.Platform.ShouldBe(PlatformTarget.OpenGL);
+    }
+
+    [Theory]
+    [InlineData("--vertex=v.hlsl", "--pixel:p.hlsl", "--vertex-entry=VS", "--pixel-entry:PS")]
+    [InlineData("--vertex", "v.hlsl", "--pixel", "p.hlsl", "--vertex-entry", "VS", "--pixel-entry", "PS")]
+    public void Parse_PairFlags_AcceptTheSpaceColonAndEqualsForms(params string[] flags)
+    {
+        var result = ArgumentParser.Parse([.. flags, "Out.mgfx"]);
+
+        result.IsSuccess.ShouldBeTrue();
+        result.Value.VertexFile.ShouldBe("v.hlsl");
+        result.Value.PixelFile.ShouldBe("p.hlsl");
+        result.Value.VertexEntry.ShouldBe("VS");
+        result.Value.PixelEntry.ShouldBe("PS");
+    }
+
+    [Fact]
+    public void Parse_NoPairFlags_IsNotAPair()
+    {
+        var result = ArgumentParser.Parse(["Shader.fx", "Out.mgfx"]);
+
+        result.Value.IsStagePair.ShouldBeFalse();
+        result.Value.VertexFile.ShouldBeNull();
+    }
+
+    [Theory]
+    [InlineData("--vertex", "v.hlsl", "Out.mgfx")]
+    [InlineData("--pixel", "p.hlsl", "Out.mgfx")]
+    public void Parse_OnlyOneOfVertexAndPixel_IsX0012(params string[] args)
+    {
+        var result = ArgumentParser.Parse(args);
+
+        result.IsFailure.ShouldBeTrue();
+        result.Error.Code.ShouldBe("X0012");
+    }
+
+    [Fact]
+    public void Parse_PairWithTwoPositionals_IsX0012()
+    {
+        var result = ArgumentParser.Parse(["--vertex", "v.hlsl", "--pixel", "p.hlsl", "A.fx", "Out.mgfx"]);
+
+        result.IsFailure.ShouldBeTrue();
+        result.Error.Code.ShouldBe("X0012");
+    }
+
+    [Fact]
+    public void Parse_PairWithAnInputFormat_IsX0012()
+    {
+        var result = ArgumentParser.Parse(["--vertex", "v.hlsl", "--pixel", "p.hlsl", "Out.mgfx", "--input-format", "slang"]);
+
+        result.IsFailure.ShouldBeTrue();
+        result.Error.Code.ShouldBe("X0012");
+    }
+
+    [Fact]
+    public void Parse_EntryFlagsWithoutAPair_IsX0012()
+    {
+        var result = ArgumentParser.Parse(["Shader.fx", "Out.mgfx", "--pixel-entry", "PS"]);
+
+        result.IsFailure.ShouldBeTrue();
+        result.Error.Code.ShouldBe("X0012");
+    }
+
+    [Fact]
+    public void Parse_PairMissingTheOutput_IsX0003()
+    {
+        var result = ArgumentParser.Parse(["--vertex", "v.hlsl", "--pixel", "p.hlsl"]);
+
+        result.IsFailure.ShouldBeTrue();
+        result.Error.Code.ShouldBe("X0003");
+        result.Error.Message.ShouldContain("OutputFile", Case.Sensitive);
+    }
+
+    [Theory]
+    [InlineData("--vertex")]
+    [InlineData("--pixel")]
+    [InlineData("--vertex-entry")]
+    [InlineData("--pixel-entry")]
+    public void Parse_PairFlagWithNoValue_IsX0009(string flag)
+    {
+        var result = ArgumentParser.Parse([flag]);
+
+        result.IsFailure.ShouldBeTrue();
+        result.Error.Code.ShouldBe("X0009");
+    }
 }

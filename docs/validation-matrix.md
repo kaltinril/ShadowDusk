@@ -539,6 +539,47 @@ same evidence rules as the ShaderToy axis apply:
   means solving slangc's name mangling in the harness), and the FNA arm (modern-syntax bodies vs
   the SM2–3 fx_2_0 ceiling — the OQ2 target-reach limit, to be measured not assumed).
 
+### 8.0aa Two-source HLSL input (`HlslStageCompiler`) — the same distinct axis (added 2026-11-11, Phase 71)
+
+`ShadowDusk.Compiler.HlslStageFrontend` accepts a vertex shader and a pixel shader as **two
+separate HLSL texts** and produces `.fx` text for the **existing, unchanged** pipeline: each
+source is split into its top-level declarations, identical shared ones are written once,
+conflicting ones are rejected (`SD0664` / `SD0665`), a `#line` marker precedes each declaration
+and a one-pass technique naming the two entry points is appended (the Slang and ShaderToy
+shader-model block). It is a **pure managed text transform**, so it runs on every host the
+pipeline runs on. The same evidence rules as the other frontends apply:
+
+- **There is NO `mgfxc` oracle for two-source input** (`mgfxc` reads one `.fx`), so no route
+  through this frontend is called `mgfxc`-equivalent. The claim is the stronger, narrower one the
+  frontend makes by construction: **the output is byte-identical to the same effect written by
+  hand as one `.fx`**, so everything proven for that `.fx` (rung 4 on the targets that have it)
+  holds for the pair.
+- **Proven today:** `HlslStagePairTests` (integration, ungated: needs only the natives every
+  suite lane has) compiles three VS/PS pairs (`tests/fixtures/hlsl-stages/`: a textured pair, a
+  pair whose entry points are both `main` with a shared constant buffer, and a Shader Model 3
+  pair) and their hand-merged `.fx` on OpenGL (MGFX v10 and v11), DirectX 11, DirectX 12, Vulkan,
+  FNA, KNIFX v11 and v12 on OpenGL and KNIFX on DirectX 11, and asserts the bytes are equal. The
+  shared-constant-buffer pair skips Vulkan because the hand-written effect itself is refused there
+  (`SD0026`, one constant buffer per stage). The location contract is pinned: an error planted in
+  a pixel source behind a removed duplicate declaration is reported in the pixel file at the
+  pixel file's line and column on OpenGL, DirectX 11 and Vulkan. 62 pure tests cover the splitter
+  and the merge (identical, conflicting, overloaded, renamed, malformed), and
+  `CliHlslStagePairTest` covers the CLI (exit codes, empty stderr, located errors, byte equality
+  with the library).
+- **The reject set:** an empty source `SD0660`; an entry point not defined `SD0661` or defined
+  twice `SD0662`; an entry name that cannot be renamed safely `SD0663`; conflicting declarations
+  `SD0664` (struct, function, constant, macro) and `SD0665` (constant buffer, texture, sampler,
+  uniform parameter); an unsupported structure (`technique` block, unbalanced `#if`) `SD0666`;
+  an invalid name `SD0667`; CLI misuse `X0012`.
+- **Not checked, and recorded as known gaps** (`project_facts.md`): each source must be
+  self-contained (a function using a declaration only the other source makes compiles in the
+  merge); a macro one source defines is visible to the other; the pipeline links vertex outputs
+  to pixel inputs by semantic and does not validate that they agree; the FNA `SD0303` effect-build
+  diagnostics carry the merged effect's lines, not the original files'.
+- **Not run on this evidence axis here:** the Windows render gate (a GPU box) was not run for
+  this change; the evidence for the render half is the byte identity with the hand-merged `.fx`
+  plus the existing rung-4 gates for that `.fx` shape.
+
 ### 8.0a Full slangc-backed Slang input (`ShadowDusk.Slang`) — the real-compiler route (added 2026-09-11, Phase 66)
 
 `ShadowDusk.Slang.SlangCompiler` is a NEW, separate, OPTIONAL package (the `ShadowDusk.ShaderToy`

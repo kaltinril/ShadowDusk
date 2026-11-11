@@ -13,6 +13,12 @@ internal sealed class PipelineRunner
         CliArguments args,
         CancellationToken ct = default)
     {
+        // Two-source input (--vertex/--pixel): merge the two files into one effect, then run the
+        // exact same compile-and-write stages. Diagnostics point at the original files (the merged
+        // effect carries #line markers), so no "generated HLSL" note is needed.
+        if (args.IsStagePair)
+            return await RunStagePairAsync(args, ct).ConfigureAwait(false);
+
         // Stage 1: Read source file. UnauthorizedAccessException (ACL-denied path,
         // directory-as-file) is an input failure exactly like IOException — map it to
         // X0001 rather than letting it crash out as an internal X0099.
@@ -76,6 +82,21 @@ internal sealed class PipelineRunner
             hlslSource = sourceText;
         }
 
+        return await CompileAndWriteAsync(
+            args, hlslSource, isConvertedGlsl, isConvertedSlang, compileSourceNameOverride: null, ct).ConfigureAwait(false);
+    }
+
+    // Stages 2 to 3: build the options, compile with the library, wrap and write the output. Shared
+    // by every input route (an .fx, a converted ShaderToy/GLSL or Slang file, a vertex/pixel pair);
+    // `hlslSource` is already .fx text.
+    private static async Task<Result<byte[], IReadOnlyList<ShaderError>>> CompileAndWriteAsync(
+        CliArguments args,
+        string hlslSource,
+        bool isConvertedGlsl,
+        bool isConvertedSlang,
+        string? compileSourceNameOverride,
+        CancellationToken ct)
+    {
         // Stage 2: Build options and delegate compilation to the library.
         IIncludeResolver includeResolver = new FileSystemIncludeResolver();
 
@@ -92,9 +113,10 @@ internal sealed class PipelineRunner
         // measured against the mgfxc 3.8.5 CLI, issue #274) or the synthetic ".generated.fx" name
         // on a converted route. With /Debug, DXC also records it in the SPIR-V / DXIL debug info.
         // v10, KNIFX and FNA output carry no source name and do not depend on it.
-        string compileSourceName = isConvertedGlsl || isConvertedSlang
-            ? Path.GetFileNameWithoutExtension(args.SourceFile) + ".generated.fx"
-            : args.SourceFile;
+        string compileSourceName = compileSourceNameOverride
+            ?? (isConvertedGlsl || isConvertedSlang
+                ? Path.GetFileNameWithoutExtension(args.SourceFile) + ".generated.fx"
+                : args.SourceFile);
 
         // An .xnb output path means "wrap it" (Stage 2.5 below). mgfxc has no .xnb mode: the
         // reference for an .xnb is MGCB, whose stock EffectProcessor stores "<unknown>" in that
@@ -222,6 +244,56 @@ internal sealed class PipelineRunner
         }
 
         return Result<byte[], IReadOnlyList<ShaderError>>.Ok(mgfxBytes);
+    }
+
+    private static async Task<Result<byte[], IReadOnlyList<ShaderError>>> RunStagePairAsync(
+        CliArguments args,
+        CancellationToken ct)
+    {
+        string vertexText, pixelText;
+        string failed = args.VertexFile!;
+        try
+        {
+            vertexText = await File.ReadAllTextAsync(args.VertexFile!, ct).ConfigureAwait(false);
+            failed = args.PixelFile!;
+            pixelText = await File.ReadAllTextAsync(args.PixelFile!, ct).ConfigureAwait(false);
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            return Fail(new ShaderError(File: failed, Line: 0, Column: 0, Code: "X0001", Message: ex.Message));
+        }
+
+        string stem = Path.GetFileNameWithoutExtension(args.OutputFile);
+        var converted = HlslStageFrontend.ConvertToFx(new HlslStageSources(
+            vertexText,
+            pixelText,
+            VertexName: args.VertexFile!,
+            PixelName: args.PixelFile!,
+            VertexEntry: args.VertexEntry,
+            PixelEntry: args.PixelEntry,
+            TechniqueName: SanitizeIdentifier(stem)));
+        if (converted.IsFailure)
+            return Result<byte[], IReadOnlyList<ShaderError>>.Fail(converted.Error);
+
+        foreach (var w in converted.Value.Warnings)
+            Console.Error.WriteLine(MgcbErrorFormatter.Format(w));
+
+        // The merged effect's SourceFileName is synthetic, with no directory, so a #include in either
+        // file would lose its relative anchor: search each file's own directory.
+        var includePaths = new List<string>(args.IncludePaths);
+        foreach (string file in new[] { args.VertexFile!, args.PixelFile! })
+        {
+            if (Path.GetDirectoryName(Path.GetFullPath(file)) is { Length: > 0 } dir && !includePaths.Contains(dir))
+                includePaths.Add(dir);
+        }
+
+        return await CompileAndWriteAsync(
+            args with { IncludePaths = includePaths },
+            converted.Value.FxText,
+            isConvertedGlsl: false,
+            isConvertedSlang: false,
+            compileSourceNameOverride: stem + ".generated.fx",
+            ct).ConfigureAwait(false);
     }
 
     // Runs the ShaderToy/GLSL -> .fx converter and surfaces its diagnostics in the CLI's existing

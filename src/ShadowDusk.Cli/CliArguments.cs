@@ -26,5 +26,16 @@ internal sealed record CliArguments(
     // output (Phase 64 C2): the implicit default is the one case where "it compiled" and "my
     // DesktopGL game loads it" diverge silently, and the warning is never required for correct
     // output.
-    bool                  TargetIsExplicit = false
-);
+    bool                  TargetIsExplicit = false,
+    // Two-source HLSL frontend: --vertex <file> --pixel <file> compile a vertex and a pixel shader
+    // given as two files. When set, SourceFile is the vertex file (it anchors diagnostics) and the
+    // only positional argument was the output file. The entry points default to `main`.
+    string?               VertexFile = null,
+    string?               PixelFile = null,
+    string                VertexEntry = "main",
+    string                PixelEntry = "main"
+)
+{
+    /// <summary>True when the input is a vertex file plus a pixel file rather than one source.</summary>
+    public bool IsStagePair => VertexFile is not null && PixelFile is not null;
+}

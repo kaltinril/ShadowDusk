@@ -10,6 +10,7 @@ internal static class ArgumentParser
     public static string UsageText { get; } =
         """
         Usage: ShadowDuskCLI <SourceFile> <OutputFile> [options]
+               ShadowDuskCLI --vertex <VertexFile> --pixel <PixelFile> <OutputFile> [options]
 
           <OutputFile>              The compiled effect. An .xnb extension writes the content
                                     pipeline container instead (Content.Load<Effect> ready, no
@@ -34,6 +35,14 @@ internal static class ArgumentParser
                                     to .fx before compiling; never required for correct output.
           --print-uniforms          Print the converted shader's drivable effect parameters to
                                     stderr (off by default; only affects ShaderToy/GLSL input).
+          --vertex <file>           Two-source input: the HLSL vertex shader, in its own file.
+          --pixel <file>            Two-source input: the HLSL pixel shader, in its own file. Both
+                                    are needed; the only positional argument is then <OutputFile>.
+                                    No technique block is needed: it is synthesized. Declarations
+                                    both files make are written once if identical, rejected if not.
+          --vertex-entry <name>     Name of the vertex entry-point function. Default: main
+          --pixel-entry <name>      Name of the pixel entry-point function. Default: main
+                                    (equal names are renamed apart internally)
 
         Unsupported platforms (exit 1): PlayStation4, XboxOne, Switch
         """;
@@ -54,6 +63,10 @@ internal static class ArgumentParser
         bool printUniforms = false;
         var defines = new List<UserDefine>();
         bool targetIsExplicit = false;
+        string? vertexFile = null;
+        string? pixelFile = null;
+        string vertexEntry = "main";
+        string pixelEntry = "main";
 
         int i = 0;
         while (i < args.Length)
@@ -208,6 +221,39 @@ internal static class ArgumentParser
                     continue;
                 }
 
+                // Two-source HLSL frontend. Space, ':' and '=' value forms, like the other long options.
+                if (TryReadValuedFlag(flagBody, "vertex", args, ref i, out string? vertexValue))
+                {
+                    if (string.IsNullOrEmpty(vertexValue))
+                        return Result<CliArguments, ShaderError>.Fail(MissingFlagValue("--vertex", "a vertex shader file"));
+                    vertexFile = vertexValue;
+                    continue;
+                }
+
+                if (TryReadValuedFlag(flagBody, "pixel", args, ref i, out string? pixelValue))
+                {
+                    if (string.IsNullOrEmpty(pixelValue))
+                        return Result<CliArguments, ShaderError>.Fail(MissingFlagValue("--pixel", "a pixel shader file"));
+                    pixelFile = pixelValue;
+                    continue;
+                }
+
+                if (TryReadValuedFlag(flagBody, "vertex-entry", args, ref i, out string? vertexEntryValue))
+                {
+                    if (string.IsNullOrEmpty(vertexEntryValue))
+                        return Result<CliArguments, ShaderError>.Fail(MissingFlagValue("--vertex-entry", "a function name"));
+                    vertexEntry = vertexEntryValue;
+                    continue;
+                }
+
+                if (TryReadValuedFlag(flagBody, "pixel-entry", args, ref i, out string? pixelEntryValue))
+                {
+                    if (string.IsNullOrEmpty(pixelEntryValue))
+                        return Result<CliArguments, ShaderError>.Fail(MissingFlagValue("--pixel-entry", "a function name"));
+                    pixelEntry = pixelEntryValue;
+                    continue;
+                }
+
                 if (flagBody.Equals("print-uniforms", StringComparison.OrdinalIgnoreCase))
                 {
                     printUniforms = true;
@@ -241,6 +287,30 @@ internal static class ArgumentParser
             i++;
         }
 
+        bool stagePair = vertexFile is not null || pixelFile is not null;
+        if (stagePair)
+        {
+            if (vertexFile is null || pixelFile is null)
+                return Result<CliArguments, ShaderError>.Fail(StagePairError(
+                    "--vertex and --pixel must be given together: a pair needs both shader files."));
+            if (outputFile is not null)
+                return Result<CliArguments, ShaderError>.Fail(StagePairError(
+                    "with --vertex and --pixel the only positional argument is <OutputFile>, " +
+                    $"but two were given ('{sourceFile}' and '{outputFile}')."));
+            if (inputFormat != InputFormat.Auto)
+                return Result<CliArguments, ShaderError>.Fail(StagePairError(
+                    "--input-format does not apply to --vertex/--pixel input (both files are HLSL)."));
+
+            // The one positional is the output; the vertex file anchors diagnostics.
+            outputFile = sourceFile;
+            sourceFile = vertexFile;
+        }
+        else if (vertexEntry != "main" || pixelEntry != "main")
+        {
+            return Result<CliArguments, ShaderError>.Fail(StagePairError(
+                "--vertex-entry and --pixel-entry only apply with --vertex and --pixel."));
+        }
+
         if (sourceFile is null || outputFile is null)
         {
             return Result<CliArguments, ShaderError>.Fail(new ShaderError(
@@ -248,9 +318,11 @@ internal static class ArgumentParser
                 Line: 0,
                 Column: 0,
                 Code: "X0003",
-                Message: sourceFile is null
-                    ? "Missing required argument: <SourceFile>"
-                    : "Missing required argument: <OutputFile>"));
+                Message: stagePair
+                    ? "Missing required argument: <OutputFile>"
+                    : sourceFile is null
+                        ? "Missing required argument: <SourceFile>"
+                        : "Missing required argument: <OutputFile>"));
         }
 
         return Result<CliArguments, ShaderError>.Ok(new CliArguments(
@@ -265,8 +337,19 @@ internal static class ArgumentParser
             InputFormat: inputFormat,
             PrintUniforms: printUniforms,
             Defines: defines,
-            TargetIsExplicit: targetIsExplicit));
+            TargetIsExplicit: targetIsExplicit,
+            VertexFile: vertexFile,
+            PixelFile: pixelFile,
+            VertexEntry: vertexEntry,
+            PixelEntry: pixelEntry));
     }
+
+    private static ShaderError StagePairError(string message) => new(
+        File: "",
+        Line: 0,
+        Column: 0,
+        Code: "X0012",
+        Message: $"Invalid two-source input: {message}");
 
     // Bug-hunt 2026-07-27 (N12): a flag that requires a value but reaches the end of the
     // argument list used to be silently ignored, so the compile ran with the DEFAULT —
