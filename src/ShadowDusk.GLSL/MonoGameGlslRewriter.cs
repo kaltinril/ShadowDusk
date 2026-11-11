@@ -862,6 +862,7 @@ public static class MonoGameGlslRewriter
             body = LowerTruncToSignFloorAbs(body);      // Rule 15 (Apos.Shapes #34)
             body = ReduceTrigArguments(body);           // Rule 16 (issue #215): sin/cos/tan
             body = NonSquareMatrixLowering.Lower(body); // Rule 17 (issue #453): non-square matrices
+            body = ArrayConstructorLowering.Lower(body); // Rule 18 (issue #475): array constructors
 
             // Phase 43 F3: inject mgfxc/MojoShader's runtime posFixup contract.
             // SPIRV-Cross's FlipVertexY is OFF (see SpirvCrossGlslTranspiler), so the
@@ -1121,6 +1122,11 @@ public static class MonoGameGlslRewriter
         // Rule 4c's own non-square interpolant rebuild) as a zero-padded square matN. The
         // versionless dialect has no non-square types; see NonSquareMatrixLowering.
         body = NonSquareMatrixLowering.Lower(body);
+
+        // Rule 18 (issue #475): an HLSL array initializer reaches the output as an array
+        // constructor (`float[](a, b)`), GLSL 1.20 / ESSL 3.00 only. Declared plain and
+        // assigned per element instead; see ArrayConstructorLowering.
+        body = ArrayConstructorLowering.Lower(body);
 
         // ---- Assemble final output: precision header + #define block + body. ----
         // The fragment-output `#define` aliases are emitted here, AFTER all Pass-2
