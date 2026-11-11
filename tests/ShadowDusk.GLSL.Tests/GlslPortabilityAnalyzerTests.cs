@@ -663,4 +663,43 @@ void main()
         AnalyzePixel(glsl, passHasVertexShader: true)
             .ShouldNotContain(f => f.Code == "SD0403");
     }
+    [Theory]
+    [InlineData("const float t[4] = float[](0.0, 8.0, 2.0, 10.0);")]
+    [InlineData("const float t[4] = float[4](0.0, 8.0, 2.0, 10.0);")]
+    [InlineData("const vec2 t[2] = vec2[](vec2(1.0, 2.0), vec2(3.0, 4.0));")]
+    public void Sd0403_ArrayConstructor_IsFlagged(string declaration)
+    {
+        // Issue #475: an HLSL array initializer surfaces as an array constructor, GLSL 1.20 /
+        // ESSL 3.00. WebGL1 and KNI Reach refuse it at load; the detector had no rule for it.
+        string glsl = $$"""
+varying vec4 vTexCoord0;
+{{declaration}}
+
+void main()
+{
+    gl_FragColor = vec4(t[1].x);
+}
+""";
+        AnalyzePixel(glsl, passHasVertexShader: true)
+            .ShouldContain(f => f.Code == "SD0403" && f.Message.Contains("array constructor"));
+    }
+
+    [Fact]
+    public void Sd0403_PlainArrayIndexingAndDeclarations_AreNotFlaggedAsArrayConstructors()
+    {
+        const string glsl = """
+varying vec4 vTexCoord0;
+uniform vec4 ps_uniforms_vec4[4];
+
+void main()
+{
+    float t[2];
+    t[0] = ps_uniforms_vec4[1].x;
+    t[1] = ps_uniforms_vec4[2].y;
+    gl_FragColor = vec4(t[1] * (t[0] + vTexCoord0.x));
+}
+""";
+        AnalyzePixel(glsl, passHasVertexShader: true)
+            .ShouldNotContain(f => f.Code == "SD0403");
+    }
 }

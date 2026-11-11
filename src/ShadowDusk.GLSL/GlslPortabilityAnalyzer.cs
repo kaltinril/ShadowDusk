@@ -138,6 +138,8 @@ public static class GlslPortabilityAnalyzer
             Warn("an unsigned integer type or literal");
         if (Regex.IsMatch(glsl, @"\bmat[234]x[234]\b"))
             Warn("a non-square matrix type");
+        if (Regex.IsMatch(glsl, ArrayConstructorLowering.ConstructorPattern))
+            Warn("an array constructor ('float[](...)')");
         if (Regex.IsMatch(glsl, @"<<|>>"))
             Warn("an integer shift operator ('<<' or '>>')");
         // GLSL 1.10 §5.1 / ESSL 1.00 reserve %, &, ^, |, ~ (and their OP= forms) for
