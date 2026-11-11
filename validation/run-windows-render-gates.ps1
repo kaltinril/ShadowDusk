@@ -240,6 +240,14 @@
   `$newerMonoGame` with -p:MonoGameVersion. For taking on a new MonoGame release; the release gate
   is always the full run, which includes this block.
 
+.PARAMETER SkipDesktopGL4LinkAbort
+  Skip the three MonoGame DesktopGL4 drivers that abort the whole process on a strict GL driver
+  (Intel's Windows driver; issue #487): XnbContentLoadGl, VertexSemanticsGl and KniEffectTestGl.
+  MonoGame's native DesktopGL4 links a throwaway vertex-shader/pixel-shader pair on every effect
+  switch and kills the process if the driver refuses it (MonoGame/MonoGame#9612). The skip is
+  printed, and the run is NOT the full release gate: do the release run on a lenient-driver
+  (NVIDIA/AMD) box without this switch. Remove the switch once #9612 is fixed.
+
 .PARAMETER SkipRestore
   Skip `tools/restore.ps1` (the vkd3d-shader native the DX/KNI-DX/FNA gates P/Invoke). Use only
   when you know the natives are already restored.
@@ -257,6 +265,7 @@ param(
     [switch]$IncludeFna,
     [switch]$IncludeVulkan,
     [switch]$SkipVulkan,
+    [switch]$SkipDesktopGL4LinkAbort,
     [switch]$SkipRestore,
     [switch]$NewerMonoGameOnly
 )
@@ -752,6 +761,11 @@ foreach ($mg in $newerMonoGame) {
             } else {
                 $project = $cmd[0]; $bestEffort = $project.StartsWith('?')
                 if ($bestEffort) { $project = $project.Substring(1) }
+                if ($SkipDesktopGL4LinkAbort -and ($props -contains '-p:MonoGameDesktopGL4=true') -and
+                    @('validation/XnbContentLoadGl', 'validation/VertexSemanticsGl', 'validation/KniEffectTestGl') -contains $project) {
+                    "Write-Host 'SKIPPED $project on DesktopGL4 (-SkipDesktopGL4LinkAbort: MonoGame/MonoGame#9612 aborts the process on a strict GL driver)' -ForegroundColor Yellow"
+                    continue
+                }
                 $runArgs = @('run', '--project', $project, '-c', 'Release', $p) + $props
                 if ($cmd.Count -gt 1) { $runArgs += $cmd[1..($cmd.Count - 1)] }
                 $quoted = ($runArgs | ForEach-Object { "'$_'" }) -join ', '
@@ -799,6 +813,9 @@ $passed = $results.Count - $failed
 Write-Host ("`n{0}/{1} render gates passed." -f $passed, $results.Count)
 if (-not $IncludeFna) {
     Write-Host "(FNA gate skipped - rerun with -IncludeFna before an FNA-affecting release.)" -ForegroundColor Yellow
+}
+if ($SkipDesktopGL4LinkAbort) {
+    Write-Host "(DesktopGL4 drivers XnbContentLoadGl, VertexSemanticsGl and KniEffectTestGl skipped by -SkipDesktopGL4LinkAbort, MonoGame#9612 - run them without it on a lenient-driver box before a release.)" -ForegroundColor Yellow
 }
 if ($SkipVulkan) {
     Write-Host "(Vulkan gates skipped by -SkipVulkan - rerun without it before a Vulkan-affecting release.)" -ForegroundColor Yellow
