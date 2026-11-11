@@ -176,7 +176,7 @@ public static class KniEffectTestProbe
         "not drawn on Vulkan: the test draws KNI's PS (reads a float2 TEXCOORD0 at location 0) behind BasicEffect's VS (writes a float4 there), which the Vulkan spec forbids without VK_KHR_maintenance4 (VUID-RuntimeSpirv-maintenance4-06817, measured under the Khronos validation layer) and MonoGame DesktopVK does not enable it; drawing it would fail the CI lane's layer check for any compiler's PS";
     private const string InfoReference = "reference arm (not scored): the reference compiler's own build, for comparison";
 
-    /// <param name="strictGl">The GL driver's front end is a strict one (Mesa, Apple, ANGLE), read from
+    /// <param name="strictGl">The GL driver's front end is a strict one (Mesa, Apple, ANGLE, Intel), read from
     /// its GL strings at run time; false before the device exists, so a build-time call sees the lenient
     /// classification and the report re-classifies with the measured driver.</param>
     internal static Expectation Classify(string rt, string kase, string arm, string check, bool strictGl = false)
@@ -534,7 +534,7 @@ public static class KniEffectTestProbe
         public string GlVersion { get; private set; } = "(unknown)";
 
         /// <summary>
-        /// An OpenGL run on a strict GLSL front end (Mesa, Apple, ANGLE; the same list as the vertex
+        /// An OpenGL run on a strict GLSL front end (Mesa, Apple, ANGLE, Intel; the same list as the vertex
         /// semantics gate), decided from the GL strings before anything is drawn, never from a failure.
         /// </summary>
         public bool StrictGl { get; private set; }
@@ -560,7 +560,7 @@ public static class KniEffectTestProbe
                 break;
             }
             string all = $"{GlVendor} {GlRenderer} {GlVersion}";
-            StrictGl = new[] { "Mesa", "llvmpipe", "softpipe", "Apple", "ANGLE" }
+            StrictGl = new[] { "Mesa", "llvmpipe", "softpipe", "Apple", "ANGLE", "Intel" }
                 .Any(k => all.Contains(k, StringComparison.OrdinalIgnoreCase));
         }
 

@@ -21,7 +21,7 @@
 // render shows the register layout fxc gives it, which a shader declaring it the same way in both
 // stages can never show. Each mode vs the mgfxc golden, maxd <= 1.
 // Non-square interpolants (NonSquareStems): each used to leave a non-square GLSL type in one stage
-// (SD0403), which strict GL front ends (Mesa, Apple, ANGLE) refused at load and MonoGame 3.8.6
+// (SD0403), which strict GL front ends (Mesa, Apple, ANGLE, Intel) refused at load and MonoGame 3.8.6
 // DesktopGL4 aborted on. Since issue #453 the GLSL rewrite holds them as zero-padded square matN
 // (Rule 17), so every case must render and pass on EVERY driver, strict or lenient, and a compile
 // that still warns SD0403 is a FAIL. The driver is classified from its GL_VENDOR / GL_RENDERER /
@@ -485,7 +485,7 @@ public static class VertexSemanticsProbe
                 break;
             }
             string all = $"{GlVendor} {GlRenderer} {GlVersion}";
-            StrictDriver = new[] { "Mesa", "llvmpipe", "softpipe", "Apple", "ANGLE" }
+            StrictDriver = new[] { "Mesa", "llvmpipe", "softpipe", "Apple", "ANGLE", "Intel" }
                 .Any(k => all.Contains(k, StringComparison.OrdinalIgnoreCase));
         }
 
