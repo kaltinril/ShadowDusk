@@ -38,6 +38,8 @@ ShadowDusk/
 │   ├── ShadowDusk.Cli/           # CLI entry-point (dotnet tool `ShadowDuskCLI`); also accepts ShaderToy/GLSL input
 │   ├── ShadowDusk.ShaderToy/     # Pure-managed ShaderToy/GLSL → .fx front-end (ShaderToyConverter.Convert); ZERO
 │   │                             #   native + ZERO MonoGame dep; additive, upstream of the pipeline. PUBLISHED standalone NuGet (0.9.0).
+│   ├── ShadowDusk.SkSL/          # SkSL INPUT frontend (SkSLToFxConverter: SkSL -> .fx through ShadowDusk.ShaderToy
+│   │                             #   internals); not packed yet (Phase 71). Opposite of Compiler's Sksl/ (.fx -> SkSL).
 │   ├── ShadowDusk.Slang/         # SlangCompiler: REAL slangc-backed Slang front-end (import/generics/interfaces,
 │   │                             #   Phase 66) — bundles real slangc (win/linux x64 + macOS x64/arm64), hands its HLSL emission to
 │   │                             #   the unchanged EffectCompiler pipeline. Opt-in, additive; the HLSL-compatible
@@ -66,6 +68,7 @@ ShadowDusk/
 │   ├── ShadowDusk.HLSL.Tests/
 │   ├── ShadowDusk.GLSL.Tests/
 │   ├── ShadowDusk.Compiler.Tests/
+│   ├── ShadowDusk.SkSL.Tests/          # SkSL-input converter unit suite (pure managed)
 │   ├── ShadowDusk.ShaderToy.Tests/     # ShaderToy→.fx converter unit/trap/golden/reject suite (pure managed)
 │   ├── ShadowDusk.Slang.Tests/         # SlangCompiler (real-slangc route) unit + [Category=Integration] suite —
 │   │                                   #   spawns the restored tools/slang/<rid>/ slangc (Phase 66; all four RIDs, issue #227)
@@ -176,7 +179,9 @@ ShadowDusk/
 │                                  #     RaylibRoute (Phase 59: the raylib converter in REAL Raylib-cs vs the
 │                                  #       same .fx on real MonoGame GL, two arm processes),
 │                                  #     SkiaVsKni (issue #369: the SkSL converter in REAL SkiaSharp vs the same
-│                                  #       .fx on real KNI SDL2.GL, one process), …), DX (VsDrivenDx,
+│                                  #       .fx on real KNI SDL2.GL, one process),
+│                                  #     SkSLVsGl (Phase 71: SkSL INPUT in REAL SkiaSharp vs converted on real
+│                                  #       MonoGame GL, one process), …), DX (VsDrivenDx,
 │                                  #   DxModernFeatures, ShaderToyRouteDx (that route's DirectX arm), …),
 │                                  #   KniEffectTest{KniGl,KniDx,Gl,Dx,Dx12,Vulkan} (+ SharedKniEffectTest, with Companion/ .fx): KNI's own
 │                                  #   EffectTest.cs in the real engine, GATE / KNOWN-FAIL / INFO rows + positive controls,

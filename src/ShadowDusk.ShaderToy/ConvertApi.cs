@@ -53,6 +53,14 @@ public sealed record ConvertOptions
 
     /// <summary>When true, stop at the first error; default false (collect all diagnostics).</summary>
     public bool StopOnFirstError { get; init; }
+
+    /// <summary>
+    /// Set only by the SkSL input frontend (<c>ShadowDusk.SkSL</c>): the source's entry is a returning
+    /// <c>vec4 mainImage(vec2)</c> that takes SkSL coordinates (pixel centers, top-left origin), so the
+    /// harness passes <c>uv * iResolution.xy</c> without the ShaderToy Y flip and describes the SkSL
+    /// host contract in its header.
+    /// </summary>
+    internal bool SkSLEntry { get; init; }
 }
 
 /// <summary>The outcome of a ShaderToy → <c>.fx</c> conversion.</summary>

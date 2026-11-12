@@ -52,6 +52,10 @@
 #                              SDL2.GL, untinted and tinted, tol 2/255, three positive controls
 #                              that must diverge. Single process; the KNI arm needs the GL context.
 #                              With RaylibRoute, the only gates that drive a non-MonoGame runtime.
+#   * SkSLVsGl               — the SkSL INPUT frontend (ShadowDusk.SkSL): the same SkSL in REAL
+#                              SkiaSharp vs converted + built for OpenGL in REAL MonoGame
+#                              DesktopGL, non-square, translucent cases blended premultiplied,
+#                              tol 2/255, five positive controls that must diverge.
 #   * VertexSemanticsGl / VertexSemanticsKniGl — vertex inputs beyond POSITION/COLOR/
 #                              TEXCOORD/NORMAL (BINORMAL, TANGENT, BLENDINDICES as Byte4,
 #                              BLENDWEIGHT 0+1, PSIZE, FOG, DEPTH, TEXCOORD3) and a float3x3
@@ -280,6 +284,7 @@ jobs:
           dotnet build validation/ShaderToyRouteGl/ShaderToyRouteGl.csproj -c Release
           dotnet build validation/RaylibRoute/RaylibRoute.csproj -c Release
           dotnet build validation/SkiaVsKni/SkiaVsKni.csproj -c Release
+          dotnet build validation/SkSLVsGl/SkSLVsGl.csproj -c Release
           dotnet build validation/InitializerDefaultsGl/InitializerDefaultsGl.csproj -c Release
           dotnet build validation/InitializerDefaultsKniGl/InitializerDefaultsKniGl.csproj -c Release
           dotnet build validation/VertexSemanticsGl/VertexSemanticsGl.csproj -c Release
@@ -295,13 +300,13 @@ jobs:
           # No GL context => hard FAIL, never a pass-by-skip. StateFidelity/CbufferModel/
           # ReservedWordGl throw on a missing device (MonoGame NoSuitableGraphicsDevice ->
           # natural red); TextureBreadthValidation, SamplerPairsGl, SamplerRegisterOrderGl,
-          # DeferredSpriteMrtGl, ShaderToyRouteGl, RaylibRoute and SkiaVsKni catch+skip, so this flag
-          # turns their skip into a failure too (all seven read SHADOWDUSK_REQUIRE_GL).
+          # DeferredSpriteMrtGl, ShaderToyRouteGl, RaylibRoute, SkiaVsKni and SkSLVsGl catch+skip, so
+          # this flag turns their skip into a failure too (all eight read SHADOWDUSK_REQUIRE_GL).
           SHADOWDUSK_REQUIRE_GL: "1"
         run: |
           set +e
           rc=0
-          for proj in StateFidelity CbufferModel TextureBreadthValidation ReservedWordGl SamplerPairsGl SamplerRegisterOrderGl DeferredSpriteMrtGl ShaderToyRouteGl RaylibRoute SkiaVsKni InitializerDefaultsGl InitializerDefaultsKniGl VertexSemanticsGl VertexSemanticsKniGl; do
+          for proj in StateFidelity CbufferModel TextureBreadthValidation ReservedWordGl SamplerPairsGl SamplerRegisterOrderGl DeferredSpriteMrtGl ShaderToyRouteGl RaylibRoute SkiaVsKni SkSLVsGl InitializerDefaultsGl InitializerDefaultsKniGl VertexSemanticsGl VertexSemanticsKniGl; do
             echo "::group::$proj"
             xvfb-run -a dotnet run --project "validation/$proj" -c Release --no-build
             this=$?
@@ -433,6 +438,7 @@ jobs:
             validation/output-shadertoy/**
             validation/output-raylib/**
             validation/output-skia-kni/**
+            validation/output-sksl/**
             validation/output/baseline/**
             validation/output/candidate/**
             validation/output/diff/**

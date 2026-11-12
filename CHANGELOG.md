@@ -14,7 +14,7 @@ that loads and renders identically to `mgfxc`'s in the real MonoGame/KNI runtime
 
 ### Added
 
-- `ShadowDusk.SkSL` (not yet packaged): an SkSL input frontend built on `ShadowDusk.ShaderToy`. It handles `half4 main(float2)` color shaders and `uniform shader` children (`child.eval(p)` becomes a sample divided by a host-set `<child>Size`). `validation/SkSLVsGl` renders the same SkSL in real SkiaSharp and, converted, in real MonoGame DesktopGL: 3/3 within 2/255, two positive controls caught.
+- `ShadowDusk.SkSL` (not yet packaged, [Phase 71](plan/PHASE-71-sksl-input-frontend.md)): `SkSLToFxConverter` converts SkSL runtime-effect shaders (`half4 main(float2)`) to `.fx`, including `uniform shader` children (`img.eval(p)` samples at `p * imgTexelSize`, a host-set 1/size). Premultiplied alpha in and out, drawn with `BlendState.AlphaBlend`. Unsupported SkSL (`sk_FragCoord`, `layout(color)`, color filters, blenders, color-space built-ins, non-square matrices) fails with an SkSL diagnostic. `validation/SkSLVsGl` renders the same SkSL in real SkiaSharp and, converted, in real MonoGame DesktopGL at 64x48 with translucent cases: 6/6 within 2/255, five positive controls caught; in the ubuntu GL CI job.
 
 - `validation/ManagedDxilDx12`: DXIL signed only by the managed container hash loads in real MonoGame `WindowsDX12` and renders pixel-identical to the `dxil.dll`-signed build and the `mgfxc` golden (PS corpus and VS rig), with a wrong-hash negative control; in the DX-on-WARP CI job and the Windows render gate script ([#478](https://github.com/kaltinril/ShadowDusk/issues/478)).
 

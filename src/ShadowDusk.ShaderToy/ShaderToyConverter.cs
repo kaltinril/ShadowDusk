@@ -265,6 +265,20 @@ public static class ShaderToyConverter
             emitter.ReferencedUniforms.Add("iChannel0");
         }
 
+        // The SkSL harness maps uv to SkSL coordinates with iResolution, so the host always drives it.
+        if (options.SkSLEntry)
+        {
+            emitter.ReferencedUniforms.Add("iResolution");
+        }
+
+        // SkSL input has no stage inputs and no gl_FragCoord; its harness never bridges them, so a
+        // reference that slipped past the SkSL pre-scan must fail here rather than read zero.
+        if (options.SkSLEntry && (emitter.UsedGlFragCoord || emitter.UsedScreenUv))
+        {
+            throw new ConvertException(
+                "SkSL has no stage inputs or gl_FragCoord; use the coordinate passed to main.", 0, 0, "main");
+        }
+
         var harness = new HarnessGenerator();
         string fx = harness.Generate(
             options,
@@ -280,7 +294,8 @@ public static class ShaderToyConverter
             emitter.UsedGlFragCoord,
             emitter.UsedScreenUv,
             godotMode,
-            returningReturnType);
+            returningReturnType,
+            options.SkSLEntry);
 
         // If any Error accumulated (e.g. a banned entry point detected up front without
         // StopOnFirstError), the conversion is NOT a success even though emission ran to completion.
@@ -578,7 +593,7 @@ public static class ShaderToyConverter
     /// valid for the original source. (The lexer strips comments the same way later; this exists for
     /// the raw-text scans that run BEFORE preprocessing/lexing.)
     /// </summary>
-    private static string BlankComments(string source)
+    internal static string BlankComments(string source)
     {
         var sb = new StringBuilder(source.Length);
         int i = 0;
