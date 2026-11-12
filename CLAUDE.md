@@ -96,7 +96,7 @@ The **rung-4 render proofs** — the actual product bar (*"loads + renders like 
 > ./validation/run-windows-render-gates.ps1 -SkipDesktopGL4LinkAbort  # ONLY on an Intel-GL box, never the release run (MonoGame#9612, issue #488)
 > ```
 >
-> The gate script exits non-zero if any render diverges from the reference compiler. A green run is evidence CI structurally **cannot** produce. The full `dotnet test` is the other half: a filtered subset can stay green while a whole class of valid HLSL silently fails to compile (exactly how issue #106 escaped). The `/release` skill requires both.
+> The gate script exits non-zero if any render diverges from the reference compiler. A green run is evidence CI structurally **cannot** produce. The full `dotnet test` is the other half: a filtered subset can stay green while a whole class of valid HLSL silently fails to compile (exactly how issue #106 escaped). For a PR, CI's Build & Test jobs run the full suite on all three OSes and satisfy this half; don't repeat it locally, run only the tests for the code you changed. The gate script may be skipped when every affected fixture is shown to compile to byte-identical output before and after the change, since identical bytes render identically. The `/release` skill requires both, run locally.
 
 ### Support-surface docs are part of the change — update them in the same PR (owner directive, 2026-07-18)
 
