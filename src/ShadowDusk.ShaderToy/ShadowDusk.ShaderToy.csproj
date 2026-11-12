@@ -26,6 +26,7 @@
 
   <ItemGroup>
     <InternalsVisibleTo Include="ShadowDusk.ShaderToy.Tests" />
+    <InternalsVisibleTo Include="ShadowDusk.SkSL" />
   </ItemGroup>
 
   <ItemGroup>

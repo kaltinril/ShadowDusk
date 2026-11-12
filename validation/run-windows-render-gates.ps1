@@ -393,6 +393,17 @@ $gates.Add(@{
         finally { Remove-Item Env:SHADOWDUSK_REQUIRE_GL -ErrorAction SilentlyContinue }
     }
 })
+# SkSL INPUT frontend (ShadowDusk.SkSL): the same SkSL rendered by real SkiaSharp and, converted and
+# compiled for OpenGL, by a real MonoGame DesktopGL Effect (image fidelity vs Skia, tol 2/255;
+# non-square, premultiplied and straight-alpha techniques, seven positive controls).
+$gates.Add(@{
+    Name   = 'SkSL vs GL (ShadowDusk.SkSL input: real SkiaSharp vs OpenGL in real MonoGame DesktopGL, tol 2/255)'
+    Action = {
+        $env:SHADOWDUSK_REQUIRE_GL = '1'
+        try { Invoke-Checked 'dotnet' @('run', '--project', 'validation/SkSLVsGl', '-c', 'Release') }
+        finally { Remove-Item Env:SHADOWDUSK_REQUIRE_GL -ErrorAction SilentlyContinue }
+    }
+})
 # Global-initializer defaults (`float R = 1;`), owner directive 2026-10-28: the value is the default
 # in EVERY MGFX/KNIFX output, proven in the real engine with no Set call. Five runtimes here (the
 # Vulkan one is in the Vulkan block); each has a no-initializer control and the GL ones also render
