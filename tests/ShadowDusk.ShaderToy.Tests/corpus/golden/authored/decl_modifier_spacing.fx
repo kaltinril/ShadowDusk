@@ -23,12 +23,12 @@ float3 iResolution;
 float scale(float v)
 {
     float k = 2.0;
-    return (v * k);
+    return v * k;
 }
 
 void mainImage(out float4 fragColor, float2 fragCoord)
 {
-    float2 uv = (fragCoord / iResolution.xy);
+    float2 uv = fragCoord / iResolution.xy;
     float s = scale(uv.x);
     fragColor = float4(s, uv.y, 0.0, 1.0);
 }

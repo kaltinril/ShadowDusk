@@ -26,10 +26,10 @@ void mainImage(out float4 fragColor, float2 fragCoord)
     float2x2 sc = float2x2(2.0, 0.0, 0.0, 2.0);
     float4x4 big = float4x4(1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0, 11.0, 12.0, 13.0, 14.0, 15.0, 16.0);
     float3x3 sub = float3x3(big[0][0], big[0][1], big[0][2], big[1][0], big[1][1], big[1][2], big[2][0], big[2][1], big[2][2]);
-    float3 v = float3((fragCoord / iResolution.xy), 1.0);
-    float3 r = (mul(v, eye) + mul(v, sub));
+    float3 v = float3(fragCoord / iResolution.xy, 1.0);
+    float3 r = mul(v, eye) + mul(v, sub);
     float2 w = mul(v.xy, sc);
-    fragColor = float4((r.xy + w), r.z, 1.0);
+    fragColor = float4(r.xy + w, r.z, 1.0);
 }
 
 

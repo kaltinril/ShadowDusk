@@ -23,11 +23,11 @@ float4 iMouse;
 
 void mainImage(out float4 fragColor, float2 fragCoord)
 {
-    float2 uv = (fragCoord / iResolution.xy);
-    float2 mouse = (iMouse.xy / iResolution.xy);
-    float d = length((uv - mouse));
-    float glow = (1.0 - smoothstep(0.0, 0.3, d));
-    fragColor = float4(glow, (glow * 0.6), 0.2, 1.0);
+    float2 uv = fragCoord / iResolution.xy;
+    float2 mouse = iMouse.xy / iResolution.xy;
+    float d = length(uv - mouse);
+    float glow = 1.0 - smoothstep(0.0, 0.3, d);
+    fragColor = float4(glow, glow * 0.6, 0.2, 1.0);
 }
 
 

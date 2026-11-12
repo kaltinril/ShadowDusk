@@ -22,8 +22,8 @@ float3 iResolution;
 
 void mainImage(out float4 fragColor, float2 fragCoord)
 {
-    float2 uv = (fragCoord / iResolution.xy);
-    fragColor = float4((uv * (2.0 + 1.0)), 2.0, 1.0);
+    float2 uv = fragCoord / iResolution.xy;
+    fragColor = float4(uv * (2.0 + 1.0), 2.0, 1.0);
 }
 
 

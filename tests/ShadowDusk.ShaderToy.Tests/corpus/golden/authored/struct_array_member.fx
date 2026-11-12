@@ -45,8 +45,8 @@ void mainImage(out float4 fragColor, float2 fragCoord)
     k.w[2] = 0.3;
     k.w[3] = 0.4;
     k.tint = float3(0.2, 0.6, 0.9);
-    float s = (((k.w[0] + k.w[1]) + k.w[2]) + k.w[3]);
-    fragColor = float4((k.tint * s), 1.0);
+    float s = k.w[0] + k.w[1] + k.w[2] + k.w[3];
+    fragColor = float4(k.tint * s, 1.0);
 }
 
 

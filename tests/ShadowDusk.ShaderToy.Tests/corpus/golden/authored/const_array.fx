@@ -25,11 +25,11 @@ static const float3 kPalette[2] = { float3(0.1, 0.2, 0.9), float3(0.9, 0.4, 0.1)
 
 void mainImage(out float4 fragColor, float2 fragCoord)
 {
-    float2 uv = (fragCoord / iResolution.xy);
+    float2 uv = fragCoord / iResolution.xy;
     float acc = 0.0;
     for (int i = 0; i < 3; i++)
     {
-        acc += (kWeights[i] * uv.x);
+        acc += kWeights[i] * uv.x;
     }
     float3 col = lerp(kPalette[0], kPalette[1], acc);
     fragColor = float4(col, 1.0);

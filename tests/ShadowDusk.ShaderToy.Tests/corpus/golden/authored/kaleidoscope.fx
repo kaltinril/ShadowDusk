@@ -33,19 +33,19 @@ float4 glsl_mod(float4 x, float  y) { return x - y * floor(x / y); }
 
 void mainImage(out float4 fragColor, float2 fragCoord)
 {
-    float2 uv = ((fragCoord - (0.5 * iResolution.xy)) / iResolution.y);
-    float ca = (iTime * 0.3);
+    float2 uv = (fragCoord - 0.5 * iResolution.xy) / iResolution.y;
+    float ca = iTime * 0.3;
     float2x2 spin = float2x2(cos(ca), -sin(ca), sin(ca), cos(ca));
     uv = mul(uv, spin);
     float r = length(uv);
     float a = atan2(uv.y, uv.x);
     float segments = 6.0;
-    float wedge = (6.2831853 / segments);
+    float wedge = 6.2831853 / segments;
     a = glsl_mod(a, wedge);
-    a = abs((a - (0.5 * wedge)));
-    float rings = (0.5 + (0.5 * sin(((r * 18.0) - (iTime * 2.0)))));
-    float spokes = (0.5 + (0.5 * sin((a * 24.0))));
-    float pattern = (rings * spokes);
+    a = abs(a - 0.5 * wedge);
+    float rings = 0.5 + 0.5 * sin(r * 18.0 - iTime * 2.0);
+    float spokes = 0.5 + 0.5 * sin(a * 24.0);
+    float pattern = rings * spokes;
     float3 col = lerp(float3(0.10, 0.20, 0.45), float3(0.95, 0.75, 0.25), pattern);
     col *= smoothstep(1.1, 0.2, r);
     fragColor = float4(col, 1.0);

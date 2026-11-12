@@ -28,7 +28,7 @@ float3x3 rot(float3 d, float3 z)
 
 void mainImage(out float4 fragColor, float2 fragCoord)
 {
-    float2 p = (fragCoord / iResolution.xy);
+    float2 p = fragCoord / iResolution.xy;
     float3x3 rot_sd = rot(normalize(float3(p, 1.0)), normalize(float3(1.0, p)));
     float3 col = mul(float3(p, 1.0), rot_sd);
     fragColor = float4(col, 1.0);

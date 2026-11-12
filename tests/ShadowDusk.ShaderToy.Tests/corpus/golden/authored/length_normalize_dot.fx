@@ -22,12 +22,12 @@ float3 iResolution;
 
 void mainImage(out float4 fragColor, float2 fragCoord)
 {
-    float2 p = ((fragCoord - (0.5 * iResolution.xy)) / iResolution.y);
+    float2 p = (fragCoord - 0.5 * iResolution.xy) / iResolution.y;
     float3 n = normalize(float3(p, 1.0));
     float3 lightDir = normalize(float3(0.5, 0.5, 1.0));
     float diff = max(dot(n, lightDir), 0.0);
     float r = length(p);
-    fragColor = float4((((float3)(diff)) * (1.0 - r)), 1.0);
+    fragColor = float4((float3)diff * (1.0 - r), 1.0);
 }
 
 

@@ -22,17 +22,17 @@ float3 iResolution;
 
 uint hash(uint x)
 {
-    x ^= (x >> 16);
-    x = (x * 747796405);
-    x ^= (x >> 13);
+    x ^= x >> 16;
+    x = x * 747796405;
+    x ^= x >> 13;
     return x;
 }
 
 void mainImage(out float4 fragColor, float2 fragCoord)
 {
     uint2 p = uint2(int(fragCoord.x), int(fragCoord.y));
-    uint h = hash((p.x + (p.y * 9999)));
-    float v = (float((h & 255)) / 255.0);
+    uint h = hash(p.x + p.y * 9999);
+    float v = float(h & 255) / 255.0;
     fragColor = float4(v, v, v, 1.0);
 }
 

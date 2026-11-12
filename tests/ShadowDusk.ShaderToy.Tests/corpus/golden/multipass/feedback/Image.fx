@@ -28,7 +28,7 @@ sampler2D iChannel0 = sampler_state
 
 void mainImage(out float4 fragColor, float2 fragCoord)
 {
-    float2 uv = (fragCoord / iResolution.xy);
+    float2 uv = fragCoord / iResolution.xy;
     float3 trail = tex2D(iChannel0, uv).rgb;
     fragColor = float4(trail, 1.0);
 }

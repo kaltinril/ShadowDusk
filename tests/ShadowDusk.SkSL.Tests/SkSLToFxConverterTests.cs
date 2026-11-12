@@ -103,7 +103,7 @@ public sealed class SkSLToFxConverterTests
 
         fx.ShouldContain("static bool sd_StraightAlpha;", Case.Sensitive);
         fx.ShouldContain(
-            "float4 sd_ChildColor(float4 c)\n{\n    return (sd_StraightAlpha ? float4((c.rgb * c.a), c.a) : c);\n}",
+            "float4 sd_ChildColor(float4 c)\n{\n    return sd_StraightAlpha ? float4(c.rgb * c.a, c.a) : c;\n}",
             Case.Sensitive);
         fx.ShouldContain(
             "float4 PSMain(VSOutput input) : COLOR0\n{\n    sd_StraightAlpha = false;\n" +
@@ -168,7 +168,7 @@ public sealed class SkSLToFxConverterTests
 
         r.Success.ShouldBeTrue(string.Join("; ", r.Diagnostics.Select(d => d.Message)));
         r.Fx.ShouldNotBeNull();
-        r.Fx.ShouldContain("sd_ChildColor(tex2D(img, ((c + float2(1, 0)) * imgTexelSize)))", Case.Sensitive);
+        r.Fx.ShouldContain("sd_ChildColor(tex2D(img, (c + float2(1, 0)) * imgTexelSize))", Case.Sensitive);
         r.Fx.ShouldContain("texture imgTexture;", Case.Sensitive);
         r.Fx.ShouldContain("float2 imgTexelSize;", Case.Sensitive);
         r.UsedUniforms.ShouldBe(new[] { "iResolution", "img", "imgTexelSize" }, ignoreOrder: true);
@@ -182,7 +182,7 @@ public sealed class SkSLToFxConverterTests
             "half4 main(float2 c) { return myimg.eval(c) + img.eval(c); }");
 
         fx.ShouldContain(
-            "sd_ChildColor(tex2D(myimg, (c * myimgTexelSize))) + sd_ChildColor(tex2D(img, (c * imgTexelSize)))",
+            "sd_ChildColor(tex2D(myimg, c * myimgTexelSize)) + sd_ChildColor(tex2D(img, c * imgTexelSize))",
             Case.Sensitive);
         fx.ShouldNotContain("mytex", Case.Sensitive);
     }
@@ -190,13 +190,13 @@ public sealed class SkSLToFxConverterTests
     [Fact]
     public void Convert_EvalWithWhitespace_IsRewritten() =>
         Succeeds("uniform shader img; half4 main(float2 c) { return img . eval ( c ); }")
-            .ShouldContain("tex2D(img, (c * imgTexelSize))", Case.Sensitive);
+            .ShouldContain("tex2D(img, c * imgTexelSize)", Case.Sensitive);
 
     [Fact]
     public void Convert_NestedEval_RewritesBoth() =>
         Succeeds("uniform shader img; half4 main(float2 p) { return img.eval(img.eval(p).xy * 10); }")
             .ShouldContain(
-                "sd_ChildColor(tex2D(img, ((sd_ChildColor(tex2D(img, (p * imgTexelSize))).xy * 10) * imgTexelSize)))",
+                "sd_ChildColor(tex2D(img, sd_ChildColor(tex2D(img, p * imgTexelSize)).xy * 10 * imgTexelSize))",
                 Case.Sensitive);
 
     [Fact]

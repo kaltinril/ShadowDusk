@@ -30,13 +30,13 @@ void mainImage(out float4 fragColor, float2 fragCoord)
     weights[2] = 0.3;
     weights[3] = 0.4;
     float2 pts[3];
-    pts[0] = ((float2)(0.0));
-    pts[1] = ((float2)(0.5));
-    pts[2] = ((float2)(1.0));
+    pts[0] = (float2)0.0;
+    pts[1] = (float2)0.5;
+    pts[2] = (float2)1.0;
     float pairs[6];
     pairs[0] = 1.0;
-    float2 uv = (fragCoord / iResolution.xy);
-    float acc = ((weights[0] + distance(uv, pts[1])) + pairs[0]);
+    float2 uv = fragCoord / iResolution.xy;
+    float acc = weights[0] + distance(uv, pts[1]) + pairs[0];
     fragColor = float4(acc, acc, acc, 1.0);
 }
 

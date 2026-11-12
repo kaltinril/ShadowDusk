@@ -22,13 +22,13 @@ float3 iResolution;
 
 float linear_sd(float t)
 {
-    return (t * t);
+    return t * t;
 }
 
 void mainImage(out float4 fragColor, float2 fragCoord)
 {
-    float2 matrix_sd = (fragCoord / iResolution.xy);
-    float sample_sd = (linear_sd(matrix_sd.x) + linear_sd(matrix_sd.y));
+    float2 matrix_sd = fragCoord / iResolution.xy;
+    float sample_sd = linear_sd(matrix_sd.x) + linear_sd(matrix_sd.y);
     fragColor = float4(matrix_sd, sample_sd, 1.0);
 }
 

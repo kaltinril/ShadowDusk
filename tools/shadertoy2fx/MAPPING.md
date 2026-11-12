@@ -252,7 +252,7 @@ position) OR after the declarator name (at most one position carries it):
 |---|---|
 | `const float k[3] = float[](a, b, c);` | `static const float k[3] = { a, b, c };` |
 | `const float[3] k = { a, b, c };` (type-side size + brace init) | `static const float k[3] = { a, b, c };` |
-| `const vec2 p[2] = vec2[2](vec2(0.), vec2(1.));` | `static const float2 p[2] = { ((float2)(0.0)), ((float2)(1.0)) };` |
+| `const vec2 p[2] = vec2[2](vec2(0.), vec2(1.));` | `static const float2 p[2] = { (float2)0., (float2)1. };` |
 | `vec2[4] c = { ... };` (local, type-side size) | `float2 c[4] = { ... };` |
 | `float arr[4];` (local) | `float arr[4];` |
 | `void f(inout float[9] k)` (array PARAMETER) | `void f(inout float k[9])` (size on the name) |
@@ -424,8 +424,9 @@ reinterpretation cannot faithfully reproduce, and a stray `U` would otherwise su
 confusing "expected `)`" parse error.
 
 **Vector splat (GLSL-only, expanded):** GLSL `vecN(scalar)` splats the scalar to all N components.
-HLSL has no single-scalar vector constructor, so `vecN(s)` → `((floatN)(s))`. A single **vector**
-argument `vecN(vM)` likewise emits a truncating cast `((floatN)(vM))` (matches GLSL truncation).
+HLSL has no single-scalar vector constructor, so `vecN(s)` → `(floatN)s`. A single **vector**
+argument `vecN(vM)` likewise emits a truncating cast `(floatN)vM` (matches GLSL truncation). The cast
+operand keeps its parentheses unless it is a name, literal, call, member or index (`(float3)(a + b)`).
 
 **Single-argument matrix constructors (GLSL-only, expanded):** HLSL has no diagonal / matrix-from-matrix
 constructor, so the converter expands the GLSL forms to an explicit `floatNxN(...)` grid:

@@ -153,7 +153,7 @@ public sealed class VectorEqualityTests
         """;
 
         string fx = ConvertOk(glsl);
-        fx.ShouldContain("bool b = (x == y)", Case.Sensitive);
+        fx.ShouldContain("bool b = x == y;", Case.Sensitive);
         fx.ShouldNotContain("all(", Case.Sensitive);
         fx.ShouldNotContain("any(", Case.Sensitive);
     }

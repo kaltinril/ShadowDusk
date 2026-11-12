@@ -48,6 +48,14 @@ Apply them in that order to every decision in this phase.
   path, straight setup with the default technique). In the ubuntu GL CI job and the Windows
   render-gate script.
 
+## Readable output (done)
+
+- The shared ShaderToy emitter writes only the parentheses that precedence, associativity or a
+  reader needs (`HlslEmitter`'s parenthesization policy), so SkSL and ShaderToy output both read
+  `tex2D(img, (c + float2(1, 0)) * imgTexelSize)`. All 84 re-pinned converter goldens compile to
+  byte-identical `.mgfx` before and after on OpenGL and DirectX 11 (vkd3d and `d3dcompiler`), and
+  `mgfxc` rebuilt the `GradientToy` goldens byte-identical.
+
 ## Remaining slices
 
 1. **`sk_FragCoord`**: needs the device coordinate, which equals the local coordinate only when the
@@ -59,14 +67,10 @@ Apply them in that order to every decision in this phase.
    child at the call site).
 4. **Color-space built-ins**: `unpremul` is a straight rewrite; `toLinearSrgb`/`fromLinearSrgb`
    depend on the working color space and need a host contract first.
-5. **Readable output**: the shared ShaderToy emitter parenthesizes every binary expression.
-   Precedence-aware emission changes ShaderToy's output too, so it re-pins
-   `tests/fixtures/shaders/shadertoy/GradientToy.fx` and its `mgfxc` goldens; do it as its own
-   change.
-6. **Matrix uniforms**: square matrices convert (`mul(p, m)`), but the host-side upload order is
+5. **Matrix uniforms**: square matrices convert (`mul(p, m)`), but the host-side upload order is
    not render-proven against Skia yet.
-7. **DirectX and FNA arms**: the gate proves OpenGL only; add a DX11-on-WARP arm.
-8. **Packaging**: a `PackageId`, `README.md`, `release.yml` entry, the support-surface docs
+6. **DirectX and FNA arms**: the gate proves OpenGL only; add a DX11-on-WARP arm.
+7. **Packaging**: a `PackageId`, `README.md`, `release.yml` entry, the support-surface docs
    (`README.md` targets table, `docs/the-purpose.md`, `docs/pipeline-overview.puml` and its SVG,
    the DocFX pages) and a CLI/`ShaderFormatDetector` route. It must ship at the same version as
    `ShadowDusk.ShaderToy`, whose internals it uses.

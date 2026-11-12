@@ -24,21 +24,21 @@ void scale(inout float k[4], float s)
 {
     for (int i = 0; i < 4; i++)
     {
-        k[i] = (k[i] * s);
+        k[i] = k[i] * s;
     }
 }
 
 void mainImage(out float4 fragColor, float2 fragCoord)
 {
-    float2 uv = (fragCoord / iResolution.xy);
+    float2 uv = fragCoord / iResolution.xy;
     float vals[4];
     vals[0] = uv.x;
     vals[1] = uv.y;
-    vals[2] = (uv.x * uv.y);
-    vals[3] = (1.0 - uv.x);
+    vals[2] = uv.x * uv.y;
+    vals[3] = 1.0 - uv.x;
     scale(vals, 0.5);
-    float acc = (((vals[0] + vals[1]) + vals[2]) + vals[3]);
-    fragColor = float4((acc * 0.25), 0.0, 0.0, 1.0);
+    float acc = vals[0] + vals[1] + vals[2] + vals[3];
+    fragColor = float4(acc * 0.25, 0.0, 0.0, 1.0);
 }
 
 

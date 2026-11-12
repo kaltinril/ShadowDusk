@@ -23,11 +23,11 @@ float iTime;
 
 void mainImage(out float4 fragColor, float2 fragCoord)
 {
-    float2 p = ((fragCoord - (0.5 * iResolution.xy)) / iResolution.y);
+    float2 p = (fragCoord - 0.5 * iResolution.xy) / iResolution.y;
     float angle = atan2(p.y, p.x);
     float radius = length(p);
-    float spiral = (0.5 + (0.5 * sin((((angle * 6.0) + (radius * 20.0)) - (iTime * 3.0)))));
-    fragColor = float4(spiral, (spiral * 0.5), (1.0 - spiral), 1.0);
+    float spiral = 0.5 + 0.5 * sin(angle * 6.0 + radius * 20.0 - iTime * 3.0);
+    fragColor = float4(spiral, spiral * 0.5, 1.0 - spiral, 1.0);
 }
 
 

@@ -29,7 +29,7 @@ sampler2D iChannel0 = sampler_state
 void mainImage(float4 inputColor, float2 uv, out float4 outputColor)
 {
     float3 tint = float3(uv.x, uv.y, 0.5);
-    outputColor = float4(((inputColor.rgb * 0.5) + (tint * 0.5)), 1.0);
+    outputColor = float4(inputColor.rgb * 0.5 + tint * 0.5, 1.0);
 }
 
 

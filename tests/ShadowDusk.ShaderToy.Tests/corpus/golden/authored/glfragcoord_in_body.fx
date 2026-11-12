@@ -25,9 +25,9 @@ static float4 gl_FragCoord;
 
 void mainImage(out float4 fragColor, float2 fragCoord)
 {
-    float2 uv = (gl_FragCoord.xy / iResolution.xy);
-    float d = (gl_FragCoord.z + gl_FragCoord.w);
-    fragColor = float4(uv, (d * 0.5), 1.0);
+    float2 uv = gl_FragCoord.xy / iResolution.xy;
+    float d = gl_FragCoord.z + gl_FragCoord.w;
+    fragColor = float4(uv, d * 0.5, 1.0);
 }
 
 

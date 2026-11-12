@@ -28,8 +28,8 @@ float uC;
 
 void mainImage(out float4 fragColor, float2 fragCoord)
 {
-    float2 uv = (fragCoord / iResolution.xy);
-    float v = (((uA * uv.x) + (uB * uv.y)) + uC);
+    float2 uv = fragCoord / iResolution.xy;
+    float v = uA * uv.x + uB * uv.y + uC;
     fragColor = float4(v, v, v, 1.0);
 }
 

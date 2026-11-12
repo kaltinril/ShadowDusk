@@ -44,7 +44,7 @@ public sealed class ReviewRegressionTests
         """);
 
         // The assignment must be wrapped so `<` cannot bind tighter than `=`.
-        fx.ShouldContain("((d = (p * 0.5)) < 0.001)", Case.Sensitive);
+        fx.ShouldContain("if ((d = p * 0.5) < 0.001)", Case.Sensitive);
     }
 
     [Fact]

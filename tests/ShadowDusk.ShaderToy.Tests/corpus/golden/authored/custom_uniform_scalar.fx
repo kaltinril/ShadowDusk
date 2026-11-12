@@ -27,8 +27,8 @@ float3 uTint;
 
 void mainImage(out float4 fragColor, float2 fragCoord)
 {
-    float2 uv = (fragCoord / iResolution.xy);
-    float3 col = (((uTint * (uv.x + uv.y)) * 0.5) * uIntensity);
+    float2 uv = fragCoord / iResolution.xy;
+    float3 col = uTint * (uv.x + uv.y) * 0.5 * uIntensity;
     fragColor = float4(col, 1.0);
 }
 

@@ -22,8 +22,8 @@ float3 iResolution;
 
 void mainImage(out float4 fragColor, float2 fragCoord)
 {
-    float2 uv = (fragCoord / iResolution.xy);
-    float d = (((uv.x - 0.5) * (uv.x - 0.5)) + ((uv.y - 0.5) * (uv.y - 0.5)));
+    float2 uv = fragCoord / iResolution.xy;
+    float d = (uv.x - 0.5) * (uv.x - 0.5) + (uv.y - 0.5) * (uv.y - 0.5);
     float3 col = lerp(float3(0.1, 0.2, 0.3), float3(0.9, 0.8, 0.2), d);
     fragColor = float4(col, 1.0);
 }

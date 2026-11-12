@@ -159,7 +159,7 @@ public sealed class StructArrayTests
         """;
 
         string fx = ConvertOk(glsl);
-        fx.ShouldContain("static const float2 pts[2] = { ((float2)(0.0)), ((float2)(1.0)) };", Case.Sensitive);
+        fx.ShouldContain("static const float2 pts[2] = { (float2)0.0, (float2)1.0 };", Case.Sensitive);
     }
 
     [Fact]
@@ -244,7 +244,7 @@ public sealed class StructArrayTests
 
         string fx = ConvertOk(glsl);
         // matrixCompMult is componentwise: emit (a * b), NOT a mul()-reordered product.
-        fx.ShouldContain("float2x2 c = (a * b);", Case.Sensitive);
+        fx.ShouldContain("float2x2 c = a * b;", Case.Sensitive);
     }
 
     [Fact]

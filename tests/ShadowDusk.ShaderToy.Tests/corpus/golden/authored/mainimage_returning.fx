@@ -23,8 +23,8 @@ float iTime;
 
 float3 mainImage(float2 fragCoord)
 {
-    float2 uv = (fragCoord / iResolution.xy);
-    return float3(uv.x, uv.y, (0.5 + (0.5 * cos(iTime))));
+    float2 uv = fragCoord / iResolution.xy;
+    return float3(uv.x, uv.y, 0.5 + 0.5 * cos(iTime));
 }
 
 
