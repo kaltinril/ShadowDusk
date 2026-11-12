@@ -816,9 +816,9 @@
     "warnings": []
   },
   "DirectX12.Debug/shadertoy/GradientToy.fx": {
-    "mgfx": "aa0886537da119c6a04a1292fdec2b72a7b045a24239ebe12ab898bc0114dea3",
-    "mgfxNormalized": "53159f7637d8324255597def494bba6e83100413b05efe53527d39fdfe985633",
-    "dxil": "d070a2971bf882c99ad6a7f8c478c827c159defb2e87034af29a6b014454c3e7",
+    "mgfx": "cf15ed4c059a3bbfaca4ab6cf6390d9028a28c445e72f3bbb0cb7c548b6e75c5",
+    "mgfxNormalized": "7837161819ea5fc8be2d15ab319146c812f69db07e0aae39c6daf41d09329b39",
+    "dxil": "8437c69fc4c0d4d096afafadb1c1aac0e12f2008be5dbb18a3c1dbd64d4e5554",
     "warnings": []
   },
   "DirectX12.Debug/texture-arrays/SamplerArray2.fx": {
@@ -3061,8 +3061,8 @@
     "warnings": []
   },
   "Vulkan.Debug/shadertoy/GradientToy.fx": {
-    "mgfx": "707f0b25b7633dd0387c066c56231b2c3610f5963dfe2341dc8c5922fa2f892e",
-    "spirv": "1e6f3c2157993aadccb550f965d1ee76709ec8e12ea791187cc3099b620cc298",
+    "mgfx": "b48a5127a46c6db61ed29055c4b9835d696f232837f0714301e650409ef5b2b1",
+    "spirv": "aba7a61b31a217e4ac92b548a167295ca2de585788b6f0a8d11b58b5caf5a963",
     "warnings": []
   },
   "Vulkan.Debug/texture-arrays/SamplerArray2.fx": {
