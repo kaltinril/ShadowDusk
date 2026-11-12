@@ -23,10 +23,10 @@ float iTime;
 
 void mainImage(out float4 fragColor, float2 fragCoord)
 {
-    float2 uv = (fragCoord / iResolution.xy);
-    float pulse = (0.5 + (0.5 * sin((iTime + (uv.x * 6.2831853)))));
-    float wave = (0.5 + (0.5 * cos(((iTime * 2.0) + (uv.y * 6.2831853)))));
-    fragColor = float4(pulse, wave, (0.5 * (pulse + wave)), 1.0);
+    float2 uv = fragCoord / iResolution.xy;
+    float pulse = 0.5 + 0.5 * sin(iTime + uv.x * 6.2831853);
+    float wave = 0.5 + 0.5 * cos(iTime * 2.0 + uv.y * 6.2831853);
+    fragColor = float4(pulse, wave, 0.5 * (pulse + wave), 1.0);
 }
 
 

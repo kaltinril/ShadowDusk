@@ -33,63 +33,63 @@ float4 glsl_mod(float4 x, float  y) { return x - y * floor(x / y); }
 
 float3 hsv2rgb(float3 c)
 {
-    const float4 K = float4(1.0, (2.0 / 3.0), (1.0 / 3.0), 3.0);
-    float3 p = abs(((frac((c.xxx + K.xyz)) * 6.0) - K.www));
-    return (c.z * lerp(K.xxx, clamp((p - K.xxx), 0.0, 1.0), c.y));
+    const float4 K = float4(1.0, 2.0 / 3.0, 1.0 / 3.0, 3.0);
+    float3 p = abs(frac(c.xxx + K.xyz) * 6.0 - K.www);
+    return c.z * lerp(K.xxx, clamp(p - K.xxx, 0.0, 1.0), c.y);
 }
 
 float hash(float co)
 {
-    return frac((sin((co * 12.9898)) * 13758.5453));
+    return frac(sin(co * 12.9898) * 13758.5453);
 }
 
 float hash(float2 co)
 {
-    return frac((sin(dot(co.xy, float2(12.9898, 58.233))) * 13758.5453));
+    return frac(sin(dot(co.xy, float2(12.9898, 58.233))) * 13758.5453);
 }
 
 float psin(float a)
 {
-    return (0.5 + (0.5 * sin(a)));
+    return 0.5 + 0.5 * sin(a);
 }
 
 float mod1p(float p, float size)
 {
-    float halfsize = (size * 0.5);
-    return (glsl_mod((p + halfsize), size) - halfsize);
+    float halfsize = size * 0.5;
+    return glsl_mod(p + halfsize, size) - halfsize;
 }
 
 float mod1cell(float p, float size)
 {
-    float halfsize = (size * 0.5);
-    return floor(((p + halfsize) / size));
+    float halfsize = size * 0.5;
+    return floor((p + halfsize) / size);
 }
 
 float circle(float2 p, float r)
 {
-    return (length(p) - r);
+    return length(p) - r;
 }
 
 float box(float2 p, float2 b)
 {
-    float2 d = (abs(p) - b);
-    return (length(max(d, 0.0)) + min(max(d.x, d.y), 0.0));
+    float2 d = abs(p) - b;
+    return length(max(d, 0.0)) + min(max(d.x, d.y), 0.0);
 }
 
 float planex(float2 p, float w)
 {
-    return (abs(p.y) - w);
+    return abs(p.y) - w;
 }
 
 float planey(float2 p, float w)
 {
-    return (abs(p.x) - w);
+    return abs(p.x) - w;
 }
 
 float pmin(float a, float b, float k)
 {
-    float h = clamp((0.5 + ((0.5 * (b - a)) / k)), 0.0, 1.0);
-    return (lerp(b, a, h) - ((k * h) * (1.0 - h)));
+    float h = clamp(0.5 + 0.5 * (b - a) / k, 0.0, 1.0);
+    return lerp(b, a, h) - k * h * (1.0 - h);
 }
 
 float pmax(float a, float b, float k)
@@ -102,12 +102,12 @@ float sun(float2 p)
     const float ch = 0.0125;
     float2 sp = p;
     float2 cp = p;
-    cp.y = mod1p(cp.y, (ch * 6.0));
+    cp.y = mod1p(cp.y, ch * 6.0);
     float d0 = circle(sp, 0.5);
     float d1 = planex(cp, ch);
-    float d2 = (p.y + (ch * 3.0));
+    float d2 = p.y + ch * 3.0;
     float d = d0;
-    d = pmax(d, -max(d1, d2), (ch * 2.0));
+    d = pmax(d, -max(d1, d2), ch * 2.0);
     return d;
 }
 
@@ -120,11 +120,11 @@ float city(float2 p)
     for (float i = 0.0; i < count; ++i)
     {
         float2 pp = p;
-        pp.x += ((i * width) / count);
+        pp.x += i * width / count;
         float nn = mod1cell(pp.x, width);
         pp.x = mod1p(pp.x, width);
-        float rr = hash((nn + (sqrt(3.0) * i)));
-        float dd = box((pp - float2(0.0, -0.5)), float2(0.02, (((0.35 * (1.0 - smoothstep(0.0, 5.0, abs(nn)))) * rr) + 0.1)));
+        float rr = hash(nn + sqrt(3.0) * i);
+        float dd = box(pp - float2(0.0, -0.5), float2(0.02, 0.35 * (1.0 - smoothstep(0.0, 5.0, abs(nn))) * rr + 0.1));
         cd = min(cd, dd);
     }
     return max(sd, cd);
@@ -132,45 +132,45 @@ float city(float2 p)
 
 float3 sunEffect(float2 p)
 {
-    float3 col = ((float3)(0.1));
-    float3 skyCol1 = hsv2rgb(float3((283.0 / 360.0), 0.83, 0.16));
-    float3 skyCol2 = hsv2rgb(float3((297.0 / 360.0), 0.79, 0.43));
-    col = lerp(skyCol1, skyCol2, pow(clamp((0.5 * ((1.0 + p.y) + (0.1 * sin(((4.0 * p.x) + (iTime * 0.5)))))), 0.0, 1.0), 4.0));
+    float3 col = (float3)0.1;
+    float3 skyCol1 = hsv2rgb(float3(283.0 / 360.0, 0.83, 0.16));
+    float3 skyCol2 = hsv2rgb(float3(297.0 / 360.0, 0.79, 0.43));
+    col = lerp(skyCol1, skyCol2, pow(clamp(0.5 * (1.0 + p.y + 0.1 * sin(4.0 * p.x + iTime * 0.5)), 0.0, 1.0), 4.0));
     p.y -= 0.375;
     float ds = sun(p);
     float dc = city(p);
     float dd = circle(p, 0.5);
-    float3 sunCol = lerp(float3(1.0, 1.0, 0.0), float3(1.0, 0.0, 1.0), clamp((0.5 - (1.0 * p.y)), 0.0, 1.0));
+    float3 sunCol = lerp(float3(1.0, 1.0, 0.0), float3(1.0, 0.0, 1.0), clamp(0.5 - 1.0 * p.y, 0.0, 1.0));
     float3 glareCol = sqrt(sunCol);
-    col += ((glareCol * exp((-30.0 * ds))) * step(0.0, ds));
-    float aa = (4.0 / iResolution.y);
+    col += glareCol * exp(-30.0 * ds) * step(0.0, ds);
+    float aa = 4.0 / iResolution.y;
     float t1 = smoothstep(0.0, 0.075, -dd);
     float t2 = smoothstep(0.0, 0.3, -dd);
     col = lerp(col, sunCol, smoothstep(-aa, 0.0, -ds));
-    col = lerp(col, glareCol, (smoothstep(-aa, 0.0, -dc) * t1));
-    col += (((float3(0.0, 0.25, 0.0) * exp((-90.0 * dc))) * step(0.0, dc)) * t2);
+    col = lerp(col, glareCol, smoothstep(-aa, 0.0, -dc) * t1);
+    col += float3(0.0, 0.25, 0.0) * exp(-90.0 * dc) * step(0.0, dc) * t2;
     return col;
 }
 
 float ground(float2 p)
 {
-    p.y += (iTime * 80.0);
+    p.y += iTime * 80.0;
     p *= 0.075;
     float2 gp = p;
-    gp = (frac(gp) - ((float2)(0.5)));
+    gp = frac(gp) - (float2)0.5;
     float d0 = abs(gp.x);
     float d1 = abs(gp.y);
     const float rw = 2.5;
     const float sw = 0.0125;
     float2 rp = p;
     rp.y = mod1p(rp.y, 12.0);
-    float d3 = (abs(rp.x) - rw);
-    float d4 = (abs(d3) - (sw * 2.0));
-    float d5 = box(rp, float2((sw * 2.0), 2.0));
+    float d3 = abs(rp.x) - rw;
+    float d4 = abs(d3) - sw * 2.0;
+    float d5 = box(rp, float2(sw * 2.0, 2.0));
     float2 sp = p;
     sp.y = mod1p(sp.y, 4.0);
     sp.x = abs(sp.x);
-    sp -= float2((rw - 0.125), 0.0);
+    sp -= float2(rw - 0.125, 0.0);
     float d6 = box(sp, float2(sw, 1.0));
     float d = d0;
     d = pmin(d, d1, 0.1);
@@ -187,20 +187,20 @@ float3 groundEffect(float2 p)
     float3 ww = normalize(float3(0.0, -0.025, 1.0));
     float3 uu = normalize(cross(float3(0.0, 1.0, 0.0), ww));
     float3 vv = normalize(cross(ww, uu));
-    float3 rd = normalize((((p.x * uu) + (p.y * vv)) + (2.5 * ww)));
-    float distg = ((-9.0 - ro.y) / rd.y);
-    const float3 shineCol = (0.75 * float3(0.5, 0.75, 1.0));
-    const float3 gridCol = ((float3)(1.0));
-    float3 col = ((float3)(0.0));
+    float3 rd = normalize(p.x * uu + p.y * vv + 2.5 * ww);
+    float distg = (-9.0 - ro.y) / rd.y;
+    const float3 shineCol = 0.75 * float3(0.5, 0.75, 1.0);
+    const float3 gridCol = (float3)1.0;
+    float3 col = (float3)0.0;
     if (distg > 0.0)
     {
-        float3 pg = (ro + (rd * distg));
+        float3 pg = ro + rd * distg;
         float aa = 0.0025;
         float dg = ground(pg.xz);
         col = lerp(col, gridCol, smoothstep(-aa, 0.0, -(dg + 0.0175)));
-        col += (shineCol * exp((-10.0 * clamp(dg, 0.0, 1.0))));
+        col += shineCol * exp(-10.0 * clamp(dg, 0.0, 1.0));
         col = clamp(col, 0.0, 1.0);
-        col *= pow((1.0 - smoothstep((ro.y * 3.0), (220.0 + (ro.y * 2.0)), distg)), 2.0);
+        col *= pow(1.0 - smoothstep(ro.y * 3.0, 220.0 + ro.y * 2.0, distg), 2.0);
     }
     return col;
 }
@@ -208,27 +208,27 @@ float3 groundEffect(float2 p)
 float3 postProcess(float3 col, float2 q)
 {
     col = clamp(col, 0.0, 1.0);
-    col = ((col * 0.6) + (((0.4 * col) * col) * (3.0 - (2.0 * col))));
-    col = lerp(col, ((float3)(dot(col, ((float3)(0.33))))), -0.4);
-    col *= (0.5 + (0.5 * pow(((((19.0 * q.x) * q.y) * (1.0 - q.x)) * (1.0 - q.y)), 0.7)));
+    col = col * 0.6 + 0.4 * col * col * (3.0 - 2.0 * col);
+    col = lerp(col, (float3)dot(col, (float3)0.33), -0.4);
+    col *= 0.5 + 0.5 * pow(19.0 * q.x * q.y * (1.0 - q.x) * (1.0 - q.y), 0.7);
     return col;
 }
 
 float3 effect(float2 p, float2 q)
 {
-    float3 col = ((float3)(0.0));
+    float3 col = (float3)0.0;
     float2 off = float2(0.0, 0.0);
-    col += sunEffect((p + off));
-    col += groundEffect((p + off));
+    col += sunEffect(p + off);
+    col += groundEffect(p + off);
     col = postProcess(col, q);
     return col;
 }
 
 void mainImage(out float4 fragColor, float2 fragCoord)
 {
-    float2 q = (fragCoord / iResolution.xy);
-    float2 p = (-1. + (2. * q));
-    p.x *= (iResolution.x / iResolution.y);
+    float2 q = fragCoord / iResolution.xy;
+    float2 p = -1. + 2. * q;
+    p.x *= iResolution.x / iResolution.y;
     float3 col = effect(p, q);
     fragColor = float4(col, 1.0);
 }

@@ -22,12 +22,12 @@ float3 iResolution;
 
 float3 tint(float3 c)
 {
-    return (c * float3(1.0, 0.5, 0.25));
+    return c * float3(1.0, 0.5, 0.25);
 }
 
 void mainImage(out float4 fragColor, float2 fragCoord)
 {
-    float2 uv = (fragCoord / iResolution.xy);
+    float2 uv = fragCoord / iResolution.xy;
     fragColor = float4(uv, 0.5, 1.0);
 }
 

@@ -23,38 +23,38 @@ float iTime;
 
 float sdSphere(float3 p, float r)
 {
-    return (length(p) - r);
+    return length(p) - r;
 }
 
 float map(float3 p)
 {
-    float sphere = sdSphere((p - float3(0.0, (0.2 * sin(iTime)), 0.0)), 1.0);
-    float plane = (p.y + 1.0);
+    float sphere = sdSphere(p - float3(0.0, 0.2 * sin(iTime), 0.0), 1.0);
+    float plane = p.y + 1.0;
     return min(sphere, plane);
 }
 
 float3 calcNormal(float3 p)
 {
     float2 e = float2(0.001, 0.0);
-    return normalize(float3((map((p + e.xyy)) - map((p - e.xyy))), (map((p + e.yxy)) - map((p - e.yxy))), (map((p + e.yyx)) - map((p - e.yyx)))));
+    return normalize(float3(map(p + e.xyy) - map(p - e.xyy), map(p + e.yxy) - map(p - e.yxy), map(p + e.yyx) - map(p - e.yyx)));
 }
 
 void mainImage(out float4 fragColor, float2 fragCoord)
 {
-    float2 uv = ((fragCoord - (0.5 * iResolution.xy)) / iResolution.y);
-    float ca = (iTime * 0.5);
-    float3 ro = float3((3.0 * sin(ca)), 1.0, (3.0 * cos(ca)));
+    float2 uv = (fragCoord - 0.5 * iResolution.xy) / iResolution.y;
+    float ca = iTime * 0.5;
+    float3 ro = float3(3.0 * sin(ca), 1.0, 3.0 * cos(ca));
     float3 ta = float3(0.0, 0.0, 0.0);
-    float3 fwd = normalize((ta - ro));
+    float3 fwd = normalize(ta - ro);
     float3 right = normalize(cross(float3(0.0, 1.0, 0.0), fwd));
     float3 up = cross(fwd, right);
-    float3 rd = normalize((((uv.x * right) + (uv.y * up)) + (1.5 * fwd)));
+    float3 rd = normalize(uv.x * right + uv.y * up + 1.5 * fwd);
     float t = 0.0;
     float d = 0.0;
     bool hit = false;
     for (int i = 0; i < 64; i++)
     {
-        float3 p = (ro + (rd * t));
+        float3 p = ro + rd * t;
         d = map(p);
         if (d < 0.001)
         {
@@ -67,19 +67,19 @@ void mainImage(out float4 fragColor, float2 fragCoord)
             break;
         }
     }
-    float3 col = (float3(0.5, 0.65, 0.9) - (0.3 * uv.y));
+    float3 col = float3(0.5, 0.65, 0.9) - 0.3 * uv.y;
     if (hit)
     {
-        float3 p = (ro + (rd * t));
+        float3 p = ro + rd * t;
         float3 n = calcNormal(p);
         float3 lightDir = normalize(float3(0.6, 0.8, -0.4));
         float diff = max(dot(n, lightDir), 0.0);
-        float3 h = normalize((lightDir - rd));
+        float3 h = normalize(lightDir - rd);
         float spec = pow(max(dot(n, h), 0.0), 32.0);
         float3 base = float3(0.85, 0.45, 0.30);
-        col = ((base * (0.15 + (0.85 * diff))) + ((((float3)(1.0)) * spec) * 0.6));
+        col = base * (0.15 + 0.85 * diff) + (float3)1.0 * spec * 0.6;
     }
-    col = pow(col, ((float3)(0.4545)));
+    col = pow(col, (float3)0.4545);
     fragColor = float4(col, 1.0);
 }
 

@@ -22,15 +22,15 @@ float3 iResolution;
 
 uint pcg(uint v)
 {
-    uint state = ((v * 747796405u) + 2891336453u);
-    uint word = (((state >> ((state >> 28u) + 4u)) ^ state) * 277803737u);
-    return ((word >> 22u) ^ word);
+    uint state = v * 747796405u + 2891336453u;
+    uint word = ((state >> ((state >> 28u) + 4u)) ^ state) * 277803737u;
+    return (word >> 22u) ^ word;
 }
 
 void mainImage(out float4 fragColor, float2 fragCoord)
 {
-    uint h = pcg((uint(fragCoord.x) + (1920u * uint(fragCoord.y))));
-    float v = (float((h & 0xFFu)) / 255.0);
+    uint h = pcg(uint(fragCoord.x) + 1920u * uint(fragCoord.y));
+    float v = float(h & 0xFFu) / 255.0;
     fragColor = float4(v, v, v, 1.0);
 }
 

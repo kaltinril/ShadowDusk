@@ -30,9 +30,9 @@ static float4 gl_FragColor;
 
 void main()
 {
-    float2 uv = (gl_FragCoord.xy / resolution);
-    float d = length((uv - 0.5));
-    gl_FragColor = float4(d, (1.0 - d), 0.0, 1.0);
+    float2 uv = gl_FragCoord.xy / resolution;
+    float d = length(uv - 0.5);
+    gl_FragColor = float4(d, 1.0 - d, 0.0, 1.0);
 }
 
 

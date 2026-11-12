@@ -22,17 +22,17 @@ float3 iResolution;
 
 void mainImage(out float4 fragColor, float2 fragCoord)
 {
-    float2 uv = (fragCoord / iResolution.xy);
+    float2 uv = fragCoord / iResolution.xy;
     float samples[4];
     samples[0] = uv.x;
     samples[1] = uv.y;
-    samples[2] = (uv.x * uv.y);
-    samples[3] = (1.0 - uv.x);
+    samples[2] = uv.x * uv.y;
+    samples[3] = 1.0 - uv.x;
     const float kGain[4] = { 0.4, 0.3, 0.2, 0.1 };
     float v = 0.0;
     for (int i = 0; i < 4; i++)
     {
-        v += (samples[i] * kGain[i]);
+        v += samples[i] * kGain[i];
     }
     fragColor = float4(v, v, v, 1.0);
 }

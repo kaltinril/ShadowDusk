@@ -26,12 +26,12 @@ static float4 outColor;
 
 float3 tint(float2 uv)
 {
-    return float3(uv, (0.5 + (0.5 * uv.x)));
+    return float3(uv, 0.5 + 0.5 * uv.x);
 }
 
 void main()
 {
-    float2 uv = (gl_FragCoord.xy / iResolution.xy);
+    float2 uv = gl_FragCoord.xy / iResolution.xy;
     outColor = float4(tint(uv), 1.0);
 }
 

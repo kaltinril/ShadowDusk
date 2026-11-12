@@ -124,7 +124,7 @@ public sealed class Phase46BatchTests
 
         string fx = ConvertOk(glsl);
         fx.ShouldContain("float a[3] = { 0.2, 0.5, 0.3 };", Case.Sensitive);
-        fx.ShouldContain("float2 b[2] = { ((float2)(0.0)), ((float2)(1.0)) };", Case.Sensitive);
+        fx.ShouldContain("float2 b[2] = { (float2)0.0, (float2)1.0 };", Case.Sensitive);
     }
 
     [Fact]
@@ -203,7 +203,7 @@ public sealed class Phase46BatchTests
 
         string fx = ConvertOk(glsl);
         fx.ShouldContain("&&", Case.Sensitive);
-        fx.ShouldContain("(x & 1)", Case.Sensitive);
+        fx.ShouldContain("int m = x & 1;", Case.Sensitive);
     }
 
     // ── 3: gl_FragCoord as a body built-in ──────────────────────────────────────────────────

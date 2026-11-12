@@ -23,14 +23,14 @@ float iTime;
 
 void mainImage(out float4 fragColor, float2 fragCoord)
 {
-    float2 p = ((fragCoord - (0.5 * iResolution.xy)) / iResolution.y);
+    float2 p = (fragCoord - 0.5 * iResolution.xy) / iResolution.y;
     float sum = 0.0;
     for (int i = 0; i < 6; i++)
     {
-        float fi = (float(i) + 1.0);
-        sum += (sin(((p.x * fi) + iTime)) / fi);
+        float fi = float(i) + 1.0;
+        sum += sin(p.x * fi + iTime) / fi;
     }
-    float v = (0.5 + (0.5 * sum));
+    float v = 0.5 + 0.5 * sum;
     fragColor = float4(v, v, v, 1.0);
 }
 

@@ -44,7 +44,7 @@ public sealed class BlockScopeInferenceTests
         fx.ShouldContain("mul(fragCoord, p)", Case.Sensitive, "inside the block p is the shadowing mat2");
 
         // After the block, `p` is the OUTER vec2 again: componentwise multiply, NOT mul().
-        fx.ShouldContain("float2 q = (p * float2(2.0, 3.0));", Case.Sensitive, "after the block the outer vec2 declaration wins again");
+        fx.ShouldContain("float2 q = p * float2(2.0, 3.0);", Case.Sensitive, "after the block the outer vec2 declaration wins again");
         fx.ShouldNotContain("mul(float2(2.0, 3.0), p)", Case.Sensitive, "the block-local mat2 must not leak into inference after the block");
     }
 
@@ -66,6 +66,6 @@ public sealed class BlockScopeInferenceTests
         """;
 
         string fx = ConvertOk(glsl);
-        fx.ShouldContain("float2 w = (v * float2(0.5, 0.5));", Case.Sensitive, "the if-block mat2 shadow must not survive past its block");
+        fx.ShouldContain("float2 w = v * float2(0.5, 0.5);", Case.Sensitive, "the if-block mat2 shadow must not survive past its block");
     }
 }

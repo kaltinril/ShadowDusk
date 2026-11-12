@@ -283,7 +283,8 @@ internal sealed class HlslEmitter
     /// </summary>
     private string TruncateToWidth(GlslType target, Expr value)
     {
-        string emitted = EmitExpr(value);
+        Emitted e = Emit(value);
+        string emitted = e.Text;
         if (!target.IsVector)
         {
             return emitted;
@@ -306,8 +307,9 @@ internal sealed class HlslEmitter
             return emitted;
         }
 
-        // Parenthesize so the swizzle binds to the whole value, then select the leading components.
-        return $"({emitted}).{swizzle}";
+        // Parenthesize (when looser than postfix) so the swizzle binds to the whole value, then select
+        // the leading components.
+        return $"{Wrap(e, PrecPostfix)}.{swizzle}";
     }
 
     private void EmitIf(IfStmt i)
@@ -348,7 +350,7 @@ internal sealed class HlslEmitter
             // A label group with an empty body and shared labels still emits its condition; the body is
             // simply empty. Build `sel == L0 || sel == L1 ...`.
             string cond = string.Join(
-                " || ", c.Labels.Select(l => $"{sel} == {EmitExpr(l)}"));
+                " || ", c.Labels.Select(l => $"{sel} == {EmitAtLeast(l, PrecRelational)}"));
             Line($"{(first ? "if" : "else if")} ({cond})");
             EmitCaseBody(c.Body);
             first = false;
@@ -490,39 +492,111 @@ internal sealed class HlslEmitter
     }
 
     // ── expressions ────────────────────────────────────────────────────────────
+    //
+    // Parenthesization policy (Phase 71, readability with no change in meaning). The parser drops the
+    // source's grouping parens (`( … )` yields the inner Expr; there is no ParenExpr node), so the
+    // emitter decides every paren. Each emitted expression carries the C/HLSL precedence level of its
+    // OUTERMOST operator (Emitted.Prec), and a parent wraps a child only when one of these holds:
+    //   1. Precedence: the child binds looser than the slot it sits in (`(a + b) * c`).
+    //   2. Associativity: the right operand of a binary operator at the SAME level (`a - (b - c)`,
+    //      `a / (b * c)`, and also `a + (b + c)`, since float addition is not associative).
+    //   3. Clarity: a few pairings that precedence leaves unambiguous but that readers misread, the same
+    //      set clang flags under -Wparentheses (see NeedsClarityParens).
+    //   4. Assignment and comma always wrap themselves outside statement position, and a conditional
+    //      nested inside another conditional is wrapped.
+    // The precedence the emitter reasons about is that of the EMITTED HLSL, not the GLSL AST: a GLSL
+    // matrix `*` becomes the call `mul(b, a)`, a vector `==` becomes `all(a == b)`, and those are
+    // atoms to their parent.
 
-    /// <summary>Translate an expression to an HLSL string.</summary>
-    public string EmitExpr(Expr expr) => expr switch
+    // HLSL/C precedence levels, lowest binding first.
+    private const int PrecSequence = 0;
+    private const int PrecAssign = 1;
+    private const int PrecConditional = 2;
+    private const int PrecLogicalOr = 3;
+    private const int PrecLogicalAnd = 4;
+    private const int PrecBitOr = 5;
+    private const int PrecBitXor = 6;
+    private const int PrecBitAnd = 7;
+    private const int PrecEquality = 8;
+    private const int PrecRelational = 9;
+    private const int PrecShift = 10;
+    private const int PrecAdditive = 11;
+    private const int PrecMultiplicative = 12;
+    private const int PrecUnary = 13;
+    private const int PrecPostfix = 14;
+    private const int PrecPrimary = 15;
+
+    /// <summary>An emitted HLSL expression with the precedence of its outermost operator, and that
+    /// operator's spelling when it is a binary operator (used by the clarity rules).</summary>
+    private readonly record struct Emitted(string Text, int Prec, string? BinaryOp = null);
+
+    private static Emitted Atom(string text) => new(text, PrecPrimary);
+
+    private static Emitted Postfix(string text) => new(text, PrecPostfix);
+
+    private static int BinaryPrecedence(string op) => op switch
     {
-        IntLiteralExpr i => i.Text,
-        FloatLiteralExpr f => NormalizeFloat(f.Text),
-        BoolLiteralExpr b => b.Value ? "true" : "false",
-        IdentifierExpr id => EmitIdentifier(id),
-        SwizzleExpr sw => EmitMemberOrSwizzle(sw),
-        IndexExpr idx => EmitIndex(idx),
+        "||" => PrecLogicalOr,
+        "&&" => PrecLogicalAnd,
+        "|" => PrecBitOr,
+        "^" => PrecBitXor,
+        "&" => PrecBitAnd,
+        "==" or "!=" => PrecEquality,
+        "<" or ">" or "<=" or ">=" => PrecRelational,
+        "<<" or ">>" => PrecShift,
+        "+" or "-" => PrecAdditive,
+        "*" or "/" or "%" => PrecMultiplicative,
+        _ => throw new InvalidOperationException($"Internal: unknown binary operator '{op}'."),
+    };
+
+    /// <summary>Translate an expression to an HLSL string, with only the parentheses its meaning or a
+    /// reader needs (see the policy above).</summary>
+    public string EmitExpr(Expr expr) => Emit(expr).Text;
+
+    private Emitted Emit(Expr expr) => expr switch
+    {
+        IntLiteralExpr i => Atom(i.Text),
+        FloatLiteralExpr f => Atom(NormalizeFloat(f.Text)),
+        BoolLiteralExpr b => Atom(b.Value ? "true" : "false"),
+        // An identifier can resolve to a member path (openfl_TextureSize -> iResolution.xy): still
+        // postfix-tight, so it never needs wrapping.
+        IdentifierExpr id => Postfix(EmitIdentifier(id)),
+        SwizzleExpr sw => Postfix(EmitMemberOrSwizzle(sw)),
+        IndexExpr idx => Postfix(EmitIndex(idx)),
         CallExpr call => EmitCall(call),
-        ArrayConstructorExpr ac => EmitArrayConstructor(ac),
-        BraceInitExpr bi => $"{{ {string.Join(", ", bi.Elements.Select(EmitExpr))} }}",
+        ArrayConstructorExpr ac => Atom(EmitArrayConstructor(ac)),
+        BraceInitExpr bi => Atom($"{{ {string.Join(", ", bi.Elements.Select(EmitExpr))} }}"),
         UnaryExpr un => EmitUnary(un),
         BinaryExpr bin => EmitBinary(bin),
-        ConditionalExpr c => $"({EmitCondition(c.Condition)} ? {EmitExpr(c.WhenTrue)} : {EmitExpr(c.WhenFalse)})",
-        // Assignment and comma are the two LOWEST-precedence operators in both GLSL and
-        // HLSL, and the parser drops the source's grouping parens (`( … )` yields the
-        // inner Expr, there is no ParenExpr node). So in sub-expression position they
-        // must re-parenthesize themselves or the surrounding operator silently binds
-        // tighter than it did in the GLSL: the raymarching idiom
-        // `if ((d = map(p)) < 0.001)` would emit `if (d = map(p) < 0.001)`, assigning a
-        // bool 0/1 to d instead of the distance — valid HLSL, wrong image, no diagnostic.
+        ConditionalExpr c => new Emitted(
+            $"{ConditionalOperand(c.Condition)} ? {ConditionalOperand(c.WhenTrue)} : {ConditionalOperand(c.WhenFalse)}",
+            PrecConditional),
+        // Assignment and comma are the two LOWEST-precedence operators in both GLSL and HLSL, so in
+        // sub-expression position they must re-parenthesize themselves or the surrounding operator
+        // silently binds tighter than it did in the GLSL: the raymarching idiom
+        // `if ((d = map(p)) < 0.001)` would emit `if (d = map(p) < 0.001)`, assigning a bool 0/1 to d
+        // instead of the distance — valid HLSL, wrong image, no diagnostic. They always wrap (even as a
+        // call argument, where the grammar would allow a bare assignment) so the side effect stands out.
         // EmitStatementExpr keeps the statement-level spelling bare.
-        SequenceExpr seq => $"({string.Join(", ", seq.Items.Select(EmitExpr))})",
-        AssignExpr a => $"({EmitAssign(a)})",
+        SequenceExpr seq => Atom($"({string.Join(", ", seq.Items.Select(EmitExpr))})"),
+        AssignExpr a => Atom($"({EmitAssign(a)})"),
         _ => throw new ConvertException("Internal: unhandled expression.", expr.Line, expr.Column),
     };
+
+    /// <summary>Emit <paramref name="expr"/> for a slot that needs at least <paramref name="minPrec"/>,
+    /// wrapping it in parentheses when its outermost operator binds looser (rule 1).</summary>
+    private string EmitAtLeast(Expr expr, int minPrec) => Wrap(Emit(expr), minPrec);
+
+    private static string Wrap(Emitted e, int minPrec) => e.Prec < minPrec ? $"({e.Text})" : e.Text;
+
+    /// <summary>A conditional's condition and branches: anything looser than <c>||</c> wraps, which is
+    /// exactly a nested conditional (rule 4; assignment and comma already wrap themselves).</summary>
+    private string ConditionalOperand(Expr expr) => EmitAtLeast(expr, PrecLogicalOr);
 
     /// <summary>
     /// Emits an expression in STATEMENT position (an expression statement, or a
     /// <c>for</c> header's init/increment slot), where an assignment or comma sequence
-    /// is already unambiguous and the redundant parens <see cref="EmitExpr"/> adds would
+    /// is already unambiguous and the parens <see cref="EmitExpr"/> adds would
     /// only be noise.
     /// </summary>
     private string EmitStatementExpr(Expr expr) => expr switch
@@ -542,13 +616,14 @@ internal sealed class HlslEmitter
     /// </summary>
     private string EmitAssign(AssignExpr a)
     {
+        string target = EmitAtLeast(a.Target, PrecUnary);
         if (a.Op == "*=")
         {
             GlslType targetType = _types.Infer(a.Target);
             GlslType valueType = _types.Infer(a.Value);
             if (targetType.IsMatrix || valueType.IsMatrix)
             {
-                // Desugar `lhs *= rhs` to `lhs = (lhs * rhs)` preserving GLSL operand order, and route
+                // Desugar `lhs *= rhs` to `lhs = lhs * rhs` preserving GLSL operand order, and route
                 // the multiply through the binary path so the matrix-order trap applies consistently.
                 // GLSL `v *= M` means `v = v*M` (row-vector); EmitBinary turns `lhs * rhs` into
                 // `mul(rhs, lhs)`, yielding `v = mul(M, v)`. (Inverting the order here would emit the
@@ -561,7 +636,7 @@ internal sealed class HlslEmitter
                     Line = a.Line,
                     Column = a.Column,
                 };
-                return $"{EmitExpr(a.Target)} = {EmitBinary(product)}";
+                return $"{target} = {EmitBinary(product).Text}";
             }
         }
 
@@ -570,55 +645,27 @@ internal sealed class HlslEmitter
         if (a.Op == "=")
         {
             GlslType targetType = _types.Infer(a.Target);
-            return $"{EmitExpr(a.Target)} = {TruncateToWidth(targetType, a.Value)}";
+            return $"{target} = {TruncateToWidth(targetType, a.Value)}";
         }
 
-        return $"{EmitExpr(a.Target)} {a.Op} {EmitExpr(a.Value)}";
+        return $"{target} {a.Op} {EmitExpr(a.Value)}";
     }
 
     /// <summary>
-    /// Emit an expression used in a BOOLEAN context (an <c>if</c>/<c>while</c>/<c>do…while</c>/ternary
-    /// condition). Two traps are handled here:
+    /// Emit an expression used in a BOOLEAN context (an <c>if</c>/<c>while</c>/<c>do…while</c>/<c>for</c>
+    /// condition). The two traps of that context are now handled by the general expression path:
     /// <list type="bullet">
     /// <item><b>B2 — over-parenthesization.</b> The call site already wraps the condition in
-    /// <c>(...)</c>, so a top-level binary must NOT add its own outer parens; otherwise
-    /// <c>if (a == 0.0)</c> becomes <c>if ((a == 0.0))</c>, which fxc rejects under
+    /// <c>(...)</c>, and a top-level binary carries no outer parens of its own, so <c>if (a == 0.0)</c>
+    /// never becomes <c>if ((a == 0.0))</c>, which fxc rejects under
     /// <c>-Werror,-Wparentheses-equality</c>.</item>
-    /// <item><b>B3 — vector equality.</b> GLSL <c>vecA == vecB</c> in a bool context is a single
-    /// bool; HLSL <c>==</c> on vectors yields a bool-vector, so it must be reduced with
-    /// <c>all(a == b)</c> (and <c>!=</c> with <c>any(a != b)</c>). The reduction recurses through
-    /// <c>&amp;&amp;</c>/<c>||</c>/<c>!</c> so a nested vector comparison is also scalarized.</item>
+    /// <item><b>B3 — vector equality.</b> <see cref="EmitBinary"/> reduces a vector <c>==</c>/<c>!=</c>
+    /// with <c>all</c>/<c>any</c> at every depth, so a comparison nested under <c>&amp;&amp;</c>,
+    /// <c>||</c> or <c>!</c> is scalarized too.</item>
     /// </list>
     /// </summary>
-    private string EmitCondition(Expr expr)
-    {
-        switch (expr)
-        {
-            case BinaryExpr bin when bin.Op is "==" or "!=":
-                // A vector compare reduces via the shared B3 helper (so this site and EmitBinary
-                // cannot drift); scalar equality emits without the redundant outer parens (B2).
-                return TryReduceVectorEquality(bin)
-                    ?? $"{EmitExpr(bin.Left)} {bin.Op} {EmitExpr(bin.Right)}";
+    private string EmitCondition(Expr expr) => EmitExpr(expr);
 
-            case BinaryExpr bin when bin.Op is "&&" or "||":
-                // Recurse so a vector comparison on either side is still scalarized; keep parens
-                // around each side to preserve precedence.
-                return $"({EmitCondition(bin.Left)}) {bin.Op} ({EmitCondition(bin.Right)})";
-
-            case UnaryExpr un when un.Op == "!" && !un.IsPostfix:
-                return $"!({EmitCondition(un.Operand)})";
-
-            case BinaryExpr bin when bin.Op is "<" or ">" or "<=" or ">=":
-                // Other top-level relational comparisons: drop the redundant outer parens the
-                // generic EmitBinary would add (B2 generalizes to all top-level comparisons).
-                return $"{EmitExpr(bin.Left)} {bin.Op} {EmitExpr(bin.Right)}";
-
-            default:
-                // Arithmetic / call / identifier condition: keep the generic emission (which retains
-                // matrix handling and any needed parens).
-                return EmitExpr(expr);
-        }
-    }
 
     private string EmitIdentifier(IdentifierExpr id)
     {
@@ -709,7 +756,7 @@ internal sealed class HlslEmitter
     /// </summary>
     private string EmitMemberOrSwizzle(SwizzleExpr sw)
     {
-        string target = EmitExpr(sw.Target);
+        string target = EmitAtLeast(sw.Target, PrecPostfix);
         GlslType targetType = _types.Infer(sw.Target);
         return targetType.IsStruct
             ? $"{target}.{sw.Member}"
@@ -724,25 +771,38 @@ internal sealed class HlslEmitter
             ReferencedUniforms.Add(id.Name);
         }
 
-        return $"{EmitExpr(idx.Target)}[{EmitExpr(idx.Index)}]";
+        return $"{EmitAtLeast(idx.Target, PrecPostfix)}[{EmitExpr(idx.Index)}]";
     }
 
-    private string EmitUnary(UnaryExpr un)
+    private Emitted EmitUnary(UnaryExpr un)
     {
-        string operand = EmitExpr(un.Operand);
-        return un.IsPostfix ? $"{operand}{un.Op}" : $"{un.Op}{operand}";
+        if (un.IsPostfix)
+        {
+            return Postfix($"{EmitAtLeast(un.Operand, PrecPostfix)}{un.Op}");
+        }
+
+        // A prefix operator applies to a unary-or-tighter operand, so `-(a + b)` keeps its parens and
+        // `-x` does not. One extra case: an operand that itself starts with the same sign character
+        // would fuse into a different token (`-` + `-x` is `--x`, a decrement), so it wraps.
+        string operand = EmitAtLeast(un.Operand, PrecUnary);
+        char last = un.Op[^1];
+        if ((last == '-' || last == '+') && operand.Length > 0 && operand[0] == last)
+        {
+            operand = $"({operand})";
+        }
+
+        return new Emitted($"{un.Op}{operand}", PrecUnary);
     }
 
     /// <summary>
-    /// B3 — vector equality reduction, shared by <see cref="EmitCondition"/> and
-    /// <see cref="EmitBinary"/> so the two sites cannot drift. GLSL <c>vecA == vecB</c> yields a
-    /// SINGLE bool (all components equal) in EVERY context — conditions, assignments, initializers,
-    /// returns, call arguments — but HLSL <c>==</c> on vectors yields a bool-vector, so it must be
-    /// reduced with <c>all(a == b)</c> (and <c>!=</c> with <c>any(a != b)</c>). Returns null when
-    /// neither operand infers as a vector: scalar compares, and operands whose types are unknown,
-    /// emit unchanged (the conservative pass-through).
+    /// B3 — vector equality reduction, used by <see cref="EmitBinary"/> in EVERY context. GLSL
+    /// <c>vecA == vecB</c> yields a SINGLE bool (all components equal) in conditions, assignments,
+    /// initializers, returns and call arguments alike, but HLSL <c>==</c> on vectors yields a
+    /// bool-vector, so it must be reduced with <c>all(a == b)</c> (and <c>!=</c> with
+    /// <c>any(a != b)</c>). Returns null when neither operand infers as a vector: scalar compares, and
+    /// operands whose types are unknown, emit unchanged (the conservative pass-through).
     /// </summary>
-    private string? TryReduceVectorEquality(BinaryExpr bin)
+    private Emitted? TryReduceVectorEquality(BinaryExpr bin)
     {
         if (bin.Op is not ("==" or "!="))
         {
@@ -757,10 +817,10 @@ internal sealed class HlslEmitter
         }
 
         string reducer = bin.Op == "==" ? "all" : "any";
-        return $"{reducer}({EmitExpr(bin.Left)} {bin.Op} {EmitExpr(bin.Right)})";
+        return Postfix($"{reducer}({InfixText(bin.Op, bin.Left, bin.Right)})");
     }
 
-    private string EmitBinary(BinaryExpr bin)
+    private Emitted EmitBinary(BinaryExpr bin)
     {
         // B3 applies outside condition contexts too (a GLSL vector ==/!= is a single bool in an
         // assignment / initializer / return / call argument as well); reduce via the shared helper.
@@ -769,9 +829,6 @@ internal sealed class HlslEmitter
             return reduced;
         }
 
-        string l = EmitExpr(bin.Left);
-        string r = EmitExpr(bin.Right);
-
         if (bin.Op == "*")
         {
             GlslType lt = _types.Infer(bin.Left);
@@ -779,24 +836,71 @@ internal sealed class HlslEmitter
 
             // Matrix multiply (trap 2). GLSL A * B  →  HLSL mul(B, A) preserves column-major semantics
             // given that matrix constructors are emitted with the identical (now transposed) scalar list.
-            // A scalar operand is NOT a matrix multiply — it is component scaling and stays as `*`.
-            bool leftMat = lt.IsMatrix;
-            bool rightMat = rt.IsMatrix;
-            if (leftMat || rightMat)
+            // A scalar operand is NOT a matrix multiply — it is component scaling and stays as `*`
+            // (the generic path below).
+            if ((lt.IsMatrix || rt.IsMatrix) && !lt.IsScalar && !rt.IsScalar)
             {
-                bool leftScalar = lt.IsScalar;
-                bool rightScalar = rt.IsScalar;
-                if (leftScalar || rightScalar)
-                {
-                    // scalar * matrix or matrix * scalar → plain componentwise scale.
-                    return $"({l} * {r})";
-                }
-
-                return $"mul({r}, {l})";
+                return Postfix($"mul({EmitExpr(bin.Right)}, {EmitExpr(bin.Left)})");
             }
         }
 
-        return $"({l} {bin.Op} {r})";
+        return new Emitted(InfixText(bin.Op, bin.Left, bin.Right), BinaryPrecedence(bin.Op), bin.Op);
+    }
+
+    /// <summary>
+    /// A C-style cast <c>(floatN)x</c>. Its operand keeps parens unless it is postfix-tight, so a cast of
+    /// a binary or unary expression reads <c>(float3)(a + b)</c> and a cast of a name reads <c>(float3)x</c>.
+    /// </summary>
+    private static Emitted Cast(string hlslType, Emitted operand) =>
+        new($"({hlslType}){Wrap(operand, PrecPostfix)}", PrecUnary);
+
+    /// <summary>Spell <c>left op right</c> with each operand wrapped only as the policy requires.</summary>
+    private string InfixText(string op, Expr left, Expr right) =>
+        $"{BinaryOperand(op, left, isRight: false)} {op} {BinaryOperand(op, right, isRight: true)}";
+
+    private string BinaryOperand(string parentOp, Expr child, bool isRight) =>
+        WrapOperand(parentOp, Emit(child), isRight);
+
+    private static string WrapOperand(string parentOp, Emitted e, bool isRight)
+    {
+        int parentPrec = BinaryPrecedence(parentOp);
+        bool wrap = e.Prec < parentPrec // rule 1: precedence
+            || (isRight && e.Prec == parentPrec) // rule 2: left associativity
+            || NeedsClarityParens(parentOp, e.BinaryOp); // rule 3: clarity
+        return wrap ? $"({e.Text})" : e.Text;
+    }
+
+    /// <summary>
+    /// Rule 3: pairings that precedence leaves unambiguous but that readers misread, so a paren is kept
+    /// anyway. The set is the one clang flags under <c>-Wparentheses</c>:
+    /// <list type="bullet">
+    /// <item><c>-Wlogical-op-parentheses</c>: <c>&amp;&amp;</c> inside <c>||</c> (<c>a || (b &amp;&amp; c)</c>).</item>
+    /// <item><c>-Wbitwise-op-parentheses</c> and its relatives: any other binary operator inside a
+    /// bitwise <c>&amp;</c>/<c>|</c>/<c>^</c> (<c>a | (b &amp; c)</c>, <c>(a &amp; b) == c</c> is
+    /// already required by precedence, <c>a &amp; (b + c)</c> is clarity).</item>
+    /// <item><c>-Wshift-op-parentheses</c>: any other binary operator inside a shift, and a shift
+    /// inside any other binary operator (<c>a &lt;&lt; (b + c)</c>, <c>(a &lt;&lt; b) &lt; c</c>).</item>
+    /// <item>Comparison chains: a comparison inside a comparison (<c>(a &lt; b) == c</c>).</item>
+    /// </list>
+    /// A same-operator chain such as <c>a &amp;&amp; b &amp;&amp; c</c> or <c>a | b | c</c> stays bare.
+    /// </summary>
+    private static bool NeedsClarityParens(string parentOp, string? childOp)
+    {
+        if (childOp is null || childOp == parentOp)
+        {
+            return false;
+        }
+
+        static bool IsLogical(string op) => op is "&&" or "||";
+        static bool IsBitwise(string op) => op is "&" or "|" or "^";
+        static bool IsShift(string op) => op is "<<" or ">>";
+        static bool IsComparison(string op) => op is "==" or "!=" or "<" or ">" or "<=" or ">=";
+
+        return (IsLogical(parentOp) && IsLogical(childOp))
+            || IsBitwise(parentOp)
+            || IsShift(parentOp)
+            || IsShift(childOp)
+            || (IsComparison(parentOp) && IsComparison(childOp));
     }
 
     /// <summary>True when an expression is a literal numeric zero (<c>0</c>, <c>0.</c>, <c>0.0</c>), used to
@@ -813,10 +917,11 @@ internal sealed class HlslEmitter
         _ => false,
     };
 
-    private string EmitCall(CallExpr call)
+    private Emitted EmitCall(CallExpr call)
     {
         string name = call.Callee;
-        List<string> args = call.Args.Select(EmitExpr).ToList();
+        List<Emitted> emittedArgs = call.Args.Select(Emit).ToList();
+        List<string> args = emittedArgs.Select(e => e.Text).ToList();
 
         // Struct constructor (G6): GLSL `Name(a, b)` -> the generated factory `make_Name(a, b)`. The
         // arg count must match the struct's member count (a wrong arity is a loud reject).
@@ -829,13 +934,13 @@ internal sealed class HlslEmitter
                     $"(one per member), got {call.Args.Count}.");
             }
 
-            return $"make_{name}({string.Join(", ", args)})";
+            return Postfix($"make_{name}({string.Join(", ", args)})");
         }
 
         // Type constructor.
         if (TypeTable.IsTypeName(name))
         {
-            return EmitConstructor(name, args, call);
+            return EmitConstructor(name, emittedArgs, call);
         }
 
         // Special-cased intrinsics.
@@ -844,12 +949,12 @@ internal sealed class HlslEmitter
             case "atan":
                 if (call.Args.Count == 2)
                 {
-                    return $"atan2({args[0]}, {args[1]})";
+                    return Postfix($"atan2({args[0]}, {args[1]})");
                 }
 
                 if (call.Args.Count == 1)
                 {
-                    return $"atan({args[0]})";
+                    return Postfix($"atan({args[0]})");
                 }
 
                 throw Reject(call, $"'atan' takes 1 or 2 arguments, got {call.Args.Count}.");
@@ -861,18 +966,21 @@ internal sealed class HlslEmitter
                 }
 
                 UsedGlslMod = true;
-                return $"glsl_mod({args[0]}, {args[1]})";
+                return Postfix($"glsl_mod({args[0]}, {args[1]})");
 
             case "matrixCompMult":
                 // GLSL matrixCompMult(a, b) is the COMPONENTWISE matrix product. HLSL `*` on matrices
-                // is already componentwise (only `mul` is the linear-algebra product), so emit `(a * b)`
+                // is already componentwise (only `mul` is the linear-algebra product), so emit `a * b`
                 // directly — NOT through the matrix-order trap in EmitBinary.
                 if (call.Args.Count != 2)
                 {
                     throw Reject(call, $"'matrixCompMult' takes 2 arguments, got {call.Args.Count}.");
                 }
 
-                return $"({args[0]} * {args[1]})";
+                return new Emitted(
+                    $"{WrapOperand("*", emittedArgs[0], isRight: false)} * {WrapOperand("*", emittedArgs[1], isRight: true)}",
+                    PrecMultiplicative,
+                    "*");
 
             case "texture" or "texture2D":
                 RegisterChannelArg(call);
@@ -907,7 +1015,7 @@ internal sealed class HlslEmitter
                         "sampler, so a cubemap channel has no faithful 2D mapping.");
                 }
 
-                return $"tex2D({string.Join(", ", args)})";
+                return Postfix($"tex2D({string.Join(", ", args)})");
 
             case "textureLod":
                 // tex2Dlod takes a float4 (uv.xy, 0, lod). ShaderToy textureLod(s, uv, lod).
@@ -923,7 +1031,7 @@ internal sealed class HlslEmitter
                 // every backend.
                 if (IsLiteralZero(call.Args[2]))
                 {
-                    return $"tex2D({args[0]}, {args[1]})";
+                    return Postfix($"tex2D({args[0]}, {args[1]})");
                 }
 
                 // A NON-zero LOD would emit the legacy tex2Dlod intrinsic. That intrinsic compiled only
@@ -944,19 +1052,19 @@ internal sealed class HlslEmitter
                     throw Reject(call, "'textureGrad' expects (sampler, uv, ddx, ddy).");
                 }
 
-                return $"tex2Dgrad({args[0]}, {args[1]}, {args[2]}, {args[3]})";
+                return Postfix($"tex2Dgrad({args[0]}, {args[1]}, {args[2]}, {args[3]})");
         }
 
         // Simple rename table.
         if (IntrinsicTable.Renames.TryGetValue(name, out string? hlsl))
         {
-            return $"{hlsl}({string.Join(", ", args)})";
+            return Postfix($"{hlsl}({string.Join(", ", args)})");
         }
 
         // Same-name HLSL intrinsic.
         if (IntrinsicTable.SameName.Contains(name))
         {
-            return $"{name}({string.Join(", ", args)})";
+            return Postfix($"{name}({string.Join(", ", args)})");
         }
 
         // Explicitly rejected intrinsic.
@@ -970,7 +1078,7 @@ internal sealed class HlslEmitter
         // to the function it names, which is why a local that shadows a called function is renamed instead).
         if (_userFunctions.Contains(name))
         {
-            return $"{MapGlobal(name)}({string.Join(", ", args)})";
+            return Postfix($"{MapGlobal(name)}({string.Join(", ", args)})");
         }
 
         throw Reject(call,
@@ -1187,27 +1295,28 @@ internal sealed class HlslEmitter
         }
     }
 
-    private string EmitConstructor(string glslType, List<string> args, CallExpr call)
+    private Emitted EmitConstructor(string glslType, List<Emitted> emittedArgs, CallExpr call)
     {
+        List<string> args = emittedArgs.Select(e => e.Text).ToList();
         string hlsl = TypeTable.ToHlsl(glslType);
         GlslType t = TypeTable.Resolve(glslType);
 
         // GLSL splat: vecN(scalar) fills all N components with the scalar. HLSL has no
-        // single-scalar vector constructor, so expand it to (x)0-style cast which splats cleanly.
+        // single-scalar vector constructor, so expand it to a cast, which splats cleanly.
         // (Only when the single argument is itself a scalar; vecN(vecM) component-promotion below.)
         if (t.IsVector && call.Args.Count == 1)
         {
             GlslType argType = _types.Infer(call.Args[0]);
             if (argType.IsScalar || !argType.IsKnown)
             {
-                // ((floatN)(scalar)) splats the scalar to every component in HLSL.
-                return $"(({hlsl})({args[0]}))";
+                // (floatN)scalar splats the scalar to every component in HLSL.
+                return Cast(hlsl, emittedArgs[0]);
             }
 
             // vecN(vecM) where M >= N (e.g. vec3(someVec4)): HLSL needs an explicit swizzle/cast.
             if (argType.IsVector)
             {
-                return $"(({hlsl})({args[0]}))";
+                return Cast(hlsl, emittedArgs[0]);
             }
         }
 
@@ -1229,12 +1338,12 @@ internal sealed class HlslEmitter
             int n = t.Rows;
             if (argType.IsMatrix)
             {
-                return EmitMatrixFromMatrix(hlsl, n, argType.Rows, args[0]);
+                return Postfix(EmitMatrixFromMatrix(hlsl, n, argType.Rows, Wrap(emittedArgs[0], PrecPostfix)));
             }
 
             if (argType.IsScalar || !argType.IsKnown)
             {
-                return EmitDiagonalMatrix(hlsl, n, args[0]);
+                return Postfix(EmitDiagonalMatrix(hlsl, n, args[0]));
             }
 
             // A single VECTOR whose component count fills the matrix (GLSL flattens components
@@ -1244,7 +1353,7 @@ internal sealed class HlslEmitter
             // pass the vector straight through. A vector of the wrong width is a loud reject.
             if (argType.IsVector && argType.Rows == n * n)
             {
-                return $"{hlsl}({args[0]})";
+                return Postfix($"{hlsl}({args[0]})");
             }
 
             // A single vector argument of the wrong width is not a defined GLSL matrix constructor.
@@ -1253,7 +1362,7 @@ internal sealed class HlslEmitter
                 $"argument that does not supply exactly {n * n} components is outside the supported subset.");
         }
 
-        return $"{hlsl}({string.Join(", ", args)})";
+        return Postfix($"{hlsl}({string.Join(", ", args)})");
     }
 
     /// <summary>
@@ -1286,10 +1395,10 @@ internal sealed class HlslEmitter
     /// result must keep the same convention, the emitted HLSL cell <c>[r][c]</c> reads the SAME HLSL cell
     /// <c>m[r][c]</c> for r,c &lt; M (the two transposes cancel), so a direct component copy is correct.
     /// </summary>
-    private static string EmitMatrixFromMatrix(string hlsl, int n, int m, string matExpr)
+    private static string EmitMatrixFromMatrix(string hlsl, int n, int m, string mref)
     {
-        // Parenthesize a non-atom matrix expression so the indexing binds to the whole value.
-        string mref = IsAtomExpr(matExpr) ? matExpr : $"({matExpr})";
+        // mref arrives already wrapped (by the caller) when it is looser than postfix, so the indexing
+        // binds to the whole value.
         var cells = new List<string>(n * n);
         for (int r = 0; r < n; r++)
         {
@@ -1307,21 +1416,6 @@ internal sealed class HlslEmitter
         }
 
         return $"{hlsl}({string.Join(", ", cells)})";
-    }
-
-    /// <summary>True if <paramref name="expr"/> is a bare identifier / member path (safe to index
-    /// without extra parens).</summary>
-    private static bool IsAtomExpr(string expr)
-    {
-        foreach (char ch in expr)
-        {
-            if (!(char.IsLetterOrDigit(ch) || ch == '_' || ch == '.'))
-            {
-                return false;
-            }
-        }
-
-        return expr.Length > 0;
     }
 
     /// <summary>

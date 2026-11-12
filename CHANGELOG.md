@@ -22,7 +22,11 @@ that loads and renders identically to `mgfxc`'s in the real MonoGame/KNI runtime
 
 ### Changed
 
+- ShaderToy and SkSL conversion: the generated `.fx` keeps only the parentheses that precedence, associativity or readability need (`tex2D(img, (c + float2(1, 0)) * imgTexelSize)` instead of `tex2D(img, ((c + float2(1, 0)) * imgTexelSize))`, `(float3)a` instead of `((float3)(a))`). The compiled output is unchanged: every re-pinned converter golden builds to the same `.mgfx` bytes on OpenGL and DirectX 11, and `mgfxc` rebuilt the `GradientToy` goldens byte-identical.
+
 ### Fixed
+
+- ShaderToy and SkSL conversion: a doubled prefix sign (`-(-x)`, `- -x`) no longer emits `--x`, a decrement in HLSL; it now emits `-(-x)`.
 
 - OpenGL: an HLSL array initializer (`float m[16] = { ... }`, a lookup table) no longer emits a GLSL ES 3.00 array constructor (`float[](...)`) that WebGL1 and KNI Reach refuse at load. Rewrite Rule 18 declares the array plain and assigns each element, and `SD0403` now warns for any array constructor that survives (issue #475)
 

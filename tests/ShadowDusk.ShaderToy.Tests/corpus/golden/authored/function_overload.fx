@@ -22,17 +22,17 @@ float3 iResolution;
 
 float sd_scale(float x)
 {
-    return (x * 2.0);
+    return x * 2.0;
 }
 
 float2 sd_scale(float2 v)
 {
-    return (v * 3.0);
+    return v * 3.0;
 }
 
 void mainImage(out float4 fragColor, float2 fragCoord)
 {
-    float2 uv = (fragCoord / iResolution.xy);
+    float2 uv = fragCoord / iResolution.xy;
     float a = sd_scale(uv.x);
     float2 b = sd_scale(uv);
     fragColor = float4(b, a, 1.0);

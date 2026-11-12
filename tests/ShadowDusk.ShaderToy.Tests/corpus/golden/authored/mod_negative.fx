@@ -32,9 +32,9 @@ float4 glsl_mod(float4 x, float  y) { return x - y * floor(x / y); }
 
 void mainImage(out float4 fragColor, float2 fragCoord)
 {
-    float2 p = ((fragCoord - (0.5 * iResolution.xy)) / iResolution.y);
-    float2 cell = glsl_mod((p * 8.0), 1.0);
-    float checker = (step(0.5, cell.x) == step(0.5, cell.y) ? 1.0 : 0.0);
+    float2 p = (fragCoord - 0.5 * iResolution.xy) / iResolution.y;
+    float2 cell = glsl_mod(p * 8.0, 1.0);
+    float checker = step(0.5, cell.x) == step(0.5, cell.y) ? 1.0 : 0.0;
     fragColor = float4(checker, checker, checker, 1.0);
 }
 

@@ -28,7 +28,7 @@ void mainImage(out float4 fragColor, float2 fragCoord)
 {
     float2 uv = sd_ScreenUV;
     float2 res = iResolution.xy;
-    fragColor = float4(uv, (res.x / max(res.y, 1.0)), 1.0);
+    fragColor = float4(uv, res.x / max(res.y, 1.0), 1.0);
 }
 
 

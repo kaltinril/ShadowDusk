@@ -30,10 +30,10 @@ float2x2 rot(float a)
 
 void mainImage(out float4 fragColor, float2 fragCoord)
 {
-    float2 p = ((fragCoord - (0.5 * iResolution.xy)) / iResolution.y);
+    float2 p = (fragCoord - 0.5 * iResolution.xy) / iResolution.y;
     p = mul(rot(iTime), p);
     p *= 2.0;
-    float stripes = (0.5 + (0.5 * sin((p.x * 10.0))));
+    float stripes = 0.5 + 0.5 * sin(p.x * 10.0);
     fragColor = float4(stripes, stripes, stripes, 1.0);
 }
 

@@ -28,10 +28,10 @@ sampler2D iChannel0 = sampler_state
 
 void mainImage(out float4 fragColor, float2 fragCoord)
 {
-    float4 col = tex2D(iChannel0, (fragCoord / iResolution.xy));
-    if ((fragCoord.y < 1.) || (fragCoord.y >= (iResolution.y - 1.)))
+    float4 col = tex2D(iChannel0, fragCoord / iResolution.xy);
+    if (fragCoord.y < 1. || fragCoord.y >= iResolution.y - 1.)
     {
-        col = ((float4)(0));
+        col = (float4)0;
     }
     fragColor = col;
 }

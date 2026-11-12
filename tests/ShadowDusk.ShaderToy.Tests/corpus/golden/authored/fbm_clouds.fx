@@ -23,18 +23,18 @@ float iTime;
 
 float hash(float2 p)
 {
-    return frac((sin(dot(p, float2(127.1, 311.7))) * 43758.5453123));
+    return frac(sin(dot(p, float2(127.1, 311.7))) * 43758.5453123);
 }
 
 float valueNoise(float2 p)
 {
     float2 i = floor(p);
     float2 f = frac(p);
-    float2 u = ((f * f) * (3.0 - (2.0 * f)));
-    float a = hash((i + float2(0.0, 0.0)));
-    float b = hash((i + float2(1.0, 0.0)));
-    float c = hash((i + float2(0.0, 1.0)));
-    float d = hash((i + float2(1.0, 1.0)));
+    float2 u = f * f * (3.0 - 2.0 * f);
+    float a = hash(i + float2(0.0, 0.0));
+    float b = hash(i + float2(1.0, 0.0));
+    float c = hash(i + float2(0.0, 1.0));
+    float d = hash(i + float2(1.0, 1.0));
     return lerp(lerp(a, b, u.x), lerp(c, d, u.x), u.y);
 }
 
@@ -45,7 +45,7 @@ float fbm(float2 p)
     float2x2 rot = float2x2(1.6, 1.2, -1.2, 1.6);
     for (int i = 0; i < 5; i++)
     {
-        sum += (amp * valueNoise(p));
+        sum += amp * valueNoise(p);
         p = mul(p, rot);
         amp *= 0.5;
     }
@@ -54,13 +54,13 @@ float fbm(float2 p)
 
 void mainImage(out float4 fragColor, float2 fragCoord)
 {
-    float2 uv = (fragCoord / iResolution.xy);
-    float2 p = (uv * 3.0);
-    p.x += (iTime * 0.1);
+    float2 uv = fragCoord / iResolution.xy;
+    float2 p = uv * 3.0;
+    p.x += iTime * 0.1;
     float n = fbm(p);
     float clouds = smoothstep(0.35, 0.75, n);
     float3 sky = lerp(float3(0.30, 0.55, 0.85), float3(0.65, 0.80, 0.95), uv.y);
-    float3 col = lerp(sky, ((float3)(1.0)), clouds);
+    float3 col = lerp(sky, (float3)1.0, clouds);
     fragColor = float4(col, 1.0);
 }
 

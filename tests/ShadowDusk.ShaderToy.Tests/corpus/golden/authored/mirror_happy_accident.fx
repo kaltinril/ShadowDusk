@@ -23,45 +23,45 @@ float iTime;
 
 float map(float3 p)
 {
-    p = abs((frac(p) - 0.5));
-    return (abs(min((length(p.xy) - 0.175), (min(p.x, p.y) + 1e-3))) + 1e-3);
+    p = abs(frac(p) - 0.5);
+    return abs(min(length(p.xy) - 0.175, min(p.x, p.y) + 1e-3)) + 1e-3;
 }
 
 float3 estimateNormal(float3 p)
 {
     float eps = 0.001;
-    return normalize(float3((map((p + float3(eps, 0.0, 0.0))) - map((p - float3(eps, 0.0, 0.0)))), (map((p + float3(0.0, eps, 0.0))) - map((p - float3(0.0, eps, 0.0)))), (map((p + float3(0.0, 0.0, eps))) - map((p - float3(0.0, 0.0, eps))))));
+    return normalize(float3(map(p + float3(eps, 0.0, 0.0)) - map(p - float3(eps, 0.0, 0.0)), map(p + float3(0.0, eps, 0.0)) - map(p - float3(0.0, eps, 0.0)), map(p + float3(0.0, 0.0, eps)) - map(p - float3(0.0, 0.0, eps))));
 }
 
 void mainImage(out float4 O, float2 C)
 {
     float2 r = iResolution.xy;
-    float2 uv = ((C - (0.5 * r)) / r.y);
+    float2 uv = (C - 0.5 * r) / r.y;
     float t = iTime;
-    float z = (frac(dot(C, sin(C))) - 0.5);
-    float4 col = ((float4)(0.0));
+    float z = frac(dot(C, sin(C))) - 0.5;
+    float4 col = (float4)0.0;
     float4 p;
     for (float i = 0.0; i < 77.0; i++)
     {
-        p = float4((z * normalize(float3((C - (0.7 * r)), r.y))), (0.1 * t));
+        p = float4(z * normalize(float3(C - 0.7 * r, r.y)), 0.1 * t);
         p.z += t;
         float4 q = p;
-        p.xy = mul(float2x2(cos(((2.0 + q.z) + float4(0, 11, 33, 0)))), p.xy);
-        p.xy = mul(float2x2(cos((q + float4(0, 11, 33, 0)))), p.xy);
+        p.xy = mul(float2x2(cos(2.0 + q.z + float4(0, 11, 33, 0))), p.xy);
+        p.xy = mul(float2x2(cos(q + float4(0, 11, 33, 0))), p.xy);
         float d = map(p.xyz);
         float3 pos = p.xyz;
         float3 lightDir = normalize(float3(0.3, 0.5, 1.0));
         float3 viewDir = normalize(float3(uv, 1.0));
         float3 n = estimateNormal(pos);
         float3 reflectDir = reflect(viewDir, n);
-        float3 envColor = lerp(float3(0.8, 0.4, 0.8), ((float3)(1.0)), (0.5 + (0.5 * reflectDir.y)));
+        float3 envColor = lerp(float3(0.8, 0.4, 0.8), (float3)1.0, 0.5 + 0.5 * reflectDir.y);
         float spec = pow(max(dot(reflectDir, lightDir), 0.0), 32.0);
-        float4 baseColor = ((1.0 + sin((((0.5 * q.z) + length((p.xyz - q.xyz))) + float4(0, 4, 3, 6)))) / (0.5 + (2.0 * dot(q.xy, q.xy))));
-        float3 finalColor = (((baseColor.rgb * 0.1) + (envColor * 0.9)) + (((float3)(spec)) * 1.2));
-        col.rgb += (finalColor / d);
-        z += (0.6 * d);
+        float4 baseColor = (1.0 + sin(0.5 * q.z + length(p.xyz - q.xyz) + float4(0, 4, 3, 6))) / (0.5 + 2.0 * dot(q.xy, q.xy));
+        float3 finalColor = baseColor.rgb * 0.1 + envColor * 0.9 + (float3)spec * 1.2;
+        col.rgb += finalColor / d;
+        z += 0.6 * d;
     }
-    O = float4(tanh((col.rgb / 2e4)), 1.0);
+    O = float4(tanh(col.rgb / 2e4), 1.0);
 }
 
 

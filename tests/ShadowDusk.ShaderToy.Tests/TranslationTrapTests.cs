@@ -134,7 +134,7 @@ public sealed class TranslationTrapTests
         // constructor, so MAPPING.md expands it to a ((floatN)(scalar)) cast.
         string fx = ConvertBody("    vec3 z = vec3(0.0); fragColor = vec4(z, 1.0);");
 
-        fx.ShouldContain("((float3)(0.0))", Case.Sensitive);
+        fx.ShouldContain("(float3)0.0", Case.Sensitive);
     }
 
     // ── B1: matrix compound assignment is transposed like binary `*` ──────────────
@@ -219,7 +219,7 @@ public sealed class TranslationTrapTests
         // B4: assigning a vec4 (iMouse) into a vec2 must emit an explicit `.xy` truncation.
         string fx = ConvertBody("    vec2 a = iMouse; fragColor = vec4(a, 0.0, 1.0);");
 
-        fx.ShouldContain("float2 a = (iMouse).xy", Case.Sensitive);
+        fx.ShouldContain("float2 a = iMouse.xy", Case.Sensitive);
     }
 
     // ── B5: stray declaration modifiers do not survive after the type ─────────────

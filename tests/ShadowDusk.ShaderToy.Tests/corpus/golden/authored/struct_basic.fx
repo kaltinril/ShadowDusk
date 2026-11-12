@@ -46,11 +46,11 @@ Particle spin(float2 p, float a)
 
 void mainImage(out float4 fragColor, float2 fragCoord)
 {
-    float2 uv = ((fragCoord - (0.5 * iResolution.xy)) / iResolution.y);
+    float2 uv = (fragCoord - 0.5 * iResolution.xy) / iResolution.y;
     Particle pt = spin(uv, iTime);
     float2 q = mul(pt.pos, pt.rot);
     float d = length(q);
-    fragColor = float4((pt.color * (1.0 - d)), 1.0);
+    fragColor = float4(pt.color * (1.0 - d), 1.0);
 }
 
 

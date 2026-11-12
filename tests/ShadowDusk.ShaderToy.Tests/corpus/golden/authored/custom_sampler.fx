@@ -30,7 +30,7 @@ sampler2D uNoise = sampler_state
 
 void mainImage(out float4 fragColor, float2 fragCoord)
 {
-    float2 uv = (fragCoord / iResolution.xy);
+    float2 uv = fragCoord / iResolution.xy;
     float4 n = tex2D(uNoise, uv);
     fragColor = float4(n.rgb, 1.0);
 }

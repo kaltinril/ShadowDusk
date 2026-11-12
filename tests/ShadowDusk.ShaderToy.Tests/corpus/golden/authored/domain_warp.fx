@@ -23,18 +23,18 @@ float iTime;
 
 float hash(float2 p)
 {
-    return frac((sin(dot(p, float2(269.5, 183.3))) * 43758.5453123));
+    return frac(sin(dot(p, float2(269.5, 183.3))) * 43758.5453123);
 }
 
 float valueNoise(float2 p)
 {
     float2 i = floor(p);
     float2 f = frac(p);
-    float2 u = ((f * f) * (3.0 - (2.0 * f)));
-    float a = hash((i + float2(0.0, 0.0)));
-    float b = hash((i + float2(1.0, 0.0)));
-    float c = hash((i + float2(0.0, 1.0)));
-    float d = hash((i + float2(1.0, 1.0)));
+    float2 u = f * f * (3.0 - 2.0 * f);
+    float a = hash(i + float2(0.0, 0.0));
+    float b = hash(i + float2(1.0, 0.0));
+    float c = hash(i + float2(0.0, 1.0));
+    float d = hash(i + float2(1.0, 1.0));
     return lerp(lerp(a, b, u.x), lerp(c, d, u.x), u.y);
 }
 
@@ -44,7 +44,7 @@ float fbm(float2 p)
     float amp = 0.5;
     for (int i = 0; i < 4; i++)
     {
-        sum += (amp * valueNoise(p));
+        sum += amp * valueNoise(p);
         p *= 2.0;
         amp *= 0.5;
     }
@@ -53,15 +53,15 @@ float fbm(float2 p)
 
 void mainImage(out float4 fragColor, float2 fragCoord)
 {
-    float2 uv = (fragCoord / iResolution.xy);
-    float2 p = (uv * 4.0);
-    float t = (iTime * 0.2);
-    float2 q = float2(fbm((p + float2(0.0, 0.0))), fbm((p + float2(5.2, 1.3))));
-    float2 r = float2(fbm(((p + (4.0 * q)) + float2((1.7 + t), 9.2))), fbm(((p + (4.0 * q)) + float2(8.3, (2.8 - t)))));
-    float f = fbm((p + (4.0 * r)));
+    float2 uv = fragCoord / iResolution.xy;
+    float2 p = uv * 4.0;
+    float t = iTime * 0.2;
+    float2 q = float2(fbm(p + float2(0.0, 0.0)), fbm(p + float2(5.2, 1.3)));
+    float2 r = float2(fbm(p + 4.0 * q + float2(1.7 + t, 9.2)), fbm(p + 4.0 * q + float2(8.3, 2.8 - t)));
+    float f = fbm(p + 4.0 * r);
     float3 col = lerp(float3(0.10, 0.10, 0.35), float3(0.95, 0.55, 0.20), f);
     col = lerp(col, float3(0.20, 0.70, 0.50), clamp(length(q), 0.0, 1.0));
-    col = lerp(col, float3(0.95, 0.95, 0.95), clamp((r.x * r.x), 0.0, 1.0));
+    col = lerp(col, float3(0.95, 0.95, 0.95), clamp(r.x * r.x, 0.0, 1.0));
     fragColor = float4(col, 1.0);
 }
 

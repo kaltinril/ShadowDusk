@@ -22,17 +22,17 @@ float3 iResolution;
 
 float circle(float2 p, float r)
 {
-    return (1.0 - smoothstep((r - 0.01), (r + 0.01), length(p)));
+    return 1.0 - smoothstep(r - 0.01, r + 0.01, length(p));
 }
 
 float3 tint(float3 base, float k)
 {
-    return (base * k);
+    return base * k;
 }
 
 void mainImage(out float4 fragColor, float2 fragCoord)
 {
-    float2 p = ((fragCoord - (0.5 * iResolution.xy)) / iResolution.y);
+    float2 p = (fragCoord - 0.5 * iResolution.xy) / iResolution.y;
     float c = circle(p, 0.3);
     float3 col = tint(float3(0.2, 0.7, 1.0), c);
     fragColor = float4(col, 1.0);

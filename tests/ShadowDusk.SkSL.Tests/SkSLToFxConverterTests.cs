@@ -168,7 +168,7 @@ public sealed class SkSLToFxConverterTests
 
         r.Success.ShouldBeTrue(string.Join("; ", r.Diagnostics.Select(d => d.Message)));
         r.Fx.ShouldNotBeNull();
-        r.Fx.ShouldContain("sd_ChildColor(tex2D(img, ((c + float2(1, 0)) * imgTexelSize)))", Case.Sensitive);
+        r.Fx.ShouldContain("sd_ChildColor(tex2D(img, (c + float2(1, 0)) * imgTexelSize))", Case.Sensitive);
         r.Fx.ShouldContain("texture imgTexture;", Case.Sensitive);
         r.Fx.ShouldContain("float2 imgTexelSize;", Case.Sensitive);
         r.UsedUniforms.ShouldBe(new[] { "iResolution", "img", "imgTexelSize" }, ignoreOrder: true);

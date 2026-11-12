@@ -22,13 +22,13 @@ float3 iResolution;
 
 void mainImage(out float4 fragColor, float2 fragCoord)
 {
-    float2 uv = (fragCoord / iResolution.xy);
+    float2 uv = fragCoord / iResolution.xy;
     float t = clamp(uv.x, 0.0, 1.0);
     float s = smoothstep(0.2, 0.8, uv.y);
-    float f = frac((uv.x * 5.0));
+    float f = frac(uv.x * 5.0);
     float3 a = float3(0.1, 0.2, 0.8);
     float3 b = float3(0.9, 0.6, 0.1);
-    float3 col = ((lerp(a, b, t) * s) + (f * 0.1));
+    float3 col = lerp(a, b, t) * s + f * 0.1;
     fragColor = float4(col, 1.0);
 }
 

@@ -23,14 +23,14 @@ float4 iMouse;
 
 void mainImage(out float4 fragColor, float2 fragCoord)
 {
-    float2 uv = (fragCoord / iResolution.xy);
+    float2 uv = fragCoord / iResolution.xy;
     float2 m = iMouse.xy;
     float v = 0.25;
-    if (all(m == ((float2)(0.0))))
+    if (all(m == (float2)0.0))
     {
         v = 0.5;
     }
-    if ((all(uv == ((float2)(0.5)))) && (any(m != ((float2)(1.0)))))
+    if (all(uv == (float2)0.5) && any(m != (float2)1.0))
     {
         v = 0.75;
     }

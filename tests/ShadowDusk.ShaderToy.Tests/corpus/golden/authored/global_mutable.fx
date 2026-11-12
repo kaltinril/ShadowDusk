@@ -32,14 +32,14 @@ void accumulate(float x)
 
 void mainImage(out float4 fragColor, float2 fragCoord)
 {
-    float2 uv = (fragCoord / iResolution.xy);
+    float2 uv = fragCoord / iResolution.xy;
     gAccum = 0.0;
     for (int i = 0; i < 4; i++)
     {
-        accumulate((uv.x * float(i)));
+        accumulate(uv.x * float(i));
     }
-    float v = (((gAccum + gA) + gB) * 0.1);
-    fragColor = float4((gTint * v), 1.0);
+    float v = (gAccum + gA + gB) * 0.1;
+    fragColor = float4(gTint * v, 1.0);
 }
 
 
