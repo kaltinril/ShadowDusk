@@ -24,6 +24,8 @@ that loads and renders identically to `mgfxc`'s in the real MonoGame/KNI runtime
 
 ### Fixed
 
+- OpenGL: an HLSL array initializer (`float m[16] = { ... }`, a lookup table) no longer emits a GLSL ES 3.00 array constructor (`float[](...)`) that WebGL1 and KNI Reach refuse at load. Rewrite Rule 18 declares the array plain and assigns each element, and `SD0403` now warns for any array constructor that survives (issue #475)
+
 ## [0.25.1] - 2026-11-09
 
 ### Changed
