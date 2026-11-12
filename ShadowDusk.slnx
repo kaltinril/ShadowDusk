@@ -9,6 +9,7 @@
     <Project Path="src/ShadowDusk.Metal/ShadowDusk.Metal.csproj" />
     <Project Path="src/ShadowDusk.MgcbPlugin/ShadowDusk.MgcbPlugin.csproj" />
     <Project Path="src/ShadowDusk.ShaderToy/ShadowDusk.ShaderToy.csproj" />
+    <Project Path="src/ShadowDusk.SkSL/ShadowDusk.SkSL.csproj" />
     <Project Path="src/ShadowDusk.Slang/ShadowDusk.Slang.csproj" />
     <Project Path="src/ShadowDusk.Slang.Wasm/ShadowDusk.Slang.Wasm.csproj" />
     <Project Path="src/ShadowDusk.Wasm/ShadowDusk.Wasm.csproj" />
@@ -21,6 +22,7 @@
     <Project Path="tests/ShadowDusk.ImageTests/ShadowDusk.ImageTests.csproj" />
     <Project Path="tests/ShadowDusk.Integration.Tests/ShadowDusk.Integration.Tests.csproj" />
     <Project Path="tests/ShadowDusk.ShaderToy.Tests/ShadowDusk.ShaderToy.Tests.csproj" />
+    <Project Path="tests/ShadowDusk.SkSL.Tests/ShadowDusk.SkSL.Tests.csproj" />
     <Project Path="tests/ShadowDusk.Slang.Tests/ShadowDusk.Slang.Tests.csproj" />
     <Project Path="tests/ShadowDusk.TestPng.Tests/ShadowDusk.TestPng.Tests.csproj" />
     <Project Path="tests/ShadowDusk.TestPng/ShadowDusk.TestPng.csproj" />
