@@ -295,7 +295,8 @@ public static class ShaderToyConverter
             emitter.UsedScreenUv,
             godotMode,
             returningReturnType,
-            options.SkSLEntry);
+            options.SkSLEntry,
+            options.SkSLEntry && merged.MutableGlobals.Any(g => g.Name == HarnessGenerator.SkSLStraightAlphaFlag));
 
         // If any Error accumulated (e.g. a banned entry point detected up front without
         // StopOnFirstError), the conversion is NOT a success even though emission ran to completion.

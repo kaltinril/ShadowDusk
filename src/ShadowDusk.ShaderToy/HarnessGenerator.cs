@@ -14,6 +14,16 @@ internal sealed class HarnessGenerator
 {
     private const string Tool = "ShadowDusk shadertoy2fx (Phase 46 experiment)";
     private const string SkSLTool = "ShadowDusk SkSL frontend";
+    private const string SkSLStraightAlphaPixelShader = "PSMainStraightAlpha";
+
+    /// <summary>Appended to the technique name for the SkSL straight-alpha technique.</summary>
+    internal const string SkSLStraightAlphaSuffix = "StraightAlpha";
+
+    /// <summary>
+    /// The static bool the SkSL frontend declares (only when the shader has children) and reads in its
+    /// child-sample helper; each SkSL pixel shader sets it to a literal, so it folds away after inlining.
+    /// </summary>
+    internal const string SkSLStraightAlphaFlag = "sd_StraightAlpha";
 
     public string Generate(
         ConvertOptions options,
@@ -30,7 +40,8 @@ internal sealed class HarnessGenerator
         bool usedScreenUv = false,
         bool godotMode = false,
         string? returningReturnType = null,
-        bool skslEntry = false)
+        bool skslEntry = false,
+        bool skslStraightAlphaFlag = false)
     {
         var sb = new StringBuilder();
 
@@ -41,9 +52,11 @@ internal sealed class HarnessGenerator
         if (skslEntry)
         {
             sb.Append("// Converted from an SkSL shader. The host sets iResolution.xy to the render-target").Append('\n');
-            sb.Append("// size in pixels, binds each child shader as <child>Texture (premultiplied texels)").Append('\n');
-            sb.Append("// with <child>TexelSize = 1 / its size in pixels, draws a fullscreen quad in NDC,").Append('\n');
-            sb.Append("// and blends with BlendState.AlphaBlend: the color is premultiplied, as in Skia.").Append('\n');
+            sb.Append("// size in pixels, binds each child shader as <child>Texture with <child>TexelSize =").Append('\n');
+            sb.Append("// 1 / its size in pixels, and draws a fullscreen quad in NDC. Two techniques:").Append('\n');
+            sb.Append($"//   {options.TechniqueName} (default): premultiplied textures, BlendState.AlphaBlend.").Append('\n');
+            sb.Append($"//   {options.TechniqueName}{SkSLStraightAlphaSuffix}: straight-alpha textures, BlendState.NonPremultiplied.").Append('\n');
+            sb.Append("// Either one renders what Skia's SrcOver renders.").Append('\n');
         }
         else if (entryMode == EntryMode.PlainGlsl)
         {
@@ -164,7 +177,7 @@ internal sealed class HarnessGenerator
         }
         else if (skslEntry)
         {
-            EmitSkSLPixelShader(sb);
+            EmitSkSLPixelShaders(sb, skslStraightAlphaFlag);
         }
         else if (returningReturnType is not null)
         {
@@ -176,6 +189,11 @@ internal sealed class HarnessGenerator
         }
 
         EmitTechnique(sb, options.TechniqueName);
+        if (skslEntry)
+        {
+            sb.Append('\n');
+            EmitTechnique(sb, options.TechniqueName + SkSLStraightAlphaSuffix, SkSLStraightAlphaPixelShader);
+        }
 
         return sb.ToString();
     }
@@ -327,15 +345,35 @@ internal sealed class HarnessGenerator
     }
 
     /// <summary>
-    /// Emit the pixel shader for SkSL input: SkSL's <c>main</c> (renamed <c>mainImage</c>) takes the
-    /// pixel-center coordinate with a TOP-LEFT origin, which is exactly <c>uv * iResolution.xy</c>.
+    /// Emit the two SkSL pixel shaders. SkSL's <c>main</c> (renamed <c>mainImage</c>) takes the
+    /// pixel-center coordinate with a TOP-LEFT origin, which is exactly <c>uv * iResolution.xy</c>, and
+    /// works in premultiplied alpha. <c>PSMain</c> is that as-is; <c>PSMainStraightAlpha</c> has the
+    /// child-sample helper premultiply each straight-alpha texel (by setting the flag to a literal, so no
+    /// runtime branch survives inlining) and un-premultiplies the result for
+    /// <c>BlendState.NonPremultiplied</c>, guarding <c>a == 0</c> as SkSL's <c>unpremul</c> does.
     /// </summary>
-    private static void EmitSkSLPixelShader(StringBuilder sb)
+    private static void EmitSkSLPixelShaders(StringBuilder sb, bool hasStraightAlphaFlag)
     {
+        sb.Append("// SkSL coordinates are pixel centers with a top-left origin, like uv.").Append('\n');
         sb.Append("float4 PSMain(VSOutput input) : COLOR0").Append('\n');
         sb.Append("{").Append('\n');
-        sb.Append("    // SkSL coordinates are pixel centers with a top-left origin, like uv.").Append('\n');
+        if (hasStraightAlphaFlag)
+        {
+            sb.Append($"    {SkSLStraightAlphaFlag} = false;").Append('\n');
+        }
+
         sb.Append("    return mainImage(input.UV * iResolution.xy);").Append('\n');
+        sb.Append("}").Append('\n');
+        sb.Append('\n');
+        sb.Append($"float4 {SkSLStraightAlphaPixelShader}(VSOutput input) : COLOR0").Append('\n');
+        sb.Append("{").Append('\n');
+        if (hasStraightAlphaFlag)
+        {
+            sb.Append($"    {SkSLStraightAlphaFlag} = true;").Append('\n');
+        }
+
+        sb.Append("    float4 color = mainImage(input.UV * iResolution.xy);").Append('\n');
+        sb.Append("    return float4(color.rgb / max(color.a, 0.0001), color.a);").Append('\n');
         sb.Append("}").Append('\n');
         sb.Append('\n');
     }
@@ -441,14 +479,14 @@ internal sealed class HarnessGenerator
         sb.Append('\n');
     }
 
-    private static void EmitTechnique(StringBuilder sb, string techniqueName)
+    private static void EmitTechnique(StringBuilder sb, string techniqueName, string pixelShader = "PSMain")
     {
         sb.Append($"technique {techniqueName}").Append('\n');
         sb.Append("{").Append('\n');
         sb.Append("    pass P0").Append('\n');
         sb.Append("    {").Append('\n');
         sb.Append("        VertexShader = compile VS_SHADERMODEL VSMain();").Append('\n');
-        sb.Append("        PixelShader  = compile PS_SHADERMODEL PSMain();").Append('\n');
+        sb.Append($"        PixelShader  = compile PS_SHADERMODEL {pixelShader}();").Append('\n');
         sb.Append("    }").Append('\n');
         sb.Append("}").Append('\n');
     }

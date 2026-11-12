@@ -14,13 +14,23 @@
 // <child>TexelSize = 1/size, premultiplied texels (some translucent), and every case drawn with
 // premultiplied source-over (Skia SrcOver, MonoGame BlendState.AlphaBlend) onto the same opaque
 // background, so a translucent result is compared after blending, as a consumer would see it.
+// The translucent cases also run a straight-alpha arm (Gum with UsePremultipliedAlpha off): the
+// straight bytes bound as-is, the SkSLStraightAlpha technique, BlendState.NonPremultiplied, vs Skia
+// drawing the same straight bytes as an Unpremul image with SrcOver. Those arms gate RGB only:
+// NonPremultiplied's own alpha equation (srcA*srcA + dstA*(1-srcA)) differs from SrcOver's, so the
+// destination alpha differs whatever the shader does; it is printed, not gated.
+// Controls compare RGB only, so each is caught by a color difference.
 //
 // Positive controls (each MUST diverge or the gate fails):
 //   * control-flipped-y          Skia: the gradient with its Y flipped (origin convention);
 //   * control-child-offset       Skia: the child-eval case with a different eval offset;
 //   * control-swapped-resolution GL: the gradient with iResolution = (height, width) (non-square axis);
 //   * control-nonpremul-blend    GL: the translucent case drawn with BlendState.NonPremultiplied;
-//   * control-straight-texture   GL: the translucent child uploaded un-premultiplied (alpha axis).
+//   * control-straight-texture   GL: the translucent child uploaded un-premultiplied (alpha axis);
+//   * control-straight-premul-technique GL: the straight arm's texture and blend with the default
+//                                (premultiplied) technique, i.e. a Gum consumer that forgot the technique.
+// TranslucentChild is also compared with an exact CPU model (double-precision bilinear, blend,
+// round), per arm, to show which arm a residual rounding difference comes from.
 // Exit: 0 pass (or no GL device without SHADOWDUSK_REQUIRE_GL=1), 1 divergence, 2 setup error.
 // =============================================================================
 
@@ -90,10 +100,18 @@ var skiaControls = new Dictionary<string, (string Of, string Sksl)>
 };
 
 // GL-only variants: the real converted shader, drawn with a host-contract mistake.
-var glJobs = cases.Select(c => new GlJob(c.Name, c, SwapResolution: false, NonPremulBlend: false, StraightTextures: false)).ToList();
-glJobs.Add(new GlJob("control-swapped-resolution", cases.First(c => c.Name == "Gradient"), true, false, false));
-glJobs.Add(new GlJob("control-nonpremul-blend", cases.First(c => c.Name == "Translucent"), false, true, false));
-glJobs.Add(new GlJob("control-straight-texture", cases.First(c => c.Name == "TranslucentChild"), false, false, true));
+var glJobs = cases.Select(c => new GlJob(c.Name, c)).ToList();
+string[] straightCases = { "Translucent", "TranslucentChild", "TwoChildren" };
+glJobs.AddRange(straightCases.Select(n => new GlJob(n + "-straight", cases.First(c => c.Name == n),
+    NonPremulBlend: true, StraightTextures: true, StraightTechnique: true)));
+glJobs.Add(new GlJob("control-swapped-resolution", cases.First(c => c.Name == "Gradient"), SwapResolution: true));
+glJobs.Add(new GlJob("control-nonpremul-blend", cases.First(c => c.Name == "Translucent"), NonPremulBlend: true));
+glJobs.Add(new GlJob("control-straight-texture", cases.First(c => c.Name == "TranslucentChild"), StraightTextures: true));
+glJobs.Add(new GlJob("control-straight-premul-technique", cases.First(c => c.Name == "TranslucentChild"),
+    NonPremulBlend: true, StraightTextures: true));
+
+// Each GL job's Skia reference: the straight jobs compare with Skia drawing the straight bytes.
+string RefOf(GlJob j) => j.StraightTextures && j.NonPremulBlend ? j.Case.Name + "-straight" : j.Case.Name;
 
 // ---- Convert + compile every case through the real product pipeline ----------
 var mgfx = new Dictionary<string, byte[]>();
@@ -123,9 +141,11 @@ foreach (Case c in cases)
 // ---- Skia arm (reference) ----------------------------------------------------
 var reference = new Dictionary<string, byte[]>();
 foreach (Case c in cases)
-    reference[c.Name] = RenderSkia(c.Sksl, c);
+    reference[c.Name] = RenderSkia(c.Sksl, c, straight: false);
+foreach (string n in straightCases)
+    reference[n + "-straight"] = RenderSkia(cases.First(c => c.Name == n).Sksl, cases.First(c => c.Name == n), straight: true);
 foreach ((string name, (string of, string sksl)) in skiaControls)
-    reference[name] = RenderSkia(sksl, cases.First(k => k.Name == of));
+    reference[name] = RenderSkia(sksl, cases.First(k => k.Name == of), straight: false);
 
 // ---- GL arm (candidate) -------------------------------------------------------
 using var game = new GlArm(glJobs, mgfx, background, Width, Height);
@@ -146,25 +166,40 @@ bool ok = game.Failures.Count == 0;
 foreach (string f in game.Failures)
     Console.Error.WriteLine("[sksl] " + f);
 
-foreach (Case c in cases)
+foreach (GlJob job in glJobs.Where(j => !j.Name.StartsWith("control-", StringComparison.Ordinal)))
 {
-    byte[] cand = game.Images[c.Name], refImg = reference[c.Name];
-    WritePng(Path.Combine(outDir, c.Name + ".skia.png"), refImg);
-    WritePng(Path.Combine(outDir, c.Name + ".gl.png"), cand);
-    (int maxd, int over) = Compare(refImg, cand, tolerance);
+    byte[] cand = game.Images[job.Name], refImg = reference[RefOf(job)];
+    WritePng(Path.Combine(outDir, job.Name + ".skia.png"), refImg);
+    WritePng(Path.Combine(outDir, job.Name + ".gl.png"), cand);
+    // Straight arms gate RGB only: BlendState.NonPremultiplied writes destination alpha
+    // srcA*srcA + dstA*(1-srcA) where Skia's SrcOver writes srcA + dstA*(1-srcA). That is the blend
+    // state's alpha equation, which no shader can change; the alpha difference is still printed.
+    int channels = job.NonPremulBlend ? 3 : 4;
+    (int maxd, int over) = Compare(refImg, cand, tolerance, 0, channels);
+    (int alphaMaxd, _) = Compare(refImg, cand, tolerance, 3, 1);
     bool match = over == 0 && Distinct(refImg) > 8;
-    Console.WriteLine($"[sksl] {c.Name,-28} maxd {maxd,3}, {over} px over {tolerance}, {Distinct(refImg)} colors -> {(match ? "MATCH" : "DIFF")}");
+    Console.WriteLine($"[sksl] {job.Name,-34} {(channels == 4 ? "RGBA" : "RGB ")} maxd {maxd,3}, {over} px over {tolerance}, {Distinct(refImg)} colors -> {(match ? "MATCH" : "DIFF")}; alpha maxd {alphaMaxd}");
     ok &= match;
+}
+
+// Where a residual difference comes from: TranslucentChild against an exact model, per arm.
+foreach (bool straight in new[] { false, true })
+{
+    string key = straight ? "TranslucentChild-straight" : "TranslucentChild";
+    byte[] exact = ExactTranslucentChild(glass, straight);
+    (int skiaMax, _) = Compare(reference[key], exact, tolerance, 0, 3);
+    (int glMax, _) = Compare(game.Images[key], exact, tolerance, 0, 3);
+    Console.WriteLine($"[sksl] {key,-34} RGB vs exact model: Skia maxd {skiaMax}, GL maxd {glMax} (informational)");
 }
 
 var controlPairs = skiaControls.Select(kv => (Name: kv.Key, Skia: reference[kv.Key], Gl: game.Images[kv.Value.Of]))
     .Concat(glJobs.Where(j => j.Name.StartsWith("control-", StringComparison.Ordinal))
-        .Select(j => (Name: j.Name, Skia: reference[j.Case.Name], Gl: game.Images[j.Name])));
+        .Select(j => (Name: j.Name, Skia: reference[RefOf(j)], Gl: game.Images[j.Name])));
 foreach ((string name, byte[] skia, byte[] gl) in controlPairs)
 {
-    (int maxd, int over) = Compare(skia, gl, tolerance);
+    (int maxd, int over) = Compare(skia, gl, tolerance, 0, 3);
     bool caught = over > 0;
-    Console.WriteLine($"[sksl] {name,-28} maxd {maxd,3}, {over} px over {tolerance} -> {(caught ? "caught (diverges, as it must)" : "NOT CAUGHT")}");
+    Console.WriteLine($"[sksl] {name,-34} maxd {maxd,3}, {over} px over {tolerance} -> {(caught ? "caught (diverges, as it must)" : "NOT CAUGHT")}");
     ok &= caught;
 }
 
@@ -172,7 +207,7 @@ Console.WriteLine($"\n[sksl] {(ok ? "PASS" : "FAIL")}: SkSL frontend render fide
 return ok ? 0 : 1;
 
 // ----------------------------------------------------------------------------
-byte[] RenderSkia(string sksl, Case c)
+byte[] RenderSkia(string sksl, Case c, bool straight)
 {
     using SKRuntimeEffect? effect = SKRuntimeEffect.CreateShader(sksl, out string errors);
     if (effect is null)
@@ -189,8 +224,9 @@ byte[] RenderSkia(string sksl, Case c)
     var owned = new List<IDisposable>();
     foreach ((string name, Texels tex) in c.Children)
     {
-        var info = new SKImageInfo(tex.Width, tex.Height, SKColorType.Rgba8888, SKAlphaType.Premul);
-        SKImage image = SKImage.FromPixelCopy(info, tex.Premul);
+        var info = new SKImageInfo(tex.Width, tex.Height, SKColorType.Rgba8888,
+            straight ? SKAlphaType.Unpremul : SKAlphaType.Premul);
+        SKImage image = SKImage.FromPixelCopy(info, straight ? tex.Straight : tex.Premul);
         SKShader child = image.ToShader(SKShaderTileMode.Clamp, SKShaderTileMode.Clamp,
             new SKSamplingOptions(SKFilterMode.Linear, SKMipmapMode.None));
         owned.Add(image);
@@ -214,13 +250,46 @@ byte[] RenderSkia(string sksl, Case c)
     }
 }
 
-static (int MaxDelta, int Over) Compare(byte[] a, byte[] b, int tol)
+// TranslucentChild ("img.eval(c * 0.9) * 0.8") in double precision: bilinear clamp at the pixel
+// center, premultiplied after filtering for straight texels (as Skia and the straight technique
+// do), source-over onto the background, rounded once.
+byte[] ExactTranslucentChild(Texels tex, bool straight)
+{
+    byte[] src = straight ? tex.Straight : tex.Premul;
+    var px = new byte[Width * Height * 4];
+    for (int y = 0; y < Height; y++)
+        for (int x = 0; x < Width; x++)
+        {
+            double u = (x + 0.5) * 0.9 - 0.5, v = (y + 0.5) * 0.9 - 0.5;
+            int x0 = (int)Math.Floor(u), y0 = (int)Math.Floor(v);
+            double fx = u - x0, fy = v - y0;
+            var s = new double[4];
+            for (int ch = 0; ch < 4; ch++)
+            {
+                double T(int xx, int yy) =>
+                    src[(Math.Clamp(yy, 0, tex.Height - 1) * tex.Width + Math.Clamp(xx, 0, tex.Width - 1)) * 4 + ch] / 255.0;
+                s[ch] = (T(x0, y0) * (1 - fx) + T(x0 + 1, y0) * fx) * (1 - fy)
+                      + (T(x0, y0 + 1) * (1 - fx) + T(x0 + 1, y0 + 1) * fx) * fy;
+            }
+            if (straight)
+                for (int ch = 0; ch < 3; ch++) s[ch] *= s[3];
+            int i = (y * Width + x) * 4;
+            for (int ch = 0; ch < 4; ch++)
+            {
+                double o = s[ch] * 0.8 + background[ch] / 255.0 * (1 - s[3] * 0.8);
+                px[i + ch] = (byte)Math.Round(Math.Clamp(o, 0, 1) * 255);
+            }
+        }
+    return px;
+}
+
+static (int MaxDelta, int Over) Compare(byte[] a, byte[] b, int tol, int firstChannel = 0, int channels = 4)
 {
     int maxd = 0, over = 0;
     for (int i = 0; i < a.Length; i += 4)
     {
         int d = 0;
-        for (int ch = 0; ch < 4; ch++)
+        for (int ch = firstChannel; ch < firstChannel + channels; ch++)
             d = Math.Max(d, Math.Abs(a[i + ch] - b[i + ch]));
         maxd = Math.Max(maxd, d);
         if (d > tol) over++;
@@ -270,7 +339,8 @@ internal sealed record Texels(int Width, int Height, byte[] Premul, byte[] Strai
 
 internal sealed record Case(string Name, string Sksl, Dictionary<string, float[]> Uniforms, Dictionary<string, Texels> Children);
 
-internal sealed record GlJob(string Name, Case Case, bool SwapResolution, bool NonPremulBlend, bool StraightTextures);
+internal sealed record GlJob(string Name, Case Case, bool SwapResolution = false, bool NonPremulBlend = false,
+    bool StraightTextures = false, bool StraightTechnique = false);
 
 internal sealed class GlArm : Game
 {
@@ -326,6 +396,9 @@ internal sealed class GlArm : Game
         {
             Case c = job.Case;
             using var effect = new Effect(gd, _mgfx[c.Name]);
+            effect.CurrentTechnique = effect.Techniques[job.StraightTechnique
+                ? SkSLToFxConverter.StraightAlphaTechniqueName
+                : SkSLToFxConverter.PremultipliedTechniqueName];
             effect.Parameters["iResolution"].SetValue(job.SwapResolution
                 ? new Vector3(_height, _width, 1f)
                 : new Vector3(_width, _height, 1f));

@@ -33,15 +33,20 @@ Apply them in that order to every decision in this phase.
   (no double Y flip).
 - `uniform shader img;` becomes a sampler plus a host-set `imgTexelSize` (1 / size in pixels), and
   `img.eval(p)` becomes `tex2D(img, p * imgTexelSize)`.
-- Alpha contract: premultiplied in and out, drawn with `BlendState.AlphaBlend` (Skia `SrcOver`).
-  Documented on the converter; the gate blends translucent cases onto an opaque background.
+- Alpha: one `.fx`, two techniques. `SkSL` (default): premultiplied textures, `BlendState.AlphaBlend`.
+  `SkSLStraightAlpha` (Gum's default): straight-alpha textures, `BlendState.NonPremultiplied`; child
+  samples are premultiplied after filtering and the result un-premultiplied. The choice is a
+  literal-set `static bool` that folds away, so there is no runtime branch. RGB matches Skia on
+  both; `NonPremultiplied`'s destination alpha (`a*a + d*(1-a)`) differs from `SrcOver`'s.
 - Rejected with SkSL diagnostics: `sk_FragCoord`, `layout(color)`, color filter and blender
   entries and children, `shader` parameters, `unpremul`, `toLinearSrgb`/`fromLinearSrgb`,
   non-square matrices, `gl_*`/`sk_*` names, the names the ShaderToy stage owns (`iResolution`,
   `iTime`, …, `mainImage`) and `<child>TexelSize`.
-- Gate: `validation/SkSLVsGl`, 64x48 target, children of other non-square sizes, six cases and
-  five positive controls (Y flip, eval offset, swapped resolution, non-premultiplied blend,
-  straight-alpha texture). In the ubuntu GL CI job and the Windows render-gate script.
+- Gate: `validation/SkSLVsGl`, 64x48 target, children of other non-square sizes, six premultiplied
+  cases, straight-alpha arms of the three translucent ones, and seven positive controls (Y flip,
+  eval offset, swapped resolution, non-premultiplied blend, straight texture on the premultiplied
+  path, straight setup with the default technique). In the ubuntu GL CI job and the Windows
+  render-gate script.
 
 ## Remaining slices
 

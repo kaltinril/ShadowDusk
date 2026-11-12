@@ -54,8 +54,8 @@
 #                              With RaylibRoute, the only gates that drive a non-MonoGame runtime.
 #   * SkSLVsGl               — the SkSL INPUT frontend (ShadowDusk.SkSL): the same SkSL in REAL
 #                              SkiaSharp vs converted + built for OpenGL in REAL MonoGame
-#                              DesktopGL, non-square, translucent cases blended premultiplied,
-#                              tol 2/255, five positive controls that must diverge.
+#                              DesktopGL, non-square, premultiplied and straight-alpha techniques,
+#                              tol 2/255, seven positive controls that must diverge.
 #   * VertexSemanticsGl / VertexSemanticsKniGl — vertex inputs beyond POSITION/COLOR/
 #                              TEXCOORD/NORMAL (BINORMAL, TANGENT, BLENDINDICES as Byte4,
 #                              BLENDWEIGHT 0+1, PSIZE, FOG, DEPTH, TEXCOORD3) and a float3x3

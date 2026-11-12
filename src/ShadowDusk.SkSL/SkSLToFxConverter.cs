@@ -21,12 +21,19 @@ namespace ShadowDusk.SkSL;
 /// <c>imgTexelSize</c> to <c>1 / (width, height)</c> of that texture. <c>img.eval(p)</c> samples at
 /// <c>p * imgTexelSize</c>, so SkSL's pixel coordinates carry over. Use the sampler state Skia would
 /// (e.g. <c>SamplerState.LinearClamp</c> for a clamped, linearly filtered image shader).</item>
-/// <item><b>Alpha:</b> SkSL works in premultiplied alpha: <c>eval</c> returns premultiplied color and
-/// <c>main</c> must return premultiplied color. The converted shader does no conversion, so the host
-/// binds premultiplied textures (MonoGame's content pipeline premultiplies by default;
-/// <c>Texture2D.FromStream</c> does not) and draws with <c>BlendState.AlphaBlend</c>, which is
-/// premultiplied source-over and equals Skia's default <c>SrcOver</c>. A shader that returns
-/// <c>rgb &gt; a</c> is outside SkSL's contract and is not guaranteed to match.</item>
+/// <item><b>Alpha:</b> SkSL works in premultiplied alpha (<c>eval</c> returns premultiplied color and
+/// <c>main</c> returns premultiplied color). The <c>.fx</c> has two techniques, so either texture
+/// convention renders what Skia's <c>SrcOver</c> renders with no conversion by the host:
+/// <see cref="PremultipliedTechniqueName"/> (first, so MonoGame's default) for premultiplied textures
+/// drawn with <c>BlendState.AlphaBlend</c> (MonoGame's content-pipeline default), and
+/// <see cref="StraightAlphaTechniqueName"/> for straight-alpha textures (<c>Texture2D.FromStream</c>,
+/// Gum with <c>UsePremultipliedAlpha</c> off) drawn with <c>BlendState.NonPremultiplied</c>. The
+/// straight technique premultiplies each child sample after filtering, as Skia does for a
+/// straight-alpha image, and un-premultiplies the result. Both match Skia's color; with
+/// <c>NonPremultiplied</c> the destination alpha follows that blend state's own equation
+/// (<c>a*a + d*(1-a)</c>, where <c>SrcOver</c> gives <c>a + d*(1-a)</c>), which matters only if the
+/// target's alpha is used later. A shader that returns <c>rgb &gt; a</c> is outside SkSL's contract
+/// and is not guaranteed to match.</item>
 /// </list>
 /// <para>Unsupported SkSL (<c>sk_FragCoord</c>, <c>layout(color)</c>, color filter and blender entries
 /// or children, <c>shader</c> parameters, the color-space built-ins) fails with an SkSL diagnostic
@@ -41,7 +48,30 @@ public static class SkSLToFxConverter
     /// <summary>The technique name used when the caller does not set one.</summary>
     public const string DefaultTechniqueName = "SkSL";
 
+    /// <summary>
+    /// The default technique: premultiplied textures in, premultiplied color out, drawn with
+    /// <c>BlendState.AlphaBlend</c>. It is the first technique, so it is MonoGame's default
+    /// <c>CurrentTechnique</c>. Equals <see cref="DefaultTechniqueName"/>.
+    /// </summary>
+    public const string PremultipliedTechniqueName = DefaultTechniqueName;
+
+    /// <summary>
+    /// The straight-alpha technique: straight-alpha textures in, straight color out, drawn with
+    /// <c>BlendState.NonPremultiplied</c> (e.g. Gum with <c>UsePremultipliedAlpha</c> off). When the
+    /// caller sets <see cref="ConvertOptions.TechniqueName"/>, it is that name plus
+    /// <see cref="StraightAlphaTechniqueSuffix"/>.
+    /// </summary>
+    public const string StraightAlphaTechniqueName = DefaultTechniqueName + StraightAlphaTechniqueSuffix;
+
+    /// <summary>Appended to the technique name to name the straight-alpha technique.</summary>
+    public const string StraightAlphaTechniqueSuffix = "StraightAlpha";
+
     private const string TexelSizeSuffix = "TexelSize";
+    private const string ChildColor = "sd_ChildColor";
+    private const string StraightAlphaFlag = "sd_StraightAlpha";
+
+    private const string ChildColorHelper =
+        $" bool {StraightAlphaFlag}; vec4 {ChildColor}(vec4 c) {{ return {StraightAlphaFlag} ? vec4(c.rgb * c.a, c.a) : c; }}";
 
     private static readonly ConvertOptions ShaderToyDefaults = new();
 
@@ -67,7 +97,7 @@ public static class SkSLToFxConverter
     // Identifiers the ShaderToy stage gives a meaning of its own; SkSL source must not use them.
     private static readonly HashSet<string> ReservedNames = new(StringComparer.Ordinal)
     {
-        "mainImage", "glsl_mod", "sd_ScreenUV", "openfl_TextureCoordv", "openfl_TextureSize",
+        "mainImage", "glsl_mod", "openfl_TextureCoordv", "openfl_TextureSize",
     };
 
     /// <summary>Convert an SkSL shader to HLSL <c>.fx</c> text.</summary>
@@ -112,8 +142,13 @@ public static class SkSLToFxConverter
             return Fail(diagnostics);
         }
 
+        // Each child becomes a sampler plus its host-set texel size. The child-sample helper follows the
+        // last declaration (same line, so later line numbers hold): the straight-alpha technique sets its
+        // flag to premultiply each sample, as Skia does when it samples a straight-alpha image.
+        int lastChild = children.Count;
         source = ChildDecl.Replace(source, m =>
-            $"uniform sampler2D {m.Groups["n"].Value}; uniform vec2 {m.Groups["n"].Value}{TexelSizeSuffix};");
+            $"uniform sampler2D {m.Groups["n"].Value}; uniform vec2 {m.Groups["n"].Value}{TexelSizeSuffix};" +
+            (--lastChild == 0 ? ChildColorHelper : string.Empty));
         source = EntryDecl.Replace(source, m => $"vec4 mainImage(in vec2 {m.Groups["pname"].Value})", 1);
         source = Identifier.Replace(source, m => Types.TryGetValue(m.Value, out string? glsl) ? glsl : m.Value);
 
@@ -253,6 +288,11 @@ public static class SkSLToFxConverter
             return $"'{name}' is not an SkSL built-in this converter supports.";
         }
 
+        if (name.StartsWith("sd_", StringComparison.Ordinal))
+        {
+            return $"'{name}' is reserved: the 'sd_' prefix belongs to the SkSL-to-.fx conversion. Rename this identifier.";
+        }
+
         if (name.StartsWith("gl_", StringComparison.Ordinal))
         {
             return $"'{name}' is a GLSL built-in, not SkSL; use the coordinate passed to main.";
@@ -279,7 +319,7 @@ public static class SkSLToFxConverter
     }
 
     /// <summary>
-    /// <c>img.eval(p)</c> becomes <c>texture(img, (p) * imgTexelSize)</c>. Matches are rewritten right to
+    /// <c>img.eval(p)</c> becomes <c>sd_ChildColor(texture(img, (p) * imgTexelSize))</c>. Matches are rewritten right to
     /// left, so each match still sits at its original index (diagnostics stay located) and a nested eval
     /// inside an argument is already rewritten when its enclosing call is copied.
     /// </summary>
@@ -312,7 +352,7 @@ public static class SkSLToFxConverter
 
             string arg = sb.ToString(open, i - 1 - open).Trim();
             sb.Remove(m.Index, i - m.Index);
-            sb.Insert(m.Index, $"texture({n}, ({arg}) * {n}{TexelSizeSuffix})");
+            sb.Insert(m.Index, $"{ChildColor}(texture({n}, ({arg}) * {n}{TexelSizeSuffix}))");
         }
 
         return sb.ToString();
