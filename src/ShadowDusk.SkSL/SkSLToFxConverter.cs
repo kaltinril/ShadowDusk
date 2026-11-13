@@ -35,7 +35,7 @@ namespace ShadowDusk.SkSL;
 /// target's alpha is used later. A shader that returns <c>rgb &gt; a</c> is outside SkSL's contract
 /// and is not guaranteed to match.</item>
 /// </list>
-/// <para>Unsupported SkSL (<c>sk_FragCoord</c>, <c>layout(color)</c>, color filter and blender entries
+/// <para>Unsupported SkSL (<c>sk_FragCoord</c>, which Skia's runtime shaders reject too, <c>layout(color)</c>, color filter and blender entries
 /// or children, <c>shader</c> parameters, the color-space built-ins) fails with an SkSL diagnostic
 /// that says what to change. Diagnostics from the ShaderToy stage keep the SkSL line number; the
 /// column can shift on a line where a type was respelled.</para>
@@ -262,8 +262,9 @@ public static class SkSLToFxConverter
         switch (name)
         {
             case "sk_FragCoord":
-                return "sk_FragCoord is not supported yet; use the coordinate passed to main (equal to the " +
-                       "pixel coordinate when the shader is drawn untransformed).";
+                return "sk_FragCoord is not supported: Skia's runtime shaders (SkiaSharp 3 and later) do not " +
+                       "accept it either. Use the coordinate passed to main (the pixel coordinate when the " +
+                       "shader is drawn untransformed).";
             case "layout":
                 return "layout(color) uniforms are not supported yet; declare a plain half4/float4 uniform " +
                        "and set it to the color already in the destination's color space (for an untagged " +

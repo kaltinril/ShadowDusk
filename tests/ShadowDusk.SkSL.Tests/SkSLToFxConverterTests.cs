@@ -240,6 +240,12 @@ public sealed class SkSLToFxConverterTests
         (d.Line, d.Column).ShouldBe((2, 45));
     }
 
+    [Fact]
+    public void Convert_SkFragCoord_IsRefusedBecauseSkiaRejectsIt() =>
+        FailsWith("half4 main(float2 p) { return half4(sk_FragCoord.xy, 0, 1); }", "sk_FragCoord").Message.ShouldBe(
+            "sk_FragCoord is not supported: Skia's runtime shaders (SkiaSharp 3 and later) do not accept it " +
+            "either. Use the coordinate passed to main (the pixel coordinate when the shader is drawn untransformed).");
+
     [Theory]
     [InlineData("half4 main(float2 p) { return half4(sk_FragCoord.xy, 0, 1); }", "sk_FragCoord", "coordinate passed to main")]
     [InlineData("layout(color) uniform half4 c; half4 main(float2 p) { return c; }", "layout", "plain half4/float4 uniform")]
