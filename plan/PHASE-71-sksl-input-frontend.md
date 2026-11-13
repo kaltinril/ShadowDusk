@@ -58,8 +58,10 @@ Apply them in that order to every decision in this phase.
 
 ## Remaining slices
 
-1. **`sk_FragCoord`**: needs the device coordinate, which equals the local coordinate only when the
-   shader is drawn untransformed; decide the host contract, then implement and gate it.
+1. **`sk_FragCoord` (refused, 2026-11-12)**: Skia's runtime shaders reject it on SkiaSharp 3.116.1,
+   3.119.4, 4.148.0 and 4.154.0 ("unknown identifier"), and the one SkiaSharp that accepts it
+   (2.88.9) crashes drawing any runtime shader on the CPU raster, so there is nothing to match. The
+   diagnostic says so and points to the coordinate passed to `main`; see `project_decisions.md`.
 2. **`layout(color)` uniforms**: Skia converts them from sRGB to the working color space; define
    what MonoGame's equivalent is (usually none) and prove it.
 3. **Color filter and blender children** (`uniform colorFilter`, `uniform blender`) and their
