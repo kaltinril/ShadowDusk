@@ -495,7 +495,7 @@ jobs:
       # call shares the runner IP's unauthenticated quota and fails at random with "API rate
       # limit exceeded" (issue #317), so it gets the workflow's read-only token.
       - name: Install Vulkan software driver (SwiftShader) for DX12 SDL2 window creation
-        uses: jakoch/install-vulkan-sdk-action@d17de7e2f5e50efb5d2123efed18497d3c58c533 # v1.7.0
+        uses: jakoch/install-vulkan-sdk-action@7fe84289ddbf750f7eff9f8e4588e600e1dd06c8 # v1.8.1
         env:
           GITHUB_TOKEN: ${{ github.token }}
         with:
