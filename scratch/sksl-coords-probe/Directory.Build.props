@@ -1,0 +1,6 @@
+<Project>
+  <PropertyGroup>
+    <SkiaVer Condition="'$(SkiaVer)'==''">4.154.0</SkiaVer>
+    <BaseIntermediateOutputPath>obj\$(SkiaVer)\</BaseIntermediateOutputPath>
+  </PropertyGroup>
+</Project>

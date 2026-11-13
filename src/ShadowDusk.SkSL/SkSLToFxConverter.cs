@@ -14,9 +14,13 @@ namespace ShadowDusk.SkSL;
 /// <remarks>
 /// <para><b>Host contract</b> (what a MonoGame/KNI consumer does to get Skia's image):</para>
 /// <list type="bullet">
-/// <item>Draw a fullscreen quad whose POSITION is already in NDC, and set <c>iResolution</c> to the
-/// render-target size in pixels (<c>Vector3(width, height, 1)</c>). <c>main</c> receives the pixel
-/// center with a top-left origin, as in Skia when the shader is drawn untransformed.</item>
+/// <item>Draw with <c>SpriteBatch</c> (the effect is pixel-shader only; SpriteBatch supplies the
+/// vertex shader), and set <c>iResolution</c> to the drawn sprite's size in pixels
+/// (<c>Vector3(width, height, 1)</c>). <c>main</c> receives the pixel center local to the sprite, with a
+/// top-left origin, wherever the sprite is placed: what Skia passes when the shape is drawn in its own
+/// translated space (<c>canvas.Translate(x, y)</c>, then a rect at the origin). SpriteBatch binds the
+/// sprite's texture to slot 0, which is the first child's sampler, so draw the first child as the
+/// sprite.</item>
 /// <item>For each <c>uniform shader img;</c> child, bind the texture to <c>imgTexture</c> and set
 /// <c>imgTexelSize</c> to <c>1 / (width, height)</c> of that texture. <c>img.eval(p)</c> samples at
 /// <c>p * imgTexelSize</c>, so SkSL's pixel coordinates carry over. Use the sampler state Skia would
