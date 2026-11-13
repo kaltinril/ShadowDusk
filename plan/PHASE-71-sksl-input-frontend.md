@@ -31,6 +31,12 @@ Apply them in that order to every decision in this phase.
 - Entry `half4 main(float2 coord)` (also `float4`/`vec4`, `half2`/`vec2`) becomes `mainImage`; the
   harness passes `input.UV * iResolution.xy`, which is SkSL's top-left, pixel-center coordinate
   (no double Y flip).
+- The `.fx` is pixel-shader only and is drawn with `SpriteBatch`, as Gum's MonoGame runtime blits a
+  shaded container: `input.UV` is SpriteBatch's `TEXCOORD0` and `iResolution` the sprite's size, so
+  `main`'s coordinate is local to the sprite wherever it is placed, as in Skia when the shape is drawn
+  in its own translated space (Gum's Skia runtime). An earlier own vertex shader derived the UV from
+  NDC, which gave render-target coordinates for an offset sprite (measured: (17.5, 11.5) at the corner
+  of a 40x30 sprite at (17, 11), where Skia gives (0.5, 0.5)), and under SpriteBatch drew nothing.
 - `uniform shader img;` becomes a sampler plus a host-set `imgTexelSize` (1 / size in pixels), and
   `img.eval(p)` becomes `tex2D(img, p * imgTexelSize)`.
 - Alpha: one `.fx`, two techniques. `SkSL` (default): premultiplied textures, `BlendState.AlphaBlend`.
@@ -42,9 +48,10 @@ Apply them in that order to every decision in this phase.
   entries and children, `shader` parameters, `unpremul`, `toLinearSrgb`/`fromLinearSrgb`,
   non-square matrices, `gl_*`/`sk_*` names, the names the ShaderToy stage owns (`iResolution`,
   `iTime`, …, `mainImage`) and `<child>TexelSize`.
-- Gate: `validation/SkSLVsGl`, 64x48 target, children of other non-square sizes, six premultiplied
-  cases, straight-alpha arms of the three translucent ones, and seven positive controls (Y flip,
-  eval offset, swapped resolution, non-premultiplied blend, straight texture on the premultiplied
+- Gate: `validation/SkSLVsGl`, 64x48 target drawn with SpriteBatch, children of other non-square
+  sizes, seven premultiplied cases (one a 40x30 sprite at (17, 11)), straight-alpha arms of the three
+  translucent ones, and eight positive controls (Y flip, eval offset, render-target coordinates for
+  the offset sprite, swapped resolution, non-premultiplied blend, straight texture on the premultiplied
   path, straight setup with the default technique). In the ubuntu GL CI job and the Windows
   render-gate script.
 

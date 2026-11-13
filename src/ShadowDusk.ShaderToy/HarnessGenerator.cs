@@ -51,9 +51,10 @@ internal sealed class HarnessGenerator
         sb.Append("// -----------------------------------------------------------------------------").Append('\n');
         if (skslEntry)
         {
-            sb.Append("// Converted from an SkSL shader. The host sets iResolution.xy to the render-target").Append('\n');
-            sb.Append("// size in pixels, binds each child shader as <child>Texture with <child>TexelSize =").Append('\n');
-            sb.Append("// 1 / its size in pixels, and draws a fullscreen quad in NDC. Two techniques:").Append('\n');
+            sb.Append("// Converted from an SkSL shader. Draw it with SpriteBatch, which supplies the vertex").Append('\n');
+            sb.Append("// shader. The host sets iResolution.xy to the drawn sprite's size in pixels and binds").Append('\n');
+            sb.Append("// each child shader as <child>Texture with <child>TexelSize = 1 / its size in pixels.").Append('\n');
+            sb.Append("// Two techniques:").Append('\n');
             sb.Append($"//   {options.TechniqueName} (default): premultiplied textures, BlendState.AlphaBlend.").Append('\n');
             sb.Append($"//   {options.TechniqueName}{SkSLStraightAlphaSuffix}: straight-alpha textures, BlendState.NonPremultiplied.").Append('\n');
             sb.Append("// Either one renders what Skia's SrcOver renders.").Append('\n');
@@ -166,7 +167,15 @@ internal sealed class HarnessGenerator
         sb.Append(translatedFunctions);
         sb.Append('\n');
 
-        EmitVertexShader(sb);
+        if (skslEntry)
+        {
+            EmitSpriteBatchInput(sb);
+        }
+        else
+        {
+            EmitVertexShader(sb);
+        }
+
         if (entryMode == EntryMode.PlainGlsl)
         {
             EmitPlainGlslPixelShader(sb, fragmentOutputName, usedScreenUv);
@@ -188,11 +197,11 @@ internal sealed class HarnessGenerator
             EmitPixelShader(sb, usedGlFragCoord, usedScreenUv);
         }
 
-        EmitTechnique(sb, options.TechniqueName);
+        EmitTechnique(sb, options.TechniqueName, withVertexShader: !skslEntry);
         if (skslEntry)
         {
             sb.Append('\n');
-            EmitTechnique(sb, options.TechniqueName + SkSLStraightAlphaSuffix, SkSLStraightAlphaPixelShader);
+            EmitTechnique(sb, options.TechniqueName + SkSLStraightAlphaSuffix, SkSLStraightAlphaPixelShader, withVertexShader: false);
         }
 
         return sb.ToString();
@@ -315,6 +324,19 @@ internal sealed class HarnessGenerator
         sb.Append('\n');
     }
 
+    /// <summary>
+    /// The SkSL pixel shaders' input: SpriteBatch's vertex shader output, in its order so the D3D
+    /// signatures link. SkSL's coordinate is local to the drawn shape, which is <c>TEXCOORD0 * size</c>
+    /// for a sprite wherever it is placed; a UV derived from NDC would give the render-target
+    /// coordinate instead.
+    /// </summary>
+    private static void EmitSpriteBatchInput(StringBuilder sb)
+    {
+        sb.Append("// SpriteBatch's vertex shader output. UV runs from 0 to 1 across the drawn sprite.").Append('\n');
+        sb.Append("struct PSInput { float4 Position : SV_Position; float4 Color : COLOR0; float2 UV : TEXCOORD0; };").Append('\n');
+        sb.Append('\n');
+    }
+
     private static void EmitPixelShader(StringBuilder sb, bool usedGlFragCoord, bool usedScreenUv)
     {
         sb.Append("float4 PSMain(VSOutput input) : COLOR0").Append('\n');
@@ -354,8 +376,8 @@ internal sealed class HarnessGenerator
     /// </summary>
     private static void EmitSkSLPixelShaders(StringBuilder sb, bool hasStraightAlphaFlag)
     {
-        sb.Append("// SkSL coordinates are pixel centers with a top-left origin, like uv.").Append('\n');
-        sb.Append("float4 PSMain(VSOutput input) : COLOR0").Append('\n');
+        sb.Append("// SkSL coordinates are pixel centers local to the sprite, with a top-left origin like uv.").Append('\n');
+        sb.Append("float4 PSMain(PSInput input) : COLOR0").Append('\n');
         sb.Append("{").Append('\n');
         if (hasStraightAlphaFlag)
         {
@@ -365,7 +387,7 @@ internal sealed class HarnessGenerator
         sb.Append("    return mainImage(input.UV * iResolution.xy);").Append('\n');
         sb.Append("}").Append('\n');
         sb.Append('\n');
-        sb.Append($"float4 {SkSLStraightAlphaPixelShader}(VSOutput input) : COLOR0").Append('\n');
+        sb.Append($"float4 {SkSLStraightAlphaPixelShader}(PSInput input) : COLOR0").Append('\n');
         sb.Append("{").Append('\n');
         if (hasStraightAlphaFlag)
         {
@@ -479,13 +501,17 @@ internal sealed class HarnessGenerator
         sb.Append('\n');
     }
 
-    private static void EmitTechnique(StringBuilder sb, string techniqueName, string pixelShader = "PSMain")
+    private static void EmitTechnique(StringBuilder sb, string techniqueName, string pixelShader = "PSMain", bool withVertexShader = true)
     {
         sb.Append($"technique {techniqueName}").Append('\n');
         sb.Append("{").Append('\n');
         sb.Append("    pass P0").Append('\n');
         sb.Append("    {").Append('\n');
-        sb.Append("        VertexShader = compile VS_SHADERMODEL VSMain();").Append('\n');
+        if (withVertexShader)
+        {
+            sb.Append("        VertexShader = compile VS_SHADERMODEL VSMain();").Append('\n');
+        }
+
         sb.Append($"        PixelShader  = compile PS_SHADERMODEL {pixelShader}();").Append('\n');
         sb.Append("    }").Append('\n');
         sb.Append("}").Append('\n');

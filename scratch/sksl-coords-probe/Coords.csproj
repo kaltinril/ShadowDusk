@@ -1,0 +1,22 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net8.0</TargetFramework>
+    <DefaultItemExcludes>$(DefaultItemExcludes);obj/**;bin/**</DefaultItemExcludes>
+    <RollForward>Major</RollForward>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <SkiaVer Condition="'$(SkiaVer)'==''">4.154.0</SkiaVer>
+    <SdRepo Condition="'$(SdRepo)'==''">C:\Users\Owner\Documents\GitHub\ShadowDusk</SdRepo>
+    <BaseIntermediateOutputPath>obj\$(SkiaVer)\</BaseIntermediateOutputPath>
+    <OutputPath>bin\$(SkiaVer)\</OutputPath>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="MonoGame.Framework.DesktopGL" Version="3.8.2.1105" />
+    <PackageReference Include="SkiaSharp" Version="$(SkiaVer)" />
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="$(SdRepo)\src\ShadowDusk.Compiler\ShadowDusk.Compiler.csproj" />
+    <ProjectReference Include="$(SdRepo)\src\ShadowDusk.SkSL\ShadowDusk.SkSL.csproj" />
+  </ItemGroup>
+</Project>

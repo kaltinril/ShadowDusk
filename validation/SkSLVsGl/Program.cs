@@ -3,13 +3,16 @@
 // -----------------------------------------------------------------------------
 //     SkSL --[real SkiaSharp SKRuntimeEffect, CPU raster]--------------> reference image
 //     SkSL --[SkSLToFxConverter]--> .fx --[EffectCompiler, OpenGL]--> .mgfx
-//          --[real MonoGame DesktopGL Effect, NDC fullscreen quad]----> candidate image
+//          --[real MonoGame DesktopGL Effect, drawn with SpriteBatch]-> candidate image
 //
 // Skia has no reference compiler for this direction, so the evidence is rendered-image fidelity
 // against real Skia (as validation/SkiaVsKni is for the output direction). Same source texels,
 // same size, same uniforms; tolerance 2/255.
 //
-// The host contract under test (SkSLToFxConverter's XML doc): a non-square render target (64x48,
+// The host contract under test (SkSLToFxConverter's XML doc): the effect drawn with SpriteBatch, as
+// Gum's MonoGame runtime blits a render-target container (Gum RenderingLibrary/Graphics/Renderer.cs,
+// BlitRenderTarget), with iResolution = the sprite's size and the first child as the sprite's texture
+// (SpriteBatch binds it to slot 0); a non-square render target (64x48,
 // so an X/Y mix-up in the coordinate mapping shows), children of other non-square sizes bound with
 // <child>TexelSize = 1/size, premultiplied texels (some translucent), and every case drawn with
 // premultiplied source-over (Skia SrcOver, MonoGame BlendState.AlphaBlend) onto the same opaque
@@ -19,11 +22,16 @@
 // drawing the same straight bytes as an Unpremul image with SrcOver. Those arms gate RGB only:
 // NonPremultiplied's own alpha equation (srcA*srcA + dstA*(1-srcA)) differs from SrcOver's, so the
 // destination alpha differs whatever the shader does; it is printed, not gated.
+// SubRectOffset draws a 40x30 sprite at (17,11), as Gum's Skia runtime draws a shaded container
+// (Runtimes/SkiaGum/RenderingLibrary/Renderer.cs, DrawRenderTargetImage: canvas translated to the
+// container, DrawRect(0, 0, w, h), no local matrix), so main's coordinate is local to the sprite.
 // Controls compare RGB only, so each is caught by a color difference.
 //
 // Positive controls (each MUST diverge or the gate fails):
 //   * control-flipped-y          Skia: the gradient with its Y flipped (origin convention);
 //   * control-child-offset       Skia: the child-eval case with a different eval offset;
+//   * control-device-coords      Skia: SubRectOffset drawn in place without the translate, so main
+//                                gets render-target coordinates (what an NDC-derived UV gave);
 //   * control-swapped-resolution GL: the gradient with iResolution = (height, width) (non-square axis);
 //   * control-nonpremul-blend    GL: the translucent case drawn with BlendState.NonPremultiplied;
 //   * control-straight-texture   GL: the translucent child uploaded un-premultiplied (alpha axis);
@@ -59,6 +67,7 @@ float[] sizeUniform = { Width, Height };
 Texels opaque = Texels.Make(50, 34, translucent: false, seed: 0);
 Texels glass = Texels.Make(50, 34, translucent: true, seed: 0);
 Texels second = Texels.Make(40, 56, translucent: true, seed: 7);
+Texels sprite = Texels.Make(40, 30, translucent: false, seed: 3);
 
 var cases = new List<Case>
 {
@@ -87,6 +96,11 @@ var cases = new List<Case>
         "uniform shader a; uniform shader b;\n" +
         "half4 main(float2 c) { return mix(a.eval(c), b.eval(float2(c.y, c.x)), 0.5); }",
         new(), new() { ["a"] = glass, ["b"] = second }),
+    // A sprite smaller than the target, off the origin; the child is the sprite's own texture, as in Gum.
+    new("SubRectOffset",
+        "uniform shader img;\n" +
+        "half4 main(float2 c) { half4 s = img.eval(c); return half4(half(c.x / 40), half(c.y / 30), s.b, 1); }",
+        new(), new() { ["img"] = sprite }, new SubRect(17, 11, 40, 30)),
 };
 
 // Skia-only variants (the GL arm keeps the real shader).
@@ -146,6 +160,8 @@ foreach (string n in straightCases)
     reference[n + "-straight"] = RenderSkia(cases.First(c => c.Name == n).Sksl, cases.First(c => c.Name == n), straight: true);
 foreach ((string name, (string of, string sksl)) in skiaControls)
     reference[name] = RenderSkia(sksl, cases.First(k => k.Name == of), straight: false);
+Case subRect = cases.First(c => c.Name == "SubRectOffset");
+reference["control-device-coords"] = RenderSkia(subRect.Sksl, subRect, straight: false, deviceCoordinates: true);
 
 // ---- GL arm (candidate) -------------------------------------------------------
 using var game = new GlArm(glJobs, mgfx, background, Width, Height);
@@ -193,6 +209,7 @@ foreach (bool straight in new[] { false, true })
 }
 
 var controlPairs = skiaControls.Select(kv => (Name: kv.Key, Skia: reference[kv.Key], Gl: game.Images[kv.Value.Of]))
+    .Append((Name: "control-device-coords", Skia: reference["control-device-coords"], Gl: game.Images[subRect.Name]))
     .Concat(glJobs.Where(j => j.Name.StartsWith("control-", StringComparison.Ordinal))
         .Select(j => (Name: j.Name, Skia: reference[RefOf(j)], Gl: game.Images[j.Name])));
 foreach ((string name, byte[] skia, byte[] gl) in controlPairs)
@@ -207,7 +224,8 @@ Console.WriteLine($"\n[sksl] {(ok ? "PASS" : "FAIL")}: SkSL frontend render fide
 return ok ? 0 : 1;
 
 // ----------------------------------------------------------------------------
-byte[] RenderSkia(string sksl, Case c, bool straight)
+// deviceCoordinates: draw a sub-rect case in place instead of in its own translated space (a control).
+byte[] RenderSkia(string sksl, Case c, bool straight, bool deviceCoordinates = false)
 {
     using SKRuntimeEffect? effect = SKRuntimeEffect.CreateShader(sksl, out string errors);
     if (effect is null)
@@ -241,7 +259,18 @@ byte[] RenderSkia(string sksl, Case c, bool straight)
         bitmap.Erase(new SKColor(background[0], background[1], background[2], background[3]));
         using (var canvas = new SKCanvas(bitmap))
         using (var paint = new SKPaint { Shader = shader, BlendMode = SKBlendMode.SrcOver, IsAntialias = false })
-            canvas.DrawRect(new SKRect(0, 0, Width, Height), paint);
+        {
+            SubRect area = c.Area ?? new SubRect(0, 0, Width, Height);
+            if (deviceCoordinates)
+            {
+                canvas.DrawRect(SKRect.Create(area.X, area.Y, area.W, area.H), paint);
+            }
+            else
+            {
+                canvas.Translate(area.X, area.Y);
+                canvas.DrawRect(new SKRect(0, 0, area.W, area.H), paint);
+            }
+        }
         return bitmap.Bytes;
     }
     finally
@@ -337,7 +366,11 @@ internal sealed record Texels(int Width, int Height, byte[] Premul, byte[] Strai
     }
 }
 
-internal sealed record Case(string Name, string Sksl, Dictionary<string, float[]> Uniforms, Dictionary<string, Texels> Children);
+internal sealed record Case(string Name, string Sksl, Dictionary<string, float[]> Uniforms, Dictionary<string, Texels> Children,
+    SubRect? Area = null);
+
+/// <summary>Where a case's sprite is drawn in the target, in pixels; null means the whole target.</summary>
+internal sealed record SubRect(int X, int Y, int W, int H);
 
 internal sealed record GlJob(string Name, Case Case, bool SwapResolution = false, bool NonPremulBlend = false,
     bool StraightTextures = false, bool StraightTechnique = false);
@@ -386,11 +419,9 @@ internal sealed class GlArm : Game
     private void RenderAll()
     {
         GraphicsDevice gd = GraphicsDevice;
-        var quad = new[]
-        {
-            new NdcVertex(-1f, -1f), new NdcVertex(-1f, 1f), new NdcVertex(1f, -1f),
-            new NdcVertex( 1f, -1f), new NdcVertex(-1f, 1f), new NdcVertex(1f,  1f),
-        };
+        using var spriteBatch = new SpriteBatch(gd);
+        using var white = new Texture2D(gd, 1, 1);
+        white.SetData(new[] { Color.White });
 
         foreach (GlJob job in _jobs)
         {
@@ -399,9 +430,10 @@ internal sealed class GlArm : Game
             effect.CurrentTechnique = effect.Techniques[job.StraightTechnique
                 ? SkSLToFxConverter.StraightAlphaTechniqueName
                 : SkSLToFxConverter.PremultipliedTechniqueName];
+            SubRect area = c.Area ?? new SubRect(0, 0, _width, _height);
             effect.Parameters["iResolution"].SetValue(job.SwapResolution
-                ? new Vector3(_height, _width, 1f)
-                : new Vector3(_width, _height, 1f));
+                ? new Vector3(area.H, area.W, 1f)
+                : new Vector3(area.W, area.H, 1f));
             foreach ((string name, float[] v) in c.Uniforms)
             {
                 EffectParameter? p = effect.Parameters[name];
@@ -431,16 +463,17 @@ internal sealed class GlArm : Game
             using var rt = new RenderTarget2D(gd, _width, _height, false, SurfaceFormat.Color, DepthFormat.None);
             gd.SetRenderTarget(rt);
             gd.Clear(_background);
-            gd.BlendState = job.NonPremulBlend ? BlendState.NonPremultiplied : BlendState.AlphaBlend;
-            gd.DepthStencilState = DepthStencilState.None;
-            gd.RasterizerState = RasterizerState.CullNone;
             for (int s = 0; s < 4; s++)
                 gd.SamplerStates[s] = SamplerState.LinearClamp;
-            foreach (EffectPass pass in effect.CurrentTechnique.Passes)
-            {
-                pass.Apply();
-                gd.DrawUserPrimitives(PrimitiveType.TriangleList, quad, 0, 2);
-            }
+            // SpriteBatch supplies the vertex shader and binds the sprite's texture to slot 0, where the
+            // first child's sampler is, so the first child is the sprite (Gum draws a container's
+            // render target this way and that target is the child the shader reads).
+            spriteBatch.Begin(SpriteSortMode.Immediate,
+                job.NonPremulBlend ? BlendState.NonPremultiplied : BlendState.AlphaBlend,
+                SamplerState.LinearClamp, DepthStencilState.None, RasterizerState.CullNone, effect);
+            spriteBatch.Draw(textures.Count > 0 ? textures[0] : white,
+                new Rectangle(area.X, area.Y, area.W, area.H), Color.White);
+            spriteBatch.End();
             gd.SetRenderTarget(null);
 
             var px = new byte[_width * _height * 4];
@@ -449,13 +482,4 @@ internal sealed class GlArm : Game
             foreach (Texture2D t2d in textures) t2d.Dispose();
         }
     }
-}
-
-readonly struct NdcVertex : IVertexType
-{
-    private readonly Vector4 _position;
-    public NdcVertex(float x, float y) => _position = new Vector4(x, y, 0f, 1f);
-    public static readonly VertexDeclaration Declaration = new(
-        new VertexElement(0, VertexElementFormat.Vector4, VertexElementUsage.Position, 0));
-    VertexDeclaration IVertexType.VertexDeclaration => Declaration;
 }
