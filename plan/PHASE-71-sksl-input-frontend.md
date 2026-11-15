@@ -49,8 +49,9 @@ Apply them in that order to every decision in this phase.
   non-square matrices, `gl_*`/`sk_*` names, the names the ShaderToy stage owns (`iResolution`,
   `iTime`, …, `mainImage`) and `<child>TexelSize`.
 - Gate: `validation/SkSLVsGl`, 64x48 target drawn with SpriteBatch, children of other non-square
-  sizes, seven premultiplied cases (one a 40x30 sprite at (17, 11)), straight-alpha arms of the three
-  translucent ones, and eight positive controls (Y flip, eval offset, render-target coordinates for
+  sizes, eight premultiplied cases (one a 40x30 sprite at (17, 11), one faded through the sprite
+  color against a Skia paint alpha), straight-alpha arms of the three
+  translucent ones, and eight positive controls (an ignored sprite tint, Y flip, eval offset, render-target coordinates for
   the offset sprite, swapped resolution, non-premultiplied blend, straight texture on the premultiplied
   path, straight setup with the default technique). In the ubuntu GL CI job and the Windows
   render-gate script.

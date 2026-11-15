@@ -332,7 +332,9 @@ internal sealed class HarnessGenerator
     /// </summary>
     private static void EmitSpriteBatchInput(StringBuilder sb)
     {
-        sb.Append("// SpriteBatch's vertex shader output. UV runs from 0 to 1 across the drawn sprite.").Append('\n');
+        sb.Append("// SpriteBatch's vertex shader output. UV runs from 0 to 1 across the drawn sprite; Color is").Append('\n');
+        sb.Append("// the color passed to SpriteBatch.Draw and multiplies the result, as it does for a sprite").Append('\n');
+        sb.Append("// (Color.White changes nothing; Color.White * alpha fades it, like a Skia paint's alpha).").Append('\n');
         sb.Append("struct PSInput { float4 Position : SV_Position; float4 Color : COLOR0; float2 UV : TEXCOORD0; };").Append('\n');
         sb.Append('\n');
     }
@@ -384,7 +386,7 @@ internal sealed class HarnessGenerator
             sb.Append($"    {SkSLStraightAlphaFlag} = false;").Append('\n');
         }
 
-        sb.Append("    return mainImage(input.UV * iResolution.xy);").Append('\n');
+        sb.Append("    return mainImage(input.UV * iResolution.xy) * input.Color;").Append('\n');
         sb.Append("}").Append('\n');
         sb.Append('\n');
         sb.Append($"float4 {SkSLStraightAlphaPixelShader}(PSInput input) : COLOR0").Append('\n');
@@ -395,7 +397,7 @@ internal sealed class HarnessGenerator
         }
 
         sb.Append("    float4 color = mainImage(input.UV * iResolution.xy);").Append('\n');
-        sb.Append("    return float4(color.rgb / max(color.a, 0.0001), color.a);").Append('\n');
+        sb.Append("    return float4(color.rgb / max(color.a, 0.0001), color.a) * input.Color;").Append('\n');
         sb.Append("}").Append('\n');
         sb.Append('\n');
     }

@@ -54,7 +54,7 @@ public sealed class SkSLToFxConverterTests
 
         // SkSL coords are pixel centers with a top-left origin: uv (top-left origin) times the size.
         fx.ShouldContain(
-            "float4 PSMain(PSInput input) : COLOR0\n{\n    return mainImage(input.UV * iResolution.xy);\n}\n",
+            "float4 PSMain(PSInput input) : COLOR0\n{\n    return mainImage(input.UV * iResolution.xy) * input.Color;\n}\n",
             Case.Sensitive);
         fx.ShouldNotContain("1.0 - input.UV.y", Case.Sensitive);
         fx.ShouldNotContain("iResolution.y -", Case.Sensitive);
@@ -104,7 +104,7 @@ public sealed class SkSLToFxConverterTests
         Succeeds(Plain).ShouldContain(
             "float4 PSMainStraightAlpha(PSInput input) : COLOR0\n{\n" +
             "    float4 color = mainImage(input.UV * iResolution.xy);\n" +
-            "    return float4(color.rgb / max(color.a, 0.0001), color.a);\n}\n",
+            "    return float4(color.rgb / max(color.a, 0.0001), color.a) * input.Color;\n}\n",
             Case.Sensitive);
 
     [Fact]
@@ -122,12 +122,12 @@ public sealed class SkSLToFxConverterTests
             Case.Sensitive);
         fx.ShouldContain(
             "float4 PSMain(PSInput input) : COLOR0\n{\n    sd_StraightAlpha = false;\n" +
-            "    return mainImage(input.UV * iResolution.xy);\n}\n",
+            "    return mainImage(input.UV * iResolution.xy) * input.Color;\n}\n",
             Case.Sensitive);
         fx.ShouldContain(
             "float4 PSMainStraightAlpha(PSInput input) : COLOR0\n{\n    sd_StraightAlpha = true;\n" +
             "    float4 color = mainImage(input.UV * iResolution.xy);\n" +
-            "    return float4(color.rgb / max(color.a, 0.0001), color.a);\n}\n",
+            "    return float4(color.rgb / max(color.a, 0.0001), color.a) * input.Color;\n}\n",
             Case.Sensitive);
     }
 
@@ -254,6 +254,26 @@ public sealed class SkSLToFxConverterTests
         ConvertDiagnostic d = FailsWith("/* one\n two */ half4 main(float2 p) { return half4(sk_FragCoord); }", "sk_FragCoord");
         (d.Line, d.Column).ShouldBe((2, 45));
     }
+
+    [Fact]
+    public void Convert_ChildThatIsNeverEvaluated_IsRefused_BecauseItWouldShiftTheTextureSlots()
+    {
+        // The host draws the first declared child as the sprite (slot 0). An unused first child
+        // gets no sampler, so 'b' would land on slot 0 and read the sprite's texture instead.
+        ConvertDiagnostic d = FailsWith(
+            "uniform shader a;\nuniform shader b;\nhalf4 main(float2 p) { return b.eval(p); }", "a");
+
+        d.Message.ShouldStartWith("'uniform shader a;' is never evaluated.", Case.Sensitive);
+        (d.Line, d.Column).ShouldBe((1, 16));
+    }
+
+    [Theory]
+    [InlineData("PSInput")]
+    [InlineData("PSMain")]
+    [InlineData("PSMainStraightAlpha")]
+    public void Convert_RefusesTheGeneratedPixelShadersOwnNames(string name) =>
+        SkSLToFxConverter.Convert($"float {name}(float x) {{ return x; }}\nhalf4 main(float2 p) {{ return half4({name}(p.x)); }}")
+            .Success.ShouldBeFalse();
 
     [Fact]
     public void Convert_SkFragCoord_IsRefusedBecauseSkiaRejectsIt() =>

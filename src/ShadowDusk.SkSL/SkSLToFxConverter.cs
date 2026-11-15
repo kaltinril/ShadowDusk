@@ -12,15 +12,22 @@ namespace ShadowDusk.SkSL;
 /// <c>ShadowDusk.Compiler.Sksl.SkslConverter</c>, which goes the other way (<c>.fx</c> to SkSL).
 /// </summary>
 /// <remarks>
-/// <para><b>Host contract</b> (what a MonoGame/KNI consumer does to get Skia's image):</para>
+/// <para><b>Host contract</b> (what a MonoGame consumer does to get Skia's image; measured on MonoGame
+/// DesktopGL only, see <c>validation/SkSLVsGl</c>):</para>
 /// <list type="bullet">
 /// <item>Draw with <c>SpriteBatch</c> (the effect is pixel-shader only; SpriteBatch supplies the
 /// vertex shader), and set <c>iResolution</c> to the drawn sprite's size in pixels
 /// (<c>Vector3(width, height, 1)</c>). <c>main</c> receives the pixel center local to the sprite, with a
 /// top-left origin, wherever the sprite is placed: what Skia passes when the shape is drawn in its own
 /// translated space (<c>canvas.Translate(x, y)</c>, then a rect at the origin). SpriteBatch binds the
-/// sprite's texture to slot 0, which is the first child's sampler, so draw the first child as the
-/// sprite.</item>
+/// sprite's texture to slot 0, which is the first declared child's sampler (a child that is never
+/// evaluated is refused, so the first declared child is always sampled), so draw the first child as
+/// the sprite. Draw the whole texture, unflipped: a source rectangle or a <c>SpriteEffects</c> flip
+/// changes the UV range and <c>main</c>'s coordinate with it. If the sprite is drawn scaled (a
+/// zoomed camera, a larger destination), <c>iResolution</c> is its size in the shader's own units,
+/// before the scale, as Skia's coordinate is. The color passed to <c>SpriteBatch.Draw</c> multiplies
+/// the result: <c>Color.White</c> changes nothing and <c>Color.White * alpha</c> fades it, as a Skia
+/// paint's alpha does.</item>
 /// <item>For each <c>uniform shader img;</c> child, bind the texture to <c>imgTexture</c> and set
 /// <c>imgTexelSize</c> to <c>1 / (width, height)</c> of that texture. <c>img.eval(p)</c> samples at
 /// <c>p * imgTexelSize</c>, so SkSL's pixel coordinates carry over. Use the sampler state Skia would
@@ -102,6 +109,8 @@ public static class SkSLToFxConverter
     private static readonly HashSet<string> ReservedNames = new(StringComparer.Ordinal)
     {
         "mainImage", "glsl_mod", "openfl_TextureCoordv", "openfl_TextureSize",
+        // The generated pixel shaders and their input struct.
+        "PSInput", "PSMain", "PSMainStraightAlpha",
     };
 
     /// <summary>Convert an SkSL shader to HLSL <c>.fx</c> text.</summary>
@@ -257,6 +266,25 @@ public static class SkSLToFxConverter
                     $"'{name}.eval' does not name a 'uniform shader' child; only globals declared " +
                     "'uniform shader name;' can be evaluated.",
                     line, col, name + ".eval"));
+            }
+        }
+
+        // A child that is never evaluated gets no texture parameter in the compiled effect, and
+        // every child after it moves down a texture slot. The host draws the FIRST child as the
+        // sprite (SpriteBatch owns slot 0), so with an unused first child the shader would read
+        // the wrong texture and nothing would say so.
+        var evaluated = new HashSet<string>(AnyEval.Matches(source).Select(m => m.Groups["n"].Value), StringComparer.Ordinal);
+        foreach (Match m in ChildDecl.Matches(source))
+        {
+            string child = m.Groups["n"].Value;
+            if (!evaluated.Contains(child) && reported.Add(child + " unused"))
+            {
+                Locate(source, m.Groups["n"].Index, out int line, out int col);
+                diagnostics.Add(Error(
+                    $"'uniform shader {child};' is never evaluated. Remove it: a child the shader does not " +
+                    "sample gets no texture parameter, and the children declared after it would be bound " +
+                    "one texture slot early.",
+                    line, col, child));
             }
         }
     }
