@@ -7,10 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ShadowDusk is a cross-platform, in-memory drop-in `mgfxc` replacement: a self-contained
 library that compiles `.fx` → `.mgfx` at runtime on Linux, macOS, and Windows, with output
-that loads and renders identically to `mgfxc`'s in the real MonoGame/KNI runtime. All ten
+that loads and renders identically to `mgfxc`'s in the real MonoGame/KNI runtime. All eleven
 `ShadowDusk.*` packages share a single version (see `Directory.Build.props` `<Version>`).
 
 ## [Unreleased]
+
+### Added
+
+### Changed
+
+### Fixed
+
+## [0.26.0] - 2026-11-15
 
 ### Added
 
@@ -4289,7 +4297,8 @@ WASM-capable build — the same pipeline on every host, with no substitute compi
 - **The MGCB content-processor plugin** is a scaffold; the PATH-based `mgfxc` override is the
   shipping MGCB integration path.
 
-[Unreleased]: https://github.com/kaltinril/ShadowDusk/compare/v0.25.1...HEAD
+[Unreleased]: https://github.com/kaltinril/ShadowDusk/compare/v0.26.0...HEAD
+[0.26.0]: https://github.com/kaltinril/ShadowDusk/compare/v0.25.1...v0.26.0
 [0.25.1]: https://github.com/kaltinril/ShadowDusk/compare/v0.25.0...v0.25.1
 [0.25.0]: https://github.com/kaltinril/ShadowDusk/compare/v0.24.0...v0.25.0
 [0.24.0]: https://github.com/kaltinril/ShadowDusk/compare/v0.23.0...v0.24.0
