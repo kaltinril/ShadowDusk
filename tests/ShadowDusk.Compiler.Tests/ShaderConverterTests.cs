@@ -123,6 +123,7 @@ public sealed class ShaderConverterTests
         ShaderFrontends.Find(ShaderFormat.Glsl).ShouldBeNull();
         ShaderFrontends.Find(ShaderFormat.Glsl).ShouldBeNull();
         ShaderConverter.CanConvert(ShaderToySource).ShouldBeFalse();
+        ShaderConverter.CanCompile(ShaderToySource).ShouldBeFalse();
     }
 
     [Fact]

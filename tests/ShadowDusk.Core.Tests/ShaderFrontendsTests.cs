@@ -19,6 +19,7 @@ public sealed class ShaderFrontendsTests
     public void Register_RefusesAFormatShadowDuskReadsItself(ShaderFormat format)
     {
         var ex = Should.Throw<ArgumentException>(() => ShaderFrontends.Register(new StubFrontend(format)));
+        Should.Throw<ArgumentException>(() => ShaderFrontends.TryRegister(new StubFrontend(format)));
 
         ex.ParamName.ShouldBe("frontend");
         ex.Message.ShouldContain(format.ToString(), Case.Sensitive);

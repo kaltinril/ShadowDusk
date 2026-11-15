@@ -26,14 +26,19 @@ public sealed class ShaderToyFrontend : IShaderFrontend
     /// <inheritdoc />
     public ShaderFormat Format => ShaderFormat.Glsl;
 
-    /// <summary>Registers this frontend with <see cref="ShaderFrontends"/>. Safe to call more than once.</summary>
+    /// <summary>
+    /// Registers this frontend with <see cref="ShaderFrontends"/> as THE GLSL frontend,
+    /// replacing any other. Safe to call more than once.
+    /// </summary>
     public static void Register() => ShaderFrontends.Register(new ShaderToyFrontend());
 
     // CA2255 warns against module initializers in libraries because they run code the consumer
-    // did not call. This one only adds an entry to a registry, which is the package's purpose.
+    // did not call. This one only adds an entry to a registry, which is the package's purpose,
+    // and only when the application has not registered a GLSL frontend of its own: this runs
+    // whenever the assembly is first used, which can be long after startup.
 #pragma warning disable CA2255
     [ModuleInitializer]
-    internal static void RegisterOnLoad() => Register();
+    internal static void RegisterOnLoad() => ShaderFrontends.TryRegister(new ShaderToyFrontend());
 #pragma warning restore CA2255
 
     /// <inheritdoc />
@@ -41,10 +46,16 @@ public sealed class ShaderToyFrontend : IShaderFrontend
     {
         ArgumentNullException.ThrowIfNull(source);
         string file = nameHint ?? MemoryName;
-        string effectName = SanitizeIdentifier(nameHint is null ? "" : Path.GetFileNameWithoutExtension(nameHint));
 
-        ConvertResult result = ShaderToyConverter.Convert(
-            source, new ConvertOptions { EffectName = effectName, TechniqueName = effectName });
+        // With a name, the effect and technique are named after the file, as the ShadowDuskCLI
+        // names them for a .glsl input. With none, the converter's own defaults stand, so the
+        // result is what ShaderToyConverter.Convert(source) gives.
+        string stem = FileStem(nameHint);
+        ConvertOptions options = stem.Length == 0
+            ? new ConvertOptions()
+            : new ConvertOptions { EffectName = SanitizeIdentifier(stem), TechniqueName = SanitizeIdentifier(stem) };
+
+        ConvertResult result = ShaderToyConverter.Convert(source, options);
 
         if (!result.Success || result.Fx is null)
         {
@@ -81,6 +92,19 @@ public sealed class ShaderToyFrontend : IShaderFrontend
             ? diagnostic.Message
             : $"{diagnostic.Message} (near '{diagnostic.Construct}')",
         Severity: diagnostic.Severity == DiagnosticSeverity.Error ? ShaderErrorSeverity.Error : ShaderErrorSeverity.Warning);
+
+    // The file name without directory or extension. Both separators are split on every host:
+    // Path treats '\' as an ordinary character off Windows, and the same hint must name the
+    // same technique (it is in the compiled bytes) wherever the game runs.
+    internal static string FileStem(string? nameHint)
+    {
+        if (string.IsNullOrEmpty(nameHint))
+            return "";
+
+        string leaf = nameHint[(nameHint.LastIndexOfAny(['/', '\\']) + 1)..];
+        int dot = leaf.LastIndexOf('.');
+        return dot < 0 ? leaf : leaf[..dot];
+    }
 
     // A valid HLSL identifier for the effect and technique name, from the file name
     // ('2d-noise.glsl' would otherwise start with a digit and hold a hyphen).

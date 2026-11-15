@@ -62,6 +62,24 @@ public static class ShaderFrontends
     /// <see cref="ShaderFormat.Unknown"/>.</exception>
     public static void Register(IShaderFrontend frontend)
     {
+        Validate(frontend);
+        Registered[frontend.Format] = frontend;
+    }
+
+    /// <summary>
+    /// Registers <paramref name="frontend"/> only when no frontend is registered for its format
+    /// yet, and says whether it did. This is what a frontend package's own load-time
+    /// registration calls, so it never displaces a frontend the application registered itself.
+    /// </summary>
+    /// <exception cref="ArgumentException">As for <see cref="Register"/>.</exception>
+    public static bool TryRegister(IShaderFrontend frontend)
+    {
+        Validate(frontend);
+        return Registered.TryAdd(frontend.Format, frontend);
+    }
+
+    private static void Validate(IShaderFrontend frontend)
+    {
         ArgumentNullException.ThrowIfNull(frontend);
         if (frontend.Format is ShaderFormat.Unknown or ShaderFormat.FxEffect or ShaderFormat.Slang)
         {
@@ -70,14 +88,14 @@ public static class ShaderFrontends
                 "are read by ShadowDusk.Compiler itself, and Unknown is not a format.",
                 nameof(frontend));
         }
-
-        Registered[frontend.Format] = frontend;
     }
 
     /// <summary>
     /// The frontend registered for <paramref name="format"/>, or null when there is none. When
     /// none is registered and a known frontend package for the format is installed, its
-    /// assembly is loaded (once) so it can register itself.
+    /// assembly is loaded so it can register itself. That is tried once per process: a package
+    /// that could not be loaded then is not looked for again (using any of its types, or calling
+    /// its own registration method, still registers it). Never throws.
     /// </summary>
     public static IShaderFrontend? Find(ShaderFormat format)
     {
@@ -99,7 +117,10 @@ public static class ShaderFrontends
 
     // Loading the assembly is not enough: a module initializer runs only when something in the
     // module is first used, so it is run here. A package that is not installed is the normal
-    // case, not an error.
+    // case, not an error. Nothing may escape: the caller is asking "is this format readable",
+    // and a frontend package that cannot load or initialize (not installed, trimmed away, built
+    // against another ShadowDusk.Core, a host resolver that throws) means "no", never a crash
+    // in a consumer that would have handed the shader to its next loader.
     private static bool LoadAndInitialize(string assemblyName)
     {
         try
@@ -108,7 +129,7 @@ public static class ShaderFrontends
             RuntimeHelpers.RunModuleConstructor(assembly.ManifestModule.ModuleHandle);
             return true;
         }
-        catch (Exception ex) when (ex is FileNotFoundException or FileLoadException or BadImageFormatException)
+        catch (Exception)
         {
             return false;
         }

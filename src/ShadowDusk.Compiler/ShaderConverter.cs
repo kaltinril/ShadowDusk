@@ -39,20 +39,36 @@ public static class ShaderConverter
     public const string UnsupportedInputCode = "SD0650";
 
     /// <summary>
-    /// Whether the methods on this class would try to convert <paramref name="source"/>. Cheap:
-    /// a text scan, no compile. False means the input is not a format this package reads, and a
-    /// caller can hand it to something else. True means the conversion will be attempted and
-    /// any failure is a real error; that includes ambiguous input, which fails loudly.
+    /// Whether every method on this class would try to convert <paramref name="source"/>: an
+    /// <c>.fx</c> effect or HLSL-compatible Slang. Cheap: a text scan, no compile. False means
+    /// the input is not a format this package reads by itself, and a caller can hand it to
+    /// something else. True means the conversion will be attempted and any failure is a real
+    /// error; that includes ambiguous input, which fails loudly.
     /// </summary>
     /// <param name="source">The shader source text.</param>
     /// <param name="nameHint">Optional file name; see <see cref="ShaderFormatDetector.Detect"/>.</param>
     /// <remarks>
-    /// This answers for <see cref="Compile"/> and <see cref="CompileAsync"/>, so it is also
-    /// true for a format a registered frontend converts (GLSL with <c>ShadowDusk.ShaderToy</c>
-    /// installed). <see cref="ConvertToSksl"/> and <see cref="ConvertToRaylib"/> read only
-    /// <c>.fx</c> and Slang.
+    /// The answer does not depend on which frontend packages are installed. For
+    /// <see cref="Compile"/> and <see cref="CompileAsync"/>, which also read what a registered
+    /// frontend converts, ask <see cref="CanCompile"/>.
     /// </remarks>
     public static bool CanConvert(string source, string? nameHint = null)
+    {
+        ShaderFormatDetection detection = ShaderFormatDetector.Detect(source, nameHint);
+        return detection.IsAmbiguous || IsRoutable(detection.Format);
+    }
+
+    /// <summary>
+    /// Whether <see cref="Compile"/> and <see cref="CompileAsync"/> would try to compile
+    /// <paramref name="source"/>: everything <see cref="CanConvert"/> accepts, plus any format a
+    /// registered <see cref="IShaderFrontend"/> converts (GLSL once <c>ShadowDusk.ShaderToy</c>
+    /// is installed). No compile; the first call for such a format may load its frontend
+    /// package (<see cref="ShaderFrontends.Find"/>). Never true for input those two methods
+    /// would report as <see cref="ShaderErrorKind.UnsupportedInput"/>.
+    /// </summary>
+    /// <param name="source">The shader source text.</param>
+    /// <param name="nameHint">Optional file name; see <see cref="ShaderFormatDetector.Detect"/>.</param>
+    public static bool CanCompile(string source, string? nameHint = null)
     {
         ShaderFormatDetection detection = ShaderFormatDetector.Detect(source, nameHint);
         return detection.IsAmbiguous
@@ -79,12 +95,12 @@ public static class ShaderConverter
         CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(compiler);
-        Result<FxInput, ShaderError[]> fx = ToFx(source, nameHint);
+        Result<FxInput, ShaderError[]> fx = ToFx(source, nameHint, options?.SourceFileName);
         if (fx.IsFailure)
             return Result<CompiledShader, ShaderError[]>.Fail(fx.Error);
 
-        return WithWarnings(
-            compiler.Compile(fx.Value.FxText, OptionsFor(fx.Value, options), cancellationToken), fx.Value.Warnings);
+        return WithFrontendFindings(
+            compiler.Compile(fx.Value.FxText, OptionsFor(fx.Value, options!), cancellationToken), fx.Value);
     }
 
     /// <summary>Asynchronous counterpart of <see cref="Compile"/>; same detection and routing.</summary>
@@ -101,13 +117,13 @@ public static class ShaderConverter
         CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(compiler);
-        Result<FxInput, ShaderError[]> fx = ToFx(source, nameHint);
+        Result<FxInput, ShaderError[]> fx = ToFx(source, nameHint, options?.SourceFileName);
         if (fx.IsFailure)
             return Result<CompiledShader, ShaderError[]>.Fail(fx.Error);
 
         Result<CompiledShader, ShaderError[]> compiled =
-            await compiler.CompileAsync(fx.Value.FxText, OptionsFor(fx.Value, options), cancellationToken).ConfigureAwait(false);
-        return WithWarnings(compiled, fx.Value.Warnings);
+            await compiler.CompileAsync(fx.Value.FxText, OptionsFor(fx.Value, options!), cancellationToken).ConfigureAwait(false);
+        return WithFrontendFindings(compiled, fx.Value);
     }
 
     /// <summary>
@@ -162,18 +178,20 @@ public static class ShaderConverter
     // GeneratedName is set when a registered frontend produced the .fx: the compile is then
     // filed under that name, because a compiler error in generated HLSL has line numbers that
     // mean nothing in the source the caller wrote (the ShadowDuskCLI does the same for .glsl).
-    private sealed record FxInput(string FxText, IReadOnlyList<ShaderError> Warnings, string? GeneratedName = null);
+    // OriginalName is what the caller called the source, for the note that explains it.
+    private sealed record FxInput(
+        string FxText, IReadOnlyList<ShaderError> Warnings, string? GeneratedName = null, string? OriginalName = null);
 
-    private static CompilerOptions OptionsFor(FxInput fx, CompilerOptions options)
-    {
-        ArgumentNullException.ThrowIfNull(options);
-        return fx.GeneratedName is null ? options : options.WithSourceFileName(fx.GeneratedName);
-    }
+    // An .fx or Slang compile gets the caller's options untouched, null included, as before.
+    private static CompilerOptions OptionsFor(FxInput fx, CompilerOptions options) =>
+        fx.GeneratedName is null ? options : options.WithSourceFileName(fx.GeneratedName);
 
     private static bool IsRoutable(ShaderFormat format) =>
         format is ShaderFormat.FxEffect or ShaderFormat.Slang;
 
-    private static Result<FxInput, ShaderError[]> ToFx(string source, string? nameHint)
+    // fallbackName names the source for a frontend when the caller gave no hint
+    // (CompilerOptions.SourceFileName). It never takes part in detection.
+    private static Result<FxInput, ShaderError[]> ToFx(string source, string? nameHint, string? fallbackName)
     {
         ShaderFormatDetection detection = ShaderFormatDetector.Detect(source, nameHint);
         switch (detection.Format)
@@ -192,27 +210,60 @@ public static class ShaderConverter
                 if (ShaderFrontends.Find(detection.Format) is not { } frontend)
                     return Result<FxInput, ShaderError[]>.Fail([DetectionError(detection, nameHint)]);
 
-                Result<ShaderFrontendOutput, ShaderError[]> converted = frontend.ToFx(source, nameHint);
+                string? originalName = nameHint ?? fallbackName;
+                Result<ShaderFrontendOutput, ShaderError[]> converted = frontend.ToFx(source, originalName);
                 if (converted.IsFailure)
                     return Result<FxInput, ShaderError[]>.Fail(converted.Error);
 
-                string stem = nameHint is null ? "" : Path.GetFileNameWithoutExtension(nameHint);
+                string stem = FileStem(originalName);
                 return Result<FxInput, ShaderError[]>.Ok(new FxInput(
                     converted.Value.FxText,
                     converted.Value.Warnings,
-                    GeneratedName: (stem.Length == 0 ? "shader" : stem) + ".generated.fx"));
+                    GeneratedName: (stem.Length == 0 ? "shader" : stem) + ".generated.fx",
+                    OriginalName: originalName));
         }
     }
 
-    // The frontend's own non-fatal findings ride along with the compiler's, never dropped.
-    private static Result<CompiledShader, ShaderError[]> WithWarnings(
-        Result<CompiledShader, ShaderError[]> compiled, IReadOnlyList<ShaderError> frontendWarnings) =>
-        compiled.IsSuccess && frontendWarnings.Count > 0
-            ? Result<CompiledShader, ShaderError[]>.Ok(compiled.Value with
-            {
-                Warnings = [.. frontendWarnings, .. compiled.Value.Warnings],
-            })
-            : compiled;
+    // The file name without directory or extension, splitting on both separators on every host
+    // (Path treats '\' as an ordinary character off Windows), so one hint gives one name.
+    private static string FileStem(string? name)
+    {
+        if (string.IsNullOrEmpty(name))
+            return "";
+
+        string leaf = name[(name.LastIndexOfAny(['/', '\\']) + 1)..];
+        int dot = leaf.LastIndexOf('.');
+        return dot < 0 ? leaf : leaf[..dot];
+    }
+
+    // The frontend's own non-fatal findings ride along with the compiler's, never dropped. When
+    // the compile of a frontend's generated .fx fails, the caller is also told, first, that the
+    // errors that follow are located in generated HLSL (the ShadowDuskCLI's SD0003 note).
+    private static Result<CompiledShader, ShaderError[]> WithFrontendFindings(
+        Result<CompiledShader, ShaderError[]> compiled, FxInput fx)
+    {
+        if (compiled.IsSuccess)
+        {
+            return fx.Warnings.Count > 0
+                ? Result<CompiledShader, ShaderError[]>.Ok(compiled.Value with
+                {
+                    Warnings = [.. fx.Warnings, .. compiled.Value.Warnings],
+                })
+                : compiled;
+        }
+
+        if (fx.GeneratedName is null)
+            return compiled;
+
+        string original = fx.OriginalName ?? "<memory>";
+        var note = new ShaderError(
+            File: original, Line: 0, Column: 0, Code: "SD0003",
+            Message: $"the converted .fx generated from '{original[(original.LastIndexOfAny(['/', '\\']) + 1)..]}' " +
+                     "failed to compile. The diagnostics below refer to the GENERATED HLSL " +
+                     $"('{fx.GeneratedName}'), not your original source lines.",
+            Severity: ShaderErrorSeverity.Note);
+        return Result<CompiledShader, ShaderError[]>.Fail([note, .. fx.Warnings, .. compiled.Error]);
+    }
 
     private static ShaderError DetectionError(ShaderFormatDetection detection, string? nameHint)
     {
