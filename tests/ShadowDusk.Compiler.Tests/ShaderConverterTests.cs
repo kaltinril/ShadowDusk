@@ -114,6 +114,19 @@ public sealed class ShaderConverterTests
     }
 
     [Fact]
+    public void WithoutTheShaderToyPackage_NoGlslFrontendIsFound()
+    {
+        // This test assembly does not reference ShadowDusk.ShaderToy: the package-absent half
+        // of issue #473. (ShaderConverterFrontendRouteTests in the integration tests, which do
+        // reference it, is the package-present half.) Find looks for the package and must
+        // come back empty, not throw.
+        ShaderFrontends.Find(ShaderFormat.Glsl).ShouldBeNull();
+        ShaderFrontends.Find(ShaderFormat.Glsl).ShouldBeNull();
+        ShaderConverter.CanConvert(ShaderToySource).ShouldBeFalse();
+        ShaderConverter.CanCompile(ShaderToySource).ShouldBeFalse();
+    }
+
+    [Fact]
     public void Compile_GlslInput_NamesTheShaderToyPackage()
     {
         var result = ShaderConverter.Compile(new EffectCompiler(), ShaderToySource, new CompilerOptions(), "toy.glsl");

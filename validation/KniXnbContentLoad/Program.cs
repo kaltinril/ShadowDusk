@@ -122,6 +122,23 @@ internal static class Program
         // rule as above.
         bool knifx12MustFail = stockMustFail;
 
+        // Issue #456: the library picks the KNIFX version from the loaded KNI. On the real
+        // runtime it must be exactly the newest one this KNI loads: v11 where v12 is refused
+        // (and the v11 arm below loads), v12 where it loads (and the v12 arm below renders).
+        CapabilityProfile detected = RuntimeProfileDetector.RecommendKnifx(typeof(Game).Assembly);
+        CapabilityProfile expectedDetected = knifx12MustFail ? CapabilityProfile.KniGL_4_02 : CapabilityProfile.KniGL_4_03;
+        Console.WriteLine($"[kni-xnb] RuntimeProfileDetector.RecommendKnifx(real KNI {loadedLine}) = {detected.Name} (KNIFX v{detected.KnifxVersion})");
+        if (!ReferenceEquals(detected, expectedDetected))
+        {
+            Console.WriteLine($"[kni-xnb] FAIL - expected {expectedDetected.Name} for KNI {loadedLine}.");
+            return 1;
+        }
+        if (RuntimeProfileDetector.Classify(xna.Name) != DetectedRuntime.Kni)
+        {
+            Console.WriteLine($"[kni-xnb] FAIL - RuntimeProfileDetector.Classify did not recognise real KNI ('{xna.Name}').");
+            return 1;
+        }
+
         string repoRoot = FindRepoRoot();
         string mgcb     = LocateMgcb(repoRoot);
         string fixtures = Path.Combine(repoRoot, "tests", "fixtures", "shaders");
