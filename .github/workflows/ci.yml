@@ -283,12 +283,15 @@ jobs:
       # (measured: 14 files, zero overwrite warnings). See the integration steps below for
       # why this is more than tidiness.
       - name: dotnet test (unit, Windows — full; GL renders only on GPU-equipped hosts)
+        timeout-minutes: 8
         if: runner.os == 'Windows'
         run: >
           dotnet test ShadowDusk.slnx --no-build -c Release
           --filter "(Category!=Integration|Category=Fidelity)"
           --logger "trx;LogFilePrefix=unit-${{ matrix.os }}"
+          --blame-hang-timeout 2m --blame-hang-dump-type full
           --results-directory TestResults/
+          -- RunConfiguration.TestSessionTimeout=360000
 
       # Diagnostic for the GLFW native (the previous, pre-xvfb soft-skip reason on this
       # runner family was "GlfwPlatform - not applicable" = Glfw.GetApi() could not LOAD
@@ -320,6 +323,7 @@ jobs:
       # fixture; if the Linux DXC divergence bites it, that failure is F11 evidence
       # and must be handled there, not re-masked here.)
       - name: dotnet test (unit, Linux — REAL GL render under xvfb/llvmpipe, REQUIRE_GL hard gate)
+        timeout-minutes: 8
         if: runner.os == 'Linux'
         env:
           # Pin Mesa's software rasterizer even if a GPU device node exists (same as wasm.yml).
@@ -330,15 +334,20 @@ jobs:
           xvfb-run -a dotnet test ShadowDusk.slnx --no-build -c Release
           --filter "(Category!=Integration|Category=Fidelity)&FullyQualifiedName!~Phase34TextureBreadthTests"
           --logger "trx;LogFilePrefix=unit-${{ matrix.os }}"
+          --blame-hang-timeout 2m --blame-hang-dump-type full
           --results-directory TestResults/
+          -- RunConfiguration.TestSessionTimeout=360000
 
       - name: dotnet test (unit, macOS — advanced-texture compile tests excluded; GL proxy N/A)
+        timeout-minutes: 8
         if: runner.os == 'macOS'
         run: >
           dotnet test ShadowDusk.slnx --no-build -c Release
           --filter "(Category!=Integration|Category=Fidelity)&FullyQualifiedName!~Phase34TextureBreadthTests"
           --logger "trx;LogFilePrefix=unit-${{ matrix.os }}"
+          --blame-hang-timeout 2m --blame-hang-dump-type full
           --results-directory TestResults/
+          -- RunConfiguration.TestSessionTimeout=360000
 
       - name: Upload test results
         if: always()
@@ -346,6 +355,19 @@ jobs:
         with:
           name: test-results-${{ matrix.os }}
           path: TestResults/unit-*.trx
+          retention-days: 7
+
+      # A unit test host killed by --blame-hang-timeout leaves its dump and the sequence file
+      # naming the stuck test here (issue #504).
+      - name: Upload unit hang dumps
+        if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: unit-hang-dumps-${{ matrix.os }}
+          path: |
+            TestResults/**/*.dmp
+            TestResults/**/Sequence_*.xml
+          if-no-files-found: ignore
           retention-days: 7
 
       # The suite-level TestSessionTimeout guardrail (Phase 21) backstops the per-test

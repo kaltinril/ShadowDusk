@@ -32,6 +32,12 @@ public sealed class CiHangGuardTests
     /// </summary>
     private static readonly TimeSpan HealthyAssemblyRun = TimeSpan.FromMinutes(6);
 
+    /// <summary>
+    /// The longest a healthy assembly run is assumed to take in a unit step (issue #504). The whole
+    /// unit step, every assembly, took 58 s at worst over 9 recent CI runs per OS.
+    /// </summary>
+    private static readonly TimeSpan HealthyUnitAssemblyRun = TimeSpan.FromMinutes(2);
+
     /// <summary>Time for the blame collector to dump the host and its children once it fires.</summary>
     private static readonly TimeSpan DumpTime = TimeSpan.FromMinutes(1);
 
@@ -68,10 +74,12 @@ public sealed class CiHangGuardTests
                     ? TimeSpan.FromMilliseconds(long.Parse(inline.Groups[1].Value, CultureInfo.InvariantCulture))
                     : runsettingsSession;
 
-                TimeSpan needed = HealthyAssemblyRun + blameTimeout + DumpTime + Slack;
+                bool integration = step.Contains("Category=Integration", StringComparison.Ordinal);
+                TimeSpan healthy = integration ? HealthyAssemblyRun : HealthyUnitAssemblyRun;
+                TimeSpan needed = healthy + blameTimeout + DumpTime + Slack;
                 session.ShouldBeGreaterThanOrEqualTo(needed,
                     $"{where}: TestSessionTimeout {session.TotalMinutes:0.#} min cannot outlast a stall that starts late in " +
-                    $"a healthy run ({HealthyAssemblyRun.TotalMinutes:0.#} min) plus the {blameTimeout.TotalMinutes:0.#} min " +
+                    $"a healthy run ({healthy.TotalMinutes:0.#} min) plus the {blameTimeout.TotalMinutes:0.#} min " +
                     $"blame-hang timeout plus {DumpTime.TotalMinutes:0.#} min to write the dump, so the session cap would " +
                     "abort the run with no hang dump (issue #312). Raise the session timeout or lower the blame timeout.");
 
