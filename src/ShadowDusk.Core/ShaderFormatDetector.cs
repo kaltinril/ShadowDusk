@@ -26,6 +26,13 @@ public enum ShaderFormat
     /// parameterless <c>void main()</c>. Converted by the separate <c>ShadowDusk.ShaderToy</c> package.
     /// </summary>
     Glsl,
+
+    /// <summary>
+    /// An SkSL runtime-effect shader (<c>half4 main(float2 coord)</c>). SkSL text carries no marker
+    /// of its own, so it is recognized only by a <c>.sksl</c> name hint on source with no other
+    /// format signal. Converted by the separate <c>ShadowDusk.SkSL</c> package.
+    /// </summary>
+    Sksl,
 }
 
 /// <summary>The result of <see cref="ShaderFormatDetector.Detect"/>.</summary>
@@ -60,12 +67,13 @@ public readonly record struct ShaderFormatDetection(ShaderFormat Format, bool Is
 /// <item>A <c>[shader("...")]</c> attribute, or a line-leading <c>import x;</c> /
 /// <c>module x;</c>: <see cref="ShaderFormat.Slang"/>.</item>
 /// <item>A GLSL entry: <see cref="ShaderFormat.Glsl"/>.</item>
-/// <item>No signal: the name hint's extension if it names a format, else
+/// <item>No signal: the name hint's extension if it names a format (the only way SkSL, which has no
+/// content marker, is recognized), else
 /// <see cref="ShaderFormat.Unknown"/>.</item>
 /// </list>
 /// <para>The name hint never overrides a content signal; it only settles rules 1 and 5.
 /// Recognized hint extensions: <c>.fx</c>; <c>.slang</c>; <c>.glsl</c>, <c>.frag</c>,
-/// <c>.fs</c>, <c>.glslf</c>.</para>
+/// <c>.fs</c>, <c>.glslf</c>; <c>.sksl</c>.</para>
 /// </remarks>
 public static class ShaderFormatDetector
 {
@@ -136,6 +144,8 @@ public static class ShaderFormatDetector
             return ShaderFormat.FxEffect;
         if (ext.Equals(".slang", StringComparison.OrdinalIgnoreCase))
             return ShaderFormat.Slang;
+        if (ext.Equals(".sksl", StringComparison.OrdinalIgnoreCase))
+            return ShaderFormat.Sksl;
         foreach (string glsl in GlslExtensions)
         {
             if (ext.Equals(glsl, StringComparison.OrdinalIgnoreCase))

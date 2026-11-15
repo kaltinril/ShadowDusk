@@ -142,6 +142,7 @@
       "shadowdusk.sksl": {
         "type": "Project",
         "dependencies": {
+          "ShadowDusk.Core": "[0.25.1, )",
           "ShadowDusk.ShaderToy": "[0.25.1, )"
         }
       }
@@ -287,6 +288,7 @@
       "shadowdusk.sksl": {
         "type": "Project",
         "dependencies": {
+          "ShadowDusk.Core": "[0.25.1, )",
           "ShadowDusk.ShaderToy": "[0.25.1, )"
         }
       }

@@ -9,11 +9,11 @@
 # Pipeline:
 #   validate          → resolve + guard the version
 #   build-and-test    → 3-OS build + full test gate
-#   pack-desktop      → pack the EIGHT desktop packages (Core/HLSL/GLSL/ShaderToy/Slang/Compiler/
+#   pack-desktop      → pack the NINE desktop packages (Core/HLSL/GLSL/ShaderToy/SkSL/Slang/Compiler/
 #                       Cli/ContentPipeline) at the validated version, with symbols (.snupkg), PLUS the
 #                       ShadowDusk.MgcbPlugin tools-only package (Phase 29) in a separate
 #                       step without symbols — it has no lib/, so a .snupkg cannot be built
-#   pack-wasm         → pack ShadowDusk.Wasm (the TENTH package) in THIS workflow —
+#   pack-wasm         → pack ShadowDusk.Wasm (the ELEVENTH package) in THIS workflow —
 #                       its own job because it needs the wasm-tools workload and the
 #                       restored dxcompiler.wasm (its `VerifyDxcWasmPresent` MSBuild
 #                       target hard-fails the pack otherwise)
@@ -162,7 +162,7 @@ jobs:
           path: TestResults/*.trx
           retention-days: 30
 
-  # ── Pack the eight desktop packages + the MGCB plugin (Wasm: pack-wasm below) ──
+  # ── Pack the nine desktop packages + the MGCB plugin (Wasm: pack-wasm below) ──
   pack-desktop:
     name: Pack desktop NuGet packages
     runs-on: ubuntu-latest
@@ -257,13 +257,15 @@ jobs:
       - name: dotnet restore
         run: dotnet restore ShadowDusk.slnx --locked-mode
 
-      # Pack the eight desktop packages at the validated version, with symbol
+      # Pack the nine desktop packages at the validated version, with symbol
       # packages (.snupkg). The Version override is belt-and-braces — it already
       # equals Directory.Build.props per the validate guard — but keeps the pack
       # explicit and matches a workflow_dispatch where the tag may not exist yet.
       # ShadowDusk.ShaderToy is the standalone, pure-managed ShaderToy/GLSL -> .fx
       # front-end (zero natives; its one dependency is ShadowDusk.Core, issue #473): it is NOT
       # in the ShadowDusk.Compiler dependency graph, so pack-consume.yml does not pull it.
+      # ShadowDusk.SkSL is the matching pure-managed SkSL -> .fx front-end (issue #506): it depends
+      # on ShadowDusk.ShaderToy and ShadowDusk.Core, carries no natives, and is not in the Compiler graph either.
       # ShadowDusk.Slang is the opt-in real-slangc Slang front-end (Phase 66): it depends on
       # ShadowDusk.Compiler and carries slangc for four RIDs, gated below.
       - name: Pack desktop packages
@@ -273,6 +275,7 @@ jobs:
             src/ShadowDusk.HLSL/ShadowDusk.HLSL.csproj \
             src/ShadowDusk.GLSL/ShadowDusk.GLSL.csproj \
             src/ShadowDusk.ShaderToy/ShadowDusk.ShaderToy.csproj \
+            src/ShadowDusk.SkSL/ShadowDusk.SkSL.csproj \
             src/ShadowDusk.Slang/ShadowDusk.Slang.csproj \
             src/ShadowDusk.Compiler/ShadowDusk.Compiler.csproj \
             src/ShadowDusk.Cli/ShadowDusk.Cli.csproj \
@@ -298,8 +301,8 @@ jobs:
           ls -la nupkg/
           count=$(find nupkg -maxdepth 1 -name '*.nupkg' | wc -l)
           echo "Found $count .nupkg files"
-          if [ "$count" -lt 9 ]; then
-            echo "::error::Expected 9 desktop .nupkg (8 libraries/CLI/ContentPipeline + ShadowDusk.MgcbPlugin), found $count"
+          if [ "$count" -lt 10 ]; then
+            echo "::error::Expected 10 desktop .nupkg (9 libraries/CLI/ContentPipeline + ShadowDusk.MgcbPlugin), found $count"
             exit 1
           fi
 
@@ -741,8 +744,8 @@ jobs:
           name: nupkg-desktop
           path: nupkg/
 
-      # ShadowDusk.Wasm (one of the ten packages) is packed by the pack-wasm job in THIS run,
-      # so its artifact is available here. All ten packages publish together.
+      # ShadowDusk.Wasm (one of the eleven packages) is packed by the pack-wasm job in THIS run,
+      # so its artifact is available here. All eleven packages publish together.
       - name: Download Wasm package
         uses: actions/download-artifact@v8
         with:

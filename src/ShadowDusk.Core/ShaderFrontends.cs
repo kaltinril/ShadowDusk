@@ -48,6 +48,7 @@ public static class ShaderFrontends
     private static readonly (ShaderFormat Format, string AssemblyName)[] KnownPackages =
     [
         (ShaderFormat.Glsl, "ShadowDusk.ShaderToy"),
+        (ShaderFormat.Sksl, "ShadowDusk.SkSL"),
     ];
 
     private static readonly ConcurrentDictionary<ShaderFormat, IShaderFrontend> Registered = new();

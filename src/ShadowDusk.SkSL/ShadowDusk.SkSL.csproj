@@ -5,20 +5,30 @@
     <TargetFrameworks>net8.0;net10.0</TargetFrameworks>
     <AssemblyName>ShadowDusk.SkSL</AssemblyName>
     <RootNamespace>ShadowDusk.SkSL</RootNamespace>
-    <!-- Skeleton: not packable until the converter does something useful. When it ships it needs a
-         PackageId, README, release.yml entry and a ShaderToy PackageReference-compatible version
-         (it reuses ShadowDusk.ShaderToy internals via InternalsVisibleTo, so both must ship at the
-         same shared version). -->
-    <IsPackable>false</IsPackable>
+    <!-- Issue #506: a standalone, pure-managed NuGet. The single version is Directory.Build.props
+         <Version>, like every ShadowDusk.* package: do NOT add a <Version>/<PackageVersion> here.
+         It reuses ShadowDusk.ShaderToy internals via InternalsVisibleTo, so both ship at the same
+         shared version; its ShadowDusk.ShaderToy reference becomes a package dependency. -->
+    <IsPackable>true</IsPackable>
+    <PackageId>ShadowDusk.SkSL</PackageId>
+    <PackageLicenseExpression>MIT</PackageLicenseExpression>
+    <PackageReadmeFile>README.md</PackageReadmeFile>
+    <Description>ShadowDusk SkSL front-end: a pure-managed, zero-native converter that translates a Skia SkSL runtime-effect shader (half4 main(float2 coord)) into a self-contained HLSL .fx source (SkSLToFxConverter.Convert). With ShadowDusk.Compiler installed, ShaderConverter.Compile reads a .sksl shader directly. Standalone and optional, not part of the faithful mgfxc-replacement pipeline.</Description>
+    <PackageTags>monogame kni fna sksl skia shader converter fx transpiler</PackageTags>
     <GenerateDocumentationFile>true</GenerateDocumentationFile>
     <NoWarn>$(NoWarn);CS1591</NoWarn>
   </PropertyGroup>
 
   <ItemGroup>
+    <ProjectReference Include="..\ShadowDusk.Core\ShadowDusk.Core.csproj" />
     <ProjectReference Include="..\ShadowDusk.ShaderToy\ShadowDusk.ShaderToy.csproj" />
   </ItemGroup>
 
   <ItemGroup>
     <InternalsVisibleTo Include="ShadowDusk.SkSL.Tests" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <None Include="README.md" Pack="true" PackagePath="\" />
   </ItemGroup>
 </Project>

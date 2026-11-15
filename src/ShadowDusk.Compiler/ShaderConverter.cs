@@ -29,6 +29,9 @@ namespace ShadowDusk.Compiler;
 /// <see cref="Compile"/> / <see cref="CompileAsync"/> route GLSL through it with no further
 /// setup; without it GLSL is reported as unsupported. The SkSL and raylib methods do not read
 /// GLSL either way.</para>
+/// <para><b>SkSL input</b> (<see cref="ShaderFormat.Sksl"/>) works the same way through the separate
+/// <c>ShadowDusk.SkSL</c> package. SkSL text has no marker, so it is recognized only by a
+/// <c>.sksl</c> name hint.</para>
 /// <para>The format-specific entry points (<see cref="EffectCompiler"/>,
 /// <see cref="SlangFrontend"/>, <see cref="SkslConverter"/>, <see cref="RaylibConverter"/>)
 /// are unchanged and remain the way to force a format.</para>
@@ -62,7 +65,7 @@ public static class ShaderConverter
     /// Whether <see cref="Compile"/> and <see cref="CompileAsync"/> would try to compile
     /// <paramref name="source"/>: everything <see cref="CanConvert"/> accepts, plus any format a
     /// registered <see cref="IShaderFrontend"/> converts (GLSL once <c>ShadowDusk.ShaderToy</c>
-    /// is installed). No compile; the first call for such a format may load its frontend
+    /// is installed, SkSL named <c>.sksl</c> once <c>ShadowDusk.SkSL</c> is). No compile; the first call for such a format may load its frontend
     /// package (<see cref="ShaderFrontends.Find"/>). Never true for input those two methods
     /// would report as <see cref="ShaderErrorKind.UnsupportedInput"/>.
     /// </summary>
@@ -277,12 +280,20 @@ public static class ShaderConverter
                 Kind: ShaderErrorKind.AmbiguousInput);
         }
 
-        string why = detection.Format == ShaderFormat.Glsl
-            ? "GLSL input is converted by the ShadowDusk.ShaderToy package. Install it and Compile and " +
-              "CompileAsync read GLSL (it registers itself; in a trimmed application call " +
-              "ShaderToyFrontend.Register()). The SkSL and raylib methods read only .fx and Slang: " +
-              "call ShaderToyConverter.Convert first and pass its .fx output."
-            : $"It is not an .fx effect or HLSL-compatible Slang: {detection.Reason}";
+        string why = detection.Format switch
+        {
+            ShaderFormat.Glsl =>
+                "GLSL input is converted by the ShadowDusk.ShaderToy package. Install it and Compile and " +
+                "CompileAsync read GLSL (it registers itself; in a trimmed application call " +
+                "ShaderToyFrontend.Register()). The SkSL and raylib methods read only .fx and Slang: " +
+                "call ShaderToyConverter.Convert first and pass its .fx output.",
+            ShaderFormat.Sksl =>
+                "SkSL input is converted by the ShadowDusk.SkSL package. Install it and Compile and " +
+                "CompileAsync read SkSL named .sksl (it registers itself; in a trimmed application call " +
+                "SkSLFrontend.Register()). The SkSL and raylib methods read only .fx and Slang: " +
+                "call SkSLToFxConverter.Convert first and pass its .fx output.",
+            _ => $"It is not an .fx effect or HLSL-compatible Slang: {detection.Reason}",
+        };
         return new ShaderError(
             File: file, Line: 0, Column: 0, Code: UnsupportedInputCode,
             Message: $"Unsupported shader input. {why}",

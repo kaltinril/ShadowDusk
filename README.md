@@ -63,7 +63,7 @@ var result = compiler.Compile(slangSource, new CompilerOptions { Target = Platfo
 
 In the browser, where no process can be spawned, the same pinned slangc runs in the page as WebAssembly (`ShadowDusk.Slang.Wasm`, issue #257): it receives the identical command line and its output is measured byte-identical to native slangc's, so a `.slang` file compiles to the same bytes in the browser as on the desktop. That project is proven in CI but is not published as a package yet ([Phase 67](plan/PHASE-67-slang-in-process-wasm.md)).
 
-Same rejection discipline as the built-in subset: a construct real slangc accepts but that has nowhere to land in an `Effect` (a compute/mesh entry point, an SM6-only wave/quad intrinsic on a target that can't represent it) is rejected loudly by name, never silently dropped, and no route through it is `mgfxc`-equivalent either. The optional `ShadowDusk.ShaderToy` package covers a third input, ShaderToy / plain-GLSL fragment shaders.
+Same rejection discipline as the built-in subset: a construct real slangc accepts but that has nowhere to land in an `Effect` (a compute/mesh entry point, an SM6-only wave/quad intrinsic on a target that can't represent it) is rejected loudly by name, never silently dropped, and no route through it is `mgfxc`-equivalent either. The optional `ShadowDusk.ShaderToy` package covers a third input, ShaderToy / plain-GLSL fragment shaders, and `ShadowDusk.SkSL` a fourth, Skia SkSL runtime effects (`.sksl`).
 
 ## Supported targets
 
@@ -228,6 +228,7 @@ All packages ship together at one shared version. Most projects only need one of
 | `ShadowDusk.Cli` | [![ShadowDusk.Cli](https://img.shields.io/nuget/v/ShadowDusk.Cli)](https://www.nuget.org/packages/ShadowDusk.Cli) | The `ShadowDuskCLI` dotnet tool — the same compiler as a command-line mgfxc replacement: `dotnet tool install -g ShadowDusk.Cli` |
 | `ShadowDusk.Wasm` | [![ShadowDusk.Wasm](https://img.shields.io/nuget/v/ShadowDusk.Wasm)](https://www.nuget.org/packages/ShadowDusk.Wasm) | The same pipeline compiled to WebAssembly, for in-browser compilation from Blazor / KNI web apps. |
 | `ShadowDusk.ShaderToy` | [![ShadowDusk.ShaderToy](https://img.shields.io/nuget/v/ShadowDusk.ShaderToy)](https://www.nuget.org/packages/ShadowDusk.ShaderToy) | Optional, standalone ShaderToy / GLSL → `.fx` front-end (pure managed, no native deps). |
+| `ShadowDusk.SkSL` | [![ShadowDusk.SkSL](https://img.shields.io/nuget/v/ShadowDusk.SkSL)](https://www.nuget.org/packages/ShadowDusk.SkSL) | Optional, standalone Skia SkSL → `.fx` front-end (pure managed, no native deps). With it installed, `ShaderConverter.Compile` reads `.sksl` input. |
 | `ShadowDusk.Slang` | [![ShadowDusk.Slang](https://img.shields.io/nuget/v/ShadowDusk.Slang)](https://www.nuget.org/packages/ShadowDusk.Slang) | Optional, standalone REAL Slang front-end: bundles the real `slangc` compiler (win-x64, linux-x64, osx-x64, osx-arm64) for genuine Slang — `import`, generics, `interface`s. Everyone else uses `ShadowDusk.Compiler`'s free HLSL-compatible-subset `.slang` support instead — zero extra package. |
 | `ShadowDusk.Core` | [![ShadowDusk.Core](https://img.shields.io/nuget/v/ShadowDusk.Core)](https://www.nuget.org/packages/ShadowDusk.Core) | Shared types (`IShaderCompiler`, `CompilerOptions`, `Result<T,E>`). Pulled in automatically as a dependency. |
 | `ShadowDusk.HLSL` | [![ShadowDusk.HLSL](https://img.shields.io/nuget/v/ShadowDusk.HLSL)](https://www.nuget.org/packages/ShadowDusk.HLSL) | HLSL front-end (FX pre-parser, DXC, DXBC backends). Pulled in automatically as a dependency. |
@@ -284,6 +285,7 @@ ShadowDusk/
 │   │                            #   vkd3d-shader + d3dcompiler DXBC backends
 │   ├── ShadowDusk.GLSL/         # SPIR-V → GLSL via SPIRV-Cross + MonoGameGlslRewriter
 │   ├── ShadowDusk.ShaderToy/    # ShaderToy / GLSL → .fx front-end (optional, pure managed)
+│   ├── ShadowDusk.SkSL/         # SkSL → .fx front-end (optional, pure managed)
 │   ├── ShadowDusk.Slang/        # REAL Slang front-end via bundled slangc (optional; win/linux x64, macOS x64/arm64)
 │   ├── ShadowDusk.Slang.Wasm/   # The same pinned slangc as WebAssembly for the browser (WasmSlangCompiler; in-repo, not a published package)
 │   ├── ShadowDusk.Metal/        # SPIR-V → MSL (stub — not yet implemented)

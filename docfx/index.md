@@ -65,6 +65,7 @@ The table above is the **graphics-backend** axis — the one that decides the ou
 - **Using the content pipeline?** [Drop-in `mgfxc`](guides/dropin-mgfxc.md) and [MGCB Content Pipeline](guides/mgcb-content-pipeline.md).
 - **Compiling in the browser?** [In-Browser (KNI/Blazor WASM)](guides/in-browser-kni-blazor.md).
 - **Coming from ShaderToy?** The optional `ShadowDusk.ShaderToy` package converts ShaderToy / plain-GLSL fragment shaders to `.fx`, and the CLI auto-detects `.glsl` input — see [Installation](getting-started/installation.md#optional-shadertoy-and-glsl-front-end).
+- **Have Skia SkSL shaders?** The optional `ShadowDusk.SkSL` package converts them to `.fx`, and `ShaderConverter.Compile` reads a `.sksl` source directly — see [Installation](getting-started/installation.md#optional-sksl-front-end).
 - **Writing genuine Slang** (generics, `interface`s, not just the HLSL-compatible subset)? The optional `ShadowDusk.Slang` package bundles the real `slangc` compiler — see [Installation](getting-started/installation.md#slang-input--the-free-subset-and-the-optional-full-language).
 - **Compiling on-device on Android?** [Runtime Compilation on Android](guides/on-device-android.md).
 - **How it works:** the [Architecture](architecture/the-faithful-pipeline.md) section.

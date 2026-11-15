@@ -128,6 +128,19 @@ public sealed class ShaderFormatDetectorTests
     }
 
     [Theory]
+    [InlineData("shader.sksl")]
+    [InlineData("content/Shader.SKSL")]
+    public void SkslNameHint_RecognizesSourceWithNoOtherSignal(string name)
+    {
+        const string sksl = "half4 main(float2 c) { return half4(c, 0, 1); }";
+
+        ShaderFormatDetector.Detect(sksl, name).Format.ShouldBe(ShaderFormat.Sksl);
+        // SkSL has no marker: without the hint it is Unknown, and a content signal still wins.
+        ShaderFormatDetector.Detect(sksl).Format.ShouldBe(ShaderFormat.Unknown);
+        ShaderFormatDetector.Detect(Fx, name).Format.ShouldBe(ShaderFormat.FxEffect);
+    }
+
+    [Theory]
     [InlineData("shader.slang")]
     [InlineData("shader.txt")]
     [InlineData("noextension")]
