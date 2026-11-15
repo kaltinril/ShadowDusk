@@ -2,13 +2,25 @@
   "version": 2,
   "dependencies": {
     "net10.0": {
-      "shadowdusk.shadertoy": {
+      "shadowdusk.core": {
         "type": "Project"
+      },
+      "shadowdusk.shadertoy": {
+        "type": "Project",
+        "dependencies": {
+          "ShadowDusk.Core": "[0.25.1, )"
+        }
       }
     },
     "net8.0": {
-      "shadowdusk.shadertoy": {
+      "shadowdusk.core": {
         "type": "Project"
+      },
+      "shadowdusk.shadertoy": {
+        "type": "Project",
+        "dependencies": {
+          "ShadowDusk.Core": "[0.25.1, )"
+        }
       }
     }
   }

@@ -8,9 +8,9 @@
     <RootNamespace>ShadowDusk.ShaderToy</RootNamespace>
     <!-- Phase 47 promoted this to a product library; 0.9.0 ships it as a STANDALONE, pure-managed
          NuGet so it can be used in-process (e.g. an XNA/KNI web shader fiddle, or an in-app importer)
-         without the CLI. It carries NO native assets and NO ProjectReferences — it is deliberately
-         separate from the faithful mgfxc-replacement pipeline (ShadowDusk.Compiler does NOT depend on
-         it). The single version source of truth is Directory.Build.props <Version>, inherited like
+         without the CLI. It carries NO native assets and one reference, ShadowDusk.Core (see
+         below) — it is deliberately separate from the faithful mgfxc-replacement pipeline
+         (ShadowDusk.Compiler does NOT depend on it). The single version source of truth is Directory.Build.props <Version>, inherited like
          every other ShadowDusk.* package: do NOT add a <Version>/<PackageVersion> property here. -->
     <IsPackable>true</IsPackable>
     <PackageId>ShadowDusk.ShaderToy</PackageId>
@@ -27,6 +27,14 @@
   <ItemGroup>
     <InternalsVisibleTo Include="ShadowDusk.ShaderToy.Tests" />
     <InternalsVisibleTo Include="ShadowDusk.SkSL" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- Issue #473: the one reference this package has. ShadowDusk.Core (pure managed, no
+         dependencies of its own) holds IShaderFrontend and the registry ShaderToyFrontend
+         registers with, so ShaderConverter can route GLSL here without ShadowDusk.Compiler
+         referencing this package. -->
+    <ProjectReference Include="..\ShadowDusk.Core\ShadowDusk.Core.csproj" />
   </ItemGroup>
 
   <ItemGroup>

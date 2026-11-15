@@ -2,7 +2,7 @@
 
 **Track:** Product surface / seamlessness. Additive; no output bytes change.
 
-**Status:** 📋 **Planned** (created 2026-07-30). **A-1 done differently 2026-11-03:** public `ShaderFormatDetector` (Core) + `ShaderConverter` (Compiler), `SD0650`/`SD0005`; A-2/A-3 and Area B not started.
+**Status:** 🚧 **In progress** (created 2026-07-30). **§3 decided 2026-11-14: no widening** (see §3). **A-1 done differently 2026-11-03:** public `ShaderFormatDetector` (Core) + `ShaderConverter` (Compiler), `SD0650`/`SD0005`. **A-2/A-3 done 2026-11-14 ([issue #473](https://github.com/kaltinril/ShadowDusk/issues/473)):** `IShaderFrontend` + `ShaderFrontends` in Core, `ShaderToyFrontend` self-registering, routed by `ShaderConverter.Compile` / `CompileAsync` (not yet by `IShaderCompiler.CompileAsync` itself, which is A-4). A-4 to A-7 and Area B not started.
 
 **Depends on:** [Phase 46](DONE/PHASE-46-shadertoy-to-fx-conversion-tool.md) (the ShaderToy/GLSL
 converter and its frozen contract), [Phase 47](DONE/PHASE-47-shadertoy-frontend-promotion.md) (the
@@ -153,8 +153,12 @@ route is invoked from. §12 is about proving the relocation is behavior-preservi
 > accepted rendered-image fidelity for the SkSL target (2026-08-13, Phase 62) and for raylib
 > (2026-10-01, which unblocked [Phase 59](PHASE-59-raylib-cs-backend.md); its glsl330 slice has
 > shipped). Neither decision rewrote THE PURPOSE text; both are distinct-axis outputs proven in
-> `docs/validation-matrix.md` §8, never §1 cells. The general question below remains open for
-> this phase's own §5/§6.
+> `docs/validation-matrix.md` §8, never §1 cells.
+>
+> **The general question was answered NO by the owner on 2026-11-14** (recorded in
+> `project_decisions.md`): the purpose text is not widened, the two evidence models are not
+> peers, and §16's follow-ons stay per-target decisions. §5/§6 are unblocked as seamlessness
+> work inside the current purpose.
 
 `CLAUDE.md` and [`plan.md`](plan.md) both open with: *"The product is a drop-in `mgfxc` replacement."*
 Every target to date is an XNA-family runtime with a reference compiler (`mgfxc` / `fxc /T fx_2_0`)
@@ -611,7 +615,7 @@ This phase changes what ShadowDusk supports and how it is used, so the same-PR r
 
 ### Gate
 
-- [ ] **G-1** Record the §3 purpose decision in `project_decisions.md`. Do not start §5/§6 first.
+- [x] **G-1** Record the §3 purpose decision in `project_decisions.md`. Do not start §5/§6 first. *(2026-11-14: no widening.)*
 
 ### Spike (do before designing §6's surface)
 
@@ -624,9 +628,13 @@ This phase changes what ShadowDusk supports and how it is used, so the same-PR r
 
 - [ ] **A-1** Move `InputFormatDetector` to `ShadowDusk.Core`, make public. Port its tests. No
       behavior or message-text change.
-- [ ] **A-2** Add `IShaderFrontend` + registry to Core.
-- [ ] **A-3** `ShaderToyFrontend` adapter in `ShadowDusk.ShaderToy`; choose and record the
+- [x] **A-2** Add `IShaderFrontend` + registry to Core. *(2026-11-14, issue #473: `ShaderFrontends`; keyed on `ShaderFormat`, and `ToFx` returns the `.fx` text with the frontend's warnings.)*
+- [x] **A-3** `ShaderToyFrontend` adapter in `ShadowDusk.ShaderToy`; choose and record the
       registration mechanism. **No `ShadowDusk.Compiler` → `ShadowDusk.ShaderToy` reference.**
+      *(2026-11-14: module initializer plus a load-on-first-need probe in `ShaderFrontends.Find`,
+      explicit `ShaderToyFrontend.Register()` for trimmed apps; no `CompilerOptions.Frontends`
+      list. Recorded in `project_decisions.md`. Routed from `ShaderConverter`, not yet from
+      `CompilationPipeline`: that is A-4.)*
 - [ ] **A-4** Wire the detect→convert stage into `CompilationPipeline`, including A6 synthetic source
       naming.
 - [ ] **A-5** Rename `hlslSource` → `source`; sweep named-argument callers; update XML docs and

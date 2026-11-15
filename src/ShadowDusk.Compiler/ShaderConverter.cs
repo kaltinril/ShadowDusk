@@ -13,7 +13,9 @@ namespace ShadowDusk.Compiler;
 /// (<see cref="ShaderFormatDetector"/>), routes an <c>.fx</c> effect or HLSL-compatible Slang to
 /// the same pipeline the format-specific entry points use, and returns an
 /// <see cref="ShaderErrorKind.UnsupportedInput"/> error (code <c>SD0650</c>) without compiling
-/// anything when the input is not one of those two.
+/// anything when the input is not one it reads. <see cref="Compile"/> and
+/// <see cref="CompileAsync"/> also read any format a registered <see cref="IShaderFrontend"/>
+/// converts (<see cref="ShaderFrontends"/>).
 /// </summary>
 /// <remarks>
 /// <para><b>Telling "not mine" from "broken":</b> a failed result whose errors contain a
@@ -21,10 +23,12 @@ namespace ShadowDusk.Compiler;
 /// that chains loaders can try the next one. Any other failure (a compile error, an
 /// <see cref="ShaderErrorKind.AmbiguousInput"/> error, an include error) is a real error in a
 /// recognized shader and should be reported.</para>
-/// <para><b>GLSL input</b> (<see cref="ShaderFormat.Glsl"/>) is reported as unsupported here:
-/// its converter is the separate <c>ShadowDusk.ShaderToy</c> package, which this package does
-/// not reference. Call <c>ShaderToyConverter.Convert</c> first, then pass its <c>.fx</c>
-/// output to any method on this class.</para>
+/// <para><b>GLSL input</b> (<see cref="ShaderFormat.Glsl"/>, ShaderToy or plain GLSL) is
+/// converted by the separate <c>ShadowDusk.ShaderToy</c> package, which this package does not
+/// reference. When that package is installed it registers its frontend and
+/// <see cref="Compile"/> / <see cref="CompileAsync"/> route GLSL through it with no further
+/// setup; without it GLSL is reported as unsupported. The SkSL and raylib methods do not read
+/// GLSL either way.</para>
 /// <para>The format-specific entry points (<see cref="EffectCompiler"/>,
 /// <see cref="SlangFrontend"/>, <see cref="SkslConverter"/>, <see cref="RaylibConverter"/>)
 /// are unchanged and remain the way to force a format.</para>
@@ -42,10 +46,18 @@ public static class ShaderConverter
     /// </summary>
     /// <param name="source">The shader source text.</param>
     /// <param name="nameHint">Optional file name; see <see cref="ShaderFormatDetector.Detect"/>.</param>
+    /// <remarks>
+    /// This answers for <see cref="Compile"/> and <see cref="CompileAsync"/>, so it is also
+    /// true for a format a registered frontend converts (GLSL with <c>ShadowDusk.ShaderToy</c>
+    /// installed). <see cref="ConvertToSksl"/> and <see cref="ConvertToRaylib"/> read only
+    /// <c>.fx</c> and Slang.
+    /// </remarks>
     public static bool CanConvert(string source, string? nameHint = null)
     {
         ShaderFormatDetection detection = ShaderFormatDetector.Detect(source, nameHint);
-        return detection.IsAmbiguous || IsRoutable(detection.Format);
+        return detection.IsAmbiguous
+            || IsRoutable(detection.Format)
+            || ShaderFrontends.Find(detection.Format) is not null;
     }
 
     /// <summary>
@@ -71,7 +83,8 @@ public static class ShaderConverter
         if (fx.IsFailure)
             return Result<CompiledShader, ShaderError[]>.Fail(fx.Error);
 
-        return WithWarnings(compiler.Compile(fx.Value.FxText, options, cancellationToken), fx.Value.Warnings);
+        return WithWarnings(
+            compiler.Compile(fx.Value.FxText, OptionsFor(fx.Value, options), cancellationToken), fx.Value.Warnings);
     }
 
     /// <summary>Asynchronous counterpart of <see cref="Compile"/>; same detection and routing.</summary>
@@ -93,7 +106,7 @@ public static class ShaderConverter
             return Result<CompiledShader, ShaderError[]>.Fail(fx.Error);
 
         Result<CompiledShader, ShaderError[]> compiled =
-            await compiler.CompileAsync(fx.Value.FxText, options, cancellationToken).ConfigureAwait(false);
+            await compiler.CompileAsync(fx.Value.FxText, OptionsFor(fx.Value, options), cancellationToken).ConfigureAwait(false);
         return WithWarnings(compiled, fx.Value.Warnings);
     }
 
@@ -146,7 +159,16 @@ public static class ShaderConverter
         };
     }
 
-    private sealed record FxInput(string FxText, IReadOnlyList<ShaderError> Warnings);
+    // GeneratedName is set when a registered frontend produced the .fx: the compile is then
+    // filed under that name, because a compiler error in generated HLSL has line numbers that
+    // mean nothing in the source the caller wrote (the ShadowDuskCLI does the same for .glsl).
+    private sealed record FxInput(string FxText, IReadOnlyList<ShaderError> Warnings, string? GeneratedName = null);
+
+    private static CompilerOptions OptionsFor(FxInput fx, CompilerOptions options)
+    {
+        ArgumentNullException.ThrowIfNull(options);
+        return fx.GeneratedName is null ? options : options.WithSourceFileName(fx.GeneratedName);
+    }
 
     private static bool IsRoutable(ShaderFormat format) =>
         format is ShaderFormat.FxEffect or ShaderFormat.Slang;
@@ -167,7 +189,18 @@ public static class ShaderConverter
                     : Result<FxInput, ShaderError[]>.Ok(new FxInput(slang.Value.FxText, slang.Value.Warnings));
 
             default:
-                return Result<FxInput, ShaderError[]>.Fail([DetectionError(detection, nameHint)]);
+                if (ShaderFrontends.Find(detection.Format) is not { } frontend)
+                    return Result<FxInput, ShaderError[]>.Fail([DetectionError(detection, nameHint)]);
+
+                Result<ShaderFrontendOutput, ShaderError[]> converted = frontend.ToFx(source, nameHint);
+                if (converted.IsFailure)
+                    return Result<FxInput, ShaderError[]>.Fail(converted.Error);
+
+                string stem = nameHint is null ? "" : Path.GetFileNameWithoutExtension(nameHint);
+                return Result<FxInput, ShaderError[]>.Ok(new FxInput(
+                    converted.Value.FxText,
+                    converted.Value.Warnings,
+                    GeneratedName: (stem.Length == 0 ? "shader" : stem) + ".generated.fx"));
         }
     }
 
@@ -194,8 +227,10 @@ public static class ShaderConverter
         }
 
         string why = detection.Format == ShaderFormat.Glsl
-            ? "GLSL input is converted by the ShadowDusk.ShaderToy package (ShaderToyConverter.Convert), " +
-              "whose .fx output this entry point then accepts."
+            ? "GLSL input is converted by the ShadowDusk.ShaderToy package. Install it and Compile and " +
+              "CompileAsync read GLSL (it registers itself; in a trimmed application call " +
+              "ShaderToyFrontend.Register()). The SkSL and raylib methods read only .fx and Slang: " +
+              "call ShaderToyConverter.Convert first and pass its .fx output."
             : $"It is not an .fx effect or HLSL-compatible Slang: {detection.Reason}";
         return new ShaderError(
             File: file, Line: 0, Column: 0, Code: UnsupportedInputCode,
