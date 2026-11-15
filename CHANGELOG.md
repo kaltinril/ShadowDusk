@@ -30,6 +30,8 @@ that loads and renders identically to `mgfxc`'s in the real MonoGame/KNI runtime
 
 - `RuntimeProfileDetector.Classify` recognises real KNI. KNI's assemblies are named `Xna.Framework*`; the detector looked for the package id `nkast.Xna.Framework*` and reported every real KNI as `Unknown`. `Recommend` returned the same MGFX v10 profile either way, so no output changed.
 
+- `ShadowDusk.Slang`: an `SD0645` timeout now says what slangc was doing when it was killed (CPU time used, whether it had read the whole source, how much output had arrived), so a stuck slangc can be told from a slow one.
+
 - `ShadowDusk.Slang`: a slangc run no longer depends on free thread-pool threads. On a busy pool (many compiles at once, a loaded machine) slangc's output was not read, so the compile stalled until `SlangcTimeout` and failed `SD0645`, and the timeout itself could fire minutes late (measured: 216 s for a 2 s limit). The pipes now have dedicated threads and the timeout is a plain timed wait.
 
 - ShaderToy and SkSL conversion: a doubled prefix sign (`-(-x)`, `- -x`) no longer emits `--x`, a decrement in HLSL; it now emits `-(-x)`.
