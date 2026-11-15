@@ -27,6 +27,10 @@ namespace ShadowDusk.Core;
 /// <see cref="Recommend(DetectedRuntime, PlatformTarget)"/> mapping below, e.g. KNI -&gt;
 /// <see cref="CapabilityProfile.KniGL_4_02"/> once KNIFX parity is render-proven.
 /// </para>
+/// <para>
+/// A game that has already chosen KNIFX asks <see cref="RecommendKnifx(Assembly)"/> instead, which
+/// picks the KNIFX version (v11 or v12) its own KNI loads.
+/// </para>
 /// </remarks>
 public static class RuntimeProfileDetector
 {
@@ -39,8 +43,13 @@ public static class RuntimeProfileDetector
         if (string.IsNullOrWhiteSpace(xnaAssemblySimpleName))
             return DetectedRuntime.Unknown;
 
-        // KNI must be checked before MonoGame: nkast's assemblies are "nkast.Xna.Framework[.*]".
-        if (xnaAssemblySimpleName.StartsWith("nkast.Xna.Framework", StringComparison.OrdinalIgnoreCase))
+        // KNI's assemblies are named "Xna.Framework" and "Xna.Framework.*" (read off the
+        // nkast.Xna.Framework* 4.2.9001 and 4.3.9001 packages); "nkast.Xna.Framework*" is the
+        // PACKAGE id, kept here for callers that pass one. Real XNA is
+        // "Microsoft.Xna.Framework*", which matches neither.
+        if (xnaAssemblySimpleName.Equals("Xna.Framework", StringComparison.OrdinalIgnoreCase)
+            || xnaAssemblySimpleName.StartsWith("Xna.Framework.", StringComparison.OrdinalIgnoreCase)
+            || xnaAssemblySimpleName.StartsWith("nkast.Xna.Framework", StringComparison.OrdinalIgnoreCase))
             return DetectedRuntime.Kni;
 
         if (xnaAssemblySimpleName.StartsWith("MonoGame.Framework", StringComparison.OrdinalIgnoreCase))
@@ -86,6 +95,42 @@ public static class RuntimeProfileDetector
                 "CompilerOptions.Profile null and set CompilerOptions.Target directly — that is " +
                 "the supported path for Vulkan and DirectX12."),
         };
+    }
+
+    /// <summary>
+    /// The KNIFX profile for a KNI of version <paramref name="kniVersion"/>: KNIFX v12
+    /// (<see cref="CapabilityProfile.KniGL_4_03"/>) for KNI 4.3 and later, KNIFX v11
+    /// (<see cref="CapabilityProfile.KniGL_4_02"/>) for anything older or unknown. KNI 4.2.x
+    /// refuses v12, and KNI 4.3.x loads v11 but prints "needs to be rebuilt", so the version is
+    /// what decides; v11 is the answer when it is not known, because every KNI loads it.
+    /// </summary>
+    /// <param name="kniVersion">The KNI assembly version, or null when it is not known.</param>
+    public static CapabilityProfile RecommendKnifx(Version? kniVersion) =>
+        kniVersion is not null && (kniVersion.Major > 4 || (kniVersion.Major == 4 && kniVersion.Minor >= 3))
+            ? CapabilityProfile.KniGL_4_03
+            : CapabilityProfile.KniGL_4_02;
+
+    /// <summary>
+    /// The KNIFX profile for the KNI the game is running on, read off a loaded KNI assembly:
+    /// <c>RuntimeProfileDetector.RecommendKnifx(typeof(Game).Assembly)</c>. For a game that
+    /// compiles to KNIFX at runtime, this picks the container version its own KNI loads without
+    /// a warning (see <see cref="RecommendKnifx(Version)"/>), so the game never names one.
+    /// </summary>
+    /// <exception cref="ArgumentException"><paramref name="kniAssembly"/> is not a KNI assembly:
+    /// only KNI loads KNIFX, so there is no profile to recommend.</exception>
+    public static CapabilityProfile RecommendKnifx(Assembly kniAssembly)
+    {
+        ArgumentNullException.ThrowIfNull(kniAssembly);
+        AssemblyName name = kniAssembly.GetName();
+        if (Classify(name.Name) != DetectedRuntime.Kni)
+        {
+            throw new ArgumentException(
+                $"'{name.Name}' is not a KNI assembly (KNI's are named Xna.Framework and Xna.Framework.*). " +
+                "KNIFX loads only on KNI; use Recommend for other runtimes.",
+                nameof(kniAssembly));
+        }
+
+        return RecommendKnifx(name.Version);
     }
 
     /// <summary>Recommends a profile from the runtime assembly's simple name.</summary>

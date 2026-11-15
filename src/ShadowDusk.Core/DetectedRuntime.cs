@@ -16,7 +16,7 @@ public enum DetectedRuntime
     /// <summary>MonoGame (<c>MonoGame.Framework</c>).</summary>
     MonoGame,
 
-    /// <summary>KNI, nkast's fork (<c>nkast.Xna.Framework[.*]</c>).</summary>
+    /// <summary>KNI, nkast's fork (assemblies <c>Xna.Framework[.*]</c>, packages <c>nkast.Xna.Framework[.*]</c>).</summary>
     Kni,
 
     /// <summary>FNA (<c>FNA</c>), the D3D9 fx_2_0 / MojoShader lineage.</summary>
