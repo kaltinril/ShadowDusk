@@ -1645,82 +1645,187 @@ public sealed class SlangCompiler
 
         using var process = new Process { StartInfo = psi };
 
-        // Event-based async reads + a synchronous WaitForExit below: the standard
-        // deadlock-safe pattern for a redirected child process (writing all of stdin before
-        // stdout/stderr are being drained risks a full pipe buffer blocking the child while
-        // this thread blocks writing — draining both streams concurrently avoids that
-        // regardless of shader source/output size).
-        var stdout = new StringBuilder();
-        var stderr = new StringBuilder();
-        process.OutputDataReceived += (_, e) => { if (e.Data is not null) stdout.Append(e.Data).Append('\n'); };
-        process.ErrorDataReceived  += (_, e) => { if (e.Data is not null) stderr.Append(e.Data).Append('\n'); };
-
         // A slangc Windows cannot load (damaged, wrong architecture) must fail as SD0622, never
         // as a modal system dialog that blocks this thread until someone clicks it.
         WindowsHardErrorSuppression.Run(process.Start);
-        process.BeginOutputReadLine();
-        process.BeginErrorReadLine();
 
-        // One kill mechanism bounds everything below (the stdin write, the wait and the
-        // reader drain): the limit fires on the compile's cancellation or on the timeout, and
-        // kills the child and everything it spawned. The write matters: it blocks once the
-        // pipe buffer (4 KiB on Windows) is full until the child reads, so a child stuck
-        // before reading stdin, with a source larger than that, would otherwise never reach
-        // a timed wait. Which of the two fired is decided after the wait; `killed` records
-        // that the limit found the child still running, so a child that exited on its own
-        // just as the timer fired is not reported as timed out.
-        using var limit = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
-        if (timeout != Timeout.InfiniteTimeSpan)
-            limit.CancelAfter(timeout);
-        bool killed = false;
-        using CancellationTokenRegistration killOnLimit = limit.Token.Register(() =>
-        {
-            if (TryKillTree(process))
-                killed = true;
-        });
-
+        // The three pipes each get a DEDICATED thread, and the timeout below is this thread's
+        // own timed wait: nothing here needs a thread-pool thread. Process's event-based reads
+        // (BeginOutputReadLine) hold a pool thread per stream for the child's whole life, and a
+        // CancelAfter timer fires on the pool too, so on a busy pool (a host compiling many
+        // shaders at once, a loaded CI runner) the output was not drained, slangc blocked on a
+        // full pipe, and the kill arrived late or not at all: measured with a saturated pool, a
+        // 2 s timeout took 216 s. Draining both output streams while the source is written also
+        // stays the deadlock-safe shape for a redirected child (a full pipe buffer on either
+        // side must never block both processes), whatever the source and output sizes. The
+        // write is on its own thread because it blocks once the pipe buffer (4 KiB on Windows)
+        // is full until the child reads: a child stuck before reading stdin, with a source
+        // larger than that, must still reach the timed wait.
+        //
+        // The readers are built here over the raw pipes, with no byte-order-mark detection:
+        // that is how the event-based reads decoded (a bare UTF-8 decoder), where
+        // Process.StandardOutput's own reader would strip a leading UTF-8 mark and switch
+        // encoding on a UTF-16 one. They and the writer are disposed below on every path,
+        // because Process.Dispose leaves a stream alone once its property has been read.
+        var stdout = new StringBuilder();
+        var stderr = new StringBuilder();
+        var utf8 = new UTF8Encoding(encoderShouldEmitUTF8Identifier: false);
+        StreamWriter stdinWriter = process.StandardInput;
+        var stdoutReader = new StreamReader(process.StandardOutput.BaseStream, utf8, detectEncodingFromByteOrderMarks: false);
+        var stderrReader = new StreamReader(process.StandardError.BaseStream, utf8, detectEncodingFromByteOrderMarks: false);
+        bool completed = false;
         try
         {
-            process.StandardInput.Write(slangSource);
-            process.StandardInput.Close();
+            PipeThread outputPump = PipeThread.Start("slangc stdout", () => ReadLines(stdoutReader, stdout));
+            PipeThread errorPump = PipeThread.Start("slangc stderr", () => ReadLines(stderrReader, stderr));
+            PipeThread sourcePump = PipeThread.Start("slangc stdin", () =>
+            {
+                stdinWriter.Write(slangSource);
+                stdinWriter.Close();
+            });
+
+            // Cancellation kills from whichever thread cancels the token; the timeout kills
+            // from this one. `killed` records that the timeout found the child still running,
+            // so a child that exited on its own just as the wait ended is not reported as
+            // timed out.
+            bool killed = false;
+            bool exited;
+            using (cancellationToken.Register(() => TryKillTree(process)))
+            {
+                exited = process.WaitForExit(
+                    timeout == Timeout.InfiniteTimeSpan ? Timeout.Infinite : (int)timeout.TotalMilliseconds);
+                if (!exited)
+                {
+                    // A grace period for the kill itself: a kill the OS refused must not turn
+                    // the timeout back into the hang it exists to prevent.
+                    killed = TryKillTree(process);
+                    exited = process.WaitForExit(KillGraceMilliseconds);
+                }
+            }
+
+            cancellationToken.ThrowIfCancellationRequested();
+            if (killed || !exited)
+            {
+                throw new TimeoutException(
+                    $"slangc did not exit within {timeout.TotalSeconds:0.###} s and was killed"
+                    + (exited ? "" : $" (it had still not exited {KillGraceMilliseconds / 1000} s after the kill)")
+                    + $": '{slangcPath}' {string.Join(' ', arguments)}.");
+            }
+
+            // The child exited on its own: its output is complete once both readers reach the
+            // end of their pipe, so wait for them without a limit, as the parameterless
+            // WaitForExit did for the event-based reads (a process slangc started that
+            // outlives it and keeps a pipe open would hold this, as it always has; slangc
+            // starts none). The write ends when the child has read the source or closed its
+            // end of the pipe; one still blocked after the child is gone is abandoned.
+            outputPump.Join();
+            errorPump.Join();
+            sourcePump.Join(KillGraceMilliseconds);
+
+            completed = true;
+            return (process.ExitCode, stdout.ToString(), stderr.ToString());
+        }
+        finally
+        {
+            // A failure before the wait (a thread that could not start) must not leave the
+            // child running; after a normal exit or a kill this finds it gone.
+            if (!completed)
+                TryKillTree(process);
+            DisposeQuietly(stdinWriter);
+            DisposeQuietly(stdoutReader);
+            DisposeQuietly(stderrReader);
+        }
+    }
+
+    /// <summary>Releases a pipe end. A writer flushes on disposal, which fails on a pipe the
+    /// child has already closed: that is the expected state after a kill or an early exit.</summary>
+    private static void DisposeQuietly(IDisposable pipe)
+    {
+        try
+        {
+            pipe.Dispose();
         }
         catch (IOException)
         {
-            // The child closed its end of the pipe before reading all of the source: it
-            // exited (or was killed) early, and its exit code, stderr and the checks below
-            // say why. Nothing to add here.
         }
-
-        // Bounded by the limit above, with a grace period for the kill itself: a kill the OS
-        // refused must not turn the timeout back into the hang it exists to prevent.
-        int rootWaitMilliseconds = timeout == Timeout.InfiniteTimeSpan
-            ? Timeout.Infinite
-            : (int)Math.Min(int.MaxValue, (long)timeout.TotalMilliseconds + KillGraceMilliseconds);
-        bool exited = process.WaitForExit(rootWaitMilliseconds);
-        if (exited)
+        catch (ObjectDisposedException)
         {
-            // The timed WaitForExit can return before the async stdout/stderr readers have
-            // delivered their last lines; the parameterless overload waits for them
-            // (documented Process contract), so the captured text is complete.
-            process.WaitForExit();
         }
+    }
 
-        // WaitForExit returns the moment the child dies, which is while the kill callback is
-        // still inside Kill (measured: `killed` read false right after a kill). Disposing the
-        // registration waits for an in-flight callback, so `killed` is settled before it is
-        // read; the `using` disposal that follows is then a no-op.
-        killOnLimit.Dispose();
+    /// <summary>Appends every line of <paramref name="reader"/> to <paramref name="text"/>,
+    /// each followed by <c>'\n'</c>, until the pipe closes.</summary>
+    private static void ReadLines(StreamReader reader, StringBuilder text)
+    {
+        while (reader.ReadLine() is { } line)
+            text.Append(line).Append('\n');
+    }
 
-        cancellationToken.ThrowIfCancellationRequested();
-        if (killed || !exited)
+    /// <summary>
+    /// One blocking pipe operation on its own background thread (see
+    /// <see cref="RunSlangc(string, string, string, IReadOnlyList{string}, TimeSpan, CancellationToken)"/>
+    /// for why it is not a thread-pool thread). A pipe the child closed early, or one whose
+    /// child was killed, ends the operation quietly: the child's exit code, its stderr and
+    /// the caller's checks say what happened. Anything else is rethrown by <see cref="Join()"/>
+    /// on the calling thread, never left to take down the host from a background thread.
+    /// </summary>
+    private sealed class PipeThread
+    {
+        private readonly Thread _thread;
+        private Exception? _failure;
+
+        private PipeThread(string name, Action body)
         {
-            throw new TimeoutException(
-                $"slangc did not exit within {timeout.TotalSeconds:0.###} s and was killed"
-                + (exited ? "" : $" (it had still not exited {KillGraceMilliseconds / 1000} s after the kill)")
-                + $": '{slangcPath}' {string.Join(' ', arguments)}.");
+            _thread = new Thread(() =>
+            {
+                try
+                {
+                    body();
+                }
+                catch (IOException)
+                {
+                }
+                catch (ObjectDisposedException)
+                {
+                }
+                catch (Exception ex)
+                {
+                    _failure = ex;
+                }
+            }, maxStackSize: 256 * 1024)
+            {
+                IsBackground = true,
+                Name = name,
+            };
         }
 
-        return (process.ExitCode, stdout.ToString(), stderr.ToString());
+        public static PipeThread Start(string name, Action body)
+        {
+            var pipeThread = new PipeThread(name, body);
+            pipeThread._thread.Start();
+            return pipeThread;
+        }
+
+        /// <summary>Waits for the operation to end and rethrows what it failed with.</summary>
+        public void Join()
+        {
+            _thread.Join();
+            Rethrow();
+        }
+
+        /// <summary>Waits up to <paramref name="milliseconds"/>; an operation still blocked
+        /// then is abandoned to its background thread.</summary>
+        public void Join(int milliseconds)
+        {
+            if (_thread.Join(milliseconds))
+                Rethrow();
+        }
+
+        private void Rethrow()
+        {
+            if (_failure is not null)
+                System.Runtime.ExceptionServices.ExceptionDispatchInfo.Capture(_failure).Throw();
+        }
     }
 
     /// <summary>How long to wait for a killed slangc to be reaped before giving up on it.</summary>

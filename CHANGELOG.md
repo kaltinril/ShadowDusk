@@ -26,6 +26,8 @@ that loads and renders identically to `mgfxc`'s in the real MonoGame/KNI runtime
 
 ### Fixed
 
+- `ShadowDusk.Slang`: a slangc run no longer depends on free thread-pool threads. On a busy pool (many compiles at once, a loaded machine) slangc's output was not read, so the compile stalled until `SlangcTimeout` and failed `SD0645`, and the timeout itself could fire minutes late (measured: 216 s for a 2 s limit). The pipes now have dedicated threads and the timeout is a plain timed wait.
+
 - ShaderToy and SkSL conversion: a doubled prefix sign (`-(-x)`, `- -x`) no longer emits `--x`, a decrement in HLSL; it now emits `-(-x)`.
 
 - OpenGL: an HLSL array initializer (`float m[16] = { ... }`, a lookup table) no longer emits a GLSL ES 3.00 array constructor (`float[](...)`) that WebGL1 and KNI Reach refuse at load. Rewrite Rule 18 declares the array plain and assigns each element, and `SD0403` now warns for any array constructor that survives (issue #475)
