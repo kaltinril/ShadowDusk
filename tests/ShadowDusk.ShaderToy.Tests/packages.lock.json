@@ -136,7 +136,7 @@
       "shadowdusk.shadertoy": {
         "type": "Project",
         "dependencies": {
-          "ShadowDusk.Core": "[0.25.1, )"
+          "ShadowDusk.Core": "[0.26.0, )"
         }
       }
     },
@@ -275,7 +275,7 @@
       "shadowdusk.shadertoy": {
         "type": "Project",
         "dependencies": {
-          "ShadowDusk.Core": "[0.25.1, )"
+          "ShadowDusk.Core": "[0.26.0, )"
         }
       }
     }

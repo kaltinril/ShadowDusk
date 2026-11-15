@@ -104,7 +104,7 @@ to nuget.org, and attaches self-contained CLI binaries for each RID to a GitHub 
    time is spent:
 
    ```powershell
-   ./validation/run-windows-render-gates.ps1              # DX corpus (vkd3d + d3dcompiler arms) + DX-modern (VTF, legacy-register, half-globals, legacy texture-slot and legacy-lod arms) + DX Apos gallery + DX resource arrays (issues #339/#340: texture-array table + render, sampler-array SD0224 refusal) + DX ShaderToy route + DX12 corpus + DX12 VS-driven/Apos gallery + DX12 texture-array row (issue #324) + DX12 legacy-lod + KNI-DX (incl. legacy texture slots) + KNI-GL desktop + KNI-GL VS-driven + Skia vs KNI (SkSL, issue #369) + non-square matrix Set on WindowsDX and DesktopVK (issue #423) + GL vertex semantics + matrix interpolants (VertexSemanticsGl, VertexSemanticsKniGl) + GL Apos + GL Apos gallery + ANGLE-D3D11 derivative probe (issue #136) + MGCB plugin (real dotnet mgcb 3.8.4.1, 3.8.5 AND 3.8.6, decoy-PATH DXC guard) + XNB direct writer Content.Load on MonoGame WindowsDX, MonoGame DesktopGL and KNI 4.2.9001+4.3.9001 + MonoGame 3.8.5 Content Builder (ShadowDusk.ContentPipeline, real ContentBuilder + Content.Load<Effect>) + Slang corpus + Slang full corpus (ShadowDusk.Slang real-slangc route; DX11, DX12 and Vulkan real-Effect arms, issue #230) + Slang textured GL (issue #252) + the Vulkan block (CandidateVulkan, InitializerDefaultsVulkan, NonSquareMatrixVulkan, KniEffectTestVulkan, VsDrivenVulkan vs/apos/texarr/legacy-lod/regslots, SlangFullCorpusVulkan) + the six InitializerDefaults drivers (global initializer = default with no Set, every MGFX/KNIFX runtime) + the KNI EffectTest drivers (KNI's own EffectTest.cs on KNI 4.2.9001+4.3.9001 GL/DX and MonoGame GL/DX/DX12/Vulkan; gated + known-failing rows) + the newer-MonoGame block (every MonoGame gate again on 3.8.6 via -p:MonoGameVersion, plus the DesktopGL4 arm and the 3.8.6 Content Builder; -NewerMonoGameOnly runs just it), vs mgfxc/fxc
+   ./validation/run-windows-render-gates.ps1              # DX corpus (vkd3d + d3dcompiler arms) + DX-modern (VTF, legacy-register, half-globals, legacy texture-slot and legacy-lod arms) + DX Apos gallery + DX resource arrays (issues #339/#340: texture-array table + render, sampler-array SD0224 refusal) + DX ShaderToy route + DX12 corpus + DX12 managed-DXIL-signature (ManagedDxilDx12, #478) + DX12 VS-driven/Apos gallery + DX12 texture-array row (issue #324) + DX12 legacy-lod + KNI-DX (incl. legacy texture slots) + KNI-GL desktop + KNI-GL VS-driven + Skia vs KNI (SkSL, issue #369) + SkSL input vs GL (SkSLVsGl, Phase 71) + non-square matrix Set on WindowsDX and DesktopVK (issue #423) + GL vertex semantics + matrix interpolants (VertexSemanticsGl, VertexSemanticsKniGl) + GL Apos + GL Apos gallery + ANGLE-D3D11 derivative probe (issue #136) + MGCB plugin (real dotnet mgcb 3.8.4.1, 3.8.5 AND 3.8.6, decoy-PATH DXC guard) + XNB direct writer Content.Load on MonoGame WindowsDX, MonoGame DesktopGL and KNI 4.2.9001+4.3.9001 + MonoGame 3.8.5 Content Builder (ShadowDusk.ContentPipeline, real ContentBuilder + Content.Load<Effect>) + Slang corpus + Slang full corpus (ShadowDusk.Slang real-slangc route; DX11, DX12 and Vulkan real-Effect arms, issue #230) + Slang textured GL (issue #252) + the Vulkan block (CandidateVulkan, InitializerDefaultsVulkan, NonSquareMatrixVulkan, KniEffectTestVulkan, VsDrivenVulkan vs/apos/texarr/legacy-lod/regslots, SlangFullCorpusVulkan) + the six InitializerDefaults drivers (global initializer = default with no Set, every MGFX/KNIFX runtime) + the KNI EffectTest drivers (KNI's own EffectTest.cs on KNI 4.2.9001+4.3.9001 GL/DX and MonoGame GL/DX/DX12/Vulkan; gated + known-failing rows) + the newer-MonoGame block (every MonoGame gate again on 3.8.6 via -p:MonoGameVersion, plus the DesktopGL4 arm and the 3.8.6 Content Builder; -NewerMonoGameOnly runs just it), vs mgfxc/fxc
    ./validation/run-windows-render-gates.ps1 -IncludeFna  # also FNA fx_2_0 + its Slang arm + initializer defaults on D3D11 and OpenGL, for an FNA-affecting release (include it when in doubt)
    ```
 
@@ -132,7 +132,7 @@ ShadowDusk's package version lives in **exactly one place**:
 ```xml
 <!-- Directory.Build.props -->
 <PropertyGroup>
-  <Version>0.25.1</Version>
+  <Version>0.26.0</Version>
 </PropertyGroup>
 ```
 
@@ -197,7 +197,7 @@ marker; the workflow creates and pushes it itself on a successful release).
 ### Manual dispatch (the only trigger)
 
 After the version-bump PR is merged to `main`: **Actions → Release → Run workflow**, and
-enter the `version` input (e.g. `0.25.1`, no leading `v`). On dispatch the workflow also
+enter the `version` input (e.g. `0.26.0`, no leading `v`). On dispatch the workflow also
 creates and pushes the matching `v<version>` tag so the GitHub Release anchors to a tag.
 
 ### The `validate` guard (input ↔ version)
@@ -243,7 +243,7 @@ first (the `/release` skill does this for you).
 2. **The `ShadowDuskCLI` tool installs and runs:**
 
    ```bash
-   dotnet tool install -g ShadowDusk.Cli --version 0.25.1
+   dotnet tool install -g ShadowDusk.Cli --version 0.26.0
    ShadowDuskCLI --help
    ```
 
@@ -251,7 +251,7 @@ first (the `/release` skill does this for you).
 3. **The consumer (GL) self-contained path works on a clean machine:**
 
    ```bash
-   dotnet add package ShadowDusk.Compiler --version 0.25.1
+   dotnet add package ShadowDusk.Compiler --version 0.26.0
    ```
 
    then compile a `.fx` → GL `.mgfx` in memory. This restores `Core/HLSL/GLSL` plus

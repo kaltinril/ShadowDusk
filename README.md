@@ -42,7 +42,7 @@ MonoGame's stock content pipeline compiles shaders with the same engine as mgfxc
 
 ## Input formats
 
-ShadowDusk's main input is `.fx` (HLSL Effect source, the format MonoGame/KNI/FNA already use). It also accepts `.slang` — the HLSL-compatible subset of [Slang](https://github.com/shader-slang/slang) — as an input:
+ShadowDusk's main input is `.fx` (HLSL Effect source, the format MonoGame/KNI/FNA already use). It also accepts `.sksl` (Skia runtime-effect shaders, via `ShadowDusk.SkSL`) and `.slang` — the HLSL-compatible subset of [Slang](https://github.com/shader-slang/slang) — as an input:
 
 ```sh
 ShadowDuskCLI MyShader.slang MyShader.mgfx /Profile:OpenGL
@@ -300,7 +300,7 @@ ShadowDusk/
 │   ├── ShaderViewer/            # Desktop shader viewer
 │   └── mgcb/                    # MGCB content-pipeline sample
 ├── tests/
-│   ├── ShadowDusk.*.Tests/      # Unit tests per library (Core, HLSL, GLSL, Compiler, ShaderToy, Slang)
+│   ├── ShadowDusk.*.Tests/      # Unit tests per library (Core, HLSL, GLSL, Compiler, ShaderToy, SkSL, Slang)
 │   ├── ShadowDusk.Integration.Tests/  # End-to-end compiles (CLI, native DXC + SPIRV-Cross)
 │   ├── ShadowDusk.ImageTests/   # Offscreen-GL render comparisons
 │   ├── ShadowDusk.BrowserTests/ # Playwright KNI WebGL harness
