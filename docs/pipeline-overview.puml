@@ -37,6 +37,7 @@ skinparam note {
 package "1 - INPUTS  (what you give us)" {
   rectangle "HLSL **.fx**\n(MonoGame / KNI / FNA source)" as FX #DCE6DC
   rectangle "ShaderToy / raw GLSL\nimage shader (.glsl / pasted)" as GLSLIN #DCE6DC
+  rectangle "Skia **SkSL** runtime effect\n(.sksl; ShadowDusk.SkSL, OPT-IN package)" as SKSLIN #DCE6DC
   rectangle "**Slang** (.slang)\nHLSL-compatible subset" as SLANGIN #DCE6DC
   rectangle "**Slang** (.slang)\ngenuine Slang: generics, interfaces\n(ShadowDusk.Slang, OPT-IN package)" as SLANGFULLIN #DCE6DC
 }
@@ -44,6 +45,7 @@ package "1 - INPUTS  (what you give us)" {
 ' ===== 2. FRONTEND (shared) =====
 package "2 - FRONTEND  (shared, runs for every target)" {
   rectangle "**ShaderToy frontend**  (ShadowDusk.ShaderToy)\nGLSL image shader -> .fx" as STOY #E7DFC9
+  rectangle "**SkSL frontend**  (ShadowDusk.SkSL)\nhalf4 main(float2) -> .fx via the ShaderToy stage;\nselected by a .sksl name hint" as SKSLFE #E7DFC9
   rectangle "**Slang frontend**  (ShadowDusk.Compiler.Slang)\n[shader(\"vertex\"/\"fragment\")] -> entry points;\ntechnique synthesized; body compiles as HLSL" as SLANGFE #E7DFC9
   rectangle "**slangc**  (bundled native: win-x64, linux-x64,\nosx-x64, osx-arm64; browser: the same slangc\nas WebAssembly, in-process, ShadowDusk.Slang.Wasm)\nreal Slang compiler: .slang -> HLSL" as SLANGCNATIVE #BFD2E8
   rectangle "**SlangCompiler**  (ShadowDusk.Slang)\nentry scan reused from Slang frontend;\n.fx wrapper assembled (technique/pass)" as SLANGFULLFE #E7DFC9
@@ -138,6 +140,8 @@ package "6 - REAL RUNTIMES  (the bar: loads + renders like mgfxc / fxc)" {
 ' ===== FLOWS =====
 GLSLIN --> STOY
 STOY --> PRE : ".fx"
+SKSLIN --> SKSLFE
+SKSLFE --> PRE : ".fx"
 SLANGIN --> SLANGFE
 SLANGFE --> PRE : ".fx"
 SLANGFULLIN --> SLANGCNATIVE
