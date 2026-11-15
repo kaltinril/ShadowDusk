@@ -130,8 +130,14 @@
           "xunit.extensibility.core": "[2.9.3]"
         }
       },
-      "shadowdusk.shadertoy": {
+      "shadowdusk.core": {
         "type": "Project"
+      },
+      "shadowdusk.shadertoy": {
+        "type": "Project",
+        "dependencies": {
+          "ShadowDusk.Core": "[0.25.1, )"
+        }
       },
       "shadowdusk.sksl": {
         "type": "Project",
@@ -269,8 +275,14 @@
           "xunit.extensibility.core": "[2.9.3]"
         }
       },
-      "shadowdusk.shadertoy": {
+      "shadowdusk.core": {
         "type": "Project"
+      },
+      "shadowdusk.shadertoy": {
+        "type": "Project",
+        "dependencies": {
+          "ShadowDusk.Core": "[0.25.1, )"
+        }
       },
       "shadowdusk.sksl": {
         "type": "Project",

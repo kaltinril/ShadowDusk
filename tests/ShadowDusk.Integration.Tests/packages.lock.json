@@ -298,7 +298,10 @@
         }
       },
       "shadowdusk.shadertoy": {
-        "type": "Project"
+        "type": "Project",
+        "dependencies": {
+          "ShadowDusk.Core": "[0.25.1, )"
+        }
       },
       "Silk.NET.SPIRV.Cross.Native": {
         "type": "CentralTransitive",
@@ -626,7 +629,10 @@
         }
       },
       "shadowdusk.shadertoy": {
-        "type": "Project"
+        "type": "Project",
+        "dependencies": {
+          "ShadowDusk.Core": "[0.25.1, )"
+        }
       },
       "Silk.NET.SPIRV.Cross.Native": {
         "type": "CentralTransitive",

@@ -117,7 +117,10 @@
         }
       },
       "shadowdusk.shadertoy": {
-        "type": "Project"
+        "type": "Project",
+        "dependencies": {
+          "ShadowDusk.Core": "[0.25.1, )"
+        }
       },
       "shadowdusk.sksl": {
         "type": "Project",

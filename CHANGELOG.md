@@ -14,6 +14,8 @@ that loads and renders identically to `mgfxc`'s in the real MonoGame/KNI runtime
 
 ### Added
 
+- `ShaderConverter.Compile` / `CompileAsync` read ShaderToy and plain GLSL when the `ShadowDusk.ShaderToy` package is installed: hand them any source and they convert and compile it, with no call to `ShaderToyConverter` and no registration code. The package registers a frontend (`ShaderToyFrontend`) with the new `ShaderFrontends` registry in `ShadowDusk.Core` (`IShaderFrontend`); a trimmed application calls `ShaderToyFrontend.Register()` once. The result is byte-identical to converting and compiling in two steps with the same names (a name hint names the effect and technique after the file, as the CLI does; no hint keeps the converter's defaults), conversion errors are the converter's own (`SD0006`, located in the GLSL), and without the package GLSL is still `UnsupportedInput` (`SD0650`). `ShaderConverter.CanCompile` is the cheap check for these two methods; `CanConvert` is unchanged. `ConvertToSksl` and `ConvertToRaylib` still read only `.fx` and Slang ([#473](https://github.com/kaltinril/ShadowDusk/issues/473)).
+
 - `RuntimeProfileDetector.RecommendKnifx(Assembly)` (and a `Version` overload): a KNI game that compiles to KNIFX at runtime passes `typeof(Game).Assembly` and gets the KNIFX version its own KNI loads, v12 on KNI 4.3 and later, v11 on older ones, instead of choosing between `KniGL_4_02` and `KniGL_4_03` itself. Checked on real KNI 4.2.9001 and 4.3.9001 ([#456](https://github.com/kaltinril/ShadowDusk/issues/456)).
 
 - `ShadowDusk.SkSL` (not yet packaged, [Phase 71](plan/PHASE-71-sksl-input-frontend.md)): `SkSLToFxConverter` converts SkSL runtime-effect shaders (`half4 main(float2)`) to `.fx`, including `uniform shader` children (`img.eval(p)` samples at `p * imgTexelSize`, a host-set 1/size). Each `.fx` has two techniques: `SkSL` (default) for premultiplied textures with `BlendState.AlphaBlend`, and `SkSLStraightAlpha` for straight-alpha textures with `BlendState.NonPremultiplied` (Gum's default). Unsupported SkSL (`sk_FragCoord`, `layout(color)`, color filters, blenders, color-space built-ins, non-square matrices) fails with an SkSL diagnostic. `validation/SkSLVsGl` renders the same SkSL in real SkiaSharp and, converted, in real MonoGame DesktopGL at 64x48: 6/6 premultiplied cases and 3/3 straight-alpha arms within 2/255, seven positive controls caught; in the ubuntu GL CI job.
@@ -23,6 +25,8 @@ that loads and renders identically to `mgfxc`'s in the real MonoGame/KNI runtime
 - `validation/VsDrivenDx12 -- apos` now also renders the real Apos.Shapes DX12 shader signed only by the managed container hash (bytes equal to the `dxil.dll`-signed build, gallery matches the `mgfxc` golden), the exact shader from [Apos.Shapes#43](https://github.com/Apostolique/Apos.Shapes/issues/43).
 
 ### Changed
+
+- `ShadowDusk.ShaderToy` now depends on `ShadowDusk.Core` (pure managed, no dependencies of its own), its first package dependency, so it can register its frontend. `ShadowDusk.Compiler` still does not depend on `ShadowDusk.ShaderToy`.
 
 - ShaderToy and SkSL conversion: the generated `.fx` keeps only the parentheses that precedence, associativity or readability need (`tex2D(img, (c + float2(1, 0)) * imgTexelSize)` instead of `tex2D(img, ((c + float2(1, 0)) * imgTexelSize))`, `(float3)a` instead of `((float3)(a))`). The compiled output is unchanged: every re-pinned converter golden builds to the same `.mgfx` bytes on OpenGL and DirectX 11, and `mgfxc` rebuilt the `GradientToy` goldens byte-identical.
 

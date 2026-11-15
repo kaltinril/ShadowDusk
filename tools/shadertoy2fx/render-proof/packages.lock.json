@@ -145,8 +145,14 @@
         "resolved": "3.4.0",
         "contentHash": "Iy22JopynbOJ32vA0lBhFEzGi65GQJBuJHYBYRBpydrDpNoTiHnjIXfA65Gu+8qsOr/ZEoIF8r9aHCgAXuO6DA=="
       },
-      "shadowdusk.shadertoy": {
+      "shadowdusk.core": {
         "type": "Project"
+      },
+      "shadowdusk.shadertoy": {
+        "type": "Project",
+        "dependencies": {
+          "ShadowDusk.Core": "[0.25.1, )"
+        }
       },
       "shadowdusk.testpng": {
         "type": "Project"

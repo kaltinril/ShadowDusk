@@ -259,8 +259,8 @@ jobs:
       # equals Directory.Build.props per the validate guard — but keeps the pack
       # explicit and matches a workflow_dispatch where the tag may not exist yet.
       # ShadowDusk.ShaderToy is the standalone, pure-managed ShaderToy/GLSL -> .fx
-      # front-end (zero natives, no ProjectReferences): it is NOT in the
-      # ShadowDusk.Compiler dependency graph, so pack-consume.yml does not pull it.
+      # front-end (zero natives; its one dependency is ShadowDusk.Core, issue #473): it is NOT
+      # in the ShadowDusk.Compiler dependency graph, so pack-consume.yml does not pull it.
       # ShadowDusk.Slang is the opt-in real-slangc Slang front-end (Phase 66): it depends on
       # ShadowDusk.Compiler and carries slangc for four RIDs, gated below.
       - name: Pack desktop packages
