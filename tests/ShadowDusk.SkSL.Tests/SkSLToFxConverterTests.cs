@@ -54,10 +54,25 @@ public sealed class SkSLToFxConverterTests
 
         // SkSL coords are pixel centers with a top-left origin: uv (top-left origin) times the size.
         fx.ShouldContain(
-            "float4 PSMain(VSOutput input) : COLOR0\n{\n    return mainImage(input.UV * iResolution.xy);\n}\n",
+            "float4 PSMain(PSInput input) : COLOR0\n{\n    return mainImage(input.UV * iResolution.xy) * input.Color;\n}\n",
             Case.Sensitive);
         fx.ShouldNotContain("1.0 - input.UV.y", Case.Sensitive);
         fx.ShouldNotContain("iResolution.y -", Case.Sensitive);
+    }
+
+    [Fact]
+    public void Convert_IsPixelShaderOnlyOverSpriteBatchVertexOutput()
+    {
+        string fx = Succeeds(Plain);
+
+        // SpriteBatch supplies the vertex shader, so main's coordinate is local to the sprite wherever
+        // it is drawn; an own vertex shader deriving UV from NDC gave render-target coordinates.
+        fx.ShouldContain(
+            "struct PSInput { float4 Position : SV_Position; float4 Color : COLOR0; float2 UV : TEXCOORD0; };",
+            Case.Sensitive);
+        fx.ShouldNotContain("VertexShader", Case.Sensitive);
+        fx.ShouldNotContain("VSMain", Case.Sensitive);
+        fx.ShouldContain("Draw it with SpriteBatch", Case.Sensitive);
     }
 
     [Fact]
@@ -87,9 +102,9 @@ public sealed class SkSLToFxConverterTests
     [Fact]
     public void Convert_StraightAlphaTechnique_UnpremultipliesTheResult() =>
         Succeeds(Plain).ShouldContain(
-            "float4 PSMainStraightAlpha(VSOutput input) : COLOR0\n{\n" +
+            "float4 PSMainStraightAlpha(PSInput input) : COLOR0\n{\n" +
             "    float4 color = mainImage(input.UV * iResolution.xy);\n" +
-            "    return float4(color.rgb / max(color.a, 0.0001), color.a);\n}\n",
+            "    return float4(color.rgb / max(color.a, 0.0001), color.a) * input.Color;\n}\n",
             Case.Sensitive);
 
     [Fact]
@@ -106,13 +121,13 @@ public sealed class SkSLToFxConverterTests
             "float4 sd_ChildColor(float4 c)\n{\n    return sd_StraightAlpha ? float4(c.rgb * c.a, c.a) : c;\n}",
             Case.Sensitive);
         fx.ShouldContain(
-            "float4 PSMain(VSOutput input) : COLOR0\n{\n    sd_StraightAlpha = false;\n" +
-            "    return mainImage(input.UV * iResolution.xy);\n}\n",
+            "float4 PSMain(PSInput input) : COLOR0\n{\n    sd_StraightAlpha = false;\n" +
+            "    return mainImage(input.UV * iResolution.xy) * input.Color;\n}\n",
             Case.Sensitive);
         fx.ShouldContain(
-            "float4 PSMainStraightAlpha(VSOutput input) : COLOR0\n{\n    sd_StraightAlpha = true;\n" +
+            "float4 PSMainStraightAlpha(PSInput input) : COLOR0\n{\n    sd_StraightAlpha = true;\n" +
             "    float4 color = mainImage(input.UV * iResolution.xy);\n" +
-            "    return float4(color.rgb / max(color.a, 0.0001), color.a);\n}\n",
+            "    return float4(color.rgb / max(color.a, 0.0001), color.a) * input.Color;\n}\n",
             Case.Sensitive);
     }
 
@@ -239,6 +254,32 @@ public sealed class SkSLToFxConverterTests
         ConvertDiagnostic d = FailsWith("/* one\n two */ half4 main(float2 p) { return half4(sk_FragCoord); }", "sk_FragCoord");
         (d.Line, d.Column).ShouldBe((2, 45));
     }
+
+    [Fact]
+    public void Convert_ChildThatIsNeverEvaluated_IsRefused_BecauseItWouldShiftTheTextureSlots()
+    {
+        // The host draws the first declared child as the sprite (slot 0). An unused first child
+        // gets no sampler, so 'b' would land on slot 0 and read the sprite's texture instead.
+        ConvertDiagnostic d = FailsWith(
+            "uniform shader a;\nuniform shader b;\nhalf4 main(float2 p) { return b.eval(p); }", "a");
+
+        d.Message.ShouldStartWith("'uniform shader a;' is never evaluated.", Case.Sensitive);
+        (d.Line, d.Column).ShouldBe((1, 16));
+    }
+
+    [Theory]
+    [InlineData("PSInput")]
+    [InlineData("PSMain")]
+    [InlineData("PSMainStraightAlpha")]
+    public void Convert_RefusesTheGeneratedPixelShadersOwnNames(string name) =>
+        SkSLToFxConverter.Convert($"float {name}(float x) {{ return x; }}\nhalf4 main(float2 p) {{ return half4({name}(p.x)); }}")
+            .Success.ShouldBeFalse();
+
+    [Fact]
+    public void Convert_SkFragCoord_IsRefusedBecauseSkiaRejectsIt() =>
+        FailsWith("half4 main(float2 p) { return half4(sk_FragCoord.xy, 0, 1); }", "sk_FragCoord").Message.ShouldBe(
+            "sk_FragCoord is not supported: Skia's runtime shaders (SkiaSharp 3 and later) do not accept it " +
+            "either. Use the coordinate passed to main (the pixel coordinate when the shader is drawn untransformed).");
 
     [Theory]
     [InlineData("half4 main(float2 p) { return half4(sk_FragCoord.xy, 0, 1); }", "sk_FragCoord", "coordinate passed to main")]

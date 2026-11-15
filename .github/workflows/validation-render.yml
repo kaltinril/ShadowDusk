@@ -55,7 +55,8 @@
 #   * SkSLVsGl               — the SkSL INPUT frontend (ShadowDusk.SkSL): the same SkSL in REAL
 #                              SkiaSharp vs converted + built for OpenGL in REAL MonoGame
 #                              DesktopGL, non-square, premultiplied and straight-alpha techniques,
-#                              tol 2/255, seven positive controls that must diverge.
+#                              drawn with SpriteBatch, tol 2/255, eight positive controls that
+#                              must diverge; each case also compiled (only) for DX11/DX12/Vulkan/FNA.
 #   * VertexSemanticsGl / VertexSemanticsKniGl — vertex inputs beyond POSITION/COLOR/
 #                              TEXCOORD/NORMAL (BINORMAL, TANGENT, BLENDINDICES as Byte4,
 #                              BLENDWEIGHT 0+1, PSIZE, FOG, DEPTH, TEXCOORD3) and a float3x3

@@ -397,7 +397,8 @@ $gates.Add(@{
 })
 # SkSL INPUT frontend (ShadowDusk.SkSL): the same SkSL rendered by real SkiaSharp and, converted and
 # compiled for OpenGL, by a real MonoGame DesktopGL Effect (image fidelity vs Skia, tol 2/255;
-# non-square, premultiplied and straight-alpha techniques, seven positive controls).
+# non-square, premultiplied and straight-alpha techniques, drawn with SpriteBatch; eight positive
+# controls; every case is also compiled for DirectX 11, DirectX 12, Vulkan and FNA, compile only).
 $gates.Add(@{
     Name   = 'SkSL vs GL (ShadowDusk.SkSL input: real SkiaSharp vs OpenGL in real MonoGame DesktopGL, tol 2/255)'
     Action = {
