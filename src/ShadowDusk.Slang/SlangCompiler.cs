@@ -1690,12 +1690,18 @@ public sealed class SlangCompiler
             // timed out.
             bool killed = false;
             bool exited;
+            string stateAtTimeout = "state unknown";
             using (cancellationToken.Register(() => TryKillTree(process)))
             {
                 exited = process.WaitForExit(
                     timeout == Timeout.InfiniteTimeSpan ? Timeout.Infinite : (int)timeout.TotalMilliseconds);
                 if (!exited)
                 {
+                    // What the child was doing when its time ran out, read before the kill: a
+                    // stuck slangc and a slow one need different fixes, and the message is all
+                    // a CI log or a consumer's report will carry (issue #469).
+                    stateAtTimeout = DescribeStalledChild(process, sourcePump);
+
                     // A grace period for the kill itself: a kill the OS refused must not turn
                     // the timeout back into the hang it exists to prevent.
                     killed = TryKillTree(process);
@@ -1706,9 +1712,15 @@ public sealed class SlangCompiler
             cancellationToken.ThrowIfCancellationRequested();
             if (killed || !exited)
             {
+                // The kill closes the pipes, so the readers end; their text is then safe to
+                // measure. A reader still blocked (something else holds the pipe) is skipped.
+                string captured = outputPump.TryJoin(PipeDrainGraceMilliseconds) && errorPump.TryJoin(PipeDrainGraceMilliseconds)
+                    ? $", {stdout.Length} stdout and {stderr.Length} stderr characters read"
+                    : ", output pipes still open";
                 throw new TimeoutException(
                     $"slangc did not exit within {timeout.TotalSeconds:0.###} s and was killed"
                     + (exited ? "" : $" (it had still not exited {KillGraceMilliseconds / 1000} s after the kill)")
+                    + $" [{stateAtTimeout}{captured}]"
                     + $": '{slangcPath}' {string.Join(' ', arguments)}.");
             }
 
@@ -1813,6 +1825,13 @@ public sealed class SlangCompiler
             Rethrow();
         }
 
+        /// <summary>Whether the operation has ended.</summary>
+        public bool IsFinished => !_thread.IsAlive;
+
+        /// <summary>Waits up to <paramref name="milliseconds"/> and says whether the operation
+        /// ended. Never rethrows: for a report on a run that has already failed.</summary>
+        public bool TryJoin(int milliseconds) => _thread.Join(milliseconds);
+
         /// <summary>Waits up to <paramref name="milliseconds"/>; an operation still blocked
         /// then is abandoned to its background thread.</summary>
         public void Join(int milliseconds)
@@ -1830,6 +1849,29 @@ public sealed class SlangCompiler
 
     /// <summary>How long to wait for a killed slangc to be reaped before giving up on it.</summary>
     private const int KillGraceMilliseconds = 10_000;
+
+    /// <summary>How long a timeout report waits for a killed child's output pipes to close.</summary>
+    private const int PipeDrainGraceMilliseconds = 2_000;
+
+    /// <summary>
+    /// One line on a child that ran out of time: how much CPU it used (near zero means it was
+    /// waiting on something, close to the timeout means it was working) and whether it had
+    /// taken the whole source from stdin. Never throws; a value that cannot be read is said so.
+    /// </summary>
+    private static string DescribeStalledChild(Process process, PipeThread sourcePump)
+    {
+        string cpu;
+        try
+        {
+            cpu = $"{process.TotalProcessorTime.TotalSeconds:0.##} s of CPU used";
+        }
+        catch (Exception ex) when (ex is InvalidOperationException or System.ComponentModel.Win32Exception or NotSupportedException)
+        {
+            cpu = "CPU time unreadable";
+        }
+
+        return cpu + (sourcePump.IsFinished ? ", source fully written to stdin" : ", source write to stdin still blocked");
+    }
 
     /// <summary>
     /// Kills <paramref name="process"/> and everything it spawned. Returns false when the
