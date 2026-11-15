@@ -18,6 +18,8 @@ that loads and renders identically to `mgfxc`'s in the real MonoGame/KNI runtime
 
 ### Fixed
 
+- `release.yml`'s "CI is green on the release commit" check now resolves the newest CI-triggering commit with `git log --first-parent`, so a PR merged with a merge commit is checked on the merge commit (where the push-event run lives) instead of the PR branch tip, which only has `pull_request` runs and made the check fail on every such release.
+
 ## [0.26.0] - 2026-11-15
 
 ### Added
