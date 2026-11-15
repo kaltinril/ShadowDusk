@@ -115,7 +115,7 @@ For **DirectX 11**, the default compiler is the cross-platform **vkd3d-shader**,
 **Output format.** ShadowDusk emits **MGFX v10** by default, the format that loads on MonoGame 3.8.1.263 (the measured floor) and every newer MonoGame, plus KNI. You never set a flag to get correct output. A global initializer (`float R = 1;`) becomes the parameter's default value on every MGFX and KNIFX target, so the effect renders right before any `Set` call; `mgfxc`'s OpenGL build stores zeros there. Targeting a newer runtime? Two optional formats load and render exactly like v10:
 
 - MonoGame 3.8.5+ &rarr; `CompilerOptions.MgfxVersion = 11`
-- KNI v4.02+ &rarr; `CompilerOptions.Container = EffectContainer.Knifx` (KNIFX v11; KNI 4.3.x can also take KNIFX v12 via `CapabilityProfile.KniGL_4_03` / `--target-runtime kni-knifx-v12`)
+- KNI v4.02+ &rarr; `CompilerOptions.Container = EffectContainer.Knifx` (KNIFX v11; KNI 4.3.x can also take KNIFX v12 via `CapabilityProfile.KniGL_4_03` / `--target-runtime kni-knifx-v12`; at runtime `RuntimeProfileDetector.RecommendKnifx(typeof(Game).Assembly)` picks the one your KNI loads)
 
 If you're not sure, keep the default. See [Parameters &amp; Caveats](https://kaltinril.github.io/ShadowDusk/guides/parameters-and-caveats.html).
 

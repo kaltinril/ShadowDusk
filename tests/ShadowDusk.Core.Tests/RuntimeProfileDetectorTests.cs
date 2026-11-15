@@ -16,6 +16,13 @@ public sealed class RuntimeProfileDetectorTests
     [Theory]
     [InlineData("nkast.Xna.Framework", DetectedRuntime.Kni)]
     [InlineData("nkast.Xna.Framework.Graphics", DetectedRuntime.Kni)]
+    // What KNI's assemblies are really named (nkast.Xna.Framework* 4.2.9001 and 4.3.9001).
+    [InlineData("Xna.Framework", DetectedRuntime.Kni)]
+    [InlineData("Xna.Framework.Graphics", DetectedRuntime.Kni)]
+    [InlineData("Xna.Framework.Game", DetectedRuntime.Kni)]
+    // Real XNA, and a name that only shares the prefix.
+    [InlineData("Microsoft.Xna.Framework", DetectedRuntime.Unknown)]
+    [InlineData("Xna.FrameworkExtras", DetectedRuntime.Unknown)]
     [InlineData("MonoGame.Framework", DetectedRuntime.MonoGame)]
     [InlineData("FNA", DetectedRuntime.Fna)]
     [InlineData("FNA.Core", DetectedRuntime.Fna)]
@@ -32,6 +39,39 @@ public sealed class RuntimeProfileDetectorTests
     {
         // KNI's assemblies could theoretically share a prefix; ensure the nkast check wins.
         RuntimeProfileDetector.Classify("nkast.Xna.Framework").ShouldBe(DetectedRuntime.Kni);
+    }
+
+    [Theory]
+    [InlineData("4.2.9001.0", "KniGL_4_02", 11)]
+    [InlineData("4.2.0.0", "KniGL_4_02", 11)]
+    [InlineData("4.0.9001.0", "KniGL_4_02", 11)]
+    [InlineData("4.3.9001.0", "KniGL_4_03", 12)]
+    [InlineData("4.3.0.0", "KniGL_4_03", 12)]
+    [InlineData("4.4.9001.0", "KniGL_4_03", 12)]
+    [InlineData("5.0.0.0", "KniGL_4_03", 12)]
+    public void RecommendKnifx_PicksTheContainerVersionThatKniLoads(string kniVersion, string expectedProfile, short expectedKnifxVersion)
+    {
+        CapabilityProfile profile = RuntimeProfileDetector.RecommendKnifx(new Version(kniVersion));
+
+        profile.Name.ShouldBe(expectedProfile);
+        profile.Container.ShouldBe(EffectContainer.Knifx);
+        profile.KnifxVersion.ShouldBe(expectedKnifxVersion);
+    }
+
+    [Fact]
+    public void RecommendKnifx_WithoutAVersion_IsV11_WhichEveryKniLoads()
+    {
+        RuntimeProfileDetector.RecommendKnifx((Version?)null).ShouldBeSameAs(CapabilityProfile.KniGL_4_02);
+    }
+
+    [Fact]
+    public void RecommendKnifx_RefusesAnAssemblyThatIsNotKni()
+    {
+        var ex = Should.Throw<ArgumentException>(() =>
+            RuntimeProfileDetector.RecommendKnifx(typeof(RuntimeProfileDetectorTests).Assembly));
+
+        ex.ParamName.ShouldBe("kniAssembly");
+        ex.Message.ShouldContain("is not a KNI assembly", Case.Sensitive);
     }
 
     [Theory]
