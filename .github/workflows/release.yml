@@ -121,7 +121,9 @@ jobs:
             local workflow="$1"; shift
             # The remaining arguments are the pathspec that triggers the workflow on a push.
             local sha
-            sha=$(git log -1 --format=%H "$RELEASE_SHA" -- "$@")
+            # --first-parent: a PR merged with a merge commit must resolve to the merge commit (the push-event
+            # run lives there); without it git skips the merge and lands on the PR branch tip, which only has pull_request runs.
+            sha=$(git log -1 --first-parent --format=%H "$RELEASE_SHA" -- "$@")
             if [ -z "$sha" ]; then
               echo "::error::$workflow: no commit at or before $RELEASE_SHA touches its trigger paths"; fail=1; return
             fi
