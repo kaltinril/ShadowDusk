@@ -27,6 +27,9 @@ name: win-arm64
 
 on:
   workflow_dispatch:
+  # Also callable: release.yml runs this as a gate before publishing (issue #483). In a called
+  # workflow `github.workflow` is the CALLER's name, so the concurrency group below is a literal.
+  workflow_call:
   # Label-gated on PRs (the job `if:` requires the 'run-win-arm64' label). Like the other
   # label-gated workflows it listens to the default pull_request types only, so adding the
   # label needs a new push (or close + reopen) to take effect.
@@ -41,7 +44,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
+  group: win-arm64-${{ github.ref }}
   # Only a PR's superseded push is cancelled: a release-time dispatch and the weekly cron, both on
   # main, must never cancel each other.
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}

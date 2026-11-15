@@ -8,6 +8,11 @@
 #
 # Pipeline:
 #   validate          → resolve + guard the version
+#   verify-ci         → fail unless ci.yml and validation-render.yml are green on the release
+#                       commit (issue #483); everything below needs it
+#   pack-consume / win-arm64 / android-emulator
+#                     → the three pre-release workflows, called (workflow_call) so one dispatch
+#                       runs them; nuget-push needs all three
 #   build-and-test    → 3-OS build + full test gate
 #   pack-desktop      → pack the NINE desktop packages (Core/HLSL/GLSL/ShaderToy/SkSL/Slang/Compiler/
 #                       Cli/ContentPipeline) at the validated version, with symbols (.snupkg), PLUS the
@@ -84,11 +89,81 @@ jobs:
             exit 1
           fi
 
+  # ── Fail unless CI and the render-gate workflow are green on the release commit ──
+  # 0.25.1 was published while validation-render.yml was red on its commit (issue #483).
+  # A workflow with path filters has no run on a commit that did not touch those paths (the
+  # version-bump merge touches only Directory.Build.props, lock files, CHANGELOG and
+  # RELEASING.md), so the check is made at the newest commit at or before this one that
+  # DID touch them: nothing that triggers the workflow changed in between.
+  # The Windows GPU render gate (validation/run-windows-render-gates.ps1) is not checked here;
+  # it is a local step before the version bump (RELEASING.md, Prerequisites item 5).
+  verify-ci:
+    name: Verify CI is green on the release commit
+    runs-on: ubuntu-latest
+    needs: validate
+    permissions:
+      contents: read
+      actions: read
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - name: Require a successful ci.yml and validation-render.yml run
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          RELEASE_SHA: ${{ github.sha }}
+        run: |
+          set -u
+          fail=0
+          check() {
+            local workflow="$1"; shift
+            # The remaining arguments are the pathspec that triggers the workflow on a push.
+            local sha
+            sha=$(git log -1 --format=%H "$RELEASE_SHA" -- "$@")
+            if [ -z "$sha" ]; then
+              echo "::error::$workflow: no commit at or before $RELEASE_SHA touches its trigger paths"; fail=1; return
+            fi
+            local ok
+            ok=$(gh api "repos/$REPO/actions/workflows/$workflow/runs?head_sha=$sha&per_page=100" \
+              --jq '[.workflow_runs[] | select(.conclusion == "success" and .event != "pull_request")] | length')
+            if [ "${ok:-0}" -gt 0 ]; then
+              echo "OK    $workflow: green on $sha (release commit $RELEASE_SHA)"
+            else
+              echo "::error::$workflow has no successful run on $sha (the newest commit at or before the release commit $RELEASE_SHA that triggers it). Wait for it, fix it, or run it on that commit, then dispatch the release again."
+              fail=1
+            fi
+          }
+          # Trigger paths: ci.yml's paths-ignore inverted; validation-render.yml's paths.
+          check ci.yml . ':(exclude,glob)**/*.md' ':(exclude)plan' ':(exclude)docs' ':(exclude)docfx' ':(exclude)LICENSE' ':(exclude).gitignore'
+          check validation-render.yml src validation tests/fixtures tools/restore.sh tools/restore.ps1 .github/workflows/validation-render.yml
+          exit $fail
+
+  # ── The three workflows that used to be dispatched by hand before a release ──
+  # Called with the release ref, so they check out and test the release commit. Each has a
+  # `workflow_call` trigger; their own `if:` conditions pass because github.event_name is the
+  # caller's (workflow_dispatch).
+  pack-consume:
+    name: Pack & Consume Smoke
+    needs: [ validate, verify-ci ]
+    uses: ./.github/workflows/pack-consume.yml
+
+  win-arm64:
+    name: win-arm64
+    needs: [ validate, verify-ci ]
+    uses: ./.github/workflows/win-arm64.yml
+
+  android-emulator:
+    name: Android emulator
+    needs: [ validate, verify-ci ]
+    uses: ./.github/workflows/android-emulator.yml
+
   # ── Build + test on all 3 OS before releasing ──────────────────────────────
   build-and-test:
     name: Build & Test (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
-    needs: validate
+    needs: [ validate, verify-ci ]
     timeout-minutes: 10
     strategy:
       fail-fast: false
@@ -723,7 +798,7 @@ jobs:
   nuget-push:
     name: NuGet Push
     runs-on: ubuntu-latest
-    needs: [ validate, pack-desktop, pack-wasm ]
+    needs: [ validate, verify-ci, pack-desktop, pack-wasm, pack-consume, win-arm64, android-emulator ]
     # Trusted Publishing: GitHub's OIDC token is exchanged for a one-hour nuget.org key, so
     # there is no long-lived key to expire or leak. The policy on nuget.org trusts this repo's
     # `release.yml` (RELEASING.md, Prerequisites).
