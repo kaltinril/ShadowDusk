@@ -144,12 +144,15 @@ jobs:
       # ("DXC's native fails to load on macOS") that Phase 37 A/B fixed — a red unit
       # suite on any OS is a real defect and must block the release.
       - name: dotnet test (unit)
+        timeout-minutes: 8
         run: >
           dotnet test ShadowDusk.slnx --no-build -c Release
           --filter "Category!=Integration"
           --settings ShadowDusk.runsettings
           --logger "trx;LogFilePrefix=release-test-${{ matrix.os }}"
+          --blame-hang-timeout 2m --blame-hang-dump-type full
           --results-directory TestResults/
+          -- RunConfiguration.TestSessionTimeout=360000
 
       - name: Upload test results
         if: always()
