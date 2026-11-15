@@ -2,7 +2,7 @@
 
 **Track:** Input frontends.
 **Status:** 🚧 **In progress (2026-11-12).** Slice 1 (color shaders and `uniform shader` children)
-is implemented and render-proven against real SkiaSharp; the package is not published yet.
+is implemented and render-proven against real SkiaSharp; the package ships from the next release ([issue #506](https://github.com/kaltinril/ShadowDusk/issues/506)).
 
 ## Goal
 
@@ -80,7 +80,7 @@ Apply them in that order to every decision in this phase.
 5. **Matrix uniforms**: square matrices convert (`mul(p, m)`), but the host-side upload order is
    not render-proven against Skia yet.
 6. **DirectX and FNA arms**: the gate proves OpenGL only; add a DX11-on-WARP arm. Since 2026-11-14 `validation/SkSLVsGl` also COMPILES every case for DirectX 11, DirectX 12, Vulkan and FNA and fails if one does not (the pixel-shader-only `.fx` is accepted by every backend); none of them is rendered yet.
-7. **Packaging**: a `PackageId`, `README.md`, `release.yml` entry, the support-surface docs
+7. **Packaging** (done in issue #506 except the diagram and CLI route): a `PackageId`, `README.md`, `release.yml` entry, the support-surface docs
    (`README.md` targets table, `docs/the-purpose.md`, `docs/pipeline-overview.puml` and its SVG,
    the DocFX pages) and a CLI/`ShaderFormatDetector` route. It must ship at the same version as
    `ShadowDusk.ShaderToy`, whose internals it uses.

@@ -8,8 +8,8 @@ argument-hint: "<version> (e.g., 0.2.0)"
 
 Automate the full ShadowDusk release from version bump through PR merge to publish trigger.
 
-A release publishes **all ten** `ShadowDusk.*` packages (`Core`, `HLSL`, `GLSL`, `ShaderToy`,
-`Slang`, `Compiler`, `Cli`, `Wasm`, `MgcbPlugin`, `ContentPipeline`) plus the `ShadowDuskCLI` `dotnet tool` to nuget.org, and attaches
+A release publishes **all eleven** `ShadowDusk.*` packages (`Core`, `HLSL`, `GLSL`, `ShaderToy`,
+`SkSL`, `Slang`, `Compiler`, `Cli`, `Wasm`, `MgcbPlugin`, `ContentPipeline`) plus the `ShadowDuskCLI` `dotnet tool` to nuget.org, and attaches
 self-contained CLI binaries to a GitHub Release. The human runbook this automates is `RELEASING.md`.
 
 ## Input
@@ -62,7 +62,7 @@ history, not just SemVer's letter):
      the evidence CI structurally cannot produce.
 3. **Branch.** `git checkout -b version/<version>` (main is already current from step 1).
 4. **Bump version.** Run `tools/bump-version.sh <version>` (bash, repo root). It edits
-   `Directory.Build.props` `<Version>` only (never the ten `src/ShadowDusk.*/*.csproj` files, never
+   `Directory.Build.props` `<Version>` only (never the eleven `src/ShadowDusk.*/*.csproj` files, never
    the `<PackageVersion Include=... />` items in `Directory.Packages.props`), rewrites the
    `ShadowDusk.*` ranges in every `*packages*.lock.json`, moves `CHANGELOG.md` `[Unreleased]` into
    a dated `[<version>]` section with a fresh empty `[Unreleased]` and the link references (adds a
@@ -133,9 +133,9 @@ history, not just SemVer's letter):
     marker, never a trigger. (`RELEASING.md` → "Triggering a release" is authoritative.)
 
     The `validate` job checks the dispatch input against `Directory.Build.props` `<Version>`; if
-    they match, all ten packages + the `ShadowDuskCLI` tool publish to nuget.org and a GitHub
+    they match, all eleven packages + the `ShadowDuskCLI` tool publish to nuget.org and a GitHub
     Release is cut. Point the user at `RELEASING.md` → "Verify after release" for the post-publish
-    checks (`dotnet tool install -g ShadowDusk.Cli` → `ShadowDuskCLI --help`, and all ten packages on
+    checks (`dotnet tool install -g ShadowDusk.Cli` → `ShadowDuskCLI --help`, and all eleven packages on
     nuget.org at `<version>`).
 
 ## ShadowDusk-specific notes

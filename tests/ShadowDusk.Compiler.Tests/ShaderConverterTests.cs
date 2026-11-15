@@ -138,6 +138,22 @@ public sealed class ShaderConverterTests
     }
 
     [Fact]
+    public void WithoutTheSkSLPackage_SkslInputIsUnsupported_AndNamesThePackage()
+    {
+        // This test assembly does not reference ShadowDusk.SkSL (issue #506, package-absent half).
+        const string sksl = "half4 main(float2 c) { return half4(c, 0, 1); }";
+
+        ShaderFrontends.Find(ShaderFormat.Sksl).ShouldBeNull();
+        ShaderConverter.CanCompile(sksl, "x.sksl").ShouldBeFalse();
+
+        var result = ShaderConverter.Compile(new EffectCompiler(), sksl, new CompilerOptions(), "x.sksl");
+        ShaderError error = result.Error.Single();
+        error.Kind.ShouldBe(ShaderErrorKind.UnsupportedInput);
+        error.Code.ShouldBe(ShaderConverter.UnsupportedInputCode);
+        error.Message.ShouldContain("ShadowDusk.SkSL", Case.Sensitive);
+    }
+
+    [Fact]
     public void Compile_RecognizedButBroken_IsACompileError_NotUnsupported()
     {
         var result = ShaderConverter.Compile(

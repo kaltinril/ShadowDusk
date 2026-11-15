@@ -39,7 +39,7 @@ ShadowDusk/
 │   ├── ShadowDusk.ShaderToy/     # Pure-managed ShaderToy/GLSL → .fx front-end (ShaderToyConverter.Convert); ZERO
 │   │                             #   native + ZERO MonoGame dep; additive, upstream of the pipeline. PUBLISHED standalone NuGet (0.9.0).
 │   ├── ShadowDusk.SkSL/          # SkSL INPUT frontend (SkSLToFxConverter: SkSL -> .fx through ShadowDusk.ShaderToy
-│   │                             #   internals); not packed yet (Phase 71). Opposite of Compiler's Sksl/ (.fx -> SkSL).
+│   │                             #   internals); PUBLISHED standalone NuGet (issue #506), registers `SkSLFrontend` for `.sksl` input in `ShaderConverter`. Opposite of Compiler's Sksl/ (.fx -> SkSL).
 │   ├── ShadowDusk.Slang/         # SlangCompiler: REAL slangc-backed Slang front-end (import/generics/interfaces,
 │   │                             #   Phase 66) — bundles real slangc (win/linux x64 + macOS x64/arm64), hands its HLSL emission to
 │   │                             #   the unchanged EffectCompiler pipeline. Opt-in, additive; the HLSL-compatible

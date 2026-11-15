@@ -64,6 +64,21 @@ var converted = ShadowDusk.ShaderToy.ShaderToyConverter.Convert(glslSource);
 
 Unsupported constructs fail loudly with a located (line/column) diagnostic rather than producing a silently-wrong `.fx`. The CLI has this front-end built in: `ShadowDuskCLI` auto-detects `.glsl`/`.frag`/`.fs` input and converts it before compiling — see the [CLI Reference](../cli/index.md).
 
+## Optional SkSL front-end
+
+`ShadowDusk.SkSL` is the same kind of package for Skia SkSL runtime-effect shaders (`half4 main(float2 coord)`): pure managed, optional, and it depends on `ShadowDusk.ShaderToy`, which installs with it. With `ShadowDusk.Compiler` beside it, `ShaderConverter.Compile` / `CompileAsync` read SkSL with no setup. SkSL text has no marker, so name the source with a `.sksl` hint:
+
+```sh
+dotnet add package ShadowDusk.SkSL
+```
+
+```csharp
+var result = ShaderConverter.Compile(new EffectCompiler(), skslSource,
+    new CompilerOptions { Target = PlatformTarget.OpenGL }, "tint.sksl");
+```
+
+Unsupported SkSL fails with a stable code (`SD0660` to `SD0673`, see [Diagnostics](../diagnostics.md)). `SkSLToFxConverter.Convert` is the standalone entry point and documents the host contract (`SpriteBatch`, `iResolution`, child textures).
+
 ## Slang input — the free subset, and the optional full language
 
 ShadowDusk accepts `.slang` source in two tiers. The **free default**, built into `ShadowDusk.Compiler` (no extra package, no native toolchain, works on every host including the browser), accepts the **HLSL-compatible subset** of Slang: entry points via `[shader("vertex")]`/`[shader("fragment")]`, a synthesized technique, and a body compiled by the same faithful pipeline as any `.fx`. Slang-only features (`import`, generics, `interface`s) are rejected with a named `SD0600` rather than approximated — see the [CLI Reference](../cli/index.md) for `--input-format`.
