@@ -30,12 +30,17 @@ public enum DiagnosticSeverity
 /// <param name="Line">1-based source line in the ShaderToy GLSL (0 if not applicable).</param>
 /// <param name="Column">1-based source column (0 if not applicable).</param>
 /// <param name="Construct">The offending source construct, when relevant (for reject messages).</param>
+/// <param name="Code">
+/// A stable diagnostic code (<c>SD0660</c> and up for the SkSL frontend, see <c>docs/error-codes.md</c>) a host can
+/// branch on instead of matching message text. <c>null</c> for the ShaderToy stage's own diagnostics.
+/// </param>
 public sealed record ConvertDiagnostic(
     DiagnosticSeverity Severity,
     string Message,
     int Line,
     int Column,
-    string? Construct = null);
+    string? Construct = null,
+    string? Code = null);
 
 /// <summary>Options controlling a ShaderToy → <c>.fx</c> conversion.</summary>
 public sealed record ConvertOptions

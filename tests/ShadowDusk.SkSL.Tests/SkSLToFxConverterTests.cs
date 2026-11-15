@@ -346,4 +346,91 @@ public sealed class SkSLToFxConverterTests
         r.Success.ShouldBeFalse();
         r.Diagnostics.ShouldHaveSingleItem().Construct.ShouldBe("CommonSource");
     }
+
+    [Fact]
+    public void Convert_IntAndBoolUniforms_AreLoweredToFloatUniformsReadAsTheirDeclaredType()
+    {
+        string fx = Succeeds(
+            "uniform shader SpriteTexture;\nuniform int steps;\nuniform bool flip;\n" +
+            "half4 main(float2 c) { return flip ? SpriteTexture.eval(c) * half(steps / 2) : half4(0); }");
+
+        fx.ShouldContain("float steps;", Case.Sensitive);
+        fx.ShouldContain("float flip;", Case.Sensitive);
+        fx.ShouldNotContain("uniform int", Case.Sensitive);
+        fx.ShouldNotContain("uniform bool", Case.Sensitive);
+        fx.ShouldContain("int(steps)", Case.Sensitive);
+        fx.ShouldContain("bool(flip)", Case.Sensitive);
+    }
+
+    [Theory]
+    [InlineData("int2", "float2", "v.x")]
+    [InlineData("bool3", "float3", "v.x")]
+    [InlineData("highp int", "float", "v")]
+    public void Convert_IntegerVectorAndQualifiedUniforms_AreLowered(string declared, string lowered, string use)
+    {
+        string fx = Succeeds($"uniform {declared} v; half4 main(float2 c) {{ return half4(float({use})); }}");
+
+        fx.ShouldContain($"{lowered} v;", Case.Sensitive);
+    }
+
+    [Fact]
+    public void Convert_LoweredUniform_IsNotRewrittenInASwizzle()
+    {
+        string fx = Succeeds("uniform int x; half4 main(float2 c) { return half4(c.x * float(x), 0, 0, 1); }");
+
+        fx.ShouldContain("c.x * float(int(x))", Case.Sensitive);
+    }
+
+    [Theory]
+    [InlineData("uniform int a[4]; half4 main(float2 c) { return half4(a[0]); }", "an array")]
+    [InlineData("uniform int a, b; half4 main(float2 c) { return half4(a + b); }", "declared with others")]
+    public void Convert_IntegerUniformThatCannotBeLowered_IsRefusedWithSD0671(string sksl, string why)
+    {
+        ConvertDiagnostic d = SkSLToFxConverter.Convert(sksl).Diagnostics.ShouldHaveSingleItem();
+
+        d.Code.ShouldBe("SD0671");
+        d.Message.ShouldContain(why, Case.Sensitive);
+    }
+
+    [Fact]
+    public void Convert_IntegerUniformShadowedByALocal_IsRefusedWithSD0671()
+    {
+        ConvertDiagnostic d = SkSLToFxConverter.Convert(
+            "uniform int n; half4 main(float2 c) { int n = 2; return half4(n); }").Diagnostics.ShouldHaveSingleItem();
+
+        d.Code.ShouldBe("SD0671");
+    }
+
+    [Theory]
+    [InlineData("half4 main(float2 p) { return half4(sk_FragCoord.xy, 0, 1); }", "SD0666")]
+    [InlineData("layout(color) uniform half4 c; half4 main(float2 p) { return c; }", "SD0666")]
+    [InlineData("uniform float2x3 m; half4 main(float2 p) { return half4(1); }", "SD0666")]
+    [InlineData("uniform float iTime; half4 main(float2 p) { return half4(iTime); }", "SD0667")]
+    [InlineData("uniform float sd_x; half4 main(float2 p) { return half4(sd_x); }", "SD0667")]
+    [InlineData("half4 main(float2 p) { return half4(gl_FragCoord); }", "SD0667")]
+    [InlineData("half4 f(float2 p) { return half4(1); }", "SD0661")]
+    [InlineData("half4 main(float2 p) { return half4(1); } half4 main(float2 q) { return half4(0); }", "SD0662")]
+    [InlineData("half4 main(half4 c) { return c; }", "SD0663")]
+    [InlineData("half4 main(half4 s, half4 d) { return s; }", "SD0664")]
+    [InlineData("half4 main(float x) { return half4(x); }", "SD0665")]
+    [InlineData("half4 main(float2 p) { return nope.eval(p); }", "SD0668")]
+    [InlineData("uniform shader a; half4 main(float2 p) { return half4(1); }", "SD0669")]
+    [InlineData("uniform shader img;\nhalf4 main(float2 p) { return img.eval(p; }", "SD0670")]
+    public void Convert_Diagnostics_CarryStableCodes(string sksl, string code) =>
+        SkSLToFxConverter.Convert(sksl).Diagnostics.ShouldContain(d => d.Code == code);
+
+    [Fact]
+    public void Convert_CommonSource_CarriesSD0660() =>
+        SkSLToFxConverter.Convert(Plain, new ConvertOptions { CommonSource = "float k;" })
+            .Diagnostics.ShouldHaveSingleItem().Code.ShouldBe("SD0660");
+
+    [Fact]
+    public void Convert_AShaderToyStageFailure_IsCodedSD0672()
+    {
+        ConvertResult r = SkSLToFxConverter.Convert("half4 main(float2 p) { return half4(nosuchfn(p.x)); }");
+
+        r.Success.ShouldBeFalse();
+        r.Diagnostics.ShouldNotBeEmpty();
+        r.Diagnostics.ShouldAllBe(d => d.Code == "SD0672");
+    }
 }

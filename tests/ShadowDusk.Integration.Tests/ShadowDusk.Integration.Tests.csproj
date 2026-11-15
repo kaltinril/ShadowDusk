@@ -22,6 +22,8 @@
     <!-- Phase 47: the ShaderToy/GLSL -> .fx front-end, for the byte-identity test that proves the
          CLI's .glsl route adds no behavior over Convert + the existing pipeline. -->
     <ProjectReference Include="..\..\src\ShadowDusk.ShaderToy\ShadowDusk.ShaderToy.csproj" />
+    <!-- Issue #507: the SkSL frontend, for the int/bool uniform lowering compiled on every target. -->
+    <ProjectReference Include="..\..\src\ShadowDusk.SkSL\ShadowDusk.SkSL.csproj" />
     <ProjectReference Include="..\..\src\ShadowDusk.HLSL\ShadowDusk.HLSL.csproj" />
     <ProjectReference Include="..\..\src\ShadowDusk.GLSL\ShadowDusk.GLSL.csproj" />
     <!-- Phase 21: reference the CLI so its binary is built alongside the tests.

@@ -32,6 +32,10 @@ namespace ShadowDusk.SkSL;
 /// <c>imgTexelSize</c> to <c>1 / (width, height)</c> of that texture. <c>img.eval(p)</c> samples at
 /// <c>p * imgTexelSize</c>, so SkSL's pixel coordinates carry over. Use the sampler state Skia would
 /// (e.g. <c>SamplerState.LinearClamp</c> for a clamped, linearly filtered image shader).</item>
+/// <item><b>Integer uniforms:</b> <c>uniform int</c>/<c>bool</c> (and vectors) become <c>float</c> effect
+/// parameters on every target (the OpenGL target has no integer uniforms); the shader still reads them
+/// as <c>int(name)</c>/<c>bool(name)</c>. The host sets a float: the whole number for an int, 0 or 1 for
+/// a bool.</item>
 /// <item><b>Alpha:</b> SkSL works in premultiplied alpha (<c>eval</c> returns premultiplied color and
 /// <c>main</c> returns premultiplied color). The <c>.fx</c> has two techniques, so either texture
 /// convention renders what Skia's <c>SrcOver</c> renders with no conversion by the host:
@@ -99,6 +103,12 @@ public static class SkSLToFxConverter
 
     private static readonly Regex ChildDecl = new(@"\buniform\s+shader\s+(?<n>\w+)\s*;", RegexOptions.Compiled);
 
+    // An int/bool uniform (scalar or vector, any precision qualifier). The terminator tells a plain
+    // declaration (';') from an array ('['), a multi-declarator (',') or an initializer ('=').
+    private static readonly Regex IntegerUniform = new(
+        @"\buniform\s+(?:(?:highp|mediump|lowp)\s+)?(?<t>(?:int|short|bool)[234]?)\s+(?<n>\w+)\s*(?<end>[;,\[=])",
+        RegexOptions.Compiled);
+
     private static readonly Regex AnyEval = new(@"\b(?<n>\w+)\s*\.\s*eval\s*\(", RegexOptions.Compiled);
 
     private static readonly Regex NonSquareMatrix = new(@"^(?:half|float)([2-4])x([2-4])$", RegexOptions.Compiled);
@@ -127,7 +137,7 @@ public static class SkSLToFxConverter
         options ??= ShaderToyDefaults;
         if (options.CommonSource is not null)
         {
-            return Fail(new[] { Error("CommonSource is a ShaderToy option; SkSL has no Common tab.", 0, 0, "CommonSource") });
+            return Fail(new[] { Error("SD0660", "CommonSource is a ShaderToy option; SkSL has no Common tab.", 0, 0, "CommonSource") });
         }
 
         options = options with
@@ -150,6 +160,11 @@ public static class SkSLToFxConverter
             source = RewriteEvals(source, children, diagnostics);
         }
 
+        if (diagnostics.Count == 0)
+        {
+            source = LowerIntegerUniforms(source, diagnostics);
+        }
+
         if (diagnostics.Count > 0)
         {
             return Fail(diagnostics);
@@ -165,8 +180,132 @@ public static class SkSLToFxConverter
         source = EntryDecl.Replace(source, m => $"vec4 mainImage(in vec2 {m.Groups["pname"].Value})", 1);
         source = Identifier.Replace(source, m => Types.TryGetValue(m.Value, out string? glsl) ? glsl : m.Value);
 
-        return ShaderToyConverter.Convert(source, options);
+        ConvertResult result = ShaderToyConverter.Convert(source, options);
+
+        // The ShaderToy stage's diagnostics carry no code; give them the SkSL frontend's, so every
+        // diagnostic a host sees from this entry point is branchable.
+        return result with
+        {
+            Diagnostics = result.Diagnostics
+                .Select(d => d.Code is not null
+                    ? d
+                    : d with { Code = d.Severity == DiagnosticSeverity.Error ? "SD0672" : "SD0673" })
+                .ToList(),
+        };
     }
+
+    /// <summary>
+    /// Lowers <c>uniform int/bool</c> (and their vectors) to float uniforms. The effect model has no
+    /// usable integer or boolean uniform on the OpenGL target (SD0210), and MonoGame's float parameters
+    /// are what a host sets. The uniform keeps its name and becomes <c>float</c>; every use in the source
+    /// reads <c>int(name)</c> / <c>bool(name)</c> so the shader still computes in the declared type
+    /// (integer division, <c>%</c>, array indices). The host sets 0/1 for a bool and the whole number
+    /// for an int. A form this cannot lower faithfully (array, multi-declarator, a local that reuses the name)
+    /// is refused with SD0671.
+    /// </summary>
+    private static string LowerIntegerUniforms(string source, List<ConvertDiagnostic> diagnostics)
+    {
+        MatchCollection decls = IntegerUniform.Matches(source);
+        if (decls.Count == 0)
+        {
+            return source;
+        }
+
+        var lowered = new Dictionary<string, string>(StringComparer.Ordinal);
+        var edits = new List<(int Index, int Length, string Text)>();
+        var declNames = new HashSet<int>();
+        foreach (Match m in decls)
+        {
+            string name = m.Groups["n"].Value;
+            string type = m.Groups["t"].Value;
+            string end = m.Groups["end"].Value;
+            Group nameGroup = m.Groups["n"];
+            if (end != ";")
+            {
+                Locate(source, nameGroup.Index, out int line, out int col);
+                string why = end switch
+                {
+                    "[" => "an array",
+                    "," => "declared with others in one statement",
+                    _ => "initialized",
+                };
+                diagnostics.Add(Error(
+                    "SD0671",
+                    $"'uniform {type} {name}' cannot be lowered to a float uniform because it is {why}. " +
+                    "Declare it on its own as a plain 'uniform float' (or 'half') and convert in the shader.",
+                    line, col, name));
+                continue;
+            }
+
+            if (HasOtherDeclaration(source, name, nameGroup.Index))
+            {
+                Locate(source, nameGroup.Index, out int line, out int col);
+                diagnostics.Add(Error(
+                    "SD0671",
+                    $"'uniform {type} {name}' cannot be lowered to a float uniform because '{name}' is also " +
+                    "declared as a local or parameter. Rename one of them.",
+                    line, col, name));
+                continue;
+            }
+
+            lowered[name] = type;
+            declNames.Add(nameGroup.Index);
+            Group t = m.Groups["t"];
+            edits.Add((t.Index, t.Length, type.Length > 1 && char.IsDigit(type[^1]) ? "float" + type[^1] : "float"));
+        }
+
+        if (diagnostics.Count > 0)
+        {
+            return source;
+        }
+
+        foreach (Match m in Identifier.Matches(source))
+        {
+            if (!lowered.TryGetValue(m.Value, out string? type) || declNames.Contains(m.Index))
+            {
+                continue;
+            }
+
+            int prev = m.Index - 1;
+            while (prev >= 0 && char.IsWhiteSpace(source[prev]))
+            {
+                prev--;
+            }
+
+            if (prev >= 0 && source[prev] == '.')
+            {
+                continue; // a struct field or swizzle that happens to share the name
+            }
+
+            edits.Add((m.Index, m.Length, $"{type}({m.Value})"));
+        }
+
+        var sb = new StringBuilder(source);
+        foreach ((int index, int length, string text) in edits.OrderByDescending(e => e.Index))
+        {
+            sb.Remove(index, length);
+            sb.Insert(index, text);
+        }
+
+        return sb.ToString();
+    }
+
+    private static readonly string[] DeclarableTypes = BuildDeclarableTypes();
+
+    /// <summary>True when <paramref name="name"/> is declared again (a local or parameter) elsewhere than at <paramref name="uniformNameIndex"/>.</summary>
+    private static bool HasOtherDeclaration(string source, string name, int uniformNameIndex)
+    {
+        var declaration = new Regex(
+            @"\b(?:" + string.Join("|", DeclarableTypes) + @")\s+" + Regex.Escape(name) + @"\b");
+        return declaration.Matches(source).Any(m => m.Index + m.Length - name.Length != uniformNameIndex);
+    }
+
+    private static string[] BuildDeclarableTypes() =>
+        Types.Keys
+            .Concat(new[] { "int", "float", "bool", "uint" })
+            .Concat(Enumerable.Range(2, 3).SelectMany(n => new[] { $"vec{n}", $"ivec{n}", $"bvec{n}", $"uvec{n}", $"mat{n}" }))
+            .Select(Regex.Escape)
+            .ToArray();
 
     /// <summary>Require exactly one <c>half4 main(float2)</c>; name the SkSL shape of anything else.</summary>
     private static void CheckEntry(string source, List<ConvertDiagnostic> diagnostics)
@@ -175,6 +314,7 @@ public static class SkSLToFxConverter
         if (mains.Count == 0)
         {
             diagnostics.Add(Error(
+                "SD0661",
                 "No 'half4 main(float2 coord)' entry point was found. Only SkSL shaders (not color filters " +
                 "or blenders) are supported.", 0, 0, "main"));
             return;
@@ -183,7 +323,7 @@ public static class SkSLToFxConverter
         if (mains.Count > 1)
         {
             Locate(source, mains[1].Index, out int l, out int c);
-            diagnostics.Add(Error("Multiple 'main' definitions found.", l, c, "main"));
+            diagnostics.Add(Error("SD0662", "Multiple 'main' definitions found.", l, c, "main"));
             return;
         }
 
@@ -197,6 +337,7 @@ public static class SkSLToFxConverter
         if (parameters.Length == 1 && ColorVectors.Contains(parameters[0]))
         {
             diagnostics.Add(Error(
+                "SD0663",
                 "This is an SkSL color filter ('half4 main(half4 color)'); only shaders ('half4 main(float2 " +
                 "coord)') are supported. Apply the filter's math to the color inside a shader instead.",
                 line, col, "main"));
@@ -204,6 +345,7 @@ public static class SkSLToFxConverter
         else if (parameters.Length == 2 && ColorVectors.Contains(parameters[0]) && ColorVectors.Contains(parameters[1]))
         {
             diagnostics.Add(Error(
+                "SD0664",
                 "This is an SkSL blender ('half4 main(half4 src, half4 dst)'); only shaders ('half4 main(float2 " +
                 "coord)') are supported. A blender has no MonoGame equivalent: use a BlendState, or a shader " +
                 "that samples the destination as a child.",
@@ -212,6 +354,7 @@ public static class SkSLToFxConverter
         else
         {
             diagnostics.Add(Error(
+                "SD0665",
                 "An SkSL shader's entry must be 'half4 main(float2 coord)' (or float4/vec4 and half2/vec2): " +
                 "it takes one coordinate and returns a premultiplied color.",
                 line, col, "main"));
@@ -248,11 +391,11 @@ public static class SkSLToFxConverter
                 continue;
             }
 
-            string? message = Unsupported(m.Value, texelSizes);
-            if (message is not null && reported.Add(m.Value))
+            (string Code, string Message)? bad = Unsupported(m.Value, texelSizes);
+            if (bad is not null && reported.Add(m.Value))
             {
                 Locate(source, m.Index, out int line, out int col);
-                diagnostics.Add(Error(message, line, col, m.Value));
+                diagnostics.Add(Error(bad.Value.Code, bad.Value.Message, line, col, m.Value));
             }
         }
 
@@ -263,6 +406,7 @@ public static class SkSLToFxConverter
             {
                 Locate(source, m.Index, out int line, out int col);
                 diagnostics.Add(Error(
+                    "SD0668",
                     $"'{name}.eval' does not name a 'uniform shader' child; only globals declared " +
                     "'uniform shader name;' can be evaluated.",
                     line, col, name + ".eval"));
@@ -281,6 +425,7 @@ public static class SkSLToFxConverter
             {
                 Locate(source, m.Groups["n"].Index, out int line, out int col);
                 diagnostics.Add(Error(
+                    "SD0669",
                     $"'uniform shader {child};' is never evaluated. Remove it: a child the shader does not " +
                     "sample gets no texture parameter, and the children declared after it would be bound " +
                     "one texture slot early.",
@@ -289,63 +434,63 @@ public static class SkSLToFxConverter
         }
     }
 
-    private static string? Unsupported(string name, Dictionary<string, string> texelSizes)
+    private static (string Code, string Message)? Unsupported(string name, Dictionary<string, string> texelSizes)
     {
         switch (name)
         {
             case "sk_FragCoord":
-                return "sk_FragCoord is not supported: Skia's runtime shaders (SkiaSharp 3 and later) do not " +
+                return U("SD0666", "sk_FragCoord is not supported: Skia's runtime shaders (SkiaSharp 3 and later) do not " +
                        "accept it either. Use the coordinate passed to main (the pixel coordinate when the " +
-                       "shader is drawn untransformed).";
+                       "shader is drawn untransformed).");
             case "layout":
-                return "layout(color) uniforms are not supported yet; declare a plain half4/float4 uniform " +
+                return U("SD0666", "layout(color) uniforms are not supported yet; declare a plain half4/float4 uniform " +
                        "and set it to the color already in the destination's color space (for an untagged " +
-                       "surface, the sRGB values).";
+                       "surface, the sRGB values).");
             case "unpremul":
-                return "unpremul() is not supported yet; divide instead: half4(c.rgb / max(c.a, 0.0001), c.a).";
+                return U("SD0666", "unpremul() is not supported yet; divide instead: half4(c.rgb / max(c.a, 0.0001), c.a).");
             case "toLinearSrgb":
             case "fromLinearSrgb":
-                return $"{name}() is not supported: the converted shader has no working color space. Do the " +
-                       "conversion on the host or write the transfer function out.";
+                return U("SD0666", $"{name}() is not supported: the converted shader has no working color space. Do the " +
+                       "conversion on the host or write the transfer function out.");
             case "colorFilter":
             case "blender":
-                return $"'{name}' children are not supported yet; only 'uniform shader' children are.";
+                return U("SD0666", $"'{name}' children are not supported yet; only 'uniform shader' children are.");
             case "shader":
-                return "'shader' is only supported as a global 'uniform shader name;' evaluated with " +
+                return U("SD0666", "'shader' is only supported as a global 'uniform shader name;' evaluated with " +
                        "name.eval(coord). To pass a child to a function, call eval at the call site and " +
-                       "pass the color.";
+                       "pass the color.");
         }
 
         if (name.StartsWith("sk_", StringComparison.Ordinal))
         {
-            return $"'{name}' is not an SkSL built-in this converter supports.";
+            return U("SD0666", $"'{name}' is not an SkSL built-in this converter supports.");
         }
 
         if (name.StartsWith("sd_", StringComparison.Ordinal))
         {
-            return $"'{name}' is reserved: the 'sd_' prefix belongs to the SkSL-to-.fx conversion. Rename this identifier.";
+            return U("SD0667", $"'{name}' is reserved: the 'sd_' prefix belongs to the SkSL-to-.fx conversion. Rename this identifier.");
         }
 
         if (name.StartsWith("gl_", StringComparison.Ordinal))
         {
-            return $"'{name}' is a GLSL built-in, not SkSL; use the coordinate passed to main.";
+            return U("SD0667", $"'{name}' is a GLSL built-in, not SkSL; use the coordinate passed to main.");
         }
 
         if (texelSizes.TryGetValue(name, out string? child))
         {
-            return $"'{name}' is reserved: the converter declares it for child shader '{child}' (the host " +
-                   "sets it to 1 / the child's size in pixels). Rename this identifier.";
+            return U("SD0667", $"'{name}' is reserved: the converter declares it for child shader '{child}' (the host " +
+                   "sets it to 1 / the child's size in pixels). Rename this identifier.");
         }
 
         if (UniformInfo.IsUniform(name) || ReservedNames.Contains(name))
         {
-            return $"'{name}' is reserved by the SkSL-to-.fx conversion (the host drives it); rename this identifier.";
+            return U("SD0667", $"'{name}' is reserved by the SkSL-to-.fx conversion (the host drives it); rename this identifier.");
         }
 
         Match nonSquare = NonSquareMatrix.Match(name);
         if (nonSquare.Success && nonSquare.Groups[1].Value != nonSquare.Groups[2].Value)
         {
-            return $"Non-square matrix types ('{name}') are not supported yet.";
+            return U("SD0666", $"Non-square matrix types ('{name}') are not supported yet.");
         }
 
         return null;
@@ -379,7 +524,7 @@ public static class SkSLToFxConverter
             if (depth != 0)
             {
                 Locate(source, m.Index, out int line, out int col);
-                diagnostics.Add(Error($"Unbalanced parentheses in '{n}.eval('.", line, col, n + ".eval"));
+                diagnostics.Add(Error("SD0670", $"Unbalanced parentheses in '{n}.eval('.", line, col, n + ".eval"));
                 return source;
             }
 
@@ -409,8 +554,10 @@ public static class SkSLToFxConverter
         }
     }
 
-    private static ConvertDiagnostic Error(string message, int line, int col, string construct) =>
-        new(DiagnosticSeverity.Error, message, line, col, construct);
+    private static (string Code, string Message) U(string code, string message) => (code, message);
+
+    private static ConvertDiagnostic Error(string code, string message, int line, int col, string construct) =>
+        new(DiagnosticSeverity.Error, message, line, col, construct, code);
 
     private static ConvertResult Fail(IReadOnlyList<ConvertDiagnostic> diagnostics) => new()
     {

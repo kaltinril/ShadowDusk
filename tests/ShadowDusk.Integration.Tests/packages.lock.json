@@ -303,6 +303,12 @@
           "ShadowDusk.Core": "[0.25.1, )"
         }
       },
+      "shadowdusk.sksl": {
+        "type": "Project",
+        "dependencies": {
+          "ShadowDusk.ShaderToy": "[0.25.1, )"
+        }
+      },
       "Silk.NET.SPIRV.Cross.Native": {
         "type": "CentralTransitive",
         "requested": "[2.23.0, )",
@@ -632,6 +638,12 @@
         "type": "Project",
         "dependencies": {
           "ShadowDusk.Core": "[0.25.1, )"
+        }
+      },
+      "shadowdusk.sksl": {
+        "type": "Project",
+        "dependencies": {
+          "ShadowDusk.ShaderToy": "[0.25.1, )"
         }
       },
       "Silk.NET.SPIRV.Cross.Native": {
