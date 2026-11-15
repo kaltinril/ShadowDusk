@@ -129,6 +129,7 @@ string RefOf(GlJob j) => j.StraightTextures && j.NonPremulBlend ? j.Case.Name + 
 
 // ---- Convert + compile every case through the real product pipeline ----------
 var mgfx = new Dictionary<string, byte[]>();
+int otherTargetFailures = 0;
 foreach (Case c in cases)
 {
     ConvertResult conv = SkSLToFxConverter.Convert(c.Sksl);
@@ -150,7 +151,30 @@ foreach (Case c in cases)
         return 2;
     }
     mgfx[c.Name] = compiled.Value.Data;
+
+    // The same .fx must at least COMPILE for every other target (rung 1 only: this driver
+    // renders OpenGL). It has no vertex shader of its own, so each backend has to accept a
+    // pixel-shader-only pass whose input is SpriteBatch's vertex output.
+    foreach (PlatformTarget other in new[] { PlatformTarget.DirectX, PlatformTarget.DirectX12, PlatformTarget.Vulkan, PlatformTarget.Fna })
+    {
+        var otherCompiled = await new EffectCompiler().CompileAsync(conv.Fx, new CompilerOptions
+        {
+            Target = other,
+            IncludeResolver = new FileSystemIncludeResolver(),
+            SourceFileName = c.Name + ".fx",
+        });
+        if (otherCompiled.IsFailure)
+        {
+            Console.Error.WriteLine($"[sksl] {c.Name}: {other} compile FAILED: " + string.Join(" | ", otherCompiled.Error.Select(e => $"{e.Code}: {e.Message}")));
+            otherTargetFailures++;
+        }
+    }
 }
+Console.WriteLine(otherTargetFailures == 0
+    ? $"[sksl] every case also compiles for DirectX, DirectX12, Vulkan and Fna (compile only, not rendered here)"
+    : $"[sksl] {otherTargetFailures} compile failure(s) on the other targets");
+if (otherTargetFailures > 0)
+    return 2;
 
 // ---- Skia arm (reference) ----------------------------------------------------
 var reference = new Dictionary<string, byte[]>();

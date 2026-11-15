@@ -78,7 +78,7 @@ Apply them in that order to every decision in this phase.
    depend on the working color space and need a host contract first.
 5. **Matrix uniforms**: square matrices convert (`mul(p, m)`), but the host-side upload order is
    not render-proven against Skia yet.
-6. **DirectX and FNA arms**: the gate proves OpenGL only; add a DX11-on-WARP arm.
+6. **DirectX and FNA arms**: the gate proves OpenGL only; add a DX11-on-WARP arm. Since 2026-11-14 `validation/SkSLVsGl` also COMPILES every case for DirectX 11, DirectX 12, Vulkan and FNA and fails if one does not (the pixel-shader-only `.fx` is accepted by every backend); none of them is rendered yet.
 7. **Packaging**: a `PackageId`, `README.md`, `release.yml` entry, the support-surface docs
    (`README.md` targets table, `docs/the-purpose.md`, `docs/pipeline-overview.puml` and its SVG,
    the DocFX pages) and a CLI/`ShaderFormatDetector` route. It must ship at the same version as
