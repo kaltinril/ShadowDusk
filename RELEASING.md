@@ -109,6 +109,9 @@ to nuget.org, and attaches self-contained CLI binaries for each RID to a GitHub 
    as a no-op). If the machine is not Windows or has no GPU, say so and stop: `dotnet test`
    alone is not a basis for releasing.
 
+   The script prints each gate's time and the total. Measured 2026-11-14 on a 16-core box
+   with an RTX 3080 and warm NuGet and build caches: 62 gates with `-IncludeFna` in 19 min.
+
    A non-zero exit means a render diverged from `mgfxc`/`fxc` — **do not release.** (The
    in-process OpenGL render gates DO run in CI via `validation-render.yml`, so they are covered
    by item 3; this item is the DX/DX12/FNA/KNI-DX/KNI-GL/Vulkan/ANGLE gap. See `CLAUDE.md` →
