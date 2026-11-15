@@ -51,6 +51,10 @@ public sealed class SlangcTimeoutTests
         ex.Message.ShouldContain("did not exit within 2 s", Case.Sensitive);
         ex.Message.ShouldContain(path, Case.Sensitive);
         ex.Message.ShouldContain(string.Join(' ', arguments), Case.Sensitive);
+        // What the child was doing, so a stuck run can be told from a slow one: this child
+        // never reads stdin, but the small source fits the pipe buffer, so the write finished.
+        ex.Message.ShouldContain("s of CPU used, source fully written to stdin", Case.Sensitive);
+        ex.Message.ShouldContain("stdout and 0 stderr characters read]", Case.Sensitive);
     }
 
     [Fact]
@@ -183,5 +187,6 @@ public sealed class SlangcTimeoutTests
 
         clock.Elapsed.ShouldBeLessThan(TimeSpan.FromSeconds(30));
         ex.Message.ShouldContain("did not exit within 2 s", Case.Sensitive);
+        ex.Message.ShouldContain("source write to stdin still blocked", Case.Sensitive);
     }
 }

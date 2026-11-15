@@ -14,7 +14,11 @@ that loads and renders identically to `mgfxc`'s in the real MonoGame/KNI runtime
 
 ### Added
 
-- `ShadowDusk.SkSL` (not yet packaged, [Phase 71](plan/PHASE-71-sksl-input-frontend.md)): `SkSLToFxConverter` converts SkSL runtime-effect shaders (`half4 main(float2)`) to `.fx`, including `uniform shader` children (`img.eval(p)` samples at `p * imgTexelSize`, a host-set 1/size). Each `.fx` has two techniques: `SkSL` (default) for premultiplied textures with `BlendState.AlphaBlend`, and `SkSLStraightAlpha` for straight-alpha textures with `BlendState.NonPremultiplied` (Gum's default). Unsupported SkSL (`sk_FragCoord`, `layout(color)`, color filters, blenders, color-space built-ins, non-square matrices) fails with an SkSL diagnostic. The `.fx` is pixel-shader only and drawn with `SpriteBatch`, with `iResolution` set to the sprite's size, so `main`'s coordinate is local to the sprite wherever it is drawn, as in Gum's Skia runtime. `validation/SkSLVsGl` renders the same SkSL in real SkiaSharp and, converted, in real MonoGame DesktopGL at 64x48: 7/7 premultiplied cases (one an offset 40x30 sprite) and 3/3 straight-alpha arms within 2/255, eight positive controls caught; in the ubuntu GL CI job.
+- `ShadowDusk.SkSL` (not yet packaged, [Phase 71](plan/PHASE-71-sksl-input-frontend.md)): `SkSLToFxConverter` converts SkSL runtime-effect shaders (`half4 main(float2)`) to `.fx`, including `uniform shader` children (`img.eval(p)` samples at `p * imgTexelSize`, a host-set 1/size). Each `.fx` has two techniques: `SkSL` (default) for premultiplied textures with `BlendState.AlphaBlend`, and `SkSLStraightAlpha` for straight-alpha textures with `BlendState.NonPremultiplied` (Gum's default). Unsupported SkSL (`sk_FragCoord`, which SkiaSharp 3 and later reject too, `layout(color)`, color filters, blenders, color-space built-ins, non-square matrices) fails with an SkSL diagnostic. The `.fx` is pixel-shader only and drawn with `SpriteBatch`, with `iResolution` set to the sprite's size, so `main`'s coordinate is local to the sprite wherever it is drawn, as in Gum's Skia runtime. `validation/SkSLVsGl` renders the same SkSL in real SkiaSharp and, converted, in real MonoGame DesktopGL at 64x48: 7/7 premultiplied cases (one an offset 40x30 sprite) and 3/3 straight-alpha arms within 2/255, eight positive controls caught; in the ubuntu GL CI job.
+
+- `ShaderConverter.Compile` / `CompileAsync` read ShaderToy and plain GLSL when the `ShadowDusk.ShaderToy` package is installed: hand them any source and they convert and compile it, with no call to `ShaderToyConverter` and no registration code. The package registers a frontend (`ShaderToyFrontend`) with the new `ShaderFrontends` registry in `ShadowDusk.Core` (`IShaderFrontend`); a trimmed application calls `ShaderToyFrontend.Register()` once. The result is byte-identical to converting and compiling in two steps with the same names (a name hint names the effect and technique after the file, as the CLI does; no hint keeps the converter's defaults), conversion errors are the converter's own (`SD0006`, located in the GLSL), and without the package GLSL is still `UnsupportedInput` (`SD0650`). `ShaderConverter.CanCompile` is the cheap check for these two methods; `CanConvert` is unchanged. `ConvertToSksl` and `ConvertToRaylib` still read only `.fx` and Slang ([#473](https://github.com/kaltinril/ShadowDusk/issues/473)).
+
+- `RuntimeProfileDetector.RecommendKnifx(Assembly)` (and a `Version` overload): a KNI game that compiles to KNIFX at runtime passes `typeof(Game).Assembly` and gets the KNIFX version its own KNI loads, v12 on KNI 4.3 and later, v11 on older ones, instead of choosing between `KniGL_4_02` and `KniGL_4_03` itself. Checked on real KNI 4.2.9001 and 4.3.9001 ([#456](https://github.com/kaltinril/ShadowDusk/issues/456)).
 
 - `validation/ManagedDxilDx12`: DXIL signed only by the managed container hash loads in real MonoGame `WindowsDX12` and renders pixel-identical to the `dxil.dll`-signed build and the `mgfxc` golden (PS corpus and VS rig), with a wrong-hash negative control; in the DX-on-WARP CI job and the Windows render gate script ([#478](https://github.com/kaltinril/ShadowDusk/issues/478)).
 
@@ -22,9 +26,17 @@ that loads and renders identically to `mgfxc`'s in the real MonoGame/KNI runtime
 
 ### Changed
 
+- `ShadowDusk.ShaderToy` now depends on `ShadowDusk.Core` (pure managed, no dependencies of its own), its first package dependency, so it can register its frontend. `ShadowDusk.Compiler` still does not depend on `ShadowDusk.ShaderToy`.
+
 - ShaderToy and SkSL conversion: the generated `.fx` keeps only the parentheses that precedence, associativity or readability need (`tex2D(img, (c + float2(1, 0)) * imgTexelSize)` instead of `tex2D(img, ((c + float2(1, 0)) * imgTexelSize))`, `(float3)a` instead of `((float3)(a))`). The compiled output is unchanged: every re-pinned converter golden builds to the same `.mgfx` bytes on OpenGL and DirectX 11, and `mgfxc` rebuilt the `GradientToy` goldens byte-identical.
 
 ### Fixed
+
+- `RuntimeProfileDetector.Classify` recognises real KNI. KNI's assemblies are named `Xna.Framework*`; the detector looked for the package id `nkast.Xna.Framework*` and reported every real KNI as `Unknown`. `Recommend` returned the same MGFX v10 profile either way, so no output changed.
+
+- `ShadowDusk.Slang`: an `SD0645` timeout now says what slangc was doing when it was killed (CPU time used, whether it had read the whole source, how much output had arrived), so a stuck slangc can be told from a slow one.
+
+- `ShadowDusk.Slang`: a slangc run no longer depends on free thread-pool threads. On a busy pool (many compiles at once, a loaded machine) slangc's output was not read, so the compile stalled until `SlangcTimeout` and failed `SD0645`, and the timeout itself could fire minutes late (measured: 216 s for a 2 s limit). The pipes now have dedicated threads and the timeout is a plain timed wait.
 
 - ShaderToy and SkSL conversion: a doubled prefix sign (`-(-x)`, `- -x`) no longer emits `--x`, a decrement in HLSL; it now emits `-(-x)`.
 

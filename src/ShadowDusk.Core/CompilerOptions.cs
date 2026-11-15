@@ -215,17 +215,26 @@ public sealed class CompilerOptions
     internal CompilerOptions WithGlTextureDeclarationOrder(IReadOnlyDictionary<string, int> order) =>
         Copy(Target, SamplerArraysFromCombinedSamplers, CombinedSamplerGlSlots, order);
 
+    /// <summary>
+    /// Returns a copy with <see cref="SourceFileName"/> replaced, preserving every other setting.
+    /// <c>ShaderConverter</c> uses it to file the compile of a frontend's generated <c>.fx</c>
+    /// under a generated name, never under the original source's.
+    /// </summary>
+    internal CompilerOptions WithSourceFileName(string sourceFileName) =>
+        Copy(Target, SamplerArraysFromCombinedSamplers, CombinedSamplerGlSlots, GlTextureDeclarationOrder, sourceFileName);
+
     private CompilerOptions Copy(
         PlatformTarget target,
         IReadOnlyCollection<string> samplerArraysFromCombinedSamplers,
         IReadOnlyDictionary<string, int> combinedSamplerGlSlots,
-        IReadOnlyDictionary<string, int> glTextureDeclarationOrder) => new()
+        IReadOnlyDictionary<string, int> glTextureDeclarationOrder,
+        string? sourceFileName = null) => new()
     {
         Target                 = target,
         Profile                = Profile,
         IncludeResolver        = IncludeResolver,
         AdditionalIncludePaths = AdditionalIncludePaths,
-        SourceFileName         = SourceFileName,
+        SourceFileName         = sourceFileName ?? SourceFileName,
         EmbeddedSourceFileName = EmbeddedSourceFileName,
         Debug                  = Debug,
         MgfxVersion            = MgfxVersion,
