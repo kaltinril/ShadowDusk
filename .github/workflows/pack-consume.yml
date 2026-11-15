@@ -26,6 +26,9 @@ name: Pack & Consume Smoke
 
 on:
   workflow_dispatch:
+  # Also callable: release.yml runs this as a gate before publishing (issue #483). In a called
+  # workflow `github.workflow` is the CALLER's name, so the concurrency group below is a literal.
+  workflow_call:
   # Label-gated on PRs (the job `if:` requires the 'run-integration' label —
   # heavyweight: packs + a cold consumer restore). NOTE: unlike ci.yml's integration
   # job there is NO push-to-main trigger here; the weekly schedule below is the
@@ -42,7 +45,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
+  group: Pack & Consume Smoke-${{ github.ref }}
   cancel-in-progress: true
 
 env:

@@ -51,7 +51,10 @@ to nuget.org, and attaches self-contained CLI binaries for each RID to a GitHub 
    their first publish reserves those IDs — the glob-scoped key in step 1 already covers them.
 
 3. **A green `main`.** CI (`ci.yml`) runs the 3-OS build + test matrix on every push/PR.
-   Releases cut from `main` only after CI is green; local green is not sufficient.
+   Releases cut from `main` only after CI is green. `release.yml` enforces it: its `verify-ci` job
+   fails unless `ci.yml` and `validation-render.yml` have a successful run on the release commit (or,
+   when a workflow's path filter skipped that commit, on the newest earlier commit that triggers it).
+   There is no local build or test step in a release: PR CI already runs the full suite on three OSes.
 
 4. **Local tooling the render gate needs — install this BEFORE reading a red gate as a
    divergence.** The gate script needs **PowerShell 7** (`pwsh`; `tools/restore.ps1` carries
@@ -91,8 +94,8 @@ to nuget.org, and attaches self-contained CLI binaries for each RID to a GitHub 
    `KniVsDriven`, the MGCB plugin / XNB / Content Builder gates,
    the Slang DX12/Vulkan/FNA arms, and browser-ANGLE (CI's browser smoke renders on SwiftShader,
    blind to ANGLE-D3D11 behavior like the issue-#136 gradient poisoning). No GPU driver is ever
-   exercised in CI. **`release.yml` does not check any of this either**, so this gate is the only
-   thing between a render regression and nuget.org. Run it on
+   exercised in CI. **`release.yml` checks only the CI-run part (`validation-render.yml`), not the
+   GPU gate**, so this gate is the only thing between a GPU-only render regression and nuget.org. Run it on
    a Windows box with a **DX12-capable GPU** (the DirectX 12 gates are default-ON; Vulkan-capable
    too, unless `-SkipVulkan`) **before** bumping the version — it is the longest and most likely step
    to fail, so a divergence should stop the release before any version churn, commit, PR, or CI
@@ -140,9 +143,11 @@ ten packages (and their inter-package dependency ranges) at the same version.
 > those pin third-party dependency versions under Central Package Management. Leave them
 > alone.)
 
-To bump for a release, change that one line (e.g. `0.25.0` → `0.25.1`), update
-`CHANGELOG.md` (move `[Unreleased]` into a dated `[0.25.1]` section, leave a fresh empty
-`[Unreleased]`), update the version examples in this file, commit, and merge to `main` via PR.
+To bump for a release, run `tools/bump-version.sh <version>` (bash, repo root, clean tree on the
+release branch). It sets that one line, rewrites the `ShadowDusk.*` ranges in every lock file,
+moves `CHANGELOG.md` `[Unreleased]` into a dated `[<version>]` section with a fresh empty
+`[Unreleased]` and the link references, updates the version examples in this file, and runs
+`tools/check-lock-files.sh`. Then commit and merge to `main` via PR.
 
 ---
 
@@ -157,21 +162,18 @@ so a stale one ships silently. Check all three:
   diagram. Quick check: `git log -1 --format=%cd docs/pipeline-overview.puml` vs the same for
   `docfx/images/pipeline-overview.svg`.
 - **`plan/PHASE-41-appendix/structural-divergence-matrix.md`** — no longer needs a release-time
-  refresh (issue #361): it carries no version stamp, and the pre-release full-suite run FAILS if
+  refresh (issue #361): it carries no version stamp, and PR CI's full suite FAILS if
   it is stale rather than rewriting it. If that test fails, regenerate it as `project_rules.md`
   says, review the diff (a changed divergence cell is a real signal, not noise) and commit it.
 - **Every `packages.lock.json`**, including versioned names such as
   `validation/KniXnbContentLoad/packages.4.3.9001.lock.json` (issues #258, #290). Each records the `ShadowDusk.*` project-reference
   ranges at the version current when it was last regenerated, and neither a normal restore nor
   CI's `--locked-mode` restore rewrites or rejects a stale one (0.19.0 and 0.20.0 both shipped
-  with lock files still saying `[0.18.0, )`). In the version-bump commit, rewrite them in place
-  (bash, repo root; `OLD`/`NEW` are the versions):
-  `git ls-files '*packages*.lock.json' | xargs sed -i -E 's/("ShadowDusk\.[A-Za-z.]+": "\[)OLD(, \)")/\1NEW\2/'`,
-  then confirm `git grep -h -o -E '"ShadowDusk\.[A-Za-z.]+": "\[[0-9.]+, \)"' -- '*packages*.lock.json' | sort | uniq -c`
-  lists only `NEW`. Prefer this to `dotnet restore --force-evaluate`, which also drops project
-  references whose source is not restored on your box (`validation/FnaValidation`'s
-  `external/FNA`). Finally run `tools/check-lock-files.sh`: it locked-restores every tracked lock
-  file (the `Lock files` CI job runs the same script, issue #291).
+  with lock files still saying `[0.18.0, )`). `tools/bump-version.sh` rewrites them in place in the version-bump commit, fails if any
+  `ShadowDusk.*` range is left at another version, and then runs `tools/check-lock-files.sh`, which
+  locked-restores every tracked lock file (the `Lock files` CI job runs the same script, issue #291).
+  It does not use `dotnet restore --force-evaluate`, which also drops project references whose
+  source is not restored on your box (`validation/FnaValidation`'s `external/FNA`).
 
 The `/release` skill's docs-audit step checks all three as a backstop, but the backstop catching
 drift is a process failure.
@@ -179,7 +181,7 @@ drift is a process failure.
 **Doc drift is fixed before the release, never deferred** (owner directive, 2026-10-29: "Always
 fix doc issues before the release."). The `/release` docs audit (step 7 of the skill) can run as a
 separate read-only agent, but every finding it reports is fixed on the release branch, each claim
-verified against the code or CI, before the build-and-test run and the release commit. If a fix
+verified against the code or CI, before the release commit. If a fix
 cannot land yet, the release stops and the owner decides.
 
 ---
@@ -209,10 +211,15 @@ first (the `/release` skill does this for you).
 ## What the workflow does
 
 1. **`validate`** — resolve + verify the version against `Directory.Build.props`.
-2. **build + test** on the 3-OS matrix (Linux / macOS / Windows).
-3. **publish** self-contained `ShadowDuskCLI` binaries per RID (`win-x64`, `linux-x64`, `osx-x64`,
+2. **`verify-ci`** — fails unless `ci.yml` and `validation-render.yml` are green on the release
+   commit (see Prerequisites item 3). Everything below needs it.
+   **`pack-consume`, `win-arm64` and `android-emulator`** run in the same dispatch, called from
+   `release.yml` with `workflow_call`; `nuget-push` needs all three, so there is nothing to
+   dispatch by hand first.
+3. **build + test** on the 3-OS matrix (Linux / macOS / Windows).
+4. **publish** self-contained `ShadowDuskCLI` binaries per RID (`win-x64`, `linux-x64`, `osx-x64`,
    `osx-arm64`) and archive them.
-4. **pack + push** all ten `ShadowDusk.*` packages (`.nupkg` + `.snupkg` symbols) to
+5. **pack + push** all ten `ShadowDusk.*` packages (`.nupkg` + `.snupkg` symbols) to
    nuget.org at the validated version, with `--skip-duplicate` (re-running a release no-ops
    on already-published versions). `ShadowDusk.Wasm` is packed in the WASM job (it needs the
    `wasm-tools` workload + restored `dxcompiler.wasm`); `ShadowDusk.MgcbPlugin` is packed in
@@ -221,7 +228,7 @@ first (the `/release` skill does this for you).
    otherwise) and on **not** carrying `MonoGame.Framework.Content.Pipeline.dll`;
    `ShadowDusk.ContentPipeline` is gated the opposite way, on shipping `lib/net8.0/` and on
    **declaring** its `MonoGame.Framework.Content.Pipeline` + `ShadowDusk.Compiler` dependencies.
-5. **GitHub Release** — create the release for the `v<version>` tag with the four CLI
+6. **GitHub Release** — create the release for the `v<version>` tag with the four CLI
    archives + the `.nupkg`/`.snupkg` set attached.
 
 ---
@@ -284,8 +291,7 @@ first (the `/release` skill does this for you).
 > DXC + SPIRV-Cross pack into `ShadowDusk.HLSL` / `ShadowDusk.GLSL` under
 > `runtimes/android-arm64/native/` (gated by `release.yml` and `pack-consume.yml`); the
 > `android-x64` pair is restored only for the emulator lane (`android-emulator.yml`) and is never
-> packed. **Before dispatching**, confirm the `Android emulator` workflow is green on the release
-> commit (`gh workflow run android-emulator.yml --ref main` if the last run is older): it is the
+> packed. `release.yml` runs the `Android emulator` workflow itself and `nuget-push` needs it: it is the
 > only run of the on-device compile and the Android identity checks. If any Android native is
 > rebuilt, upload it as a NEW asset (never replace one), re-pin its SHA-256 in both restore
 > scripts AND its GNU build id in `DxcNativeIdentity` / `SpvcLoader.AndroidBuildIdByRid`
@@ -300,9 +306,8 @@ first (the `/release` skill does this for you).
 > or `THIRD-PARTY-NOTICES.txt` (exact entry names). The list lives in ONE script,
 > `tools/verify-slang-nupkg.sh`, which `tools/verify-slang-packaging.sh` (pack-consume.yml) runs
 > too; to check a locally packed nupkg, `bash tools/verify-slang-nupkg.sh <path/to/nupkg>` (exits
-> 1 naming each missing entry). **Before dispatching**, confirm the
-> `Pack & Consume Smoke` workflow is green on the release commit (dispatch it if the last run is
-> older): its `tools/verify-slang-packaging.sh` step is the only proof that a cold consumer can
+> 1 naming each missing entry). `release.yml` runs
+> `Pack & Consume Smoke` itself and `nuget-push` needs it: its `tools/verify-slang-packaging.sh` step is the only proof that a cold consumer can
 > install the package and run slangc on Linux, macOS and Windows, and its macOS
 > `tools/verify-slang-osx-x64-rosetta.sh` step is the only run of the packaged **osx-x64** slangc
 > (under Rosetta 2, output byte-identical to osx-arm64; issue #352). Host floors are upstream's:
@@ -310,9 +315,8 @@ first (the `/release` skill does this for you).
 
 > **win-arm64 (issue #286):** the core pipeline as a native arm64 process (byte identity with
 > win-x64) and `ShadowDusk.Slang`'s `SD0620` there run only in the `win-arm64` workflow
-> (`windows-11-arm`). Before dispatching, run it on the branch or tag that points at the release
-> commit (`gh workflow run win-arm64.yml --ref main`; `--ref` takes a branch or tag, not a SHA),
-> check the run's head SHA is the release commit, and wait for green. No win-arm64 slangc is packed.
+> (`windows-11-arm`). `release.yml` runs it on the release commit and `nuget-push` needs it.
+> No win-arm64 slangc is packed.
 
 ---
 
