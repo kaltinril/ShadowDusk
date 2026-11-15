@@ -125,7 +125,8 @@ public sealed class CapabilityProfile
     /// header version changed (KNI's v12 reader is its v11 reader renamed). For KNI 4.3.x, which loads
     /// v11 with a "needs to be rebuilt" console warning; KNI 4.2.x rejects v12, so this is opt-in and
     /// <see cref="KniGL_4_02"/> stays the <c>kni-knifx</c> default. Flipping that default is tracked in
-    /// <c>project_decisions.md</c>.
+    /// <c>project_decisions.md</c>. A game compiling at runtime gets the right one of the two from
+    /// <see cref="RuntimeProfileDetector.RecommendKnifx(System.Reflection.Assembly)"/>.
     /// </summary>
     public static readonly CapabilityProfile KniGL_4_03 =
         new("KniGL_4_03", PlatformTarget.OpenGL, EffectContainer.Knifx, 11, ShaderDialect.LegacyMojoShader,

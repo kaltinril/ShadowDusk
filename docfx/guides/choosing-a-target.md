@@ -65,6 +65,8 @@ Instead of setting the backend (`Target`), container (`Container`), and version 
 | `KniGL_4_03` | `kni-knifx-v12` | OpenGL, KNIFX v12 (KNI 4.3.x only; 4.2.x rejects it) |
 | `Fna_Fx2` | `fna` | FNA, fx_2_0 |
 
+A KNI game that compiles at runtime does not have to pick between the two KNIFX rows: `RuntimeProfileDetector.RecommendKnifx(typeof(Game).Assembly)` returns `KniGL_4_03` on KNI 4.3 and later and `KniGL_4_02` on older versions.
+
 Set it on the library with `CompilerOptions.Profile = CapabilityProfile.KniGL_4_02`, or on the CLI with `--target-runtime kni-knifx`. A set profile **overrides** `Target` / `Container` / `MgfxVersion`. The set is **closed** — it holds only render-proven contracts, so you can never request an untested combination.
 
 **Auto-detecting the runtime.** For an in-app runtime compile, `RuntimeProfileDetector.Recommend(typeof(Game).Assembly, target)` classifies the loaded framework (MonoGame / KNI / FNA) and returns the proven profile to pass to `CompilerOptions.Profile`. It is **conservative**: it returns the universally-loadable MGFX v10 (or fx_2_0 for FNA) and never silently upgrades a consumer to a newer container — the newer formats stay an explicit opt-in.
