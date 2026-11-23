@@ -32,6 +32,14 @@ public static class GlslPortabilityAnalyzer
         @"^\s*varying\s+vec4\s+(?<name>[A-Za-z_][A-Za-z0-9_]*)\s*;",
         RegexOptions.Compiled | RegexOptions.Multiline);
 
+    private static readonly Regex VertexOrInstanceId = new(
+        @"\bgl_(?:Vertex|Instance)ID\b",
+        RegexOptions.Compiled);
+
+    private static readonly Regex AttributeDeclaration = new(
+        @"^\s*attribute\s",
+        RegexOptions.Compiled | RegexOptions.Multiline);
+
     private static readonly Regex GradientCall = new(
         @"\b(dFdx|dFdy|fwidth)\s*\(",
         RegexOptions.Compiled);
@@ -78,10 +86,42 @@ public static class GlslPortabilityAnalyzer
                 CheckSpriteBatchInterpolants(glsl, entry, sourceFileName, findings);
         }
 
+        else
+        {
+            CheckIdDrivenVertexShaderWithoutAttributes(glsl, entry, sourceFileName, findings);
+        }
+
         CheckEssl100LoopShapes(glsl, entry, sourceFileName, findings);
         CheckVersionGatedConstructs(glsl, entry, sourceFileName, findings);
 
         return findings;
+    }
+
+    /// <summary>
+    /// SD0404 (issue #524): a vertex shader driven only by <c>gl_VertexID</c> /
+    /// <c>gl_InstanceID</c>, with no vertex attribute. MonoGame and KNI enable only the attribute
+    /// arrays the linked program reads, so such a draw enables none, and Apple's OpenGL 2.1 then
+    /// produces no pixels and no error (measured with raw GL and in real MonoGame DesktopGL on
+    /// Apple's software renderer). NVIDIA and Mesa draw it.
+    /// </summary>
+    private static void CheckIdDrivenVertexShaderWithoutAttributes(
+        string glsl, string entry, string sourceFileName, List<ShaderError> findings)
+    {
+        if (!VertexOrInstanceId.IsMatch(glsl) || AttributeDeclaration.IsMatch(glsl))
+            return;
+
+        findings.Add(new ShaderError(
+            File: sourceFileName,
+            Line: 0,
+            Column: 0,
+            Code: "SD0404",
+            Message:
+                $"{char.ToUpperInvariant(entry[0])}{entry[1..]} reads gl_VertexID or gl_InstanceID and has no " +
+                "vertex input. MonoGame and KNI enable only the vertex arrays a shader reads, and " +
+                "Apple's OpenGL 2.1 draws nothing when none is enabled, with no error. To draw on " +
+                "macOS, give the vertex shader an input from your vertex declaration (such as " +
+                "POSITION0) whose value reaches the pixel shader's output.",
+            Severity: ShaderErrorSeverity.Warning));
     }
 
     /// <summary>
@@ -114,6 +154,23 @@ public static class GlslPortabilityAnalyzer
                 "report the shader shape.",
             Severity: ShaderErrorSeverity.Warning));
 
+        // The integer class has a lowering on desktop GL (Rule 19, issue #524: the guarded
+        // GL_EXT_gpu_shader4 prelude), so what is left to warn about is the stacks that have no
+        // such extension.
+        void WarnInteger(string detail) => findings.Add(new ShaderError(
+            File: sourceFileName,
+            Line: 0,
+            Column: 0,
+            Code: "SD0403",
+            Message:
+                $"In {entry}, the emitted GL contains {detail}, a construct introduced in " +
+                "GLSL 1.30+/ES 3.00. ShadowDusk enables it on desktop OpenGL through " +
+                "GL_EXT_gpu_shader4, but GLSL ES 1.00 (WebGL1, KNI Reach) and any desktop driver " +
+                "without that extension reject it at Effect-load time with the engine's generic " +
+                "\"Shader Compilation Failed\" exception. If the effect targets those, restructure " +
+                "the shader to avoid it.",
+            Severity: ShaderErrorSeverity.Warning));
+
         // Builtin functions absent below GLSL 1.30 / ES 3.00. round, roundEven, and trunc
         // DO have lowerings — their presence in the FINAL text means a rewrite missed a
         // shape, which is exactly worth a warning too.
@@ -125,6 +182,10 @@ public static class GlslPortabilityAnalyzer
             "floatBitsToInt", "floatBitsToUint", "intBitsToFloat", "uintBitsToFloat",
             "packHalf2x16", "unpackHalf2x16", "packUnorm2x16", "unpackUnorm2x16",
             "modf", "round", "roundEven", "trunc",
+            // Integer builtins GL_EXT_gpu_shader4 does NOT add, so the integer-class text below
+            // would wrongly call them enabled.
+            "bitCount", "findLSB", "findMSB", "bitfieldReverse", "bitfieldExtract", "bitfieldInsert",
+            "uaddCarry", "usubBorrow", "umulExtended", "imulExtended",
         ];
         foreach (string builtin in gatedBuiltins)
         {
@@ -134,14 +195,18 @@ public static class GlslPortabilityAnalyzer
 
         if (Regex.IsMatch(glsl, @"\bswitch\s*\("))
             Warn("a 'switch' statement");
-        if (Regex.IsMatch(glsl, @"\buint\b|\buvec[234]\b|\b\d+[uU]\b"))
-            Warn("an unsigned integer type or literal");
+        if (Regex.IsMatch(glsl, @"\bgl_PrimitiveID\b"))
+            Warn("'gl_PrimitiveID'");
+        if (VertexOrInstanceId.IsMatch(glsl))
+            WarnInteger("a vertex or instance ID ('gl_VertexID' / 'gl_InstanceID')");
+        if (Regex.IsMatch(glsl, @"\buint\b|\buvec[234]\b|\b(?:0[xX][0-9a-fA-F]+|\d+)[uU]\b"))
+            WarnInteger("an unsigned integer type or literal");
         if (Regex.IsMatch(glsl, @"\bmat[234]x[234]\b"))
             Warn("a non-square matrix type");
         if (Regex.IsMatch(glsl, ArrayConstructorLowering.ConstructorPattern))
             Warn("an array constructor ('float[](...)')");
         if (Regex.IsMatch(glsl, @"<<|>>"))
-            Warn("an integer shift operator ('<<' or '>>')");
+            WarnInteger("an integer shift operator ('<<' or '>>')");
         // GLSL 1.10 §5.1 / ESSL 1.00 reserve %, &, ^, |, ~ (and their OP= forms) for
         // future use in the same sentence that reserves the shifts above, so they belong
         // to the same class — SPIRV-Cross emits them verbatim for OpBitwiseAnd/Or/Xor/Not
@@ -149,9 +214,9 @@ public static class GlslPortabilityAnalyzer
         // catch. The lookarounds keep the logical operators &&, ||, ^^ (all legal in 1.10)
         // from matching; '~' is unambiguous because GLSL has no other use for it.
         if (Regex.IsMatch(glsl, @"(?<![&])&(?![&])|(?<![|])\|(?![|])|(?<!\^)\^(?!\^)|~"))
-            Warn("an integer bitwise operator ('&', '|', '^' or '~')");
+            WarnInteger("an integer bitwise operator ('&', '|', '^' or '~')");
         if (glsl.Contains('%'))
-            Warn("an integer modulo operator ('%')");
+            WarnInteger("an integer modulo operator ('%')");
     }
 
     /// <summary>

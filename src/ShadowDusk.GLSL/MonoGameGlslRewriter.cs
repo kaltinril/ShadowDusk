@@ -879,6 +879,7 @@ public static class MonoGameGlslRewriter
                 vsGlsl += "\n";
             }
             ThrowIfUnrewrittenStageIo(vsGlsl);
+            vsGlsl = GpuShader4Prelude.Apply(vsGlsl);   // Rule 19 (issue #524)
             return new MonoGameGlslResult(vsGlsl, Array.Empty<MonoGameGlslSampler>(), reg, attributes, uniformLayout);
         }
 
@@ -1157,6 +1158,7 @@ public static class MonoGameGlslRewriter
         }
 
         ThrowIfUnrewrittenStageIo(finalGlsl);
+        finalGlsl = GpuShader4Prelude.Apply(finalGlsl);   // Rule 19 (issue #524)
         return new MonoGameGlslResult(finalGlsl, samplers, reg, Array.Empty<MonoGameGlslAttribute>(), uniformLayout);
     }
 

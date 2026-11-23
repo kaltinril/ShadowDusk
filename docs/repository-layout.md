@@ -191,6 +191,7 @@ ShadowDusk/
 │                                  #   NonSquareMatrix{Vulkan,Dx} (+ SharedNonSquareMatrix): non-square matrix parameters Set from
 │                                  #     C# and the stock SkinnedEffect, real DesktopVK vs WindowsDX (issue #423 probe),
 │                                  #   VertexSemantics{Gl,KniGl} (+ SharedVertexSemantics): every GL vertex-input semantic
+│                                  #   (plus the issue #524 integer-dialect rows, vs exact pixels)
 │                                  #   and a float3x3 interpolant through a custom VertexDeclaration, vs the mgfxc build,
 │                                  #   DX12 (BaselineDx12, CandidateDx12, VsDrivenDx12
 │                                  #     + compare_dx12.py; ManagedDxilDx12 = DXIL signed only by the managed
