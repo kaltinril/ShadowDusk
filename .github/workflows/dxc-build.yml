@@ -1,11 +1,12 @@
 # .github/workflows/dxc-build.yml
-# Phase 70 (issue #287): builds the pinned DXC (v1.9.2607, 0d3ee6b55) for win-arm64.
+# Phase 70 (issue #287): builds the pinned DXC (v1.9.2607, 0d3ee6b55) for Windows.
 #
-# Why this one RID is built here. Every other desktop RID takes the published files of that exact
-# release (Microsoft.Direct3D.DXC for win-x64, MonoGame.Tool.Dxc for linux-x64 and macOS). But
-# Microsoft's "arm64" v1.9.2607 binaries are ARM64EC (PE machine 0x8664 with hybrid metadata,
-# microsoft/DirectXShaderCompiler#8934, fixed only in v1.9.2609), and a native arm64 .NET process
-# cannot load ARM64EC. No classic ARM64 build of this version is published anywhere.
+# Why Windows is built here. ShadowDusk redistributes no binary from Microsoft's DXC release,
+# because that release carries LICENSE-MS.txt, whose distribution terms include indemnifying
+# Microsoft (owner decision, see project_decisions.md). The source at this tag is under the LLVM
+# release licence and the third-party licences it lists, and those are what these builds carry.
+# win-arm64 could not use Microsoft's files anyway: its "arm64" v1.9.2607 DLLs are ARM64EC
+# (microsoft/DirectXShaderCompiler#8934), which a native arm64 process cannot load.
 #
 # THE SAME COMPILER, NEVER A SUBSTITUTE: the source is the v1.9.2607 tag with its gitlinked
 # submodules, and the build reproduces the version stamp Microsoft's release carries
@@ -13,12 +14,14 @@
 # fourth field is the commit count), a detached HEAD, a nine-digit short hash and a dirty tree.
 # The dirt is one newline in README.md, which nothing compiles.
 #
-# The job fails unless the files are classic ARM64, carry that stamp, and compile the probe
-# shaders to the SAME BYTES as Microsoft's x64 release of the tag (run under emulation).
+# Each job fails unless the files are for the right architecture (classic ARM64, never ARM64EC),
+# carry that stamp, and compile the probe shaders to the SAME BYTES as Microsoft's x64 release of
+# the tag (used here only as a measuring reference, never uploaded; under emulation on arm64),
+# with DXC's internal validator and again through the dxil.dll built here.
 #
-# The files are uploaded as a run artifact. Nothing here publishes: a maintainer attaches them to
-# a NEW release tag (never replacing an asset) and pins their SHA-256 in tools/restore.*.
-name: Build DXC win-arm64 natives (v1.9.2607)
+# The files are uploaded as run artifacts. Nothing here publishes: they are attached to a NEW
+# release tag (never replacing an asset) and their SHA-256 pinned in tools/restore.*.
+name: Build DXC Windows natives (v1.9.2607)
 
 on:
   workflow_dispatch:
@@ -37,10 +40,22 @@ env:
   MS_DXC_NUPKG_SHA256: '5d6acd23089b2979a3c1d39b7e31227da989a47b5d9f3db57111ad4717ea537e'
 
 jobs:
-  build-win-arm64:
-    name: Build win-arm64 dxcompiler + dxil
-    runs-on: windows-11-arm
+  build:
+    name: Build ${{ matrix.rid }} dxcompiler + dxil
+    runs-on: ${{ matrix.os }}
     timeout-minutes: 300
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - rid: win-x64
+            os: windows-latest
+            vcvars: vcvars64.bat
+            machine: '0x8664'
+          - rid: win-arm64
+            os: windows-11-arm
+            vcvars: vcvarsarm64.bat
+            machine: '0xAA64'
     steps:
       - name: Fetch the pinned source (full history, for the version stamp)
         shell: pwsh
@@ -69,7 +84,7 @@ jobs:
         shell: cmd
         run: |
           for /f "usebackq tokens=*" %%i in (`"%ProgramFiles(x86)%\Microsoft Visual Studio\Installer\vswhere.exe" -latest -products * -property installationPath`) do set VSROOT=%%i
-          call "%VSROOT%\VC\Auxiliary\Build\vcvarsarm64.bat" || exit /b 1
+          call "%VSROOT%\VC\Auxiliary\Build\${{ matrix.vcvars }}" || exit /b 1
           cmake -G Ninja -S dxc-src -B build ^
             -DCMAKE_BUILD_TYPE=Release ^
             -DENABLE_SPIRV_CODEGEN=ON ^
@@ -81,6 +96,8 @@ jobs:
 
       - name: Verify architecture, stamp, and bytes against Microsoft's x64 build
         shell: pwsh
+        env:
+          EXPECTED_MACHINE: ${{ matrix.machine }}
         run: |
           $ErrorActionPreference = 'Stop'
           New-Item -ItemType Directory -Force out, ms, probe | Out-Null
@@ -90,7 +107,9 @@ jobs:
             $bytes = [IO.File]::ReadAllBytes("out/$f")
             $pe = [BitConverter]::ToInt32($bytes, 0x3C)
             $machine = [BitConverter]::ToUInt16($bytes, $pe + 4)
-            if ($machine -ne 0xAA64) { throw ("{0}: PE machine 0x{1:X4}, expected classic ARM64 (0xAA64)" -f $f, $machine) }
+            if ($machine -ne [Convert]::ToUInt16($env:EXPECTED_MACHINE, 16)) {
+              throw ("{0}: PE machine 0x{1:X4}, expected {2}" -f $f, $machine, $env:EXPECTED_MACHINE)
+            }
             $v = [Diagnostics.FileVersionInfo]::GetVersionInfo((Resolve-Path "out/$f").Path)
             $stamp = "$($v.FileMajorPart).$($v.FileMinorPart).$($v.FileBuildPart).$($v.FilePrivatePart)"
             $tag = [regex]::Match($v.ProductVersion, '\(([^)]+)\)').Groups[1].Value
@@ -102,7 +121,7 @@ jobs:
           Expand-Archive ms/dxc.zip ms/x
           $ref = 'ms/x/build/native/bin/x64/dxc.exe'
           $own = 'build/bin/dxc.exe'
-          Copy-Item out/dxil.dll build/bin/ -Force
+          $validator = (Resolve-Path 'build/bin/dxil.dll').Path
 
           Set-Content probe/a.hlsl 'float4 main(float4 c : COLOR0) : SV_Target { return c.bgra * 0.5; }'
           Set-Content probe/b.hlsl @'
@@ -120,11 +139,22 @@ jobs:
               & $ref @mode -E main -Fo "probe/$src.ref.$suffix" "probe/$src.hlsl"
               if ($LASTEXITCODE -ne 0) { throw "reference compile of $src ($suffix) failed" }
               & $own @mode -E main -Fo "probe/$src.own.$suffix" "probe/$src.hlsl"
-              if ($LASTEXITCODE -ne 0) { throw "win-arm64 compile of $src ($suffix) failed" }
+              if ($LASTEXITCODE -ne 0) { throw "self-built compile of $src ($suffix) failed" }
               $r = (Get-FileHash "probe/$src.ref.$suffix").Hash
               $o = (Get-FileHash "probe/$src.own.$suffix").Hash
               "$src.$suffix ref $r own $o"
-              if ($r -ne $o) { throw "$src ($suffix): the win-arm64 build differs from Microsoft's x64 build" }
+              if ($r -ne $o) { throw "$src ($suffix): the self-built DXC differs from Microsoft's x64 build" }
+              if ($suffix -eq 'dxil') {
+                # dxc.exe validates through the DLL this variable names; the library never reads it.
+                $env:DXC_DXIL_DLL_PATH = $validator
+                & $own @mode -E main -Fo "probe/$src.ext.$suffix" "probe/$src.hlsl"
+                $code = $LASTEXITCODE
+                Remove-Item Env:DXC_DXIL_DLL_PATH
+                if ($code -ne 0) { throw "compile of $src through the self-built dxil.dll failed" }
+                $e = (Get-FileHash "probe/$src.ext.$suffix").Hash
+                "$src.$suffix through self-built dxil.dll $e"
+                if ($e -ne $r) { throw "$src: validating through the self-built dxil.dll changed the bytes" }
+              }
             }
           }
           Get-FileHash out/*.dll -Algorithm SHA256 | ForEach-Object { "$($_.Hash.ToLower())  $(Split-Path $_.Path -Leaf)" } | Tee-Object out/SHA256SUMS
@@ -132,7 +162,7 @@ jobs:
       - name: Upload
         uses: actions/upload-artifact@v7
         with:
-          name: dxc-win-arm64
+          name: dxc-${{ matrix.rid }}
           path: out/
           if-no-files-found: error
           retention-days: 30
