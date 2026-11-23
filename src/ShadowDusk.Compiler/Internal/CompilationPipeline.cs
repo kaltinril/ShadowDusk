@@ -2705,6 +2705,10 @@ internal sealed class CompilationPipeline
         if (writeResult.IsFailure)
             return Fail(writeResult.Error, fnaWarnings);
 
+        // Tells the developer only: the default stays byte-equal to fxc's (issue #505).
+        if (FnaMatrixDefaultWarning.Check(ctabs, sourceFileName) is { } matrixDefaultWarning)
+            AccumulateWarnings(fnaWarnings, fnaSeenWarnings, [matrixDefaultWarning]);
+
         return Result<CompiledShader, ShaderError[]>.Ok(
             new CompiledShader(PlatformTarget.Fna, writeResult.Value)
             {
