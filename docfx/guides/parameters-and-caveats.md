@@ -27,6 +27,46 @@ This is deliberately **better than `mgfxc`**, not the same: `mgfxc`'s OpenGL bui
 
 ShadowDusk evaluates literals, arithmetic, casts, constructors such as `float4(1, 0, 0, 1)`, brace lists, arrays, earlier `const` values and a few math functions. If an initializer is something else (a call to your own function, say), the compile still succeeds and warns with `SD0017` naming the variable; its default is then zero until you `SetValue` it. Setting parameters by name at runtime always works.
 
+## Annotations as shader UI metadata
+
+An HLSL annotation can describe a parameter to a tool, such as a property grid that builds a labeled slider:
+
+```hlsl
+float Speed < string UIName = "Speed"; string UIGroup = "Motion"; float UIMin = 0; float UIMax = 5; float UIStep = 0.1; > = 1.0;
+```
+
+Read them from the compile result, because **the game cannot read them at runtime**. `.mgfx` and `.knifx` files carry no annotations, the same as `mgfxc`'s:
+
+```csharp
+var result = await new EffectCompiler().CompileAsync(source, options);
+ParameterReflection speed = result.Value.Parameters.Single(p => p.Name == "Speed");
+
+string? Note(string name) => speed.Annotations?.FirstOrDefault(a => a.Name == name)?.Value;
+
+string label = Note("UIName")?.Trim('"') ?? speed.Name;
+float max = float.Parse(Note("UIMax") ?? "1", CultureInfo.InvariantCulture);
+```
+
+Each `Value` is the text from your source: a string keeps its quotes and a number is not parsed. ShadowDusk does not interpret the names, so these are a suggested convention:
+
+| Annotation | Type | Meaning |
+|---|---|---|
+| `UIName` | `string` | Display name |
+| `UIGroup` | `string` | Group or section in the property grid |
+| `UIMin`, `UIMax` | number | Allowed range |
+| `UIStep` | number | Slider or spinner increment |
+| `UIWidget` | `string` | Control to use, such as `"Color"` or `"Slider"` |
+
+What is reported depends on where the annotation is written and on the target:
+
+| Annotation on | `mgfxc` | `CompiledShader.Parameters` |
+|---|---|---|
+| Numeric parameter | Accepted | Reported on OpenGL, DirectX 11, DirectX 12, Vulkan and KNIFX. **Not reported on FNA.** |
+| `texture` | Accepted | Compiles, not reported |
+| Sampler, technique or pass | **Rejected** | Not portable, so avoid them. A sampler annotation before the `=` also fails with `SD0016` on OpenGL, DirectX 12 and Vulkan. |
+
+On FNA, `fxc` writes annotations into the `.fxb` and `EffectParameter.Annotations` can read them. ShadowDusk's `.fxb` has none, so a game that reads annotations at runtime needs `fxc`'s build for now.
+
 ## Advanced texture intrinsics compile on Windows only (for now)
 
 A small family of advanced **OpenGL-target** texture intrinsics — **3D-texture sampling (`tex3D`), explicit-LOD sampling (the `tex2Dlod` family), and gradient sampling (the `tex2Dgrad` family)** — currently compiles on the Windows DXC native but **fails to compile on the Linux/macOS DXC builds**, even though all hosts pin the same DXC version. If your `.fx` uses these and you compile on Linux/macOS, expect a compile error (a loud diagnostic, never a miscompile); compiling the same shader on Windows works. The ordinary texture corpus (`tex2D`, multi-texture, samplers, render targets, …) is unaffected and compiles identically on all three OSes. This per-OS divergence is a known, tracked gap under investigation — it will be fixed in the compiler, not papered over here.
