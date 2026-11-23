@@ -39,6 +39,18 @@
 //     degenerate interpolants were split): must diverge from the split golden. That layout's VS
 //     writes one varying where the PS reads four, so a strict driver's linker refuses the program
 //     (Mesa: "varying ... not written by vertex shader"); there that link refusal is the detection.
+//   * The integer-dialect case with its GL_EXT_gpu_shader4 prelude blanked out (issue #524): a
+//     Mesa or Apple compatibility context must refuse it with the runtime's shader-compile error.
+//     Skipped on any other driver, which may accept it, and on a core profile, where MonoGame
+//     DesktopGL4 aborts the process.
+// Integer dialect (IntegerCases, issue #524): SV_VertexID, uint / uvec, u literals and the integer
+// shift, bitwise and modulo operators, which the versionless dialect only has through Rule 19's
+// prelude. mgfxc has no build of these (they are SM4+ HLSL), so each is checked against the exact
+// colour the CPU computes. A vertex-ID case draws only if the IDs are live: every vertex of the
+// quad gets its position from its ID alone. VertexIdNoAttributes reads no vertex input at all, so
+// the runtime enables no attribute array, and Apple's GL 2.1 then draws nothing (measured; SD0404
+// warns). That is an open gap (issue #524), printed as KNOWN-GAP and never as a pass. Every other
+// driver must draw it (measured on NVIDIA compatibility and core, and Mesa compatibility).
 // Exit code 0 iff every case passes and every control is detected. See docs/validation-matrix.md §6.
 
 using System;
@@ -154,6 +166,20 @@ public static class VertexSemanticsProbe
                     });
             }
 
+            foreach ((string name, string source, Vector4 expected) in IntegerCases)
+            {
+                var compiled = CompileSource(compiler, label, container, Path.Combine(dir, $"Integer{name}.fx"), source);
+                jobs.Add(new Job($"integer dialect {name} [{container}]", compiled, null, null, 0, expected, ControlKind.None)
+                {
+                    MayDrawNothing = name == VertexIdNoAttributes,
+                });
+                if (container == EffectContainer.Mgfx && name == "UintOps" && compiled.Bytes is not null)
+                {
+                    jobs.Add(new Job("CONTROL integer dialect without the gpu_shader4 prelude (strict driver must refuse)",
+                        new Compiled(BlankGpuShader4Prelude(compiled.Bytes), null), null, null, 0, expected, ControlKind.PreludeRemoved));
+                }
+            }
+
             if (container == EffectContainer.Mgfx && semantics.Bytes is not null)
             {
                 byte[] patched = RelabelAttribute(semantics.Bytes, fromUsage: 4, toUsage: 5); // Binormal -> Tangent
@@ -197,7 +223,7 @@ public static class VertexSemanticsProbe
         Console.WriteLine($"[{label}] results:");
         foreach (JobResult r in game.Results)
         {
-            string tag = r.Ok ? "PASS" : "FAIL";
+            string tag = r.KnownGap ? "KNOWN-GAP" : r.Ok ? "PASS" : "FAIL";
             Console.WriteLine($"  [{tag}] {r.Name,-58} {r.Detail}");
             if (!r.Ok) failures++;
         }
@@ -225,7 +251,9 @@ public static class VertexSemanticsProbe
             failures++;
         }
 
-        Console.WriteLine($"[{label}] {game.Results.Count - failures}/{game.Results.Count} passed.");
+        int knownGaps = game.Results.Count(r => r.KnownGap);
+        Console.WriteLine($"[{label}] {game.Results.Count - failures - knownGaps}/{game.Results.Count} passed" +
+                          (knownGaps > 0 ? $", {knownGaps} known gap(s)." : "."));
         return failures == 0 ? 0 : 1;
     }
 
@@ -268,6 +296,106 @@ public static class VertexSemanticsProbe
         ("TwoTechniques", ["A", "B"]),
     ];
 
+    private const string VertexIdNoAttributes = "VertexIdNoAttributes";
+
+    /// <summary>
+    /// The runtime's own message when the driver refuses a shader: MonoGame up to 3.8.5 and KNI
+    /// say the first, MonoGame 3.8.6's ShaderCompilerException the second (both measured on Mesa).
+    /// </summary>
+    private static readonly string[] ShaderCompileRefusalSignatures =
+        ["Shader Compilation Failed", "Failed to compile pixel shader"];
+
+    private const string IntegerVs = """
+        struct V { float4 pos : SV_Position; float2 uv : TEXCOORD0; };
+        V VS(float4 p : POSITION0, float2 uv : TEXCOORD0) { V o; o.pos = p; o.uv = uv; return o; }
+
+        """;
+
+    private const string IntegerTechnique = """
+
+        technique T { pass P { VertexShader = compile vs_3_0 VS(); PixelShader = compile ps_3_0 PS(); } }
+        """;
+
+    // Issue #524's shapes. TEXCOORD0 is (0.5, 0.5) on every vertex; the +0.25 keeps an interpolated
+    // 3.9999 from truncating to the wrong integer.
+    private static readonly (string Name, string Source, Vector4 Expected)[] IntegerCases =
+    [
+        ("VertexId", """
+            struct V { float4 pos : SV_Position; float4 c : COLOR0; };
+            V VS(float4 p : POSITION0, uint id : SV_VertexID)
+            {
+                V o;
+                o.pos = float4(float((id << 1) & 2) * 2 - 1, float(id & 2) * 2 - 1, 0, 1);
+                o.c = p;   // keeps the attribute active: the quad's z is 0
+                return o;
+            }
+            float4 PS(V i) : SV_Target { return float4(1, i.c.z, 0, 1); }
+            """ + IntegerTechnique, new(1, 0, 0, 1)),
+        (VertexIdNoAttributes, """
+            struct V { float4 pos : SV_Position; };
+            V VS(uint id : SV_VertexID) { V o; o.pos = float4(float((id << 1) & 2) * 2 - 1, float(id & 2) * 2 - 1, 0, 1); return o; }
+            float4 PS(V i) : SV_Target { return float4(1, 0, 0, 1); }
+            """ + IntegerTechnique, new(1, 0, 0, 1)),
+        ("InstanceId", """
+            struct V { float4 pos : SV_Position; float4 c : COLOR0; };
+            V VS(float4 p : POSITION0, uint iid : SV_InstanceID)
+            {
+                V o;
+                o.pos = p;
+                o.c = float4(float(iid & 1u), 1, 0, 1);   // a non-instanced draw: ID 0
+                return o;
+            }
+            float4 PS(V i) : SV_Target { return i.c; }
+            """ + IntegerTechnique, new(0, 1, 0, 1)),
+        ("UintOps", IntegerVs + """
+            float4 PS(V i) : SV_Target
+            {
+                uint2 p = uint2(i.uv * 8.0 + 0.25);   // (4, 4)
+                uint a = p.x ^ 5u;                    // 1
+                uint b = (p.y << 1) & 12u;            // 8
+                uint c = (p.x + 7u) % 3u;             // 2
+                return float4(float(a) / 4.0, float(b) / 16.0, float(c) / 4.0, 1);
+            }
+            """ + IntegerTechnique, new(0.25f, 0.5f, 0.5f, 1)),
+        ("IntOps", IntegerVs + """
+            float4 PS(V i) : SV_Target
+            {
+                int a = int(i.uv.x * 8.0 + 0.25);     // 4
+                int b = (a << 1) & 12;                // 8
+                int c = (a | 3) % 5;                  // 2
+                return float4(float(b) / 16.0, float(c) / 4.0, 0, 1);
+            }
+            """ + IntegerTechnique, new(0.5f, 0.5f, 0, 1)),
+        ("UintTable", IntegerVs + """
+            static const uint Table[4] = { 1, 2, 3, 4 };
+            float4 PS(V i) : SV_Target { return float4(float(Table[uint(i.uv.x * 4.0 + 0.25) & 3u]) / 4.0, 0, 0, 1); }
+            """ + IntegerTechnique, new(0.75f, 0, 0, 1)),
+    ];
+
+    /// <summary>
+    /// Blanks the prelude's two active lines with same-length whitespace, so the MGFX string
+    /// lengths stay valid, and changes the header's effect key so the runtime's effect cache
+    /// cannot hand back the unpatched effect (see <see cref="RelabelAttribute"/>).
+    /// </summary>
+    private static byte[] BlankGpuShader4Prelude(byte[] mgfx)
+    {
+        byte[] copy = (byte[])mgfx.Clone();
+        int blanked = 0;
+        foreach (string line in new[] { "#extension GL_EXT_gpu_shader4 : enable", "#define uint unsigned int" })
+        {
+            byte[] needle = System.Text.Encoding.ASCII.GetBytes(line);
+            for (int at = IndexOf(copy, needle); at >= 0; at = IndexOf(copy, needle, at + 1))
+            {
+                copy.AsSpan(at, needle.Length).Fill((byte)' ');
+                blanked++;
+            }
+        }
+        if (blanked < 2)
+            throw new InvalidOperationException($"control setup: expected the prelude's lines, blanked {blanked}");
+        copy[6] ^= 0x5A;
+        return copy;
+    }
+
     private enum ControlKind
     {
         None,
@@ -275,6 +403,8 @@ public static class VertexSemanticsProbe
         WrongElement,
         /// <summary>Must NOT match the mgfxc golden.</summary>
         WrongPacking,
+        /// <summary>A strict compatibility-context driver must refuse it (issue #524).</summary>
+        PreludeRemoved,
     }
 
     private sealed record Compiled(byte[]? Bytes, string? Error)
@@ -295,6 +425,9 @@ public static class VertexSemanticsProbe
 
         /// <summary>The technique to draw, or null for the effect's first.</summary>
         public string? Technique { get; init; }
+
+        /// <summary>On Apple's GL 2.1 an untouched target is the known gap of issue #524 (SD0404), not a pass.</summary>
+        public bool MayDrawNothing { get; init; }
     }
 
     private sealed record JobResult(string Name, bool Ok, string Detail)
@@ -303,6 +436,9 @@ public static class VertexSemanticsProbe
 
         /// <summary>The candidate loaded and drew.</summary>
         public bool Rendered { get; init; }
+
+        /// <summary>A documented open gap: reported on its own, counted neither as a pass nor a failure.</summary>
+        public bool KnownGap { get; init; }
     }
 
     private static Compiled Compile(EffectCompiler compiler, string label, EffectContainer container, string path)
@@ -440,6 +576,17 @@ public static class VertexSemanticsProbe
         /// </summary>
         public bool StrictDriver { get; private set; }
 
+        /// <summary>
+        /// The context is a core profile, where a refused shader may abort the process (MonoGame
+        /// DesktopGL4's MGGL_FAIL), so no control that relies on a refusal runs there.
+        /// </summary>
+        public bool CoreProfile { get; private set; }
+
+        /// <summary>A Mesa or Apple compatibility context: measured to refuse the bare integer dialect.</summary>
+        private bool RefusesBareIntegerDialect =>
+            !CoreProfile && new[] { "Mesa", "llvmpipe", "Apple" }
+                .Any(k => $"{GlVendor} {GlRenderer} {GlVersion}".Contains(k, StringComparison.OrdinalIgnoreCase));
+
         public ProbeGame(IReadOnlyList<Job> jobs)
         {
             _jobs = jobs;
@@ -464,6 +611,9 @@ public static class VertexSemanticsProbe
         [UnmanagedFunctionPointer(CallingConvention.Winapi)]
         private delegate nint GlGetStringFn(uint name);
 
+        [UnmanagedFunctionPointer(CallingConvention.Winapi)]
+        private delegate void GlGetIntegervFn(uint name, out int value);
+
         /// <summary>
         /// The current context's GL strings, read straight from the platform GL library (the
         /// runtime's context is current on this thread during Draw).
@@ -482,6 +632,13 @@ public static class VertexSemanticsProbe
                 GlVendor = Marshal.PtrToStringAnsi(glGetString(GL_VENDOR)) ?? "(null)";
                 GlRenderer = Marshal.PtrToStringAnsi(glGetString(GL_RENDERER)) ?? "(null)";
                 GlVersion = Marshal.PtrToStringAnsi(glGetString(GL_VERSION)) ?? "(null)";
+                if (!GlVersion.StartsWith("2.", StringComparison.Ordinal)
+                    && NativeLibrary.TryGetExport(handle, "glGetIntegerv", out nint getInteger))
+                {
+                    const uint GL_CONTEXT_PROFILE_MASK = 0x9126;
+                    Marshal.GetDelegateForFunctionPointer<GlGetIntegervFn>(getInteger)(GL_CONTEXT_PROFILE_MASK, out int mask);
+                    CoreProfile = (mask & 1) != 0;
+                }
                 break;
             }
             string all = $"{GlVendor} {GlRenderer} {GlVersion}";
@@ -502,6 +659,12 @@ public static class VertexSemanticsProbe
                     Results.Add(new JobResult(job.Name, false, "compile failed: " + job.Candidate.Error));
                     continue;
                 }
+                if (job.Control == ControlKind.PreludeRemoved && !RefusesBareIntegerDialect)
+                {
+                    Results.Add(new JobResult(job.Name, true,
+                        $"not run on this context ({GlRenderer}, {(CoreProfile ? "core profile" : "not Mesa or Apple")})"));
+                    continue;
+                }
                 Color[] candidate;
                 try
                 {
@@ -510,7 +673,14 @@ public static class VertexSemanticsProbe
                 catch (Exception ex)
                 {
                     try { GraphicsDevice.SetRenderTarget(null); } catch { /* ignore */ }
-                    if (job.Control == ControlKind.WrongPacking && StrictDriver
+                    if (job.Control == ControlKind.PreludeRemoved)
+                    {
+                        bool refused = ShaderCompileRefusalSignatures.Any(m => ex.Message.Contains(m, StringComparison.Ordinal));
+                        Results.Add(new JobResult(job.Name, refused,
+                            $"{(refused ? "CONTROL-DETECTED" : "CONTROL NOT DETECTED, wrong exception")} ({GlRenderer}): " +
+                            $"{ex.GetType().Name}: {ex.Message.ReplaceLineEndings(" ").Trim()}"));
+                    }
+                    else if (job.Control == ControlKind.WrongPacking && StrictDriver
                         && ex.Message.Contains(StrictLinkRefusalSignature, StringComparison.Ordinal))
                     {
                         // A wrong layout whose VS no longer writes a varying the PS reads: a strict
@@ -529,11 +699,18 @@ public static class VertexSemanticsProbe
                     }
                     continue;
                 }
+                if (job.Control == ControlKind.PreludeRemoved)
+                {
+                    Results.Add(new JobResult(job.Name, false,
+                        $"CONTROL NOT DETECTED: {GlRenderer} accepted the integer dialect without the prelude"));
+                    continue;
+                }
                 try
                 {
                     Color c = candidate[(Size / 2) * Size + Size / 2];
                     var notes = new List<string> { $"centre=({c.R},{c.G},{c.B},{c.A})" };
                     bool ok = true;
+                    bool knownGap = false;
 
                     if (job.Expected is { } e)
                     {
@@ -545,6 +722,12 @@ public static class VertexSemanticsProbe
                             ok = !match;
                             notes.Add(match ? "CONTROL NOT DETECTED: a relabelled record still drew the binormal"
                                             : "CONTROL-DETECTED: the relabelled record bound the wrong element");
+                        }
+                        else if (job.MayDrawNothing && GlVendor.Contains("Apple", StringComparison.OrdinalIgnoreCase)
+                                 && c == new Color(255, 0, 255, 255))
+                        {
+                            knownGap = true;
+                            notes.Add("drew nothing: Apple's GL 2.1 with no enabled attribute array (issue #524, SD0404)");
                         }
                         else
                         {
@@ -588,7 +771,7 @@ public static class VertexSemanticsProbe
 
                     Results.Add(new JobResult(job.Name, ok, string.Join("; ", notes))
                     {
-                        PackingStem = job.PackingStem, Rendered = true,
+                        PackingStem = job.PackingStem, Rendered = true, KnownGap = knownGap,
                     });
                 }
                 catch (Exception ex)
