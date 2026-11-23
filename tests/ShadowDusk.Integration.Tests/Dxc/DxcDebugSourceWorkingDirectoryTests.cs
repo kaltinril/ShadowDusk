@@ -55,11 +55,9 @@ public sealed class DxcDebugSourceWorkingDirectoryTests
 
     /// <summary>
     /// SHA-256 of the debug Vulkan <c>.mgfx</c>, measured on win-x64; every host must match it.
-    /// Re-measured 2026-10-03 when the bare <c>sampler s;</c>'s parameter took mgfxc's name
-    /// (<c>s</c>, was <c>s_SDTexture</c> plus a standalone sampler parameter <c>s</c>); the
-    /// SPIR-V is unchanged.
+    /// Re-measured for the DXC v1.9.2607 pin (Phase 70).
     /// </summary>
-    private const string ExpectedVulkanDebugSha256 = "091019E0BE05767FE18A3E4E09A54107318570EAEB4818E923677928D9C452B4";
+    private const string ExpectedVulkanDebugSha256 = "B33C96E9984EE0AD353B2F3FFB4B83DC26AC87926BA7329D86929AB73C2110B6";
 
     private const string Fx = """
         #if OPENGL

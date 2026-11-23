@@ -512,6 +512,18 @@ public sealed class DxcFactAttribute : FactAttribute
     }
 }
 
+/// <summary>The theory form of <see cref="DxcFactAttribute"/>, with the same gate.</summary>
+public sealed class DxcTheoryAttribute : TheoryAttribute
+{
+    public DxcTheoryAttribute()
+    {
+        if (ShadowDusk.Tests.Shared.NativeRequirement.ShouldSkip(
+                DxcTestGate.DxcAvailable,
+                Environment.GetEnvironmentVariable(ShadowDusk.Tests.Shared.NativeRequirement.DxcEnvVar)))
+            Skip = DxcTestGate.SkipReason;
+    }
+}
+
 /// <summary>macOS-only DXC dylib probe; mirrors <see cref="FnaTestGate"/> / DxcLoader.</summary>
 internal static class DxcTestGate
 {

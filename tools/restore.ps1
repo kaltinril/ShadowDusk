@@ -116,29 +116,12 @@ function Restore-Vkd3dShader {
 Restore-Vkd3dShader
 
 # ---------------------------------------------------------------------------
-# DXC macOS natives (libdxcompiler.dylib, Phase 37 A)
+# DXC natives (Android only)
 # ---------------------------------------------------------------------------
-# Vortice.Dxc 3.3.4 ships NO macOS native (win-x64/win-arm64/linux-x64 only), so
-# every CompileAsync on a Mac dies with DllNotFoundException — the Finding A
-# product gap. The fix is OUR OWN libdxcompiler.dylib built from the EXACT pinned
-# DXC commit the Vortice native reports (e043f4a1286f4e1026222ab1bc94e25de8d0e959,
-# FileVersion 1.7.2212.40 — the same pin Restore-DxcWasm below uses; same compiler,
-# never a substitute), by .github/workflows/dxc-build.yml (osx-arm64 on macos-14,
-# osx-x64 on macos-15-intel; MACOSX_DEPLOYMENT_TARGET 11.0/10.15; otool gate =
-# system-only linkage). Both arches share one file name, so the restored layout is
-# per-arch (tools/dxc/osx-{x64,arm64}/), exactly like vkd3d's. Every host restores
-# both RIDs (pack-ready pattern; ShadowDusk.HLSL.csproj packs them under
-# runtimes/osx-{x64,arm64}/native). Mirrors Restore-Vkd3dShader.
-#
-# Pins enforced since 2026-06-11: dylibs built by dxc-build.yml run 27327330108
-# (green on both RIDs, otool gate + ps_6_0 -spirv smoke passed) and hosted on the
-# fixed tag below. Same pin-discipline as vkd3d: hash mismatch -> re-download;
-# offline -> non-fatal warning.
-$DxcReleaseUrl = 'https://github.com/kaltinril/ShadowDusk/releases/download/native-dxc-1.7.2212.40'
-$DxcOsxX64Sha256   = '9e61d5c1993d2cd5a5ea6701011d0a86e8c8dd89c995ef0c4d03ff3b83dbbc17'
-$DxcOsxArm64Sha256 = '4f29ef90af61426a39037a2e9d7215a48c7c746328a38a20028e456c1ee3d811'
-
-function Restore-DxcFile([string]$Asset, [string]$DestRel, [string]$Sha256, [string]$Url = $DxcReleaseUrl) {
+# The desktop DXC (win-x64, win-arm64, linux-x64, osx-x64, osx-arm64) is restored by NuGet:
+# ShadowDusk.HLSL.csproj takes it from Microsoft.Direct3D.DXC and MonoGame.Tool.Dxc by
+# PackageDownload (Phase 70). Only the Android build below is ours, under tools/dxc/.
+function Restore-DxcFile([string]$Asset, [string]$DestRel, [string]$Sha256, [string]$Url) {
     $DxcDir = Join-Path $RepoRoot 'tools' 'dxc'
     $Dest = Join-Path $DxcDir $DestRel
 
@@ -180,15 +163,6 @@ function Restore-DxcFile([string]$Asset, [string]$DestRel, [string]$Sha256, [str
     Move-Item -Force $tmp $Dest
     Write-Host "restore.ps1: DXC native ($DestRel) downloaded, hash OK"
 }
-
-function Restore-DxcMacos {
-    Restore-DxcFile 'libdxcompiler.osx-x64.dylib' (Join-Path 'osx-x64' 'libdxcompiler.dylib') `
-        $DxcOsxX64Sha256
-    Restore-DxcFile 'libdxcompiler.osx-arm64.dylib' (Join-Path 'osx-arm64' 'libdxcompiler.dylib') `
-        $DxcOsxArm64Sha256
-}
-
-Restore-DxcMacos
 
 # ---------------------------------------------------------------------------
 # Android natives (Phase 50): on-device DXC + SPIRV-Cross for arm64-v8a
@@ -411,7 +385,7 @@ Restore-DxcWasm
 # (tests/ShadowDusk.BrowserTests/node-test-vkd3d-wasm.mjs). vkd3d-shader.{js,wasm}
 # are RESTORED artifacts placed into the ShadowDusk.Wasm package wwwroot/vkd3d/ so
 # they ship as Blazor static web assets (served at _content/ShadowDusk.Wasm/vkd3d/).
-# Mirrors Restore-DxcWasm (local-build copy) + Restore-DxcMacos (pinned download with
+# Mirrors Restore-DxcWasm (local-build copy) + Restore-DxcFile (pinned download with
 # the PENDING-FIRST-HOSTED-BUILD placeholder pattern). Runs unconditionally.
 #
 # Pins: SHA-256 of the assets hosted on the native-vkd3d-wasm-2.1-r2 prerelease (built

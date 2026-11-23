@@ -21,13 +21,13 @@ public sealed class DxcNativeIdentityTests
     private static readonly byte[] UuidB = Convert.FromHexString("1b5513a41646349c89cb814d05326d9a");
 
     [Theory]
-    [InlineData("win-x64", false, "1.7.2212.40 (e043f4a12)")]
-    [InlineData("win-arm64", false, "1.7.2212.40 (e043f4a12)")]
+    [InlineData("win-x64", false, "1.9.0.5402 (0d3ee6b55-dirty)")]
+    [InlineData("win-arm64", false, "1.9.0.5402 (0d3ee6b55-dirty)")]
     [InlineData("win-x64", true, DxcNativeIdentity.WindowsValidatorVersion)]
     [InlineData("win-arm64", true, DxcNativeIdentity.WindowsValidatorVersion)]
-    [InlineData("linux-x64", false, "65681bf462e07b533a7c7bfa54bda4e23a6c5d9f")]
-    [InlineData("osx-x64", false, "1b5513a41646349c89cb814d05326d9a")]
-    [InlineData("osx-arm64", false, "9e2d66e9c3a934429f46afaae3fdc480")]
+    [InlineData("linux-x64", false, "875c9449d09db6367641dd5cc37cc8c6d47daf7b")]
+    [InlineData("osx-x64", false, "21971f2aab6c3d999955e295b1f1a451")]
+    [InlineData("osx-arm64", false, "71711714044735c8babc650f876515d7")]
     [InlineData("android-arm64", false, "5882f6181b9e7149c5c5c4dbb2a88ed4e78d3223")]
     [InlineData("android-x64", false, "225337e5e08f3850fa4299f5499ae303f636aea0")]
     public void Expected_IsThePinnedBuildOfEachBundledRid(string rid, bool validator, string expected)
@@ -50,20 +50,20 @@ public sealed class DxcNativeIdentityTests
     }
 
     [Theory]
-    [InlineData("1.7.2212.40", "1.7.2212.40 (e043f4a12)", "1.7.2212.40 (e043f4a12)")]
+    [InlineData("1.9.0.5402", "1.9.0.5402 (0d3ee6b55-dirty)", "1.9.0.5402 (0d3ee6b55-dirty)")]
     [InlineData("1.9.2602.17", "1.9.2602.17 (21d28f727)", "1.9.2602.17 (21d28f727)")]
-    [InlineData("1.7.2212.40", "1.7.2212.40 (0123abcde)", "1.7.2212.40 (0123abcde)")]
-    [InlineData("1.7.2212.40", "1.7.2212.40", "1.7.2212.40")]
-    [InlineData("1.7.2212.40", null, "1.7.2212.40")]
-    [InlineData("1.7.2212.40", "1.7.2212.40 ()", "1.7.2212.40")]
+    [InlineData("1.9.0.5402", "1.9.0.5402 (0123abcde)", "1.9.0.5402 (0123abcde)")]
+    [InlineData("1.9.0.5402", "1.9.0.5402", "1.9.0.5402")]
+    [InlineData("1.9.0.5402", null, "1.9.0.5402")]
+    [InlineData("1.9.0.5402", "1.9.0.5402 ()", "1.9.0.5402")]
     public void WindowsIdentity_IsTheFileVersionPlusTheBuildTag(string fileVersion, string? productVersion, string expected)
     {
         // The commit in the tag is what tells a rebuild of the same version number from other
-        // sources apart: "1.7.2212.40 (0123abcde)" is not the pinned build.
+        // sources apart: "1.9.0.5402 (0123abcde)" is not the pinned build.
         string identity = DxcNativeIdentity.WindowsIdentity(fileVersion, productVersion);
 
         identity.ShouldBe(expected);
-        (identity == DxcNativeIdentity.WindowsCompilerVersion).ShouldBe(expected == "1.7.2212.40 (e043f4a12)");
+        (identity == DxcNativeIdentity.WindowsCompilerVersion).ShouldBe(expected == "1.9.0.5402 (0d3ee6b55-dirty)");
     }
 
     private static DxcNativeKind Kind(bool validator) =>

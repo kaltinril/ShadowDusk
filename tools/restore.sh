@@ -113,31 +113,15 @@ restore_vkd3d_shader() {
 restore_vkd3d_shader
 
 # ---------------------------------------------------------------------------
-# DXC macOS natives (libdxcompiler.dylib, Phase 37 A)
+# DXC natives (Android only)
 # ---------------------------------------------------------------------------
-# Vortice.Dxc 3.3.4 ships NO macOS native (win-x64/win-arm64/linux-x64 only), so
-# every CompileAsync on a Mac dies with DllNotFoundException — the Finding A
-# product gap. The fix is OUR OWN libdxcompiler.dylib built from the EXACT pinned
-# DXC commit the Vortice native reports (e043f4a1286f4e1026222ab1bc94e25de8d0e959,
-# FileVersion 1.7.2212.40 — the same pin the WASM build below uses; same compiler,
-# never a substitute), by .github/workflows/dxc-build.yml (osx-arm64 on macos-14,
-# osx-x64 on macos-15-intel; MACOSX_DEPLOYMENT_TARGET 11.0/10.15; otool gate =
-# system-only linkage). Both arches share one file name, so the restored layout is
-# per-arch (tools/dxc/osx-{x64,arm64}/), exactly like vkd3d's. Every host restores
-# both RIDs (pack-ready pattern; ShadowDusk.HLSL.csproj packs them under
-# runtimes/osx-{x64,arm64}/native). Mirrors restore_vkd3d_shader.
-#
-# Pins enforced since 2026-06-11: dylibs built by dxc-build.yml run 27327330108
-# (green on both RIDs, otool gate + ps_6_0 -spirv smoke passed) and hosted on the
-# fixed tag below. Same pin-discipline as vkd3d: hash mismatch -> re-download;
-# offline -> non-fatal warning.
-DXC_RELEASE_URL="https://github.com/kaltinril/ShadowDusk/releases/download/native-dxc-1.7.2212.40"
-DXC_OSX_X64_SHA256="9e61d5c1993d2cd5a5ea6701011d0a86e8c8dd89c995ef0c4d03ff3b83dbbc17"
-DXC_OSX_ARM64_SHA256="4f29ef90af61426a39037a2e9d7215a48c7c746328a38a20028e456c1ee3d811"
+# The desktop DXC (win-x64, win-arm64, linux-x64, osx-x64, osx-arm64) is restored by NuGet:
+# ShadowDusk.HLSL.csproj takes it from Microsoft.Direct3D.DXC and MonoGame.Tool.Dxc by
+# PackageDownload (Phase 70). Only the Android build below is ours, under tools/dxc/.
 
-# restore_dxc_file <asset-name> <dest-relative-to-tools/dxc> <sha256> [release-url]
+# restore_dxc_file <asset-name> <dest-relative-to-tools/dxc> <sha256> <release-url>
 restore_dxc_file() {
-    local asset="$1" dest_rel="$2" sha="$3" url="${4:-$DXC_RELEASE_URL}"
+    local asset="$1" dest_rel="$2" sha="$3" url="$4"
     local dxc_dir="$REPO_ROOT/tools/dxc"
     local dest="$dxc_dir/$dest_rel"
 
@@ -175,15 +159,6 @@ restore_dxc_file() {
     mv -f "$dest.tmp" "$dest"
     echo "restore.sh: DXC native ($dest_rel) downloaded, hash OK"
 }
-
-restore_dxc_macos() {
-    restore_dxc_file "libdxcompiler.osx-x64.dylib" "osx-x64/libdxcompiler.dylib" \
-        "$DXC_OSX_X64_SHA256"
-    restore_dxc_file "libdxcompiler.osx-arm64.dylib" "osx-arm64/libdxcompiler.dylib" \
-        "$DXC_OSX_ARM64_SHA256"
-}
-
-restore_dxc_macos
 
 # ---------------------------------------------------------------------------
 # Android natives (Phase 50): on-device DXC + SPIRV-Cross for arm64-v8a
@@ -479,7 +454,7 @@ restore_vkd3d_wasm
 # consumer who adds it gets genuine Slang input, compiled via slangc -target hlsl and
 # handed to the existing, unchanged, faithful DXC pipeline. A consumer who does NOT add
 # ShadowDusk.Slang pays zero size/dependency cost. Every host restores every RID (like
-# restore_vkd3d_shader / restore_dxc_macos above), so any machine is pack-ready: the
+# restore_vkd3d_shader above), so any machine is pack-ready: the
 # ShadowDusk.Slang nupkg must carry all four, and release.yml / pack-consume.yml gate on it.
 #
 # Pin: the official shader-slang v2026.14.1 release for every RID (the SAME version
