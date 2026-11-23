@@ -186,14 +186,29 @@ public sealed class Vkd3dInputGuardTests
         psi.ArgumentList.Add("raw-self-macro");
 
         // Measured: every guarded case above returns in well under a second, and the raw call runs
-        // until it is killed. 20 s is far past any real compile of this three-line shader.
-        ChildProcessTimeoutException hung = await Should.ThrowAsync<ChildProcessTimeoutException>(
-            () => ChildProcess.RunAsync(psi, TimeSpan.FromSeconds(20), "vkd3d raw self-referential macro"),
-            "the pinned vkd3d-shader returned on a self-referential macro: its preprocessor no longer hangs, so " +
-            "SD0240 is no longer needed");
-        _output.WriteLine(hung.Message);
-        hung.Stdout.ShouldContain(Vkd3dInputGuardProbe.VerdictPrefix + "RAW START", Case.Sensitive);
-        hung.Stdout.ShouldNotContain(Vkd3dInputGuardProbe.VerdictPrefix + "RAW RETURNED", Case.Sensitive);
+        // until it is stopped, allocating as it goes. The probe stops itself at a memory cap (issue
+        // #503: run to the deadline, it starved the whole CI runner); the 20 s deadline remains for
+        // a hang that does not allocate.
+        string stdout;
+        try
+        {
+            ChildProcessResult stopped = await ChildProcess.RunAsync(psi, TimeSpan.FromSeconds(20), "vkd3d raw self-referential macro");
+            _output.WriteLine(stopped.Stdout);
+            stdout = stopped.Stdout;
+            stdout.ShouldContain(
+                Vkd3dInputGuardProbe.VerdictPrefix + Vkd3dInputGuardProbe.RawRunawayVerdict,
+                Case.Sensitive,
+                "the pinned vkd3d-shader ended on a self-referential macro without running away: its preprocessor " +
+                "no longer hangs, so SD0240 is no longer needed\n" + stopped.Output);
+        }
+        catch (ChildProcessTimeoutException hung)
+        {
+            _output.WriteLine(hung.Message);
+            stdout = hung.Stdout;
+        }
+
+        stdout.ShouldContain(Vkd3dInputGuardProbe.VerdictPrefix + "RAW START", Case.Sensitive);
+        stdout.ShouldNotContain(Vkd3dInputGuardProbe.VerdictPrefix + "RAW RETURNED", Case.Sensitive);
     }
 
     private static string Verdict(string output, string name)
