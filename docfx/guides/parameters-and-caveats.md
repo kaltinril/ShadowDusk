@@ -23,7 +23,7 @@ float FishEyeAmount = 0.35;
 
 …carries `0.35` into the `.mgfx` (and `.knifx`) as the parameter's default value, on every target. The effect has that value the moment you load it, before any `SetValue`. DXC drops the initializer, so ShadowDusk reads it from your source (after macros, `#if` and any defines are applied) and writes it into the file itself.
 
-This is deliberately **better than `mgfxc`**, not the same: `mgfxc`'s OpenGL build stores zero for every initializer, and its DirectX 11 build loses array elements and half of a `float2x2`. ShadowDusk keeps scalars, vectors, matrices, `int`, `bool` and every element of an array.
+This is deliberately **better than `mgfxc`**, not the same: `mgfxc`'s OpenGL build stores zero for every initializer, and its DirectX 11 build loses array elements and half of a `float2x2`. ShadowDusk keeps scalars, vectors, matrices, `int`, `bool` and every element of an array. On FNA, a non-symmetric column-major matrix default reads as its transpose, with `fxc`'s build too; ShadowDusk warns `SD0306`, and calling `SetValue(Matrix)` after loading gives the declared value.
 
 ShadowDusk evaluates literals, arithmetic, casts, constructors such as `float4(1, 0, 0, 1)`, brace lists, arrays, earlier `const` values and a few math functions. If an initializer is something else (a call to your own function, say), the compile still succeeds and warns with `SD0017` naming the variable; its default is then zero until you `SetValue` it. Setting parameters by name at runtime always works.
 
@@ -71,11 +71,9 @@ On FNA, `fxc` writes annotations into the `.fxb` and `EffectParameter.Annotation
 
 A small family of advanced **OpenGL-target** texture intrinsics — **3D-texture sampling (`tex3D`), explicit-LOD sampling (the `tex2Dlod` family), and gradient sampling (the `tex2Dgrad` family)** — currently compiles on the Windows DXC native but **fails to compile on the Linux/macOS DXC builds**, even though all hosts pin the same DXC version. If your `.fx` uses these and you compile on Linux/macOS, expect a compile error (a loud diagnostic, never a miscompile); compiling the same shader on Windows works. The ordinary texture corpus (`tex2D`, multi-texture, samplers, render targets, …) is unaffected and compiles identically on all three OSes. This per-OS divergence is a known, tracked gap under investigation — it will be fixed in the compiler, not papered over here.
 
-## DirectX 12 must be compiled on Windows (for now)
+## DirectX 12 compiles on every host
 
-DXC's DXIL validation-and-signing step runs through `dxil.dll`, which is **Windows-only**. A `DirectX12` compile on Linux or macOS therefore emits **unsigned DXIL**: it loads only with Windows Developer Mode enabled, and **retail D3D12 rejects it at pipeline-state creation**.
-
-DirectX 12 DXIL is signed on every host (the retired `SD0214` warned about the old unsigned output), so there is no host to avoid. See [DirectX 12](../backends/directx12.md).
+DXC's signing step uses `dxil.dll`, which exists only on Windows. On Linux and macOS, ShadowDusk writes the same DXIL container hash in managed code, so DirectX 12 output is signed on every host (the retired `SD0214` warned about the old unsigned output). See [DirectX 12](../backends/directx12.md).
 
 ## Vertex-stage texture fetch is rejected on the OpenGL target
 

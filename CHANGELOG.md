@@ -21,8 +21,7 @@ that loads and renders identically to `mgfxc`'s in the real MonoGame/KNI runtime
 
 ### Fixed
 
-- OpenGL: a stage using `SV_VertexID`, `SV_InstanceID`, `uint`/`uint2..4`, or an integer shift, bitwise or modulo operator now compiles on Apple's OpenGL 2.1, Mesa and MonoGame 3.8.6 DesktopGL4, which all refused the versionless GLSL ([issue #524](https://github.com/kaltinril/ShadowDusk/issues/524)). GL rewrite Rule 19 adds a guarded `GL_EXT_gpu_shader4` prelude to those stages only; every other stage is byte-identical. **Still open on macOS:** a vertex shader with no vertex input at all (the fullscreen-triangle shape) now compiles but draws nothing on Apple's GL, because no attribute array is enabled. The new warning `SD0404` reports it; reading a `POSITION0` input that reaches the output draws correctly.
-- `release.yml`'s "CI is green on the release commit" check now resolves the newest CI-triggering commit with `git log --first-parent`, so a PR merged with a merge commit is checked on the merge commit (where the push-event run lives) instead of the PR branch tip, which only has `pull_request` runs and made the check fail on every such release.
+- OpenGL: a stage using `SV_VertexID`, `SV_InstanceID`, `uint`/`uint2..4`, or an integer shift, bitwise or modulo operator now compiles on Apple's OpenGL 2.1, Mesa and MonoGame 3.8.6 DesktopGL4, which all refused the versionless GLSL ([issue #524](https://github.com/kaltinril/ShadowDusk/issues/524)). GL rewrite Rule 19 adds a guarded `GL_EXT_gpu_shader4` prelude to those stages only; every other stage is byte-identical. **Still open on macOS:** a vertex shader driven only by `SV_VertexID` or `SV_InstanceID`, with no vertex input (the fullscreen-triangle shape), now compiles but draws nothing on Apple's GL, because no attribute array is enabled. The new warning `SD0404` reports it; reading a `POSITION0` input that reaches the output draws correctly. `SD0403` still warns for these constructs, now naming the stacks that remain: GLSL ES 1.00 (WebGL1, KNI Reach) and desktop drivers without the extension.
 - Test suite only, no shipped code changed ([issue #503](https://github.com/kaltinril/ShadowDusk/issues/503)): the positive control that proves vkd3d still hangs on `#define K K` now stops itself once its memory has grown 256 MiB, instead of letting vkd3d allocate without bound for 20 s. Every machine-wide stall measured on the Windows CI runner (7 of 24 runs, up to 110 s with no test finishing in any host) began while this control ran, and all 4 runs with a 60 s slangc timeout were among them.
 
 ## [0.26.0] - 2026-11-15
@@ -50,6 +49,10 @@ that loads and renders identically to `mgfxc`'s in the real MonoGame/KNI runtime
 - ShaderToy and SkSL conversion: the generated `.fx` keeps only the parentheses that precedence, associativity or readability need (`tex2D(img, (c + float2(1, 0)) * imgTexelSize)` instead of `tex2D(img, ((c + float2(1, 0)) * imgTexelSize))`, `(float3)a` instead of `((float3)(a))`). The compiled output is unchanged: every re-pinned converter golden builds to the same `.mgfx` bytes on OpenGL and DirectX 11, and `mgfxc` rebuilt the `GradientToy` goldens byte-identical.
 
 ### Fixed
+
+- `release.yml`'s "CI is green on the release commit" check now resolves the newest CI-triggering commit with `git log --first-parent`, so a PR merged with a merge commit is checked on the merge commit (where the push-event run lives) instead of the PR branch tip, which only has `pull_request` runs and made the check fail on every such release.
+
+- CLI: the single-file linux-x64 build published with .NET SDK 11 again bundles `libvkd3d-shader.so.1`; without it, DirectX 11 compiles failed with `SD0211`.
 
 - SkSL input: `uniform int` / `uniform bool` (and their vectors) no longer fail SD0210 on the OpenGL target (issue #507). `SkSLToFxConverter` lowers them to float uniforms on every target and reads them as `int(name)` / `bool(name)` in the shader, so integer division and indexing keep their meaning; the host sets a float (0/1 for a bool). Arrays, multi-declarator statements and names reused by a local are refused with `SD0671`.
 
