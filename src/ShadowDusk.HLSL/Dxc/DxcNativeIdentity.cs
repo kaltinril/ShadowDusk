@@ -56,21 +56,19 @@ internal enum DxcNativeKind
 internal static class DxcNativeIdentity
 {
     /// <summary>The pinned DXC, as its Windows file version and source commit.</summary>
-    internal const string WindowsCompilerVersion = "1.7.2212.40 (e043f4a12)";
+    internal const string WindowsCompilerVersion = "1.9.0.5402 (0d3ee6b55-dirty)";
 
-    /// <summary>The <c>dxil.dll</c> Vortice.Dxc 3.3.4 ships beside that DXC, as its file version and build tag.</summary>
-    internal const string WindowsValidatorVersion =
-        "101.7.2212.36 (release/github-release-1.7.2212, ShaderCompiler.dxcbin.0.230301.1+" +
-        "a9f555fbc9e2418fd87996a553e75aab2aa1c0cc-101.7.2212.32.github-release-1.7.2212-4-g0e372b8)";
+    /// <summary>The <c>dxil.dll</c> of the same Microsoft release (<c>Microsoft.Direct3D.DXC</c> 1.9.2607.13), as its file version and build tag.</summary>
+    internal const string WindowsValidatorVersion = "1.9.0.5402 (0d3ee6b55-dirty)";
 
-    /// <summary>GNU build id of Vortice.Dxc 3.3.4's <c>runtimes/linux-x64/native/libdxcompiler.so</c>.</summary>
-    internal const string LinuxX64CompilerBuildId = "65681bf462e07b533a7c7bfa54bda4e23a6c5d9f";
+    /// <summary>GNU build id of <c>MonoGame.Tool.Dxc</c> 1.9.2607.1's <c>binaries/linux-x64/lib/libdxcompiler.so</c>.</summary>
+    internal const string LinuxX64CompilerBuildId = "875c9449d09db6367641dd5cc37cc8c6d47daf7b";
 
-    /// <summary><c>LC_UUID</c> of our <c>osx-x64</c> <c>libdxcompiler.dylib</c> (release tag <c>native-dxc-1.7.2212.40</c>).</summary>
-    internal const string OsxX64CompilerUuid = "1b5513a41646349c89cb814d05326d9a";
+    /// <summary><c>LC_UUID</c> of the x86_64 slice of <c>MonoGame.Tool.Dxc</c> 1.9.2607.1's universal <c>libdxcompiler.dylib</c>.</summary>
+    internal const string OsxX64CompilerUuid = "21971f2aab6c3d999955e295b1f1a451";
 
-    /// <summary><c>LC_UUID</c> of our <c>osx-arm64</c> <c>libdxcompiler.dylib</c> (same release tag).</summary>
-    internal const string OsxArm64CompilerUuid = "9e2d66e9c3a934429f46afaae3fdc480";
+    /// <summary><c>LC_UUID</c> of the arm64 slice of the same universal file.</summary>
+    internal const string OsxArm64CompilerUuid = "71711714044735c8babc650f876515d7";
 
     /// <summary>
     /// GNU build id of our <c>android-arm64</c> <c>libdxcompiler.so</c>, the one ShadowDusk.HLSL
