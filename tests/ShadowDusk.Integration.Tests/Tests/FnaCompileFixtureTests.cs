@@ -713,4 +713,37 @@ public sealed class FnaCompileFixtureTests
             .ToList();
         samplerStates.ShouldHaveSingleItem().DwordValue.ShouldBe(BitConverter.SingleToUInt32Bits(-2.0f));
     }
+
+    // -------------------------------------------------------------------------
+    // SD0306 (issue #505): FNA reads a non-symmetric column-major default transposed
+    // -------------------------------------------------------------------------
+
+    [Fact]
+    public async Task NonSymmetricColumnMajorDefaults_WarnSD0306_AndRowMajorIsNotNamed()
+    {
+        using var cts = new CancellationTokenSource(CompileTimeout);
+
+        var result = await CompileFnaFileAsync(GoldenPath(Path.Combine("defaults", "DefaultsMatrices.fx")), cts.Token);
+
+        result.IsSuccess.ShouldBeTrue(DescribeErrors(result));
+        ShaderError warning = result.Value.Warnings.Where(w => w.Code == "SD0306").ShouldHaveSingleItem();
+        warning.Message.ShouldContain("'M2', 'M3', 'M4'", Case.Sensitive);
+        warning.Message.ShouldNotContain("'M4r'", Case.Sensitive);
+    }
+
+    [Fact]
+    public async Task IdentityMatrixDefault_DoesNotWarnSD0306()
+    {
+        const string source = """
+            float4x4 M = float4x4(1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1);
+            float4 MainPS(float4 color : COLOR0) : COLOR0 { return mul(color, M); }
+            technique T { pass P0 { PixelShader = compile ps_3_0 MainPS(); } };
+            """;
+        using var cts = new CancellationTokenSource(CompileTimeout);
+
+        var result = await CompileFnaSourceAsync(source, null, cts.Token);
+
+        result.IsSuccess.ShouldBeTrue(DescribeErrors(result));
+        result.Value.Warnings.ShouldNotContain(w => w.Code == "SD0306");
+    }
 }
