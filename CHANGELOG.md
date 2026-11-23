@@ -19,6 +19,7 @@ that loads and renders identically to `mgfxc`'s in the real MonoGame/KNI runtime
 ### Fixed
 
 - `release.yml`'s "CI is green on the release commit" check now resolves the newest CI-triggering commit with `git log --first-parent`, so a PR merged with a merge commit is checked on the merge commit (where the push-event run lives) instead of the PR branch tip, which only has `pull_request` runs and made the check fail on every such release.
+- Test suite only, no shipped code changed ([issue #503](https://github.com/kaltinril/ShadowDusk/issues/503)): the positive control that proves vkd3d still hangs on `#define K K` now stops itself once its memory has grown 256 MiB, instead of letting vkd3d allocate without bound for 20 s. Every machine-wide stall measured on the Windows CI runner (7 of 24 runs, up to 110 s with no test finishing in any host) began while this control ran, and all 4 runs with a 60 s slangc timeout were among them.
 
 ## [0.26.0] - 2026-11-15
 

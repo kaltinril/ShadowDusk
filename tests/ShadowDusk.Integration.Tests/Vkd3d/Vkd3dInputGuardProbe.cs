@@ -1,5 +1,6 @@
 #nullable enable
 
+using System.Diagnostics;
 using System.Reflection;
 using ShadowDusk.Compiler;
 using ShadowDusk.Core;
@@ -92,6 +93,20 @@ public static class Vkd3dInputGuardProbe
         new("alias", "#define F G\nfloat G(float x) { return x; }\n" + PsColor + " { return c * F(0.5); }\n"),
     ];
 
+    /// <summary>The verdict the raw hang control prints when its memory cap stops it.</summary>
+    public const string RawRunawayVerdict = "RAW RUNAWAY";
+
+    /// <summary>
+    /// How far the raw hang control's private memory may grow before it is stopped. vkd3d's
+    /// preprocessor allocates without bound on <c>#define K K</c> (measured on a desktop: over
+    /// 8 GB in 5 s). Left to run to its 20 s deadline, this control is where every machine-wide
+    /// stall of the Windows CI runner began (issue #503). A three-line shader needs nowhere near
+    /// this much.
+    /// </summary>
+    private const long RawHangMemoryCapBytes = 256L * 1024 * 1024;
+
+    private const int MemoryPollMilliseconds = 10;
+
     /// <summary>The plain HLSL the raw hang control hands vkd3d.</summary>
     public const string RawSelfMacroSource =
         "#define K K\nstatic const float K = 0.5;\nfloat4 PS(float4 c : COLOR0) : SV_Target { return c * K; }\n";
@@ -117,7 +132,7 @@ public static class Vkd3dInputGuardProbe
         if (target == "raw-void-cast")
             return RunRaw(RawVoidCastSource);
         if (target == "raw-self-macro")
-            return RunRaw(RawSelfMacroSource);
+            return RunRaw(RawSelfMacroSource, RawHangMemoryCapBytes);
         // Measurement aid: a plain HLSL file (entry PS, ps_4_0) through the unguarded call.
         if (target == "raw-file" && args.Length == 2)
             return RunRaw(File.ReadAllText(args[1]));
@@ -148,7 +163,7 @@ public static class Vkd3dInputGuardProbe
     /// The pinned vkd3d-shader, called the way the backend calls it but WITHOUT the input guard:
     /// the fault the guard keeps vkd3d away from.
     /// </summary>
-    private static int RunRaw(string source)
+    private static int RunRaw(string source, long? memoryGrowthCapBytes = null)
     {
         if (Vkd3dLoader.Register() is { } loadError)
         {
@@ -168,8 +183,45 @@ public static class Vkd3dInputGuardProbe
 
         Console.WriteLine($"{VerdictPrefix}RAW START");
         Console.Out.Flush();
+        using var returned = new ManualResetEventSlim();
+        Thread? watchdog = memoryGrowthCapBytes is { } cap ? StartMemoryWatchdog(cap, returned) : null;
         object? outcome = invoke.Invoke(null, [source, request, "ps_4_0", Vkd3dTargetType.DxbcTpf]);
+        returned.Set();
+        watchdog?.Join();
         Console.WriteLine($"{VerdictPrefix}RAW RETURNED {outcome}");
         return 0;
+    }
+
+    /// <summary>
+    /// Ends this process, after printing <see cref="RawRunawayVerdict"/>, once its private memory
+    /// has grown by <paramref name="capBytes"/>. The call being watched is a native one that never
+    /// returns, so only another thread can stop it.
+    /// </summary>
+    private static Thread StartMemoryWatchdog(long capBytes, ManualResetEventSlim returned)
+    {
+        using Process current = Process.GetCurrentProcess();
+        long baseline = current.PrivateMemorySize64;
+        var clock = Stopwatch.StartNew();
+        var thread = new Thread(() =>
+        {
+            using Process self = Process.GetCurrentProcess();
+            while (!returned.Wait(MemoryPollMilliseconds))
+            {
+                self.Refresh();
+                long growth = self.PrivateMemorySize64 - baseline;
+                if (growth < capBytes)
+                    continue;
+                Console.WriteLine($"{VerdictPrefix}{RawRunawayVerdict} +{growth / (1024 * 1024)} MiB in {clock.Elapsed.TotalSeconds:0.00} s");
+                Console.Out.Flush();
+                self.Kill();
+                return;
+            }
+        })
+        {
+            IsBackground = true,
+            Name = "vkd3d raw memory watchdog",
+        };
+        thread.Start();
+        return thread;
     }
 }
