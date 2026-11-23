@@ -40,18 +40,18 @@ DirectX Shader Compiler (dxcompiler, dxil), release v1.9.2607
 Copyright (c) Microsoft Corporation; portions Copyright (c) 2003-2015
 University of Illinois at Urbana-Champaign. All rights reserved.
 
-This package redistributes the DXC natives for every supported RID:
-  win-x64             dxcompiler.dll, dxil.dll: Microsoft's release, unmodified
-                      (NuGet package Microsoft.Direct3D.DXC 1.9.2607.13)
+This package redistributes DXC natives for every supported RID, each built from
+the open-source repository at the tag below. No binary from Microsoft's DXC
+release is included:
+  win-x64, win-arm64  dxcompiler.dll, dxil.dll: built by this project
+  android-arm64       libdxcompiler.so: built by this project
   linux-x64, osx-*    libdxcompiler: MonoGame's builds of the same tag, unmodified
                       (NuGet package MonoGame.Tool.Dxc 1.9.2607.1)
-  win-arm64, android  built by this project from the same tag, unmodified
 
-The license files of the DXC release ride in this package under licenses/dxc/.
-Microsoft's release notes state that LICENSE-LLVM.txt (the University of
-Illinois/NCSA Open Source License, reproduced below) applies to its files other
-than d3d12shader.h; LICENSE-MS.txt ships in the same release and is included as
-published.
+The licenses of that source ride in this package under licenses/dxc/: DXC's
+LICENSE.TXT (the University of Illinois/NCSA Open Source License, reproduced
+below) and ThirdPartyNotices.txt, plus the code they build in: miniz, the HLSL
+headers, SPIRV-Tools, SPIRV-Headers and DirectX-Headers.
 
 Source availability: microsoft/DirectXShaderCompiler at tag v1.9.2607, commit
     0d3ee6b551b8fa768fbf825300ebab81047ef6a8

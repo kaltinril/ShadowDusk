@@ -158,15 +158,20 @@ public sealed class DxcLibraryPathDecoyTests
             List<string> dxilImages = images
                 .Where(i => DxcLoader.IsDxilLeafName(Path.GetFileName(i)))
                 .ToList();
-            // The pinned DXC dlopens libdxil by leaf name while it loads, so it reaches the decoy;
-            // finding no DxcCreateInstance there, DXC dlcloses it and runs without a validator.
-            // Whether the linker really unmaps it is the linker's business, so the invariant is
-            // the one ShadowDusk owns: a libdxil image in the process refuses validated DXIL
-            // (DirectX 12) loudly, and no such image means DX12 compiles.
-            report["DirectX12"].ShouldBe(dxilImages.Count > 0 ? ["SD0219"] : ["OK"],
-                $"libdxil images mapped: [{string.Join(", ", dxilImages)}]");
-            if (!mac)
-                dxilImages.ShouldNotBeEmpty("the real validator on LD_LIBRARY_PATH was not bound, so this case proves nothing");
+            if (mac)
+            {
+                // The invariant ShadowDusk owns on macOS: a libdxil image in the process refuses
+                // validated DXIL (DirectX 12) loudly, and no such image means DX12 compiles.
+                report["DirectX12"].ShouldBe(dxilImages.Count > 0 ? ["SD0219"] : ["OK"],
+                    $"libdxil images mapped: [{string.Join(", ", dxilImages)}]");
+            }
+            else
+            {
+                // A REAL validator sits on LD_LIBRARY_PATH. The pinned DXC validates internally and
+                // must not bind it, and ShadowDusk loads none.
+                dxilImages.ShouldBeEmpty("a libdxil was loaded on Linux, where the pinned DXC has no use for one");
+                report["DirectX12"].ShouldBe(["OK"]);
+            }
         }
         finally
         {

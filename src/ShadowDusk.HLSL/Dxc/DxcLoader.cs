@@ -490,7 +490,8 @@ internal static class DxcLoader
 
             _foreignValidatorError =
                 dxilPath is not null ? VerifyBoundWindowsDxil(dxilPath, pinnedValidator)
-                : VerifyNoUnixDxil(mac);
+                : mac ? VerifyNoMacDxil()
+                : null;
 
             // What DXC's own leaf-name load of this library, made from inside every debug
             // SPIR-V compile, would be handed (issue #332). Asked of the dynamic linker now,
@@ -631,20 +632,16 @@ internal static class DxcLoader
     /// foreign validator DXC may have bound. Cannot enumerate images means no finding, never a
     /// false positive.
     /// </summary>
-    private static ShaderError? VerifyNoUnixDxil(bool mac)
+    private static ShaderError? VerifyNoMacDxil()
     {
-        // The pinned DXC dlopens libdxil by leaf name while it loads, on Linux too since v1.8.
-        string? foreign = (mac ? LoadedImages.MacImagePaths() : LoadedImages.LinuxImagePaths())
+        string? foreign = LoadedImages.MacImagePaths()
             .FirstOrDefault(path => IsDxilLeafName(Path.GetFileName(path)));
-        string searchPath = mac
-            ? "DYLD_LIBRARY_PATH, the working directory, or /usr/local/lib"
-            : "LD_LIBRARY_PATH or the system library directories";
         return foreign is null
             ? null
             : LoadError(
                 $"A DXIL validator library ('{foreign}') is loaded into this process, and " +
-                "ShadowDusk's DXC on this OS ships none: DXC picked it up from the dynamic-linker search " +
-                $"path ({searchPath}) and would " +
+                "ShadowDusk's macOS DXC ships none: DXC picked it up from the dynamic-linker search " +
+                "path (DYLD_LIBRARY_PATH, the working directory, or /usr/local/lib) and would " +
                 "validate DXIL with a foreign build. Compiles that need the validator " +
                 "(DirectX 12) are refused; SPIR-V targets are unaffected. Remove that library " +
                 "from those paths.");
@@ -838,7 +835,7 @@ internal static class DxcLoader
 
     /// <summary>
     /// The native images mapped into this process, by path. Used by
-    /// <see cref="VerifyNoUnixDxil"/>, and by the integration tests that prove which
+    /// <see cref="VerifyNoMacDxil"/>, and by the integration tests that prove which
     /// <c>libdxcompiler</c> a compile really ran in.
     /// </summary>
     internal static class LoadedImages
@@ -865,33 +862,6 @@ internal static class DxcLoader
                 }
             }
             catch (Exception ex) when (ex is DllNotFoundException or EntryPointNotFoundException)
-            {
-                // Cannot enumerate: report nothing rather than fail a compile on a guess.
-            }
-
-            return paths;
-        }
-
-        /// <summary>
-        /// Linux: the path of every file mapped into this process, from <c>/proc/self/maps</c>.
-        /// Empty off Linux or when it cannot be read (never a guess).
-        /// </summary>
-        internal static IReadOnlyList<string> LinuxImagePaths()
-        {
-            var paths = new List<string>();
-            if (!OperatingSystem.IsLinux())
-                return paths;
-
-            try
-            {
-                foreach (string line in File.ReadLines("/proc/self/maps"))
-                {
-                    int path = line.IndexOf('/', StringComparison.Ordinal);
-                    if (path >= 0 && !paths.Contains(line[path..]))
-                        paths.Add(line[path..]);
-                }
-            }
-            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
             {
                 // Cannot enumerate: report nothing rather than fail a compile on a guess.
             }
