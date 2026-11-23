@@ -2,6 +2,12 @@
   "version": 2,
   "dependencies": {
     "net10.0": {
+      "Microsoft.NET.ILLink.Tasks": {
+        "type": "Direct",
+        "requested": "[10.0.15, )",
+        "resolved": "10.0.15",
+        "contentHash": "u0WnRcZgBZYHlVFpbe/3Adpmb9rmNJ8/fmEwqc/xjB7fFppq+gfaLJd3Sdaw+J02zV0eP/T9dneQ3Dv5jWw6bw=="
+      },
       "Vortice.D3DCompiler": {
         "type": "Direct",
         "requested": "[3.3.4, )",
@@ -56,7 +62,25 @@
         "type": "Project"
       }
     },
+    "net10.0/win-x64": {
+      "Vortice.Dxc": {
+        "type": "Direct",
+        "requested": "[3.3.4, 3.3.4]",
+        "resolved": "3.3.4",
+        "contentHash": "Q+JJzn96ZKaLQFEhLRFtWau0/KxORtREpP8FTRdKN0luIdrTZIARto7OESKpOGXl3idIGP/jH8YQIupNzaR5EQ==",
+        "dependencies": {
+          "SharpGen.Runtime": "2.1.2-beta",
+          "SharpGen.Runtime.COM": "2.1.2-beta"
+        }
+      }
+    },
     "net8.0": {
+      "Microsoft.NET.ILLink.Tasks": {
+        "type": "Direct",
+        "requested": "[8.0.34, )",
+        "resolved": "8.0.34",
+        "contentHash": "AoMGwI/388svzARQ2NYC25vFOQGcf13FgQWv61TwPAdPUMOejXpQxBQHrQpXfqM7vqxxj1E3SAkX/OkE2cuChw=="
+      },
       "Vortice.D3DCompiler": {
         "type": "Direct",
         "requested": "[3.3.4, )",
@@ -109,6 +133,18 @@
       },
       "shadowdusk.core": {
         "type": "Project"
+      }
+    },
+    "net8.0/win-x64": {
+      "Vortice.Dxc": {
+        "type": "Direct",
+        "requested": "[3.3.4, 3.3.4]",
+        "resolved": "3.3.4",
+        "contentHash": "Q+JJzn96ZKaLQFEhLRFtWau0/KxORtREpP8FTRdKN0luIdrTZIARto7OESKpOGXl3idIGP/jH8YQIupNzaR5EQ==",
+        "dependencies": {
+          "SharpGen.Runtime": "2.1.2-beta",
+          "SharpGen.Runtime.COM": "2.1.2-beta"
+        }
       }
     }
   }

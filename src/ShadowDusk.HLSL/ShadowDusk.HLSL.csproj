@@ -159,7 +159,10 @@
           Link="osx-arm64/libdxcompiler.dylib" Pack="true" PackagePath="runtimes/osx-arm64/native/libdxcompiler.dylib" />
   </ItemGroup>
   <ItemGroup>
-    <None Include="licenses\dxc\*" Pack="true" PackagePath="licenses/dxc/" />
+    <!-- Copied to output too, so the CLI and MGCB plugin packages, which ship this project's
+         build output rather than its package, carry the licences of the natives they contain. -->
+    <None Include="licenses\dxc\*" Pack="true" PackagePath="licenses/dxc/"
+          CopyToOutputDirectory="PreserveNewest" Link="licenses/dxc/%(Filename)%(Extension)" ExcludeFromSingleFile="true" />
     <None Include="$(MSBuildThisFileDirectory)..\..\tools\dxc\win-x64\dxcompiler.dll"
           Condition="Exists('$(MSBuildThisFileDirectory)..\..\tools\dxc\win-x64\dxcompiler.dll')"
           CopyToOutputDirectory="PreserveNewest" Link="runtimes/win-x64/native/dxcompiler.dll"

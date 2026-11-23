@@ -24,8 +24,10 @@ namespace ShadowDusk.HLSL.Dxc;
 /// <para>
 /// 2021 rejects a vector condition in <c>?:</c> and vector <c>&amp;&amp;</c> / <c>||</c>, which
 /// FX shaders use and which ShadowDusk has always compiled for these targets. A source 2021
-/// refuses is therefore compiled again at 2018 (<see cref="MayRetryAsLegacy"/>), so moving the
-/// pin stops no shader from compiling.
+/// refuses is therefore compiled again at 2018 (<see cref="MayRetryAsLegacy"/>) and carries the
+/// warning <see cref="LegacyFallbackCode"/>, because <c>mgfxc</c> would not compile it here. The
+/// one exception is a Vulkan source whose preprocessed view depends on <c>__HLSL_VERSION</c>:
+/// it keeps its 2021 error (accepted by the owner, <c>project_decisions.md</c>).
 /// </para>
 /// </remarks>
 internal static class DxcLanguageVersion
@@ -38,6 +40,9 @@ internal static class DxcLanguageVersion
 
     /// <summary>The language <c>mgfxc</c>'s DXC compiles DirectX 12 and Vulkan in.</summary>
     internal const string Modern = "2021";
+
+    /// <summary>The warning on a shader that only compiled at <see cref="Legacy"/>.</summary>
+    internal const string LegacyFallbackCode = "SD0242";
 
     /// <summary>The language version a compile for <paramref name="platform"/> runs at first.</summary>
     internal static string For(PlatformTarget platform) =>
@@ -59,6 +64,45 @@ internal static class DxcLanguageVersion
         && !error.Code.StartsWith("SD", StringComparison.Ordinal)
         && (request.Platform != PlatformTarget.Vulkan
             || !ChangesPairingView(request.HlslSource, request.SourceFileName, request.Stage));
+
+    /// <summary>
+    /// The outcome of the retry at <see cref="Legacy"/> after <paramref name="modern"/> refused the
+    /// source: the blob with a <see cref="LegacyFallbackCode"/> warning, or, when both versions
+    /// fail, the diagnostic of the attempt that got further through the source. That is the real
+    /// error whichever language the source is written in: a 2021-only construct stops a 2018
+    /// compile early, a vector condition stops a 2021 compile early. Both texts stay in
+    /// <see cref="ShaderError.RawDiagnostics"/>, verbatim.
+    /// </summary>
+    internal static Result<PlatformBlob, ShaderError> AfterLegacyRetry(
+        ShaderError modern, Result<PlatformBlob, ShaderError> legacy)
+    {
+        if (legacy.IsFailure)
+            return Result<PlatformBlob, ShaderError>.Fail(ReportBoth(modern, legacy.Error));
+
+        var notice = new ShaderError(
+            modern.File,
+            modern.Line,
+            modern.Column,
+            LegacyFallbackCode,
+            "this shader compiled as HLSL 2018 because HLSL 2021, the language mgfxc's DXC uses for this " +
+            $"target, refused it, so mgfxc would not compile it here. HLSL 2021 said: {modern.Message}",
+            ShaderErrorSeverity.Warning);
+        return Result<PlatformBlob, ShaderError>.Ok(
+            new PlatformBlob(legacy.Value.Kind, legacy.Value.Bytes) { Warnings = [notice, .. legacy.Value.Warnings] });
+    }
+
+    private static ShaderError ReportBoth(ShaderError modern, ShaderError legacy)
+    {
+        bool legacyGotFurther = string.Equals(modern.File, legacy.File, StringComparison.Ordinal)
+            && (legacy.Line, legacy.Column).CompareTo((modern.Line, modern.Column)) > 0;
+        ShaderError primary = legacyGotFurther ? legacy : modern;
+        return primary with
+        {
+            RawDiagnostics =
+                $"HLSL 2021:\n{modern.RawDiagnostics ?? modern.Message}\n" +
+                $"HLSL 2018:\n{legacy.RawDiagnostics ?? legacy.Message}",
+        };
+    }
 
     /// <summary>
     /// True when <c>__HLSL_VERSION</c> at 2018 and at 2021 gives a different managed view of

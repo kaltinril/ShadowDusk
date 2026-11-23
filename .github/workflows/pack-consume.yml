@@ -195,6 +195,12 @@ jobs:
             'runtimes/linux-x64/native/libvkd3d-shader.so.1' \
             'runtimes/osx-x64/native/libvkd3d-shader.1.dylib' \
             'runtimes/osx-arm64/native/libvkd3d-shader.1.dylib' \
+            'runtimes/win-x64/native/dxcompiler.dll' \
+            'runtimes/win-x64/native/dxil.dll' \
+            'runtimes/win-arm64/native/dxcompiler.dll' \
+            'runtimes/win-arm64/native/dxil.dll' \
+            'runtimes/linux-x64/native/libdxcompiler.so' \
+            'licenses/dxc/DXC-LICENSE.txt' \
             'runtimes/osx-x64/native/libdxcompiler.dylib' \
             'runtimes/osx-arm64/native/libdxcompiler.dylib' \
             'runtimes/android-arm64/native/libdxcompiler.so' \

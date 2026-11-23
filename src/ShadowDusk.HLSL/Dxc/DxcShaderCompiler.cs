@@ -167,15 +167,13 @@ public sealed class DxcShaderCompiler : IDxcShaderCompiler, IDisposable
     }
 
     // The target's language version, then 2018 for a source only that accepts (Phase 70,
-    // DxcLanguageVersion). When both fail, the 2018 diagnostics are reported: that is the language
-    // this source has always been diagnosed in.
+    // DxcLanguageVersion, which also decides what a double failure reports).
     private Result<PlatformBlob, ShaderError> CompileInLanguage(DxcCompileRequest request)
     {
         Result<PlatformBlob, ShaderError> result = CompileCore(request, DxcLanguageVersion.For(request.Platform));
-        return result.IsSuccess
-               || !DxcLanguageVersion.MayRetryAsLegacy(request, result.Error)
+        return result.IsSuccess || !DxcLanguageVersion.MayRetryAsLegacy(request, result.Error)
             ? result
-            : CompileCore(request, DxcLanguageVersion.Legacy);
+            : DxcLanguageVersion.AfterLegacyRetry(result.Error, CompileCore(request, DxcLanguageVersion.Legacy));
     }
 
     private Result<PlatformBlob, ShaderError> CompileCore(DxcCompileRequest request, string languageVersion)

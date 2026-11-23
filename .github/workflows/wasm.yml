@@ -134,7 +134,7 @@ jobs:
           # The emscripten loader is generated with the .wasm and calls it through a minified import
           # table, so a rebuilt module with the previous loader traps at startup (Phase 70). restore
           # copies only the .wasm; the loader is committed in both places and must stay equal.
-          if ! cmp -s <(tr -d '' < .wasm-build/dxc-wasm-out/dxcompiler.js) <(tr -d '' < src/ShadowDusk.Wasm/wwwroot/dxc/dxcompiler.js); then
+          if ! cmp -s .wasm-build/dxc-wasm-out/dxcompiler.js src/ShadowDusk.Wasm/wwwroot/dxc/dxcompiler.js; then
             echo "::error::src/ShadowDusk.Wasm/wwwroot/dxc/dxcompiler.js is not the loader built with .wasm-build/dxc-wasm-out/dxcompiler.wasm. Copy it."
             exit 1
           fi

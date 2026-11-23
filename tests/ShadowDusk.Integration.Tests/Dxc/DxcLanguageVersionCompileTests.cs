@@ -48,6 +48,28 @@ public sealed class DxcLanguageVersionCompileTests
         var result = await CompileAsync(Effect(body), target);
 
         result.IsSuccess.ShouldBeTrue(Describe(result));
+        // OpenGL's reference language accepts it. DirectX 12 and Vulkan left theirs, and say so.
+        result.Value.Warnings.Any(w => w.Code == "SD0242").ShouldBe(target != PlatformTarget.OpenGL);
+    }
+
+    [DxcTheory]
+    [InlineData(PlatformTarget.Vulkan)]
+    [InlineData(PlatformTarget.DirectX12)]
+    public async Task ASourceBothVersionsRefuse_ReportsTheErrorOfTheAttemptThatGotFurther(PlatformTarget target)
+    {
+        // Valid 2021 with a later typo: 2018 stops at 'template', which is not what is wrong.
+        const string modern =
+            "template<typename T> T Twice(T v) { return v + v; }\n" +
+            "float4 MainPS(float4 pos : SV_Position) : SV_Target0 {\nreturn Twice(pos) + notDeclared;\n}\n" + Technique;
+        var modernResult = await CompileAsync(modern, target);
+        modernResult.IsFailure.ShouldBeTrue();
+        modernResult.Error[0].Message.ShouldContain("notDeclared", Case.Sensitive);
+
+        // Valid 2018 with a later typo: 2021 stops at the vector condition.
+        var legacyResult = await CompileAsync(Effect("float3 r = (a > 0.5) ? a : 1 - a;\nr += notDeclared;"), target);
+        legacyResult.IsFailure.ShouldBeTrue();
+        legacyResult.Error[0].Message.ShouldContain("notDeclared", Case.Sensitive);
+        legacyResult.Error[0].RawDiagnostics.ShouldNotBeNull().ShouldContain("HLSL 2021:", Case.Sensitive);
     }
 
     [DxcTheory]

@@ -29,6 +29,8 @@
 
   <ItemGroup>
     <None Include="README.md" Pack="true" PackagePath="\" />
+    <!-- The licences of the DXC source wwwroot/dxc/dxcompiler.wasm is built from (Phase 70). -->
+    <None Include="..\ShadowDusk.HLSL\licenses\dxc\*" Pack="true" PackagePath="licenses/dxc/" />
   </ItemGroup>
 
   <!--

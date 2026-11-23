@@ -35,8 +35,9 @@ internal enum DxcNativeKind
 /// <list type="bullet">
 /// <item>Windows (PE): the four-part FILEVERSION of the version resource plus the build tag
 ///   that follows it in the ProductVersion string (for <c>dxcompiler.dll</c> the source
-///   commit, <c>1.9.0.5402 (0d3ee6b55-dirty)</c>), so a rebuild that reuses the version number
-///   from other sources does not pass.</item>
+///   commit, <c>1.9.0.5402 (0d3ee6b55-dirty)</c>). It tells other DXC versions apart, but not two
+///   builds of this commit: Microsoft's build of the tag carries the same stamp as ours, and
+///   compiles the corpus to the same bytes.</item>
 /// <item>Linux (ELF): the GNU build id note.</item>
 /// <item>macOS (Mach-O): the <c>LC_UUID</c> load command; a universal (fat) file is accepted
 ///   when any slice carries the pinned id.</item>
