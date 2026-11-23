@@ -86,7 +86,7 @@ public sealed class DxcShaderCompiler : IDxcShaderCompiler, IDisposable
         if (NativeError(request.SourceFileName, usesValidator: false) is { } loadError)
             return Result<string, ShaderError>.Fail(loadError);
 
-        IReadOnlyList<string> arguments = DxcFlagBuilder.BuildPreprocess(request.Macros);
+        IReadOnlyList<string> arguments = DxcFlagBuilder.BuildPreprocess(request.Macros, request.LanguageVersion);
 
         // Same raw vtable call the compile path uses (per-platform wchar_t arg encoding,
         // UTF-8 source). #includes are already flattened upstream, so no include handler.
@@ -157,7 +157,7 @@ public sealed class DxcShaderCompiler : IDxcShaderCompiler, IDisposable
     // WaveQuadIntrinsics), keeping DXC's location, its message verbatim, and its raw text.
     private Result<PlatformBlob, ShaderError> CompileRejectingWaveOps(DxcCompileRequest request)
     {
-        Result<PlatformBlob, ShaderError> result = CompileCore(request);
+        Result<PlatformBlob, ShaderError> result = CompileInLanguage(request);
 
         if (result.IsSuccess)
             return result;
@@ -166,14 +166,27 @@ public sealed class DxcShaderCompiler : IDxcShaderCompiler, IDisposable
         return relabelled is null ? result : Result<PlatformBlob, ShaderError>.Fail(relabelled);
     }
 
-    private Result<PlatformBlob, ShaderError> CompileCore(DxcCompileRequest request)
+    // The target's language version, then 2018 for a source only that accepts (Phase 70,
+    // DxcLanguageVersion). When both fail, the 2018 diagnostics are reported: that is the language
+    // this source has always been diagnosed in.
+    private Result<PlatformBlob, ShaderError> CompileInLanguage(DxcCompileRequest request)
+    {
+        Result<PlatformBlob, ShaderError> result = CompileCore(request, DxcLanguageVersion.For(request.Platform));
+        return result.IsSuccess
+               || !DxcLanguageVersion.MayRetryAsLegacy(request, result.Error)
+            ? result
+            : CompileCore(request, DxcLanguageVersion.Legacy);
+    }
+
+    private Result<PlatformBlob, ShaderError> CompileCore(DxcCompileRequest request, string languageVersion)
     {
         IReadOnlyList<string> arguments = DxcFlagBuilder.Build(
             request.Platform,
             request.Stage,
             request.EntryPoint,
             request.Macros,
-            request.Options);
+            request.Options,
+            languageVersion);
         bool usesValidator = UsesValidator(arguments);
 
         if (NativeError(request.SourceFileName, usesValidator) is { } loadError)

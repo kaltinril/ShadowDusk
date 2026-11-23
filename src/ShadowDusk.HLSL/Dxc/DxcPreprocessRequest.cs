@@ -26,4 +26,7 @@ public sealed class DxcPreprocessRequest
 
     /// <summary>The macro defines to apply (the target's <c>PlatformMacros</c> set as -D pairs).</summary>
     public IReadOnlyList<(string Name, string? Value)> Macros { get; init; } = [];
+
+    /// <summary>The HLSL language version to preprocess at (<see cref="DxcLanguageVersion"/>); null is 2018.</summary>
+    internal string? LanguageVersion { get; init; }
 }

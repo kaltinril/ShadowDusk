@@ -56,6 +56,19 @@ internal sealed class JsDxcShaderCompiler : IDxcShaderCompiler
         DxcCompileRequest request,
         CancellationToken cancellationToken = default)
     {
+        // The same language-version rule as the desktop DxcShaderCompiler (Phase 70).
+        Result<PlatformBlob, ShaderError> result = CompileAt(request, DxcLanguageVersion.For(request.Platform), cancellationToken);
+        return result.IsSuccess
+               || !DxcLanguageVersion.MayRetryAsLegacy(request, result.Error)
+            ? result
+            : CompileAt(request, DxcLanguageVersion.Legacy, cancellationToken);
+    }
+
+    private Result<PlatformBlob, ShaderError> CompileAt(
+        DxcCompileRequest request,
+        string languageVersion,
+        CancellationToken cancellationToken)
+    {
         cancellationToken.ThrowIfCancellationRequested();
 
         if (!WasmCompilerInitialization.DxcReady)
@@ -70,7 +83,8 @@ internal sealed class JsDxcShaderCompiler : IDxcShaderCompiler
             request.Stage,
             request.EntryPoint,
             request.Macros,
-            request.Options);
+            request.Options,
+            languageVersion);
 
         // An entry function declared more than once crashes the desktop DXC's SPIR-V back end, so
         // the desktop host blanks its redundant prototypes, proven by DXC's own preprocessor (-P;

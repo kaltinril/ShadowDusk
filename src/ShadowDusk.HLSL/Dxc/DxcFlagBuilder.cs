@@ -29,23 +29,13 @@ internal static class DxcFlagBuilder
     /// <summary>Silences the warning (an error under <c>-WX</c>) <see cref="TimestampDefine"/> raises.</summary>
     internal const string NoBuiltinMacroRedefinedWarning = "-Wno-builtin-macro-redefined";
 
-    /// <summary>DXC's language-version switch; see <see cref="LanguageVersion"/>.</summary>
-    internal const string LanguageVersionFlag = "-HV";
-
-    /// <summary>
-    /// The HLSL language version of every DXC compile and preprocess (Phase 70, issue #287). DXC
-    /// defaults to 2021 since v1.7.2308, where a vector condition in <c>?:</c> and vector
-    /// <c>&amp;&amp;</c> / <c>||</c> are hard errors. The FX dialect ShadowDusk accepts allows
-    /// them, and the DXC it pinned before ran 2018, so the version is stated, never inherited.
-    /// </summary>
-    internal const string LanguageVersion = "2018";
-
     public static IReadOnlyList<string> Build(
         PlatformTarget platform,
         ShaderStage stage,
         string entryPoint,
         IReadOnlyList<(string Name, string? Value)> macros,
-        DxcCompileOptions? options = null)
+        DxcCompileOptions? options = null,
+        string? languageVersion = null)
     {
         options ??= new DxcCompileOptions();
 
@@ -180,8 +170,8 @@ internal static class DxcFlagBuilder
 
         args.Add("-T");
         args.Add(profile);
-        args.Add(LanguageVersionFlag);
-        args.Add(LanguageVersion);
+        args.Add(DxcLanguageVersion.Flag);
+        args.Add(languageVersion ?? DxcLanguageVersion.For(platform));
 
         args.AddRange(platformFlags);
 
@@ -255,9 +245,14 @@ internal static class DxcFlagBuilder
     /// process even in a preprocess-only run).
     /// </summary>
     public static IReadOnlyList<string> BuildPreprocess(
-        IReadOnlyList<(string Name, string? Value)> macros)
+        IReadOnlyList<(string Name, string? Value)> macros,
+        string? languageVersion = null)
     {
-        var args = new List<string> { "-P", LanguageVersionFlag, LanguageVersion, NoBuiltinMacroRedefinedWarning, TimestampDefine };
+        var args = new List<string>
+        {
+            "-P", DxcLanguageVersion.Flag, languageVersion ?? DxcLanguageVersion.Legacy,
+            NoBuiltinMacroRedefinedWarning, TimestampDefine,
+        };
 
         foreach ((string name, string? value) in macros)
         {

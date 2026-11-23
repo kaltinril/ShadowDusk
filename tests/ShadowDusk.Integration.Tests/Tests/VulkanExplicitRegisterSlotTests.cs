@@ -780,14 +780,15 @@ public sealed class VulkanExplicitRegisterSlotTests
 
     [Theory]
     [InlineData("#if __HLSL_VERSION >= 2018", "TexB")]
-    [InlineData("#if __HLSL_VERSION >= 2021", "TexA")]
+    [InlineData("#if __HLSL_VERSION >= 2021", "TexB")]
+    [InlineData("#if __HLSL_VERSION >= 2022", "TexA")]
     [InlineData("#ifdef __spirv__", "TexB")]
     [InlineData("#if __SHADER_TARGET_STAGE == __SHADER_STAGE_PIXEL", "TexB")]
     [InlineData("#if __SHADER_TARGET_STAGE == __SHADER_STAGE_VERTEX", "TexA")]
     public async Task Vulkan_APairingUnderAConditionalOnAMeasuredPredefine_IsTheOneDxcCompiles(string conditional, string sampled)
     {
         // Each branch reads a different texture: the one bound must be the one DXC compiled, with
-        // the measured value (2018, __spirv__ defined, the PIXEL stage for a pixel shader).
+        // the measured value (2021, __spirv__ defined, the PIXEL stage for a pixel shader).
         string source = $$"""
             Texture2D TexA; Texture2D TexB; SamplerState S;
             float4 MainPS(float4 pos : SV_Position, float2 uv : TEXCOORD0) : SV_Target0 {
