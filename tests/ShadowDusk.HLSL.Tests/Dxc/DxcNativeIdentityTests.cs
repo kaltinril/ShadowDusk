@@ -196,6 +196,51 @@ public sealed class DxcNativeIdentityTests
     /// A minimal ELF64 little-endian image: header, a PT_LOAD and a PT_NOTE program header,
     /// then the note segment.
     /// </summary>
+    [Theory]
+    [InlineData((ushort)0x8664, false, System.Runtime.InteropServices.Architecture.X64, true)]
+    [InlineData((ushort)0x8664, true, System.Runtime.InteropServices.Architecture.X64, false)] // ARM64EC
+    [InlineData((ushort)0xAA64, false, System.Runtime.InteropServices.Architecture.X64, false)]
+    [InlineData((ushort)0xAA64, false, System.Runtime.InteropServices.Architecture.Arm64, true)]
+    [InlineData((ushort)0xAA64, true, System.Runtime.InteropServices.Architecture.Arm64, true)] // ARM64X
+    [InlineData((ushort)0x8664, false, System.Runtime.InteropServices.Architecture.Arm64, false)]
+    [InlineData((ushort)0x8664, true, System.Runtime.InteropServices.Architecture.Arm64, false)] // ARM64EC
+    public void PeArchitecture_IsReadFromTheHeaderAndTheLoadConfiguration(
+        ushort machine, bool chpe, System.Runtime.InteropServices.Architecture process, bool expected)
+    {
+        using var image = new MemoryStream(Pe(machine, chpe));
+
+        DxcNativeIdentity.IsPeForArchitecture(image, process).ShouldBe(expected);
+    }
+
+    /// <summary>A PE32+ image with one section holding a load configuration.</summary>
+    private static byte[] Pe(ushort machine, bool chpe)
+    {
+        const int peOffset = 0x40, optionalSize = 240, sectionRaw = 0x200, sectionRva = 0x1000;
+        byte[] image = new byte[0x400];
+        image[0] = (byte)'M';
+        image[1] = (byte)'Z';
+        BinaryPrimitives.WriteInt32LittleEndian(image.AsSpan(0x3C), peOffset);
+        image[peOffset] = (byte)'P';
+        image[peOffset + 1] = (byte)'E';
+        BinaryPrimitives.WriteUInt16LittleEndian(image.AsSpan(peOffset + 4), machine);
+        BinaryPrimitives.WriteUInt16LittleEndian(image.AsSpan(peOffset + 6), 1);
+        BinaryPrimitives.WriteUInt16LittleEndian(image.AsSpan(peOffset + 20), optionalSize);
+        int optional = peOffset + 24;
+        BinaryPrimitives.WriteUInt16LittleEndian(image.AsSpan(optional), 0x20B);
+        BinaryPrimitives.WriteInt32LittleEndian(image.AsSpan(optional + 112 + 80), sectionRva + 0x10);
+        BinaryPrimitives.WriteInt32LittleEndian(image.AsSpan(optional + 112 + 84), 0x100);
+        int section = optional + optionalSize;
+        BinaryPrimitives.WriteInt32LittleEndian(image.AsSpan(section + 8), 0x200);
+        BinaryPrimitives.WriteInt32LittleEndian(image.AsSpan(section + 12), sectionRva);
+        BinaryPrimitives.WriteInt32LittleEndian(image.AsSpan(section + 16), 0x200);
+        BinaryPrimitives.WriteInt32LittleEndian(image.AsSpan(section + 20), sectionRaw);
+        int loadConfig = sectionRaw + 0x10;
+        BinaryPrimitives.WriteInt32LittleEndian(image.AsSpan(loadConfig), 0x100);
+        if (chpe)
+            BinaryPrimitives.WriteInt64LittleEndian(image.AsSpan(loadConfig + 0xC8), 0x180001000);
+        return image;
+    }
+
     private static byte[] Elf(byte[] notes)
     {
         const int headerSize = 64, entrySize = 56, entries = 2;

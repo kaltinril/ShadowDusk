@@ -456,7 +456,16 @@ internal static class DxcLoader
             // A pinned-version file can still be unloadable here: win-x64 and win-arm64 carry
             // the same version stamp, and the flat directories are probed whatever the RID, so
             // the other architecture's copy can come first. Skip it and keep looking; it is
-            // reported only if no candidate loads.
+            // reported only if no candidate loads. Asked before the load, because an ARM64EC
+            // file would load into an x64 process and crash it (DxcNativeIdentity).
+            if (windows
+                && (!DxcNativeIdentity.IsPeForArchitecture(dxcPath, architecture)
+                    || !DxcNativeIdentity.IsPeForArchitecture(dxilPath!, architecture)))
+            {
+                unloadable.Add($"'{dxcPath}' is not built for this process's architecture ({architecture})");
+                continue;
+            }
+
             try
             {
                 if (dxilPath is not null)

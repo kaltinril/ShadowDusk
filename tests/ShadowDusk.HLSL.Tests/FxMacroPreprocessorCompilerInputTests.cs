@@ -313,7 +313,8 @@ public sealed class FxMacroPreprocessorCompilerInputTests
     // on one of them is evaluated as DXC evaluates it, and the view stays trusted.
     [Theory]
     [InlineData("#if __HLSL_VERSION >= 2016\nfloat4 a;\n#else\nfloat4 b;\n#endif\n", 4)]
-    [InlineData("#if __HLSL_VERSION >= 2021\nfloat4 a;\n#else\nfloat4 b;\n#endif\n", 2)]
+    [InlineData("#if __HLSL_VERSION >= 2021\nfloat4 a;\n#else\nfloat4 b;\n#endif\n", 4)]
+    [InlineData("#if __HLSL_VERSION >= 2022\nfloat4 a;\n#else\nfloat4 b;\n#endif\n", 2)]
     [InlineData("#ifdef __spirv__\nfloat4 a;\n#else\nfloat4 b;\n#endif\n", 4)]
     [InlineData("#if defined(__hlsl_dx_compiler) && __SHADER_TARGET_MAJOR == 6 && __SHADER_TARGET_MINOR == 0\nfloat4 a;\n#else\nfloat4 b;\n#endif\n", 4)]
     [InlineData("#if __SHADER_STAGE_MESH == 13 && __SHADER_STAGE_AMPLIFICATION == 14 && __SHADER_STAGE_LIBRARY == 6\nfloat4 a;\n#else\nfloat4 b;\n#endif\n", 4)]

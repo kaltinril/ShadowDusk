@@ -2,6 +2,7 @@
 
 using System.Buffers.Binary;
 using System.Diagnostics;
+using System.Runtime.InteropServices;
 using ShadowDusk.Core;
 
 namespace ShadowDusk.HLSL.Dxc;
@@ -340,6 +341,96 @@ internal static class DxcNativeIdentity
     private static long AlignUp(int value, int alignment) => ((long)value + alignment - 1) & ~((long)alignment - 1);
 
     /// <summary>Fills <paramref name="buffer"/> from <paramref name="offset"/>; false when the file is shorter.</summary>
+    /// <summary>
+    /// False when the PE file at <paramref name="path"/> cannot run in a process of
+    /// <paramref name="architecture"/>, read without loading it. The version stamp cannot tell:
+    /// win-x64 and win-arm64 carry the same one. And the loader's own failure cannot either:
+    /// Microsoft's "arm64" v1.9.2607 DLLs are ARM64EC, whose header says x64, so an x64 process
+    /// maps them and crashes on the first call (measured, DXC issue #8934). An unreadable file
+    /// answers true: it is the load that reports it.
+    /// </summary>
+    internal static bool IsPeForArchitecture(string path, Architecture architecture)
+    {
+        try
+        {
+            using FileStream stream = File.OpenRead(path);
+            return IsPeForArchitecture(stream, architecture);
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            return true;
+        }
+    }
+
+    /// <inheritdoc cref="IsPeForArchitecture(string, Architecture)"/>
+    internal static bool IsPeForArchitecture(Stream stream, Architecture architecture)
+    {
+        const ushort MachineX64 = 0x8664, MachineArm64 = 0xAA64, Pe32Plus = 0x20B;
+        const int LoadConfigDirectory = 112 + (10 * 8), ChpeMetadataPointer = 0xC8, SectionSize = 40;
+
+        ushort expected = architecture switch
+        {
+            Architecture.X64 => MachineX64,
+            Architecture.Arm64 => MachineArm64,
+            _ => (ushort)0,
+        };
+        Span<byte> word = stackalloc byte[4];
+        if (expected == 0 || !TryReadAt(stream, 0x3C, word))
+            return true;
+
+        long pe = BinaryPrimitives.ReadUInt32LittleEndian(word);
+        Span<byte> fileHeader = stackalloc byte[24];
+        if (!TryReadAt(stream, pe, fileHeader))
+            return true;
+
+        ushort machine = BinaryPrimitives.ReadUInt16LittleEndian(fileHeader[4..]);
+        if (machine != expected)
+            return false;
+        if (architecture != Architecture.X64)
+            return true;
+
+        // An x64 header with CHPE metadata in its load configuration is ARM64EC.
+        int sections = BinaryPrimitives.ReadUInt16LittleEndian(fileHeader[6..]);
+        int optionalSize = BinaryPrimitives.ReadUInt16LittleEndian(fileHeader[20..]);
+        long optional = pe + 24;
+        Span<byte> magic = stackalloc byte[2];
+        Span<byte> directory = stackalloc byte[8];
+        if (optionalSize < LoadConfigDirectory + 8
+            || !TryReadAt(stream, optional, magic)
+            || BinaryPrimitives.ReadUInt16LittleEndian(magic) != Pe32Plus
+            || !TryReadAt(stream, optional + LoadConfigDirectory, directory))
+        {
+            return true;
+        }
+
+        uint loadConfigRva = BinaryPrimitives.ReadUInt32LittleEndian(directory);
+        if (loadConfigRva == 0)
+            return true;
+
+        Span<byte> section = stackalloc byte[SectionSize];
+        Span<byte> pointer = stackalloc byte[8];
+        for (int i = 0; i < sections; i++)
+        {
+            if (!TryReadAt(stream, optional + optionalSize + ((long)i * SectionSize), section))
+                return true;
+
+            uint virtualSize = BinaryPrimitives.ReadUInt32LittleEndian(section[8..]);
+            uint virtualAddress = BinaryPrimitives.ReadUInt32LittleEndian(section[12..]);
+            uint rawSize = BinaryPrimitives.ReadUInt32LittleEndian(section[16..]);
+            uint rawPointer = BinaryPrimitives.ReadUInt32LittleEndian(section[20..]);
+            if (loadConfigRva < virtualAddress || loadConfigRva - virtualAddress >= Math.Max(virtualSize, rawSize))
+                continue;
+
+            long loadConfig = rawPointer + (long)(loadConfigRva - virtualAddress);
+            return !TryReadAt(stream, loadConfig, word)
+                || BinaryPrimitives.ReadUInt32LittleEndian(word) < ChpeMetadataPointer + 8
+                || !TryReadAt(stream, loadConfig + ChpeMetadataPointer, pointer)
+                || BinaryPrimitives.ReadUInt64LittleEndian(pointer) == 0;
+        }
+
+        return true;
+    }
+
     private static bool TryReadAt(Stream stream, long offset, Span<byte> buffer)
     {
         if (offset < 0 || offset > stream.Length - buffer.Length)
