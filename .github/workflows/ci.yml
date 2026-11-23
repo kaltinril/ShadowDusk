@@ -31,14 +31,12 @@ on:
 # anonymously over https. A job that ever needs more must declare it on the job itself.
 permissions:
   contents: read
-  actions: read  # TEMP Phase 70
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
 env:
-  GH_TOKEN: ${{ github.token }}  # TEMP Phase 70
   DOTNET_SKIP_FIRST_TIME_EXPERIENCE: '1'
   DOTNET_NOLOGO: '1'
   DOTNET_CLI_TELEMETRY_OPTOUT: '1'

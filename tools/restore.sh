@@ -270,7 +270,6 @@ restore_dxc_file "dxcompiler.win-arm64.dll" "win-arm64/dxcompiler.dll" \
 restore_dxc_file "dxil.win-arm64.dll" "win-arm64/dxil.dll" \
     "$DXC_WIN_ARM64_VALIDATOR_SHA256" "$DXC_NATIVE_RELEASE_URL"
 
-if [ -n "${GITHUB_ACTIONS:-}" ]; then bash "$REPO_ROOT/tools/temp-fetch-dxc-artifacts.sh"; fi  # TEMP Phase 70
 restore_android
 
 # ---------------------------------------------------------------------------
