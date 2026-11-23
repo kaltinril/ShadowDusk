@@ -355,8 +355,8 @@ public sealed class FxMacroPreprocessorCompilerInputTests
     }
 
     [Theory]
-    // The DXC version stamp differs by host for the same pinned DXC (1.7.2212.40 on Windows,
-    // 1.7.0.3759 on Linux), so it is never seeded and a test of it keeps the view untrusted.
+    // The DXC version stamp differs by host for the same pinned DXC (1.9.0.5402 on Windows,
+    // 1.9.0.1 on Linux and macOS), so it is never seeded and a test of it keeps the view untrusted.
     [InlineData("#if __DXC_VERSION_MAJOR >= 1\nfloat4 a;\n#endif\n", "__DXC_VERSION_MAJOR")]
     [InlineData("#if __DXC_VERSION_RELEASE >= 2212\nfloat4 a;\n#endif\n", "__DXC_VERSION_RELEASE")]
     [InlineData("#ifdef __GNUC__\nfloat4 a;\n#endif\n", "__GNUC__")]

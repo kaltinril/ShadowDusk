@@ -25,10 +25,10 @@ namespace ShadowDusk.Integration.Tests.Tests;
 /// committed manifest, <c>tests/fixtures/golden/byte-identity/dxc-targets-manifest.json</c>,
 /// generated on win-x64.
 ///
-/// <para><b>Why it exists.</b> Each desktop host loads a different DXC binary: Vortice.Dxc's
-/// win-x64 natives (<c>dxcoob 1.7.2212.40 (e043f4a12)</c>), Vortice.Dxc's linux-x64 natives
-/// (which identify as <c>dxc(private) 1.7.0.3759 (8c9d92be7)</c>, DXC tag <c>v1.7.2212</c>, 28
-/// commits behind <c>e043f4a1</c>), and our own macOS build of <c>e043f4a1</c>. The OpenGL arm
+/// <para><b>Why it exists.</b> Each desktop host loads a different build of the one pinned DXC
+/// (v1.9.2607, <c>0d3ee6b55</c>): our Windows builds (<c>dxc(private) 1.9.0.5402
+/// (0d3ee6b55-dirty)</c>) and MonoGame's Linux and macOS builds (<c>dxc(private) 1.9.0.1
+/// (0d3ee6b5)</c>). The OpenGL arm
 /// of <see cref="CrossHostByteIdentityTests"/> sees DXC's SPIR-V only after SPIRV-Cross and the
 /// managed rewrite; this class pins DXC's own output for the targets that ship it.</para>
 ///
@@ -76,20 +76,11 @@ public sealed class DxcTargetsCrossHostByteIdentityTests
     private static readonly TimeSpan CorpusBudget = TimeSpan.FromMinutes(10);
 
     /// <summary>
-    /// The one measured cross-host difference in DXC's own output (2026-10-04), pinned exactly
-    /// so it can neither grow nor silently go away. Our macOS DXC (<c>e043f4a1</c>, the same
-    /// commit as Windows) emits the debug records of a split global vector's elements
-    /// (<c>DIGlobalVariable _ambientColor.1</c>, <c>.2</c>, ...) in a different ORDER than the
-    /// Windows and Linux builds, for <c>ForwardLighting.fx</c>'s pixel shader under
-    /// <c>Debug</c>. Debug metadata only: disassembled with one DXC, every instruction and every
-    /// other line is identical, and the release arm matches on every host. The order comes from
-    /// <c>HLModule::CreateElementGlobalVariableDebugInfo</c> appending each element in the order
-    /// DXC's HLSL scalar-replacement pass processes them; on the same source and commit that
-    /// order differs by host build, so it is a host-build fact, not one of the 28 commits the
-    /// Linux build lacks. Values are this host's canonical digests (see the class remarks),
-    /// re-measured on macos-latest whenever the DXC command line or this shader's DXC input
-    /// changes (DXIL debug info embeds both), last for issue #446, whose POSITION to
-    /// SV_Position mapping rewrote this shader's vertex output (2026-10-31).
+    /// Measured cross-host differences in DXC's own output, pinned exactly so one can neither
+    /// grow nor silently go away. None on the v1.9.2607 pin. Through v1.7.2212 our macOS build
+    /// listed the debug records of a split global vector's elements in another order for
+    /// <c>ForwardLighting.fx</c>'s pixel shader under <c>Debug</c>. An entry holds this host's
+    /// canonical digests (see the class remarks).
     /// </summary>
     private static readonly Dictionary<string, (string Dxil, string MgfxNormalized)> MacOsDivergences = new(StringComparer.Ordinal)
     {
@@ -335,8 +326,8 @@ public sealed class DxcTargetsCrossHostByteIdentityTests
     /// host emits by construction: ShadowDusk's own <c>SD0214</c>, and DXC's own warning (DXC
     /// reports it when no <c>dxil.dll</c> validator is bound). Matched exactly, so no other
     /// diagnostic can hide behind the filter. DXC's text is itself one of the measured per-host
-    /// differences: Vortice's Linux build (<c>8c9d92be7</c>) says <c>DXIL.dll not found.</c>,
-    /// our <c>e043f4a1</c> macOS build says <c>DXIL signing library (dxil.dll,libdxil.so) not
+    /// differences: DXC's v1.7.2212 Linux build says <c>DXIL.dll not found.</c>,
+    /// a later build says <c>DXIL signing library (dxil.dll,libdxil.so) not
     /// found.</c> (DXC #5004, one of the 28 commits between them, which also taught Linux DXC to
     /// look for <c>libdxil.so</c>).
     /// </summary>

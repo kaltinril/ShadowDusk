@@ -856,7 +856,7 @@ public sealed class VulkanExplicitRegisterSlotTests
     public async Task Vulkan_AFileTestingTheDxcVersion_PairsOverTheWholeFile_AsBefore()
     {
         // __DXC_VERSION_* is the DXC build's own stamp and differs by host for the same pinned DXC
-        // (1.7.2212.40 on Windows, 1.7.0.3759 on Linux, measured 2026-10-31), so it is not seeded
+        // (1.9.0.5402 on Windows, 1.9.0.1 on Linux and macOS), so it is not seeded
         // (DxcSpirvPredefinedMacros): the managed view cannot know it, so it neither drops the '#if 0'
         // line nor reads the calls: every line and every function counts, as in the released rewrite.
         // The dead call comes first and decides SpriteTexture's sampler, so the live one gets an

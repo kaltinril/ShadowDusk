@@ -6,7 +6,7 @@
 //
 // THIS IS THE PRODUCT FRONTEND (Phase 23, Option A). It wraps the pinned desktop
 // DirectXShaderCompiler compiled to WebAssembly — the SAME compiler + version the
-// desktop pipeline uses (Vortice.Dxc 3.3.4 == DXC 1.7.2212.40, commit e043f4a1) —
+// desktop pipeline uses (DXC v1.9.2607, commit 0d3ee6b5) —
 // so its SPIR-V is byte-identical to the desktop CLI on the corpus (node gate
 // .wasm-build/node-test-dxc-wasm.mjs == 10/10). Because the bytes are identical to
 // the desktop-validated compiler, the in-browser render is transitively proven.

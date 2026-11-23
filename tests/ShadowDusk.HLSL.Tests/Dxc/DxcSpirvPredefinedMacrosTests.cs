@@ -64,8 +64,8 @@ public sealed class DxcSpirvPredefinedMacrosTests
     [Fact]
     public void TheDxcVersionStamp_IsNotSeeded_BecauseItIsHostDependent()
     {
-        // Measured 2026-10-31: the same pinned DXC prints 1.7.2212.40 on Windows and 1.7.0.3759 on
-        // Linux (Vortice.Dxc 3.3.4's linux-x64 build, "dxc(private) 1.7.0.3759"). A seed would be
+        // The same pinned DXC prints another stamp per host build (1.9.0.5402 on our Windows build,
+        // 1.9.0.1 on MonoGame's Linux and macOS builds). A seed would be
         // wrong on some host, so a conditional on it keeps the view untrusted (whole-file pairing).
         Dictionary<string, string> measured = Measure(ShaderStage.Pixel, DxcVersionNames);
         measured.Values.ShouldAllBe(v => v.Length > 0, "DXC defines its version stamp");

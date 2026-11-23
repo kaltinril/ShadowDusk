@@ -12,7 +12,8 @@ namespace ShadowDusk.HLSL.Dxc;
 /// crashes the host process on them.
 /// </summary>
 /// <remarks>
-/// <para><b>The native fault.</b> The pinned DXC (Vortice.Dxc 3.3.4's <c>dxcompiler</c>) faults
+/// <para><b>The native fault.</b> DXC through v1.7.2212 (fixed by the v1.9.2607 pin; this guard is
+/// kept until it is retired on its own) faults
 /// with an access violation inside <c>IDxcCompiler3::Compile</c> whenever <c>-spirv</c> is
 /// requested and the ENTRY function is declared more than once: a prototype before the
 /// definition, after it, or several, with or without semantics. A prototype of any other

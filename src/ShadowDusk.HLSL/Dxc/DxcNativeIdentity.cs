@@ -63,7 +63,7 @@ internal static class DxcNativeIdentity
     /// <summary>The pinned DXC, as its Windows file version and source commit.</summary>
     internal const string WindowsCompilerVersion = "1.9.0.5402 (0d3ee6b55-dirty)";
 
-    /// <summary>The <c>dxil.dll</c> of the same Microsoft release (<c>Microsoft.Direct3D.DXC</c> 1.9.2607.13), as its file version and build tag.</summary>
+    /// <summary>The <c>dxil.dll</c> built with it (<c>.github/workflows/dxc-build.yml</c>), as its file version and build tag.</summary>
     internal const string WindowsValidatorVersion = "1.9.0.5402 (0d3ee6b55-dirty)";
 
     /// <summary>GNU build id of <c>MonoGame.Tool.Dxc</c> 1.9.2607.1's <c>binaries/linux-x64/lib/libdxcompiler.so</c>.</summary>

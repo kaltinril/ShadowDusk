@@ -153,7 +153,7 @@ jobs:
                 if ($code -ne 0) { throw "compile of $src through the self-built dxil.dll failed" }
                 $e = (Get-FileHash "probe/$src.ext.$suffix").Hash
                 "$src.$suffix through self-built dxil.dll $e"
-                if ($e -ne $r) { throw "$src: validating through the self-built dxil.dll changed the bytes" }
+                if ($e -ne $r) { throw "${src}: validating through the self-built dxil.dll changed the bytes" }
               }
             }
           }

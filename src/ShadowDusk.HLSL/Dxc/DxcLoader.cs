@@ -38,20 +38,16 @@ namespace ShadowDusk.HLSL.Dxc;
 /// path, so Vortice's handler never runs.</para>
 ///
 /// <para><b>Windows, Linux and macOS: the pinned natives, by absolute path, before anything
-/// else.</b> Loading is not left to name-based search. <c>dxcompiler.dll</c> binds its DXIL
-/// validator/signer from its own <c>DllMain</c> with a bare <c>LoadLibrary("dxil.dll")</c>,
-/// and a bare name resolves to an already-loaded module of that name first, then the
-/// application directory, the system directories and finally <c>PATH</c>. ShadowDusk used to
-/// call Vortice's <c>Dxc.LoadDxil()</c> (itself a bare <c>LoadLibrary("dxil.dll")</c>) before
-/// the first DXC P/Invoke; in the normal layout our <c>dxil.dll</c> sits in
-/// <c>runtimes/&lt;rid&gt;/native</c>, not the application directory, so that call loaded
-/// whichever <c>dxil.dll</c> the OS search found on <c>PATH</c> (every VS Developer Command
-/// Prompt puts the Windows SDK's 1.8 one there) and DXC then validated with it: every
-/// DirectX 12 compile failed with "DXIL container mismatch for 'PSVRuntimeInfoSize'", and a
-/// loadable non-validator decoy silently produced UNSIGNED DXIL. <see cref="Register"/> now
-/// locates the pinned natives, loads <c>dxil.dll</c> then <c>dxcompiler.dll</c> by full path
-/// (Linux: <c>libdxcompiler.so</c>; macOS: <c>libdxcompiler.dylib</c>) and verifies that the
-/// <c>dxil.dll</c> a bare-name lookup returns is the pinned build.</para>
+/// else.</b> Loading is not left to name-based search. Through DXC v1.7.2212,
+/// <c>dxcompiler.dll</c> bound its DXIL validator/signer from its own <c>DllMain</c> with a bare
+/// <c>LoadLibrary("dxil.dll")</c>, which took a <c>dxil.dll</c> from <c>PATH</c> (every VS
+/// Developer Command Prompt puts the Windows SDK's there) and failed every DirectX 12 compile.
+/// <see cref="Register"/> therefore locates the pinned natives, loads <c>dxil.dll</c> then
+/// <c>dxcompiler.dll</c> by full path (Linux: <c>libdxcompiler.so</c>; macOS:
+/// <c>libdxcompiler.dylib</c>) and verifies that the <c>dxil.dll</c> a bare-name lookup returns
+/// is the pinned build. <b>The pinned v1.9.2607 library no longer loads a validator at all</b>
+/// (measured, Phase 70): it validates and signs with its internal validator, to the same bytes.
+/// The pair check is kept unchanged for now, as the conservative behavior.</para>
 ///
 /// <para><b>Only the pinned build is ever loaded (issue #270).</b> A directory that holds a
 /// file with the right NAME is not enough: the host application's own directories can carry a
@@ -72,15 +68,10 @@ namespace ShadowDusk.HLSL.Dxc;
 /// DirectX 12) are refused; SPIR-V, <c>-Vd</c> and preprocess requests never call the validator
 /// and proceed (<see cref="CheckBoundValidator"/>). A copy of the pinned <c>dxil.dll</c> from
 /// another directory, or the pinned file reached through a <c>\\?\</c> path, is the same build
-/// and is accepted. Vortice's Linux <c>libdxcompiler.so</c> never opens a <c>libdxil</c>, so
-/// Linux has no validator to bind and ShadowDusk loads none. Our macOS and Android builds do:
-/// DXC's library constructor (<c>DllMain</c> -&gt; <c>InitMaybeFail</c> -&gt;
-/// <c>DxilLibInitialize</c>, <c>tools/clang/tools/dxcompiler</c> at the pinned commit) calls
-/// <c>dlopen("libdxil.dylib")</c> by leaf name ONCE, while <c>libdxcompiler</c> itself is being
-/// loaded, and <c>DxilLibIsEnabled</c> never retries after a miss. We ship no <c>libdxil</c>
-/// and cannot pre-empt a library we do not ship, so on macOS <see cref="Register"/> checks,
-/// right after its own load, whether any <c>libdxil</c> image is in the process and fails
-/// DirectX 12 loudly if so. That one <c>dlopen</c> happens inside <see cref="Register"/>.</para>
+/// and is accepted. Off Windows ShadowDusk ships and loads no <c>libdxil</c>, and the pinned
+/// library does not open one. macOS keeps the check it needed through v1.7.2212, when DXC's
+/// constructor opened <c>libdxil.dylib</c> by leaf name: <see cref="Register"/> fails DirectX 12
+/// loudly if any <c>libdxil</c> image is in the process.</para>
 ///
 /// <para><b>One load DOES happen later, inside a compile (issues #312, #332).</b> DXC's SPIR-V
 /// emitter loads <c>libdxcompiler</c> itself, by LEAF name, from inside every <c>-Zi</c>
@@ -88,9 +79,9 @@ namespace ShadowDusk.HLSL.Dxc;
 /// -&gt; <c>DxcDllSupport::Initialize</c>). It reaches dyld's lock, which is why
 /// <see cref="DxcForkGate"/> never makes a <c>fork()</c> wait for a compile; and a leaf name is
 /// a name search, which this class otherwise never allows. What that search answers is decided
-/// by the dynamic linker, not by us: Windows and dyld from macOS 14 hand back the already-loaded
-/// pinned image (by base name; by its <c>@rpath/</c> install name), glibc and older dyld search
-/// their directories. <see cref="DxcLeafNameLookup"/> asks the linker, without loading anything,
+/// by the dynamic linker, not by us: Windows, glibc and dyld from macOS 14 hand back the
+/// already-loaded pinned image (by base name; by the pinned build's <c>SONAME</c>; by its
+/// <c>@rpath/</c> install name), older dyld searches its directories. <see cref="DxcLeafNameLookup"/> asks the linker, without loading anything,
 /// right after the pinned load, and <see cref="CheckDebugSpirvLookup"/> refuses the debug SPIR-V
 /// compiles (<c>SD0223</c>) when the answer is not the pinned build: never silently a decoy.</para>
 ///

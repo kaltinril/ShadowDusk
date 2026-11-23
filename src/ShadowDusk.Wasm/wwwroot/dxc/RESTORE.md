@@ -3,13 +3,12 @@
 This directory holds the **faithful pinned DirectXShaderCompiler compiled to
 WebAssembly** — the PRODUCT in-browser HLSL→SPIR-V frontend (Phase 23, Option A;
 see `plan/PHASE-23-in-browser-compilation.md`). It is the SAME compiler + version
-the desktop pipeline uses (Vortice.Dxc 3.3.4 == DXC 1.7.2212.40, commit
-`e043f4a1`), so its SPIR-V is byte-identical to the desktop CLI on the corpus.
+the desktop pipeline uses (DXC v1.9.2607, commit `0d3ee6b5`), so its SPIR-V is byte-identical to the desktop CLI on the corpus.
 
 | File | Committed? | What |
 |---|---|---|
 | `dxcompiler.js` (~54 KB) | yes | emscripten MODULARIZE + EXPORT_ES6 loader; `export default createDxcModule`; embind `compileToSpirv(hlsl, args[]) → Uint8Array`. Locates `dxcompiler.wasm` via `new URL("dxcompiler.wasm", import.meta.url)`. |
-| `dxcompiler.wasm` (~17.4 MB) | **no — gitignored** | the LLVM-fork DXC build. Too large to commit; restored. |
+| `dxcompiler.wasm` (~19.2 MB) | **no — gitignored** | the LLVM-fork DXC build. Too large to commit; restored. |
 | `../shadowdusk-dxc.js` (~7 KB) | yes | the FAITHFUL `[JSImport]` shim — `ensureReady()` (lazy-load + instantiate) + `compileToSpirv()` (verbatim args). |
 
 ## Restore

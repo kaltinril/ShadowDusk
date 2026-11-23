@@ -11,7 +11,7 @@ internal static class DxcFlagBuilder
     /// modification time it cannot read, a string literal.
     /// </summary>
     /// <remarks>
-    /// The pinned DXC (Vortice.Dxc 3.3.4's <c>dxcompiler</c>) ends the process with a fail-fast
+    /// The pinned DXC ends the process with a fail-fast
     /// (<c>0xC0000409</c>) whenever its preprocessor EXPANDS the built-in <c>__TIMESTAMP__</c>
     /// (the modification time of the in-memory input, which it cannot stat): in a preprocess-only
     /// run as in a compile, on every target, also when the name is assembled by token pasting
