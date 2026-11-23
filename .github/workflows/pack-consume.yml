@@ -83,7 +83,7 @@ jobs:
             10.0.x
 
       # Same caches as ci.yml: NuGet (carries the transitive DXC + SPIRV-Cross
-      # natives), the pinned vkd3d natives, and the pinned macOS DXC dylibs.
+      # natives), the pinned vkd3d natives, and the pinned Windows and Android DXC natives.
       - name: Cache NuGet
         uses: actions/cache@v6
         with:

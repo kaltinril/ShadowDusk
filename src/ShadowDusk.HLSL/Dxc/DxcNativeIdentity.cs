@@ -50,9 +50,9 @@ internal enum DxcNativeKind
 /// survives all three and still differs for every other DXC build.
 /// </para>
 /// <para>
-/// The pins change only with the DXC packages ShadowDusk.HLSL takes its natives from
-/// (<c>Microsoft.Direct3D.DXC</c>, <c>MonoGame.Tool.Dxc</c>) or our own win-arm64 and Android
-/// builds (<c>tools/restore.*</c>); <c>DxcPinnedNativeIdentityTests</c> fails with
+/// The pins change only with the DXC package ShadowDusk.HLSL takes its Linux and macOS natives
+/// from (<c>MonoGame.Tool.Dxc</c>) or our own Windows and Android builds
+/// (<c>tools/restore.*</c>); <c>DxcPinnedNativeIdentityTests</c> fails with
 /// the value to paste here when a shipped file stops matching.
 /// </para>
 /// </remarks>

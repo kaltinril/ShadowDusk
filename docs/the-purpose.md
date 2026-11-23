@@ -167,7 +167,7 @@ Where each host×target cell stands (updated 2026-10-29; proven cells carry thei
 > "compiles green in CI" cells above hold for the normal corpus, but NOT for the
 > Phase 34 advanced-texture HiDef shaders — 3D-texture (`tex3D`), explicit-LOD
 > (`tex2Dlod`-family), and gradient-sampling (`tex2Dgrad`-family) intrinsics compile on
-> the Windows DXC yet FAIL to compile on the Vortice Linux/macOS DXC builds.
+> the Windows DXC yet FAIL to compile on the Linux/macOS DXC builds (measured on the v1.7.2212 natives, not re-measured on v1.9.2607).
 > `Phase34TextureBreadthTests` is therefore Windows-only in ci.yml (see its
 > "runs on Windows only until that discrepancy is investigated" comment), i.e. the
 > green Linux/macOS lanes deliberately exclude those shaders. This is a real per-OS

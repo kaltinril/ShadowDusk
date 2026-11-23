@@ -388,14 +388,14 @@ jobs:
       # ShadowDusk.HLSL's native packing is restore-state-dependent (csproj entries are
       # Condition="Exists(...)"): a pack on a machine without the restored binaries
       # SILENTLY produces a package whose FNA target and DxbcBackend.Vkd3d fail with
-      # SD0211 — and, for the Phase 37 A macOS DXC dylibs, whose ENTIRE OpenGL pipeline
+      # SD0211 — and, for the DXC natives, whose ENTIRE OpenGL pipeline
       # dies with DllNotFoundException on every Mac — for every NuGet consumer,
       # directly contradicting the documented self-contained promise. Fail the release
       # red instead (the mirror of the pack-wasm dxcompiler.wasm gate; same list as
       # pack-consume.yml's pack gate). tools/restore.sh provisions everything by pinned
       # download (Phase 37 A/C), so a clean CI runner satisfies this gate.
       # The LGPL-2.1 notice must ride along with the binaries it covers.
-      - name: Verify ShadowDusk.HLSL contains all natives (vkd3d ×4 RIDs + macOS DXC ×2 + android-arm64 DXC) + LGPL notice
+      - name: Verify ShadowDusk.HLSL contains all natives (vkd3d ×4 RIDs + DXC for win-x64, win-arm64, linux-x64, osx ×2, android-arm64) + notices
         run: |
           pkg=$(find nupkg -maxdepth 1 -name 'ShadowDusk.HLSL.*.nupkg' ! -name '*.snupkg' | head -1)
           echo "Inspecting $pkg"

@@ -326,7 +326,7 @@ for real devices; x86_64 for the emulator).
   compile + `Effect` load proven (green-screen). A finer **pixel-vs-`mgfxc`** on-device render
   diff is the next rung (the harness today proves compile + `Effect` load, not a pixel compare).
 - **Productionization:** the `android-arm64` natives are now **hosted on the
-  `native-dxc-1.7.2212.40` release tag, pinned in `tools/restore.*` (SHA-256), and packed into
+  `native-dxc-1.9.2607` release tag since Phase 70, pinned in `tools/restore.*` (SHA-256), and packed into
   `ShadowDusk.HLSL` / `ShadowDusk.GLSL` under `runtimes/android-arm64/native/` (shipping in
   0.11.0)** — so other devs/CI/consumers restore them instead of building locally, and the
   release/`pack-consume` CI hard-gates their presence. Still open: author the CI form
