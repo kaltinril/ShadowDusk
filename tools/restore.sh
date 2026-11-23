@@ -113,11 +113,15 @@ restore_vkd3d_shader() {
 restore_vkd3d_shader
 
 # ---------------------------------------------------------------------------
-# DXC natives (Android only)
+# DXC natives built by this project (win-arm64, Android)
 # ---------------------------------------------------------------------------
-# The desktop DXC (win-x64, win-arm64, linux-x64, osx-x64, osx-arm64) is restored by NuGet:
-# ShadowDusk.HLSL.csproj takes it from Microsoft.Direct3D.DXC and MonoGame.Tool.Dxc by
-# PackageDownload (Phase 70). Only the Android build below is ours, under tools/dxc/.
+# win-x64, linux-x64 and macOS DXC are restored by NuGet: ShadowDusk.HLSL.csproj takes them from
+# Microsoft.Direct3D.DXC and MonoGame.Tool.Dxc by PackageDownload (Phase 70). win-arm64 is built
+# here (.github/workflows/dxc-build.yml) because Microsoft's arm64 v1.9.2607 DLLs are ARM64EC,
+# which a native arm64 process cannot load (DXC issue #8934).
+DXC_NATIVE_RELEASE_URL="https://github.com/kaltinril/ShadowDusk/releases/download/native-dxc-1.9.2607"
+DXC_WIN_ARM64_COMPILER_SHA256="8200297ad19e479ad453b2d4765360ac96175143c515effb7c08c938947167e8"
+DXC_WIN_ARM64_VALIDATOR_SHA256="3a175788362de39f9a422c7ba5900353bcc3ea40b7d08fced0e1a3df68a2b215"
 
 # restore_dxc_file <asset-name> <dest-relative-to-tools/dxc> <sha256> <release-url>
 restore_dxc_file() {
@@ -254,6 +258,11 @@ restore_android() {
     restore_spvc_android_file "libspirv-cross.android-x64.so" "android-x64/libspirv-cross.so" \
         "$SPVC_ANDROID_X64_SHA256"
 }
+
+restore_dxc_file "dxcompiler.win-arm64.dll" "win-arm64/dxcompiler.dll" \
+    "$DXC_WIN_ARM64_COMPILER_SHA256" "$DXC_NATIVE_RELEASE_URL"
+restore_dxc_file "dxil.win-arm64.dll" "win-arm64/dxil.dll" \
+    "$DXC_WIN_ARM64_VALIDATOR_SHA256" "$DXC_NATIVE_RELEASE_URL"
 
 restore_android
 

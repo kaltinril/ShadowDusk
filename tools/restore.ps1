@@ -116,11 +116,15 @@ function Restore-Vkd3dShader {
 Restore-Vkd3dShader
 
 # ---------------------------------------------------------------------------
-# DXC natives (Android only)
+# DXC natives built by this project (win-arm64, Android)
 # ---------------------------------------------------------------------------
-# The desktop DXC (win-x64, win-arm64, linux-x64, osx-x64, osx-arm64) is restored by NuGet:
-# ShadowDusk.HLSL.csproj takes it from Microsoft.Direct3D.DXC and MonoGame.Tool.Dxc by
-# PackageDownload (Phase 70). Only the Android build below is ours, under tools/dxc/.
+# win-x64, linux-x64 and macOS DXC are restored by NuGet: ShadowDusk.HLSL.csproj takes them from
+# Microsoft.Direct3D.DXC and MonoGame.Tool.Dxc by PackageDownload (Phase 70). win-arm64 is built
+# here (.github/workflows/dxc-build.yml) because Microsoft's arm64 v1.9.2607 DLLs are ARM64EC,
+# which a native arm64 process cannot load (DXC issue #8934).
+$DxcNativeReleaseUrl = 'https://github.com/kaltinril/ShadowDusk/releases/download/native-dxc-1.9.2607'
+$DxcWinArm64CompilerSha256 = '8200297ad19e479ad453b2d4765360ac96175143c515effb7c08c938947167e8'
+$DxcWinArm64ValidatorSha256 = '3a175788362de39f9a422c7ba5900353bcc3ea40b7d08fced0e1a3df68a2b215'
 function Restore-DxcFile([string]$Asset, [string]$DestRel, [string]$Sha256, [string]$Url) {
     $DxcDir = Join-Path $RepoRoot 'tools' 'dxc'
     $Dest = Join-Path $DxcDir $DestRel
@@ -261,6 +265,11 @@ function Restore-Android {
     Restore-SpvcAndroidFile 'libspirv-cross.android-x64.so' (Join-Path 'android-x64' 'libspirv-cross.so') `
         $SpvcAndroidX64Sha256
 }
+
+Restore-DxcFile 'dxcompiler.win-arm64.dll' (Join-Path 'win-arm64' 'dxcompiler.dll') `
+    $DxcWinArm64CompilerSha256 $DxcNativeReleaseUrl
+Restore-DxcFile 'dxil.win-arm64.dll' (Join-Path 'win-arm64' 'dxil.dll') `
+    $DxcWinArm64ValidatorSha256 $DxcNativeReleaseUrl
 
 Restore-Android
 

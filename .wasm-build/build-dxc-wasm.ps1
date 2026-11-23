@@ -7,7 +7,7 @@
     Produces dxcompiler.{js,wasm}: an emscripten ES module exporting
         compileToSpirv(hlsl: string, args: string[]) -> Uint8Array
     built from the SAME DirectXShaderCompiler version the desktop pipeline uses
-    (Vortice.Dxc 3.3.4 == DXC 1.7.2212.40, commit e043f4a1), so its SPIR-V is
+    (DXC v1.9.2607, commit 0d3ee6b5, the DXC MonoGame 3.8.6 bundles), so its SPIR-V is
     byte-identical to the desktop CLI on the corpus. That byte-identity (verified by
     node-test-dxc-wasm.mjs against .wasm-build/corpus-spirv/) is M0's DoD.
 
@@ -32,11 +32,11 @@
     build can be resumed without redoing finished stages.
 
 .NOTES
-    Source = microsoft/DirectXShaderCompiler @ e043f4a1286f4e1026222ab1bc94e25de8d0e959
-             (the commit Vortice.Dxc 3.3.4's dxcompiler.dll reports: FileVersion
-             1.7.2212.40, ProductVersion "1.7.2212.40 (e043f4a12)"). Submodules
-             SPIRV-Headers @ 1d31a10, SPIRV-Tools @ 40f5bf5, DirectX-Headers @ 980971e
-             are pinned to DXC's gitlinked SHAs.
+    Source = microsoft/DirectXShaderCompiler @ 0d3ee6b551b8fa768fbf825300ebab81047ef6a8
+             (the v1.9.2607 tag). Submodules SPIRV-Headers @ 29981f6, SPIRV-Tools @ b707790,
+             DirectX-Headers @ 980971e are pinned to DXC's gitlinked SHAs.
+             The paths follow this script's directory, so a git worktree builds in place.
+             SHADOWDUSK_EMSDK points at an emsdk elsewhere (emscripten 3.1.34 active).
 #>
 param(
     [switch]$SkipHostTblgen,   # reuse an existing host-tablegen build
@@ -59,9 +59,9 @@ param(
 $ErrorActionPreference = 'Stop'
 Set-StrictMode -Version Latest
 
-$root    = 'C:\git\ShadowDusk\.wasm-build'
+$root    = $PSScriptRoot
 $src     = Join-Path $root 'dxc-src'
-$emsdk   = Join-Path $root 'emsdk'
+$emsdk   = if ($env:SHADOWDUSK_EMSDK) { $env:SHADOWDUSK_EMSDK } else { Join-Path $root 'emsdk' }
 $glue    = Join-Path $root 'dxc-wasm-glue.cpp'
 
 # Output co-located with the SPIRV-Cross module pattern; M1/M2 copies it into the

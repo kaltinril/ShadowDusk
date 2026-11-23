@@ -199,6 +199,8 @@ jobs:
             'tools/vkd3d/libvkd3d-shader.so.1' \
             'tools/vkd3d/osx-x64/libvkd3d-shader.1.dylib' \
             'tools/vkd3d/osx-arm64/libvkd3d-shader.1.dylib' \
+            'tools/dxc/win-arm64/dxcompiler.dll' \
+            'tools/dxc/win-arm64/dxil.dll' \
             'tools/dxc/android-arm64/libdxcompiler.so' \
             'tools/dxc/android-x64/libdxcompiler.so' \
             'tools/spirv-cross/android-arm64/libspirv-cross.so' \
