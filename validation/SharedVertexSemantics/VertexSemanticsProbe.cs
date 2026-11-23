@@ -298,8 +298,12 @@ public static class VertexSemanticsProbe
 
     private const string VertexIdNoAttributes = "VertexIdNoAttributes";
 
-    /// <summary>The runtime's own message when the driver refuses a shader (MonoGame and KNI GL).</summary>
-    private const string ShaderCompileRefusalSignature = "Shader Compilation Failed";
+    /// <summary>
+    /// The runtime's own message when the driver refuses a shader: MonoGame up to 3.8.5 and KNI
+    /// say the first, MonoGame 3.8.6's ShaderCompilerException the second (both measured on Mesa).
+    /// </summary>
+    private static readonly string[] ShaderCompileRefusalSignatures =
+        ["Shader Compilation Failed", "Failed to compile pixel shader"];
 
     private const string IntegerVs = """
         struct V { float4 pos : SV_Position; float2 uv : TEXCOORD0; };
@@ -671,7 +675,7 @@ public static class VertexSemanticsProbe
                     try { GraphicsDevice.SetRenderTarget(null); } catch { /* ignore */ }
                     if (job.Control == ControlKind.PreludeRemoved)
                     {
-                        bool refused = ex.Message.Contains(ShaderCompileRefusalSignature, StringComparison.Ordinal);
+                        bool refused = ShaderCompileRefusalSignatures.Any(m => ex.Message.Contains(m, StringComparison.Ordinal));
                         Results.Add(new JobResult(job.Name, refused,
                             $"{(refused ? "CONTROL-DETECTED" : "CONTROL NOT DETECTED, wrong exception")} ({GlRenderer}): " +
                             $"{ex.GetType().Name}: {ex.Message.ReplaceLineEndings(" ").Trim()}"));
