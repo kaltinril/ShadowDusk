@@ -173,7 +173,7 @@ function Restore-DxcFile([string]$Asset, [string]$DestRel, [string]$Sha256, [str
 # ---------------------------------------------------------------------------
 # For an ON-DEVICE Android compile (Phase 50 — additive reach; build-time precompile is the
 # default and needs none of this) the OpenGL pipeline's two natives must exist for
-# android-arm64: OUR OWN libdxcompiler.so (the pinned DXC e043f4a1, an NDK port of the
+# android-arm64: OUR OWN libdxcompiler.so (the pinned DXC 0d3ee6b5, an NDK port of the
 # .wasm-build cross-compile recipe) and libspirv-cross.so (NDK CMake from the pinned
 # SPIRV-Cross — Silk.NET.SPIRV.Cross.Native ships desktop RIDs only). Both are RESTORED
 # artifacts, Exists()-gated in the csprojs: ShadowDusk.HLSL packs
@@ -182,20 +182,20 @@ function Restore-DxcFile([string]$Asset, [string]$DestRel, [string]$Sha256, [str
 # bare SONAME from the APK's lib/arm64-v8a/ (Android W^X-safe).
 #
 # Pins: the Android DXC + SPIRV-Cross .so are hosted on their own release tags
-# (native-dxc-android-1.7.2212.40-16k and native-spirv-cross-android-d8e3e2b1, below) and
+# (native-dxc-1.9.2607 and native-spirv-cross-android-d8e3e2b1, below) and
 # SHA-256-verified below. Restore-Android provisions them so ShadowDusk.HLSL packs
 # runtimes/android-arm64/native/libdxcompiler.so and ShadowDusk.GLSL packs the spirv-cross .so —
 # an on-device Android compile is then self-contained. Same pin-discipline as the macOS dylibs:
 # hash mismatch -> re-download; offline -> non-fatal warning. Re-running dxc-android-build.yml /
 # spirv-cross-android-build.yml re-pins the SHA-256s here.
 # DXC for Android (both ABIs) since the 16 KB fix: built by .github/workflows/dxc-android-build.yml
-# (tools/build-dxc-android.sh: DXC e043f4a1, NDK r27c, API 24, 16 KB pages, -g0, stripped;
+# (tools/build-dxc-android.sh: DXC 0d3ee6b5, NDK r27c, API 24, 16 KB pages, -g0, stripped;
 # byte-reproducible, two independent builds compared, and required to equal these pins) and hosted
 # on their own tag below. Their GNU build ids are DxcNativeIdentity.AndroidArm64CompilerBuildId /
 # AndroidX64CompilerBuildId. The earlier hand-built Android DXC assets on native-dxc-1.7.2212.40
 # (not 16 KB aligned, XA0141) stay on that tag, unused.
-$DxcAndroidReleaseUrl = 'https://github.com/kaltinril/ShadowDusk/releases/download/native-dxc-android-1.7.2212.40-16k'
-$DxcAndroidArm64Sha256  = 'fa8c9515cf97ea6274cb6d4098f55df84914bea99b65eed7b153f481eb578b6a'
+$DxcAndroidReleaseUrl = 'https://github.com/kaltinril/ShadowDusk/releases/download/native-dxc-1.9.2607'
+$DxcAndroidArm64Sha256  = '46c62b2d1c5329fd4b67d9e775b0664c1ab52ccaf8f0bd679254f396ea612f8b'
 # SPIRV-Cross for Android (both ABIs) since the issue #304 follow-up: built by
 # .github/workflows/spirv-cross-android-build.yml (tools/build-spirv-cross-android.sh: SPIRV-Cross
 # d8e3e2b1, the commit the desktop Silk.NET.SPIRV.Cross.Native 2.23.0 natives are built from;
@@ -210,7 +210,7 @@ $SpvcAndroidArm64Sha256 = '0e0f1b9ba6cb47881109bbffe87b1dcac2a53142b81dd16fa63ff
 # a local NDK build. Both are the reproducible CI builds described above (their own tags).
 # Their GNU
 # build ids are the android-x64 pins in DxcNativeIdentity / SpvcLoader.
-$DxcAndroidX64Sha256  = 'eb2fda8a4c48ce0c0b6cc8fe8325e5850fe6f92f3764ce12e342b2f37af1e249'
+$DxcAndroidX64Sha256  = '70ae828e409432d3f8197885753506a2e6731f84268aa3ecc3bd495b43dbc5ce'
 $SpvcAndroidX64Sha256 = 'dc0397473bfab0f0e6f1e0b6cdda37a932726bf58aad2603e3b119eef2920233'
 
 function Restore-SpvcAndroidFile([string]$Asset, [string]$DestRel, [string]$Sha256) {

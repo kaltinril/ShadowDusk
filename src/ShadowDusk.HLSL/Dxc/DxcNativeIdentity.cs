@@ -79,22 +79,22 @@ internal static class DxcNativeIdentity
     /// GNU build id of our <c>android-arm64</c> <c>libdxcompiler.so</c>, the one ShadowDusk.HLSL
     /// packs: the 16 KB page aligned, byte-reproducible build of <c>.github/workflows/dxc-android-build.yml</c>
     /// (<c>tools/build-dxc-android.sh</c>, the pinned commit), release tag
-    /// <c>native-dxc-android-1.7.2212.40-16k</c>, SHA-256 pinned in <c>tools/restore.*</c>.
+    /// <c>native-dxc-1.9.2607</c>, SHA-256 pinned in <c>tools/restore.*</c>.
     /// Android has no file to read it from (the library is mapped straight out of the APK), so
     /// <see cref="DxcLoader"/> reads it from the MAPPED image instead.
     /// </summary>
-    internal const string AndroidArm64CompilerBuildId = "5882f6181b9e7149c5c5c4dbb2a88ed4e78d3223";
+    internal const string AndroidArm64CompilerBuildId = "e395fd28ed24ab70ba254f653c55a1ef2ac4c3f1";
 
     /// <summary>
     /// GNU build id of the <c>android-x64</c> <c>libdxcompiler.so</c> that the x86_64 emulator
     /// lane of <c>validation/AndroidGl</c> bundles (the same CI build as android-arm64, release
-    /// tag <c>native-dxc-android-1.7.2212.40-16k</c>, SHA-256 pinned in <c>tools/restore.*</c>).
+    /// tag <c>native-dxc-1.9.2607</c>, SHA-256 pinned in <c>tools/restore.*</c>).
     /// No package ships it: it is pinned so
     /// the emulator lane (<c>.github/workflows/android-emulator.yml</c>) runs with the identity
     /// check on. A rebuild of that file gets a new build id and an <c>SD0219</c> naming both,
     /// which is the cue to update this line.
     /// </summary>
-    internal const string AndroidX64CompilerBuildId = "225337e5e08f3850fa4299f5499ae303f636aea0";
+    internal const string AndroidX64CompilerBuildId = "8587fa6685f4e752e4ea4fad9484e1a6e6c35e94";
 
     /// <summary>
     /// The one Vortice.Dxc release ShadowDusk.HLSL runs with: ShadowDusk.HLSL is compiled against
