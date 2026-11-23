@@ -1,1 +1,1 @@
-["-E","PixelShaderFunction","-T","ps_5_0","-spirv","-fvk-use-gl-layout","-auto-binding-space","1","-Zpr"]
+["-E","PixelShaderFunction","-T","ps_5_0","-HV","2018","-spirv","-fvk-use-gl-layout","-auto-binding-space","1","-Zpr","-Wno-builtin-macro-redefined","-D__TIMESTAMP__=\u0022??? ??? ?? ??:??:?? ????\u0022"]

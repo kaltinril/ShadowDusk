@@ -10,11 +10,15 @@
       "MainPS",
       "-T",
       "ps_5_0",
+      "-HV",
+      "2018",
       "-spirv",
       "-fvk-use-gl-layout",
       "-auto-binding-space",
       "1",
-      "-Zpr"
+      "-Zpr",
+      "-Wno-builtin-macro-redefined",
+      "-D__TIMESTAMP__=\u0022??? ??? ?? ??:??:?? ????\u0022"
     ]
   },
   {
@@ -28,11 +32,15 @@
       "MainPS",
       "-T",
       "ps_5_0",
+      "-HV",
+      "2018",
       "-spirv",
       "-fvk-use-gl-layout",
       "-auto-binding-space",
       "1",
-      "-Zpr"
+      "-Zpr",
+      "-Wno-builtin-macro-redefined",
+      "-D__TIMESTAMP__=\u0022??? ??? ?? ??:??:?? ????\u0022"
     ]
   },
   {
@@ -46,11 +54,15 @@
       "MainPS",
       "-T",
       "ps_5_0",
+      "-HV",
+      "2018",
       "-spirv",
       "-fvk-use-gl-layout",
       "-auto-binding-space",
       "1",
-      "-Zpr"
+      "-Zpr",
+      "-Wno-builtin-macro-redefined",
+      "-D__TIMESTAMP__=\u0022??? ??? ?? ??:??:?? ????\u0022"
     ]
   },
   {
@@ -64,11 +76,15 @@
       "PixelShaderFunction",
       "-T",
       "ps_5_0",
+      "-HV",
+      "2018",
       "-spirv",
       "-fvk-use-gl-layout",
       "-auto-binding-space",
       "1",
-      "-Zpr"
+      "-Zpr",
+      "-Wno-builtin-macro-redefined",
+      "-D__TIMESTAMP__=\u0022??? ??? ?? ??:??:?? ????\u0022"
     ]
   },
   {
@@ -82,11 +98,15 @@
       "BloomPass",
       "-T",
       "ps_5_0",
+      "-HV",
+      "2018",
       "-spirv",
       "-fvk-use-gl-layout",
       "-auto-binding-space",
       "1",
-      "-Zpr"
+      "-Zpr",
+      "-Wno-builtin-macro-redefined",
+      "-D__TIMESTAMP__=\u0022??? ??? ?? ??:??:?? ????\u0022"
     ]
   },
   {
@@ -100,11 +120,15 @@
       "MainPS",
       "-T",
       "ps_5_0",
+      "-HV",
+      "2018",
       "-spirv",
       "-fvk-use-gl-layout",
       "-auto-binding-space",
       "1",
-      "-Zpr"
+      "-Zpr",
+      "-Wno-builtin-macro-redefined",
+      "-D__TIMESTAMP__=\u0022??? ??? ?? ??:??:?? ????\u0022"
     ]
   },
   {
@@ -118,47 +142,59 @@
       "mainPS",
       "-T",
       "ps_5_0",
+      "-HV",
+      "2018",
       "-spirv",
       "-fvk-use-gl-layout",
       "-auto-binding-space",
       "1",
-      "-Zpr"
+      "-Zpr",
+      "-Wno-builtin-macro-redefined",
+      "-D__TIMESTAMP__=\u0022??? ??? ?? ??:??:?? ????\u0022"
     ]
   },
   {
     "name": "Fading",
     "entryPoint": "MainPS",
     "stage": "Pixel",
-    "spirvBytes": 1020,
-    "spirvWords": 255,
+    "spirvBytes": 1004,
+    "spirvWords": 251,
     "args": [
       "-E",
       "MainPS",
       "-T",
       "ps_5_0",
+      "-HV",
+      "2018",
       "-spirv",
       "-fvk-use-gl-layout",
       "-auto-binding-space",
       "1",
-      "-Zpr"
+      "-Zpr",
+      "-Wno-builtin-macro-redefined",
+      "-D__TIMESTAMP__=\u0022??? ??? ?? ??:??:?? ????\u0022"
     ]
   },
   {
     "name": "Dots",
     "entryPoint": "PixelShaderFunction",
     "stage": "Pixel",
-    "spirvBytes": 1912,
-    "spirvWords": 478,
+    "spirvBytes": 1928,
+    "spirvWords": 482,
     "args": [
       "-E",
       "PixelShaderFunction",
       "-T",
       "ps_5_0",
+      "-HV",
+      "2018",
       "-spirv",
       "-fvk-use-gl-layout",
       "-auto-binding-space",
       "1",
-      "-Zpr"
+      "-Zpr",
+      "-Wno-builtin-macro-redefined",
+      "-D__TIMESTAMP__=\u0022??? ??? ?? ??:??:?? ????\u0022"
     ]
   },
   {
@@ -172,11 +208,15 @@
       "mainPixel",
       "-T",
       "ps_5_0",
+      "-HV",
+      "2018",
       "-spirv",
       "-fvk-use-gl-layout",
       "-auto-binding-space",
       "1",
-      "-Zpr"
+      "-Zpr",
+      "-Wno-builtin-macro-redefined",
+      "-D__TIMESTAMP__=\u0022??? ??? ?? ??:??:?? ????\u0022"
     ]
   }
 ]

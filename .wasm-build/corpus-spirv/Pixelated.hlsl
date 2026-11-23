@@ -2,7 +2,7 @@
 #define MGFX 1
 #define GLSL 1
 #define OPENGL 1
-#line 1 "C:/git/ShadowDusk/tests/fixtures/shaders/Pixelated.fx"
+#line 1 "C:/git/ShadowDusk/.claude/worktrees/wt-70/tests/fixtures/shaders/Pixelated.fx"
 #if OPENGL
 	#define SV_POSITION POSITION
 	#define VS_SHADERMODEL vs_3_0

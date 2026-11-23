@@ -164,7 +164,7 @@ sealed class CapturingDxc(MethodInfo buildFlags) : IDxcShaderCompiler, IDisposab
             // Same call DxcShaderCompiler makes internally => identical args.
             var argList = (System.Collections.Generic.IReadOnlyList<string>)buildFlags.Invoke(
                 null,
-                new object?[] { request.Platform, request.Stage, request.EntryPoint, request.Macros, request.Options })!;
+                new object?[] { request.Platform, request.Stage, request.EntryPoint, request.Macros, request.Options, null })!;
 
             Spirv.Add((
                 request.HlslSource,
