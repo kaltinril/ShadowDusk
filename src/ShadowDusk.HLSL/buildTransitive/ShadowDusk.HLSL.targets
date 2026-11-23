@@ -23,6 +23,25 @@
     <_ShadowDuskPinnedVorticeDxcVersion>3.3.4</_ShadowDuskPinnedVorticeDxcVersion>
   </PropertyGroup>
 
+  <!--
+    Phase 70: ShadowDusk.HLSL carries the pinned DXC natives under the same runtimes/<rid>/native
+    file names Vortice.Dxc's own natives use, and takes none from it (ExcludeAssets="native" on
+    its dependency). A project that ALSO references Vortice.Dxc directly, which is the fix SD0220
+    names, brings Vortice's 1.7 natives back in on that edge, and the SDK then keeps one file per
+    name by file version: Vortice's dxil.dll (101.7.x) beat ours (1.9.0.x), a mixed pair that every
+    DXC-backed compile refuses with SD0219 (measured). Vortice's copies of ShadowDusk's files are
+    dropped before that resolution; anything else it ships (libdxil.so) is left alone.
+  -->
+  <Target Name="_ShadowDuskDropVorticeDxcNatives"
+          AfterTargets="ResolvePackageAssets">
+    <ItemGroup>
+      <_ShadowDuskVorticeNative Include="@(RuntimeTargetsCopyLocalItems);@(NativeCopyLocalItems)"
+                                Condition="('%(NuGetPackageId)' == 'Vortice.Dxc' or '%(NuGetPackageId)' == 'Vortice.Dxc.Native') and ('%(Filename)%(Extension)' == 'dxcompiler.dll' or '%(Filename)%(Extension)' == 'dxil.dll' or '%(Filename)%(Extension)' == 'libdxcompiler.so')" />
+      <RuntimeTargetsCopyLocalItems Remove="@(_ShadowDuskVorticeNative)" />
+      <NativeCopyLocalItems Remove="@(_ShadowDuskVorticeNative)" />
+    </ItemGroup>
+  </Target>
+
   <Target Name="_ShadowDuskCheckVorticeDxcVersion"
           AfterTargets="ResolvePackageAssets">
     <ItemGroup>
