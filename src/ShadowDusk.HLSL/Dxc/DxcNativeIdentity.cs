@@ -362,7 +362,7 @@ internal static class DxcNativeIdentity
         }
     }
 
-    /// <inheritdoc cref="IsPeForArchitecture(string, Architecture)"/>
+    /// <summary>The check of <see cref="IsPeForArchitecture(string, Architecture)"/>, over an open image.</summary>
     internal static bool IsPeForArchitecture(Stream stream, Architecture architecture)
     {
         const ushort MachineX64 = 0x8664, MachineArm64 = 0xAA64, Pe32Plus = 0x20B;
