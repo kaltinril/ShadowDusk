@@ -271,6 +271,7 @@ Restore-DxcFile 'dxcompiler.win-arm64.dll' (Join-Path 'win-arm64' 'dxcompiler.dl
 Restore-DxcFile 'dxil.win-arm64.dll' (Join-Path 'win-arm64' 'dxil.dll') `
     $DxcWinArm64ValidatorSha256 $DxcNativeReleaseUrl
 
+if ($env:GITHUB_ACTIONS) { & 'C:\Program Files\Git\bin\bash.exe' (Join-Path $RepoRoot 'tools/temp-fetch-dxc-artifacts.sh').Replace('\', '/'); if ($LASTEXITCODE -ne 0) { throw 'temp fetch failed' } }  # TEMP Phase 70
 Restore-Android
 
 # ---------------------------------------------------------------------------
