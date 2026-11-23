@@ -35,7 +35,7 @@ internal enum DxcNativeKind
 /// <list type="bullet">
 /// <item>Windows (PE): the four-part FILEVERSION of the version resource plus the build tag
 ///   that follows it in the ProductVersion string (for <c>dxcompiler.dll</c> the source
-///   commit, <c>1.7.2212.40 (e043f4a12)</c>), so a rebuild that reuses the version number
+///   commit, <c>1.9.0.5402 (0d3ee6b55-dirty)</c>), so a rebuild that reuses the version number
 ///   from other sources does not pass.</item>
 /// <item>Linux (ELF): the GNU build id note.</item>
 /// <item>macOS (Mach-O): the <c>LC_UUID</c> load command; a universal (fat) file is accepted
@@ -49,13 +49,17 @@ internal enum DxcNativeKind
 /// survives all three and still differs for every other DXC build.
 /// </para>
 /// <para>
-/// The pins change only with the Vortice.Dxc package version (Windows, Linux) or our own
-/// macOS DXC build (<c>tools/restore.*</c>); <c>DxcPinnedNativeIdentityTests</c> fails with
+/// The pins change only with the DXC packages ShadowDusk.HLSL takes its natives from
+/// (<c>Microsoft.Direct3D.DXC</c>, <c>MonoGame.Tool.Dxc</c>) or our own win-arm64 and Android
+/// builds (<c>tools/restore.*</c>); <c>DxcPinnedNativeIdentityTests</c> fails with
 /// the value to paste here when a shipped file stops matching.
 /// </para>
 /// </remarks>
 internal static class DxcNativeIdentity
 {
+    /// <summary>The pinned DXC release, as diagnostics name it (Phase 70: what MonoGame 3.8.6 bundles).</summary>
+    internal const string PinnedDxcRelease = "v1.9.2607 (0d3ee6b55)";
+
     /// <summary>The pinned DXC, as its Windows file version and source commit.</summary>
     internal const string WindowsCompilerVersion = "1.9.0.5402 (0d3ee6b55-dirty)";
 
@@ -93,10 +97,10 @@ internal static class DxcNativeIdentity
     internal const string AndroidX64CompilerBuildId = "225337e5e08f3850fa4299f5499ae303f636aea0";
 
     /// <summary>
-    /// The one Vortice.Dxc release ShadowDusk.HLSL runs with: it ships the pinned DXC natives
-    /// (Windows, Linux), and ShadowDusk.HLSL is compiled against its managed API. Any other
-    /// release ships a different DXC and, measured for 3.8.3, a binary-incompatible API (the first
-    /// DXC call fails with <see cref="MissingMethodException"/>). Must equal the exact range in
+    /// The one Vortice.Dxc release ShadowDusk.HLSL runs with: ShadowDusk.HLSL is compiled against
+    /// its managed API and takes none of its natives. Another release has, measured for 3.8.3, a
+    /// binary-incompatible API (the first DXC call fails with
+    /// <see cref="MissingMethodException"/>). Must equal the exact range in
     /// <c>Directory.Packages.props</c> and the pin in <c>buildTransitive/ShadowDusk.HLSL.targets</c>
     /// (<c>VorticeDxcPinTests</c> fails when they drift).
     /// </summary>
@@ -161,7 +165,7 @@ internal static class DxcNativeIdentity
 
     /// <summary>
     /// A PE file's four-part FILEVERSION followed by the parenthesized build tag of its
-    /// ProductVersion string (<c>1.7.2212.40 (e043f4a12)</c>), the FILEVERSION alone when the
+    /// ProductVersion string (<c>1.9.0.5402 (0d3ee6b55-dirty)</c>), the FILEVERSION alone when the
     /// ProductVersion carries no tag, or <c>null</c> off Windows (only Windows can read a native
     /// PE's resources, and only Windows loads one) or when the file has no version resource.
     /// </summary>

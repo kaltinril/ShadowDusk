@@ -153,6 +153,10 @@
     <_PinnedDxcMonoGame>$([MSBuild]::EnsureTrailingSlash('$(NuGetPackageRoot)'))monogame.tool.dxc/1.9.2607.1/binaries/</_PinnedDxcMonoGame>
   </PropertyGroup>
   <ItemGroup Condition="'$(_PinnedDxcWindows)' != ''">
+    <!-- The DXC release's own license files, for the binaries above. -->
+    <None Include="$(_PinnedDxcWindows)../../../LICENSE-LLVM.txt" Pack="true" PackagePath="licenses/dxc/LICENSE-LLVM.txt" />
+    <None Include="$(_PinnedDxcWindows)../../../LICENSE-MS.txt" Pack="true" PackagePath="licenses/dxc/LICENSE-MS.txt" />
+    <None Include="$(_PinnedDxcWindows)../../../LICENCE-MIT.txt" Pack="true" PackagePath="licenses/dxc/LICENSE-MIT.txt" />
     <None Include="$(_PinnedDxcWindows)x64/dxcompiler.dll" CopyToOutputDirectory="PreserveNewest"
           Link="runtimes/win-x64/native/dxcompiler.dll" Pack="true" PackagePath="runtimes/win-x64/native/dxcompiler.dll" />
     <None Include="$(_PinnedDxcWindows)x64/dxil.dll" CopyToOutputDirectory="PreserveNewest"
@@ -171,7 +175,7 @@
 
   <!-- Android DXC native (Phase 50): Vortice.Dxc has no android RID, so for an on-device
        Android compile we bundle OUR OWN libdxcompiler.so built for arm64-v8a from the exact
-       pinned DXC commit (e043f4a1 — the same compiler the macOS/WASM builds use, never a
+       pinned DXC commit (0d3ee6b5, the same compiler every other RID runs, never a
        substitute), via the NDK port of the .wasm-build cross-compile recipe. A RESTORED
        artifact (tools/restore.*), Exists()-gated like the macOS/vkd3d entries above: inert
        until the hosted NDK build lands, then packed under runtimes/android-arm64/native so
