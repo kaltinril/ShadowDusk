@@ -1,7 +1,7 @@
 # Phase 70 — DXC pin bump (v1.7.2212 → the DXC MonoGame ships)
 
 **Track:** Pins and natives.
-**Status:** 🔄 **In review, [PR #523](https://github.com/kaltinril/ShadowDusk/pull/523).** Target, natives, language rule, manifests and docs are done on the branch. It closes when the Windows render gate passes on the new pin, the PR merges, this doc moves to `plan/DONE/` and [issue #287](https://github.com/kaltinril/ShadowDusk/issues/287) is closed.
+**Status:** 🚧 **In review, [PR #523](https://github.com/kaltinril/ShadowDusk/pull/523).** Target, natives, language rule, manifests and docs are done on the branch. It closes when the Windows render gate passes on the new pin, the PR merges, this doc moves to `plan/DONE/` and [issue #287](https://github.com/kaltinril/ShadowDusk/issues/287) is closed.
 
 ## What was decided and built
 
