@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# TEMPORARY, Phase 70 draft only: never merge. The win-arm64 and Android DXC natives are pinned for
+# TEMPORARY, Phase 70 draft only: never merge. The Windows and Android DXC natives are pinned for
 # the native-dxc-1.9.2607 release tag, which is not published yet. Until it is, CI takes the same
 # files from the workflow runs that built them, checked against the SHA-256 pins in tools/restore.sh.
 set -euo pipefail
@@ -19,7 +19,9 @@ fetch() { # run artifact path-in-artifact dest pin-variable
     echo "temp-fetch: $4 from run $1, hash OK"
 }
 
-fetch 45090088637 dxc-win-arm64 dxcompiler.dll tools/dxc/win-arm64/dxcompiler.dll DXC_WIN_ARM64_COMPILER_SHA256
-fetch 45090088637 dxc-win-arm64 dxil.dll tools/dxc/win-arm64/dxil.dll DXC_WIN_ARM64_VALIDATOR_SHA256
+fetch 45103510894 dxc-win-x64 dxcompiler.dll tools/dxc/win-x64/dxcompiler.dll DXC_WIN_X64_COMPILER_SHA256
+fetch 45103510894 dxc-win-x64 dxil.dll tools/dxc/win-x64/dxil.dll DXC_WIN_X64_VALIDATOR_SHA256
+fetch 45103510894 dxc-win-arm64 dxcompiler.dll tools/dxc/win-arm64/dxcompiler.dll DXC_WIN_ARM64_COMPILER_SHA256
+fetch 45103510894 dxc-win-arm64 dxil.dll tools/dxc/win-arm64/dxil.dll DXC_WIN_ARM64_VALIDATOR_SHA256
 fetch 45091569109 dxc-android-android-arm64-a android-arm64/libdxcompiler.so tools/dxc/android-arm64/libdxcompiler.so DXC_ANDROID_ARM64_SHA256
 fetch 45091569109 dxc-android-android-x64-a android-x64/libdxcompiler.so tools/dxc/android-x64/libdxcompiler.so DXC_ANDROID_X64_SHA256

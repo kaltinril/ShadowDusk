@@ -115,13 +115,15 @@ restore_vkd3d_shader
 # ---------------------------------------------------------------------------
 # DXC natives built by this project (win-arm64, Android)
 # ---------------------------------------------------------------------------
-# win-x64, linux-x64 and macOS DXC are restored by NuGet: ShadowDusk.HLSL.csproj takes them from
-# Microsoft.Direct3D.DXC and MonoGame.Tool.Dxc by PackageDownload (Phase 70). win-arm64 is built
-# here (.github/workflows/dxc-build.yml) because Microsoft's arm64 v1.9.2607 DLLs are ARM64EC,
-# which a native arm64 process cannot load (DXC issue #8934).
+# linux-x64 and macOS DXC are restored by NuGet: ShadowDusk.HLSL.csproj takes them from
+# MonoGame.Tool.Dxc by PackageDownload (Phase 70). Windows is built here from the same tag
+# (.github/workflows/dxc-build.yml): ShadowDusk redistributes no binary from Microsoft's DXC
+# release, which carries LICENSE-MS.txt, and its arm64 DLLs are ARM64EC anyway (DXC issue #8934).
 DXC_NATIVE_RELEASE_URL="https://github.com/kaltinril/ShadowDusk/releases/download/native-dxc-1.9.2607"
-DXC_WIN_ARM64_COMPILER_SHA256="8200297ad19e479ad453b2d4765360ac96175143c515effb7c08c938947167e8"
-DXC_WIN_ARM64_VALIDATOR_SHA256="3a175788362de39f9a422c7ba5900353bcc3ea40b7d08fced0e1a3df68a2b215"
+DXC_WIN_X64_COMPILER_SHA256="7e42055d58d7bdbc992117a51a5b74f0e69f01fcde5089d670ac471e035a33c7"
+DXC_WIN_X64_VALIDATOR_SHA256="f820b394bad55b4c2cc5ea4d5579cbe6d79c9f35e4cdd4e11d4f7f96dc49715f"
+DXC_WIN_ARM64_COMPILER_SHA256="b234c8d78f1f641fc9aba8b08ca47ab86dcea67e84488fa015808f3ad4175e92"
+DXC_WIN_ARM64_VALIDATOR_SHA256="2fdbebddefe7b99fc0bcb6bd99381dc2b342ef251b5d96f31a7914d1cc71ee37"
 
 # restore_dxc_file <asset-name> <dest-relative-to-tools/dxc> <sha256> <release-url>
 restore_dxc_file() {
@@ -259,6 +261,10 @@ restore_android() {
         "$SPVC_ANDROID_X64_SHA256"
 }
 
+restore_dxc_file "dxcompiler.win-x64.dll" "win-x64/dxcompiler.dll" \
+    "$DXC_WIN_X64_COMPILER_SHA256" "$DXC_NATIVE_RELEASE_URL"
+restore_dxc_file "dxil.win-x64.dll" "win-x64/dxil.dll" \
+    "$DXC_WIN_X64_VALIDATOR_SHA256" "$DXC_NATIVE_RELEASE_URL"
 restore_dxc_file "dxcompiler.win-arm64.dll" "win-arm64/dxcompiler.dll" \
     "$DXC_WIN_ARM64_COMPILER_SHA256" "$DXC_NATIVE_RELEASE_URL"
 restore_dxc_file "dxil.win-arm64.dll" "win-arm64/dxil.dll" \

@@ -118,13 +118,15 @@ Restore-Vkd3dShader
 # ---------------------------------------------------------------------------
 # DXC natives built by this project (win-arm64, Android)
 # ---------------------------------------------------------------------------
-# win-x64, linux-x64 and macOS DXC are restored by NuGet: ShadowDusk.HLSL.csproj takes them from
-# Microsoft.Direct3D.DXC and MonoGame.Tool.Dxc by PackageDownload (Phase 70). win-arm64 is built
-# here (.github/workflows/dxc-build.yml) because Microsoft's arm64 v1.9.2607 DLLs are ARM64EC,
-# which a native arm64 process cannot load (DXC issue #8934).
+# linux-x64 and macOS DXC are restored by NuGet: ShadowDusk.HLSL.csproj takes them from
+# MonoGame.Tool.Dxc by PackageDownload (Phase 70). Windows is built here from the same tag
+# (.github/workflows/dxc-build.yml): ShadowDusk redistributes no binary from Microsoft's DXC
+# release, which carries LICENSE-MS.txt, and its arm64 DLLs are ARM64EC anyway (DXC issue #8934).
 $DxcNativeReleaseUrl = 'https://github.com/kaltinril/ShadowDusk/releases/download/native-dxc-1.9.2607'
-$DxcWinArm64CompilerSha256 = '8200297ad19e479ad453b2d4765360ac96175143c515effb7c08c938947167e8'
-$DxcWinArm64ValidatorSha256 = '3a175788362de39f9a422c7ba5900353bcc3ea40b7d08fced0e1a3df68a2b215'
+$DxcWinX64CompilerSha256 = '7e42055d58d7bdbc992117a51a5b74f0e69f01fcde5089d670ac471e035a33c7'
+$DxcWinX64ValidatorSha256 = 'f820b394bad55b4c2cc5ea4d5579cbe6d79c9f35e4cdd4e11d4f7f96dc49715f'
+$DxcWinArm64CompilerSha256 = 'b234c8d78f1f641fc9aba8b08ca47ab86dcea67e84488fa015808f3ad4175e92'
+$DxcWinArm64ValidatorSha256 = '2fdbebddefe7b99fc0bcb6bd99381dc2b342ef251b5d96f31a7914d1cc71ee37'
 function Restore-DxcFile([string]$Asset, [string]$DestRel, [string]$Sha256, [string]$Url) {
     $DxcDir = Join-Path $RepoRoot 'tools' 'dxc'
     $Dest = Join-Path $DxcDir $DestRel
@@ -266,6 +268,10 @@ function Restore-Android {
         $SpvcAndroidX64Sha256
 }
 
+Restore-DxcFile 'dxcompiler.win-x64.dll' (Join-Path 'win-x64' 'dxcompiler.dll') `
+    $DxcWinX64CompilerSha256 $DxcNativeReleaseUrl
+Restore-DxcFile 'dxil.win-x64.dll' (Join-Path 'win-x64' 'dxil.dll') `
+    $DxcWinX64ValidatorSha256 $DxcNativeReleaseUrl
 Restore-DxcFile 'dxcompiler.win-arm64.dll' (Join-Path 'win-arm64' 'dxcompiler.dll') `
     $DxcWinArm64CompilerSha256 $DxcNativeReleaseUrl
 Restore-DxcFile 'dxil.win-arm64.dll' (Join-Path 'win-arm64' 'dxil.dll') `
