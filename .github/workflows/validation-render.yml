@@ -65,9 +65,11 @@
 #                              render vs the committed mgfxc OpenGL build in the same process
 #                              (maxd <= 1) AND the element's CPU-known value; 30 matrix-
 #                              interpolant packing fixtures whose stages declare it differently
-#                              (column_major / row_major, square and non-square) vs mgfxc; four
+#                              (column_major / row_major, square and non-square) vs mgfxc; five
 #                              positive controls that must diverge (a relabelled BINORMAL0
-#                              record, two row_major fixtures packed by columns, a split float1x4 in one register). Every
+#                              record, two row_major fixtures packed by columns, a split float1x4 in one register,
+#                              and, on a Mesa or Apple compatibility context, the integer-dialect case with its
+#                              prelude blanked, which must be refused). Every
 #                              case must render and pass on every driver, strict llvmpipe
 #                              included: since issue #453 the non-square cases' GLSL holds a
 #                              zero-padded square matN (it used to be refused there, SD0403), a
