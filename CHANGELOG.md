@@ -14,6 +14,8 @@ that loads and renders identically to `mgfxc`'s in the real MonoGame/KNI runtime
 
 ### Added
 
+- FNA: new warning `SD0306` when a column-major matrix has a non-symmetric initializer default, which FNA reads as its transpose. It tells the developer to call `SetValue(Matrix)`. The compiled `.fxb` does not change and stays equal to `fxc`'s.
+
 ### Changed
 
 ### Fixed
