@@ -340,7 +340,6 @@ internal static class DxcNativeIdentity
 
     private static long AlignUp(int value, int alignment) => ((long)value + alignment - 1) & ~((long)alignment - 1);
 
-    /// <summary>Fills <paramref name="buffer"/> from <paramref name="offset"/>; false when the file is shorter.</summary>
     /// <summary>
     /// False when the PE file at <paramref name="path"/> cannot run in a process of
     /// <paramref name="architecture"/>, read without loading it. The version stamp cannot tell:
@@ -431,6 +430,7 @@ internal static class DxcNativeIdentity
         return true;
     }
 
+    /// <summary>Fills <paramref name="buffer"/> from <paramref name="offset"/>; false when the file is shorter.</summary>
     private static bool TryReadAt(Stream stream, long offset, Span<byte> buffer)
     {
         if (offset < 0 || offset > stream.Length - buffer.Length)
