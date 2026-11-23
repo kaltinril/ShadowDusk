@@ -124,7 +124,11 @@ public sealed class DxcDebugSpirvLeafNameTests
             }
             else
             {
-                leafResolved.ShouldBe("-", $"{tag} glibc matched the leaf 'libdxcompiler.so' to a loaded object; the pinned SONAME is libdxcompiler.so.3.7, so which one?");
+                // glibc matches a leaf name to a loaded object's SONAME, and the pinned Linux build's
+                // SONAME is libdxcompiler.so (Phase 70), so the load is answered by the pinned image.
+                leafResolved.ShouldBe(dxcMapped, $"{tag} glibc did not answer the leaf name with the already-loaded pinned image");
+                report.Values["OpenGL.debug"].ShouldBe(["OK"], $"{tag} {report.Message("OpenGL", "debug")}");
+                report.Values["Vulkan.debug"].ShouldBe(["OK"], $"{tag} {report.Message("Vulkan", "debug")}");
             }
 
             // The decoy is never loaded unless it is the pinned build itself.
@@ -143,36 +147,16 @@ public sealed class DxcDebugSpirvLeafNameTests
                 case Decoy.ForeignBuild:
                     decoyLoads.ShouldBeEmpty($"{tag} the dynamic linker loaded the foreign build inside the compile");
                     decoyImages.ShouldBeEmpty($"{tag} the foreign build is mapped into the process");
-                    if (mac)
-                    {
-                        // Nothing to refuse: dyld hands DXC the pinned image before searching anywhere.
-                        report.Values["OpenGL.debug"].ShouldBe(["OK"], tag);
-                        report.Values["Vulkan.debug"].ShouldBe(["OK"], tag);
-                    }
-                    else
-                    {
-                        // glibc would load it (RTLD_NOLOAD found the file), so the compile is refused, naming it.
-                        report.Values["leaf.foundUnloadedFile"].ShouldBe(["True"], $"{tag} glibc did not report the file on LD_LIBRARY_PATH");
-                        foreach (string target in new[] { "OpenGL", "Vulkan" })
-                        {
-                            report.Values[$"{target}.debug"].ShouldBe(["SD0223"], $"{tag} {target}: {report.Message(target, "debug")}");
-                            report.Message(target, "debug").ShouldContain(report.DecoyName, Case.Sensitive);
-                            report.Message(target, "debug").ShouldContain("LD_LIBRARY_PATH", Case.Sensitive);
-                        }
-                    }
+                    // Nothing to refuse: the linker hands DXC the pinned image before searching anywhere.
+                    report.Values["OpenGL.debug"].ShouldBe(["OK"], tag);
+                    report.Values["Vulkan.debug"].ShouldBe(["OK"], tag);
                     break;
 
                 case Decoy.CopyOfPinned:
                     // The same build is the same compiler: compiles, and the bytes are below.
                     report.Values["OpenGL.debug"].ShouldBe(["OK"], $"{tag} {report.Message("OpenGL", "debug")}");
                     report.Values["Vulkan.debug"].ShouldBe(["OK"], $"{tag} {report.Message("Vulkan", "debug")}");
-                    if (!mac)
-                    {
-                        // The positive control for the ForeignBuild case: the compile-time load from
-                        // inside DXC really reaches LD_LIBRARY_PATH (glibc initializes the copy there).
-                        decoyLoads.ShouldNotBeEmpty($"{tag} glibc never loaded the copy on LD_LIBRARY_PATH during the debug compiles, so the " +
-                            $"ForeignBuild refusal above protects against nothing this test can see:\n{string.Join("\n", report.Trace)}");
-                    }
+                    decoyLoads.ShouldBeEmpty($"{tag} the linker loaded the copy instead of answering with the pinned image");
                     break;
             }
         }

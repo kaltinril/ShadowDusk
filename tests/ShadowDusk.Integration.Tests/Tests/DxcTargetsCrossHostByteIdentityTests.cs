@@ -93,9 +93,7 @@ public sealed class DxcTargetsCrossHostByteIdentityTests
     /// </summary>
     private static readonly Dictionary<string, (string Dxil, string MgfxNormalized)> MacOsDivergences = new(StringComparer.Ordinal)
     {
-        ["DirectX12.Debug/ForwardLighting.fx"] = (
-            Dxil: "c2febb31e6e185c4adfdfb82dc0845be1c0f5c745a7726baa941d4b074091f15",
-            MgfxNormalized: "ec55537764b5c0c1c5431778950b0b3d58909f51db047bfb5fea0f9b4677778d"),
+        // Empty on the DXC v1.9.2607 pin: ForwardLighting.fx, the one entry through v1.7.2212, now matches.
     };
 
     private static string ShadersRoot => Path.Combine(AppContext.BaseDirectory, "fixtures", "shaders");

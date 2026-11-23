@@ -111,12 +111,10 @@ public sealed class DxcDebugSourceWorkingDirectoryTests
 
         // The positive control: the pre-fix compile really reads both decoys where the leaf-name
         // load succeeds, so the assertions above guard against something this host does.
-        bool leafLoadSucceedsAsIs = OperatingSystem.IsWindows() || OperatingSystem.IsMacOS();
+        // Every host now: the pinned Linux build's SONAME is its leaf name, so glibc answers the load too.
         clean["control"].ShouldBe(["none"], "[clean] nothing to read, nothing read");
-        decoy["control"].ShouldBe([leafLoadSucceedsAsIs ? "hlsl+fx" : "none"],
-            leafLoadSucceedsAsIs
-                ? "[decoy] DXC's pre-fix compile did not read hlsl.hlsl and the #line file from the working directory, so this test no longer shows the mechanism it guards"
-                : "[decoy] glibc should find nothing for DXC's leaf-name load, so DXC cannot read any file");
+        decoy["control"].ShouldBe(["hlsl+fx"],
+            "[decoy] DXC's pre-fix compile did not read hlsl.hlsl and the #line file from the working directory, so this test no longer shows the mechanism it guards");
         if (OperatingSystem.IsLinux())
         {
             scenarios[2].Values["control"].ShouldBe(["hlsl+fx"],
