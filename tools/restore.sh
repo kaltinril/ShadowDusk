@@ -277,7 +277,7 @@ restore_android
 # DXC -> WASM (faithful in-browser HLSL -> SPIR-V frontend, Phase 23 M0)
 # ---------------------------------------------------------------------------
 # The faithful in-browser frontend is the SAME DirectXShaderCompiler the desktop
-# pipeline uses (Vortice.Dxc 3.3.4), compiled to WebAssembly so its SPIR-V is
+# pipeline uses (v1.9.2607), compiled to WebAssembly so its SPIR-V is
 # byte-identical to the desktop CLI (Option A — NO substitute compiler; Slang is
 # sample-only). dxcompiler.{js,wasm} is a BUILT artifact, NOT checked into the repo;
 # the build is an out-of-band LLVM-fork emscripten build, scripted under .wasm-build/.
@@ -321,18 +321,18 @@ WARNING: DXC->WASM module (.wasm-build/dxc-wasm-out/dxcompiler.{js,wasm}) not fo
 Build recipe (faithful pinned DXC -> WebAssembly, emscripten 3.1.34 — the .NET 8 pin):
 
   PINNED SOURCE — microsoft/DirectXShaderCompiler @ commit
-    e043f4a1286f4e1026222ab1bc94e25de8d0e959
-  This is the EXACT commit Vortice.Dxc 3.3.4's dxcompiler.dll reports (FileVersion
-  1.7.2212.40 == DXC December-2022 release branch). Byte-identity requires this exact
+    0d3ee6b551b8fa768fbf825300ebab81047ef6a8
+  This is the v1.9.2607 tag, the DXC MonoGame 3.8.6 bundles and every other RID runs.
+  Byte-identity requires this exact
   commit AND its gitlinked SPIR-V submodules:
-    external/SPIRV-Headers   @ 1d31a100405cf8783ca7a31e31cdd727c9fc54c3
-    external/SPIRV-Tools     @ 40f5bf59c6acb4754a0bffd3c53a715732883a12
+    external/SPIRV-Headers   @ 29981f65241605e08b0ede4cfeb999fe3b723c6a
+    external/SPIRV-Tools     @ b707790a898e44038547df54580022fc1cf89c3d
     external/DirectX-Headers @ 980971e835876dc0cde415e8f9bc646e64667bf7
 
   1. Clone the pinned source with submodules into .wasm-build/dxc-src:
         git init .wasm-build/dxc-src && cd .wasm-build/dxc-src
         git remote add origin https://github.com/microsoft/DirectXShaderCompiler.git
-        git fetch --depth 1 origin e043f4a1286f4e1026222ab1bc94e25de8d0e959
+        git fetch --depth 1 origin 0d3ee6b551b8fa768fbf825300ebab81047ef6a8
         git checkout FETCH_HEAD
         git -c advice.detachedHead=false submodule update --init --recursive --depth 1 \
             external/SPIRV-Headers external/SPIRV-Tools external/DirectX-Headers

@@ -1,9 +1,15 @@
 # Phase 70 — DXC pin bump (v1.7.2212 → the DXC MonoGame ships)
 
 **Track:** Pins and natives.
-**Status:** 📋 **Planned (2026-10-31, owner decision on [issue #287](https://github.com/kaltinril/ShadowDusk/issues/287)).**
-Not started. Its own phase, never folded into another change, because it moves output bytes on
-three targets.
+**Status:** 🔄 **In review, [PR #523](https://github.com/kaltinril/ShadowDusk/pull/523).** Target, natives, language rule, manifests and docs are done on the branch. It closes when the Windows render gate passes on the new pin, the PR merges, this doc moves to `plan/DONE/` and [issue #287](https://github.com/kaltinril/ShadowDusk/issues/287) is closed.
+
+## What was decided and built
+
+- **Target: v1.9.2607 (`0d3ee6b55`)**, the DXC MonoGame 3.8.6 and 3.8.6.1 bundle. No Vortice.Dxc release ships it, so `Vortice.Dxc` 3.3.4 stays as the managed wrapper only and `ShadowDusk.HLSL` carries the natives (reversing #303, owner 2026-11-22).
+- **Natives:** win-x64 and win-arm64 are our builds (`dxc-build.yml`), android-arm64/x64 are our builds (`tools/build-dxc-android.sh`), WASM is our build, Linux and macOS are `MonoGame.Tool.Dxc`. No binary from Microsoft's release ships (`LICENSE-MS.txt`, owner 2026-11-22). All hosted natives are on release `native-dxc-1.9.2607`.
+- **Language:** DirectX 12 and Vulkan at HLSL 2021 with a retry at 2018; OpenGL and the DirectX 11 reflection companion at 2018.
+- **Manifests:** re-baselined, reviewed entry by entry in [`PHASE-70-appendix/manifest-review.md`](PHASE-70-appendix/manifest-review.md).
+- **Follow-ups left out on purpose:** the pinned DXC no longer needs `dxil.dll`, `DxcForkGate`, or the entry-prototype blanking. Each can be retired in its own change.
 
 ## Why now
 

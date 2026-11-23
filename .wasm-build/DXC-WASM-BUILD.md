@@ -13,6 +13,13 @@ sample-only and is NOT used here.
 
 ## 1. Pinned DXC version — and how it was mapped from Vortice.Dxc
 
+> **Current pin (Phase 70): DXC v1.9.2607, commit `0d3ee6b551b8fa768fbf825300ebab81047ef6a8`,
+> submodules SPIRV-Headers `29981f65`, SPIRV-Tools `b707790a`, DirectX-Headers `980971e8`.** The
+> recipe is unchanged. After a rebuild, commit `dxc-wasm-out/dxcompiler.{js,wasm}` AND copy the
+> `.js` to `src/ShadowDusk.Wasm/wwwroot/dxc/`: a module and a loader from different builds trap
+> at startup, and `wasm.yml` fails on the mismatch. The table below records the original
+> v1.7.2212 mapping.
+
 | What | Value |
 |---|---|
 | Desktop NuGet | `Vortice.Dxc` **3.3.4** (`Directory.Packages.props`) |

@@ -243,8 +243,11 @@ A pass's VS and PS entry points are compiled **separately**, one native invocati
 
 ### Stage 3a — DXC (the HLSL frontend, OpenGL and Vulkan)
 
-**What it is.** Microsoft's DirectXShaderCompiler, via the `Vortice.Dxc` package
-(`src/ShadowDusk.HLSL/Dxc/DxcShaderCompiler.cs`). It is the faithful HLSL → SPIR-V frontend.
+**What it is.** Microsoft's DirectXShaderCompiler at v1.9.2607, the DXC MonoGame 3.8.6 bundles,
+driven through the managed `Vortice.Dxc` wrapper (`src/ShadowDusk.HLSL/Dxc/DxcShaderCompiler.cs`).
+Its language version is stated per target: HLSL 2021 for DirectX 12 and Vulkan, as `mgfxc` runs
+them, with a retry at 2018 for a source 2021 refuses; 2018 for OpenGL and the DirectX 11
+reflection companion, whose reference is `fxc`. It is the faithful HLSL → SPIR-V frontend.
 It is used **only** on the GL/Vulkan/Metal paths (and to produce a DXIL blob for reflection on
 GL); it never produces the DX11 shader payload.
 
@@ -271,9 +274,9 @@ compile (OpenGL SPIR-V, DirectX DXBC, DirectX 12 DXIL) still validates fully. DX
 is constructed lazily and invoked through a per-platform raw vtable call rather than Vortice's
 string wrapper, which is what makes it run on Linux and macOS at all.
 
-**Before DXC compiles: two guards against crashes in the pinned DXC.** Both exist because
-the pinned DXC (Vortice.Dxc 3.3.4's `dxcompiler`) can end the host process, which for a library
-compiled into a game is never acceptable.
+**Before DXC compiles: two guards against DXC crashes.** Both exist because DXC could end the
+host process on the v1.7.2212 pin, which for a library compiled into a game is never acceptable.
+v1.9.2607 fixed the entry-prototype fault; the guards stay until they are retired on their own.
 
 - **Entry-point prototypes are blanked, proven by DXC's own preprocessor**
   (`src/ShadowDusk.HLSL/Dxc/DxcSpirvEntryRedeclarations.cs`). DXC's SPIR-V back end faults with an

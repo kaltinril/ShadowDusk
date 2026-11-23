@@ -254,8 +254,9 @@ first (the `/release` skill does this for you).
    dotnet add package ShadowDusk.Compiler --version 0.26.0
    ```
 
-   then compile a `.fx` → GL `.mgfx` in memory. This restores `Core/HLSL/GLSL` plus
-   `Vortice.Dxc` and `Silk.NET.SPIRV.Cross.Native` transitively — no manual native install.
+   then compile a `.fx` → GL `.mgfx` in memory. This restores `Core/HLSL/GLSL` (the DXC natives
+   ride inside `ShadowDusk.HLSL`) plus the managed `Vortice.Dxc` wrapper and
+   `Silk.NET.SPIRV.Cross.Native` transitively — no manual native install.
 4. **The GitHub Release** exists for `v<version>` with the four self-contained CLI archives
    and the package set attached.
 
@@ -282,10 +283,17 @@ first (the `/release` skill does this for you).
 > broken for any consumer RID. If the gate trips, check that the `native-vkd3d-2.1`
 > release assets are intact and the restore-step log shows four "hash OK" lines.
 
+> **Windows DXC natives (Phase 70):** `tools/restore.{ps1,sh}` restore `dxcompiler.dll` and
+> `dxil.dll` for win-x64 and win-arm64, SHA-256 pinned, from `native-dxc-1.9.2607`. They are our
+> builds of the DXC v1.9.2607 tag (`dxc-build.yml`). Linux and macOS DXC come from
+> `MonoGame.Tool.Dxc` by `PackageDownload`. A pack without the restored Windows files ships no
+> Windows DXC, so `release.yml` and `ci.yml` gate on them. No binary from Microsoft's DXC release
+> may be packed (`project_decisions.md`).
+
 > **Android natives (Phase 50, issue #304):** `tools/restore.{ps1,sh}` also restore four Android
 > `.so` files, SHA-256 pinned, all reproducible CI builds with 16 KB pages (Google Play's
 > requirement for Android 15+ targets; the emulator lane fails on `XA0141`): DXC from
-> `native-dxc-android-1.7.2212.40-16k` (built by `dxc-android-build.yml` with
+> `native-dxc-1.9.2607` (built by `dxc-android-build.yml` with
 > `tools/build-dxc-android.sh` at the pinned DXC commit), SPIRV-Cross from
 > `native-spirv-cross-android-d8e3e2b1` (built by `spirv-cross-android-build.yml` with
 > `tools/build-spirv-cross-android.sh` at the desktop's SPIRV-Cross commit; a SPIRV-Cross bump on

@@ -6,7 +6,7 @@
 //
 // The corpus ground truth (.wasm-build/corpus-spirv/{name}.{hlsl,args.json,spv}) is
 // produced by the dxc-corpus-probe, which drives the REAL desktop ShadowDusk pipeline
-// (FxPreParser + Preprocessor + DxcShaderCompiler @ Vortice.Dxc 3.3.4) and captures
+// (FxPreParser + Preprocessor + DxcShaderCompiler @ the pinned DXC v1.9.2607) and captures
 // the EXACT (preprocessed HLSL, DXC arg list, SPIR-V bytes) triple the desktop CLI
 // feeds DXC. compileToSpirv receives byte-for-byte the same hlsl+args, so byte-equal
 // SPIR-V proves the WASM build is the same compiler -> the transitive render-proof.

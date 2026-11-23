@@ -8,7 +8,8 @@
 #   2. at RUN time: SD0219 naming the resolved Vortice.Dxc for the DXC-backed target (OpenGL),
 #      never a raw exception or a compile with a different DXC, while DirectX 11 and FNA (no DXC)
 #      keep compiling;
-# and the fix the messages name (pin Vortice.Dxc 3.3.4) must clear both. Exits non-zero on any
+# and the fix the messages name (pin Vortice.Dxc 3.3.4) must clear both, including through a
+# RID-specific publish, where Vortice's own 1.7 natives would collide with ShadowDusk's by name. Exits non-zero on any
 # failure. Used by .github/workflows/pack-consume.yml on all three OSes; runnable locally (bash on
 # Windows: Git Bash) after packing Core/HLSL/GLSL/Compiler into a feed, or with --pack.
 #

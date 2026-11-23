@@ -25,8 +25,8 @@
     so these normal project references become correct package dependencies when
     packed (no PrivateAssets — that would also sever in-repo transitive flow to the
     CLI/Wasm/test consumers). A consumer runs `dotnet add package ShadowDusk.Compiler`
-    and NuGet restores the whole ShadowDusk.* set plus the native deps (Vortice.Dxc,
-    Silk.NET.SPIRV.Cross.Native) transitively via ShadowDusk.HLSL/GLSL.
+    and NuGet restores the whole ShadowDusk.* set plus its dependencies (the Vortice.Dxc
+    wrapper, Silk.NET.SPIRV.Cross.Native) transitively via ShadowDusk.HLSL/GLSL.
   -->
   <ItemGroup>
     <ProjectReference Include="..\ShadowDusk.Core\ShadowDusk.Core.csproj" />

@@ -50,11 +50,10 @@ The one place ShadowDusk itself sits in a trust path is the **native binaries it
 distributes** (you trust our package). Those are version-pinned and integrity-checked:
 
 - **Downloaded, version-pinned, SHA-256-verified natives** — vkd3d-shader (the DXBC / fx_2_0
-  backend, all four desktop RIDs), the macOS DXC dylib, the Android DXC and SPIRV-Cross, and the
+  backend, all four desktop RIDs), the Windows DXC, the Android DXC and SPIRV-Cross, and the
   vkd3d-shader **WebAssembly** module. `tools/restore.ps1` / `tools/restore.sh` download these from
-  **fixed GitHub Release tags** (`native-vkd3d-2.1`, `native-dxc-1.7.2212.40`,
-  `native-vkd3d-wasm-2.1-r2`, `native-dxc-android-1.7.2212.40-16k`,
-  `native-spirv-cross-android-d8e3e2b1`), check each
+  **fixed GitHub Release tags** (`native-vkd3d-2.1`, `native-dxc-1.9.2607`,
+  `native-vkd3d-wasm-2.1-r2`, `native-spirv-cross-android-d8e3e2b1`), check each
   file's SHA-256 against a hash embedded in the script, and **discard a mismatched file**
   (re-downloading rather than using it). The **release** workflow then **re-hashes** the vkd3d
   WASM module against the pins read out of `tools/restore.sh` before it packs `ShadowDusk.Wasm`
@@ -74,7 +73,8 @@ distributes** (you trust our package). Those are version-pinned and integrity-ch
   committed `packages.lock.json` files restored under CI `RestoreLockedMode`. (The
   `tools/spirv-cross/` copy is an optional build-from-source convenience pulled from the
   developer's own Vulkan SDK / vcpkg toolchain; it never ships to consumers.)
-- **Desktop DXC on Windows/Linux** comes from the `Vortice.Dxc` NuGet package, pinned in
+- **DXC on Linux and macOS** comes from the `MonoGame.Tool.Dxc` NuGet package at an exact version
+  (`PackageDownload` in `ShadowDusk.HLSL.csproj`). The managed `Vortice.Dxc` wrapper is pinned in
   `Directory.Packages.props` and locked via `packages.lock.json`.
 
 **At runtime the same natives are loaded only as those pinned builds.** DXC, vkd3d-shader and

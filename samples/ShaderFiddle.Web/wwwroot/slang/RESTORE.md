@@ -2,8 +2,8 @@
 
 > **Slang is SAMPLE-ONLY / a dead reference — NOT the product in-browser frontend.**
 > The product in-browser HLSL → SPIR-V frontend is the **faithful pinned DXC compiled
-> to WebAssembly** (the SAME compiler the desktop pipeline uses — Vortice.Dxc 3.3.4 /
-> DXC commit `e043f4a1`), which lives in the package at
+> to WebAssembly** (the SAME compiler the desktop pipeline uses — DXC v1.9.2607,
+> commit `0d3ee6b5`), which lives in the package at
 > `src/ShadowDusk.Wasm/wwwroot/dxc/` (see its `RESTORE.md`) and produces byte-identical
 > SPIR-V to desktop. Slang was a 2026 spike; it is retained **only** in this sample's
 > mode-2 path because it lacks a maintained DXC WASM build at the time, and because

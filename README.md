@@ -251,7 +251,7 @@ pwsh tools/setup-local-testing.ps1 -WithRenderGates   # also the GPU render proo
 
 It prints a PASS/WARN/FAIL line per step and never skips anything silently — a step that can't run says why and gives you the command that fixes it. The most common first-run failure is having only one .NET SDK: the libraries multi-target `net8.0` **and** `net10.0`, so you need both.
 
-The individual steps, if you'd rather run them yourself: DXC binaries come from the `Vortice.Dxc` NuGet package automatically, and SPIRV-Cross native binaries are downloaded by `tools/restore.ps1` / `tools/restore.sh`:
+The individual steps, if you'd rather run them yourself: Linux and macOS DXC comes from a pinned NuGet package automatically, and the Windows DXC and SPIRV-Cross native binaries are downloaded by `tools/restore.ps1` / `tools/restore.sh`:
 
 ```sh
 ./tools/restore.sh        # Linux / macOS
@@ -315,7 +315,7 @@ ShadowDusk/
 ## Tech stack
 
 - C# 12 / .NET 8 + .NET 10 (libraries multi-target `net8.0;net10.0`)
-- [Vortice.Dxc](https://github.com/amerkoleci/Vortice.Windows) — managed DXC wrapper (cross-platform, no Windows SDK required)
+- [Vortice.Dxc](https://github.com/amerkoleci/Vortice.Windows) — managed DXC wrapper (the DXC natives ride inside `ShadowDusk.HLSL`)
 - [SPIRV-Cross](https://github.com/KhronosGroup/SPIRV-Cross) — SPIR-V → GLSL transpilation via P/Invoke
 - [vkd3d-shader](https://gitlab.winehq.org/wine/vkd3d) — cross-platform HLSL → DXBC (SM5) for the DirectX backend
 - xUnit + Shouldly

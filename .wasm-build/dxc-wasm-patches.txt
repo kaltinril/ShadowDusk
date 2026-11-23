@@ -1,5 +1,5 @@
 DXC source patches required for the emscripten/WASM SPIR-V build (Phase 23 M0).
-Applied to .wasm-build/dxc-src (the pinned e043f4a1 checkout) by build-dxc-wasm.ps1
+Applied to .wasm-build/dxc-src (the pinned 0d3ee6b5 checkout) by build-dxc-wasm.ps1
 before Stage 1 configure. All are CMake-only (no C++ source changes) and exist solely
 to let DXC's LLVM-fork CMake cross-compile under emscripten on Windows.
 

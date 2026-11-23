@@ -3,8 +3,8 @@
 # push/PR. This is Phase 30 §6, reconciled with the AS-BUILT native strategy:
 #
 #   * SPIRV-Cross (OpenGL path) ships TRANSITIVELY via the Silk.NET.SPIRV.Cross.Native
-#     NuGet, and DXC via Vortice.Dxc — both are restored by `dotnet restore` and live
-#     in the NuGet package cache. There is NO `tools/spirv-cross/` bundling step (the
+#     NuGet. DXC rides in ShadowDusk.HLSL: Linux and macOS from MonoGame.Tool.Dxc (dotnet
+#     restore), Windows and Android from tools/restore. There is NO `tools/spirv-cross/` bundling step (the
 #     doc's §3/§4 manual-bundle + native-versions.json model is OBSOLETE here).
 #   * The DirectX DXBC backend's `vkd3d-shader` native is a RESTORED, non-redistributed
 #     artifact. `tools/restore.*` verifies/recipes it and NO-OPs gracefully when absent

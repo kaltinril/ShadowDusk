@@ -16,7 +16,7 @@ ShadowDusk/
 │                                  #   vs win-x64 byte identity, issue #286). Native builds (manual dispatch;
 │                                  #   the two Android ones also on PRs touching their recipe or the restore
 │                                  #   scripts), artifacts uploaded by hand to fixed native-* release tags:
-│                                  #   dxc-build.yml (macOS DXC), dxc-android-build.yml
+│                                  #   dxc-build.yml (Windows DXC), dxc-android-build.yml
 │                                  #   (tools/build-dxc-android.sh), spirv-cross-android-build.yml
 │                                  #   (tools/build-spirv-cross-android.sh), build-vkd3d-natives.yml
 │                                  #   (desktop vkd3d), vkd3d-wasm-build.yml (browser vkd3d)
@@ -128,9 +128,9 @@ ShadowDusk/
 ├── Directory.Build.targets        # Browser projects only: drops every copy item sourced under tools/ so no
 │                                  #   desktop/Android native reaches a net8.0-browser build or publish (issue #273)
 ├── tools/                         # Vendored / downloaded native binaries (restored, not committed)
-│   ├── dxc/<rid>/                 # OUR pinned DXC builds for osx-x64/osx-arm64 (dylib) and android-arm64
+│   ├── dxc/<rid>/                 # OUR pinned DXC v1.9.2607 builds for win-x64, win-arm64 and android-arm64
 │   │                              #   (restored + hash-pinned; android-x64 is the emulator lane's pair, never packed).
-│   │                              #   Windows/Linux DXC comes from the Vortice.Dxc 3.3.4 NuGet.
+│   │                              #   Linux and macOS DXC comes from the MonoGame.Tool.Dxc NuGet (PackageDownload).
 │   ├── spirv-cross/               # libspirv-cross-c-shared (.dll/.so/.dylib)
 │   ├── vkd3d/                     # vkd3d-shader native (cross-platform DXBC backend)
 │   ├── vkd3d-wasm/                # vkd3d-shader compiled to WASM (browser DXBC + FNA export)

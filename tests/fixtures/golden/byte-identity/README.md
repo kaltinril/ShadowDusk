@@ -50,7 +50,7 @@ release and with `Debug` on. Keys are `Vulkan/`, `Vulkan.Debug/`, `DirectX12/` a
 | `warnings` | The warning list, verbatim. |
 
 **Why DirectX 12 needs a canonical form.** A DXIL container differs by construction off
-Windows: its digest is a hash of the container, which covers the bitcode below (off Windows the managed retail hash, issue #478),
+Windows: its digest is a hash of the container, which covers the bitcode below (DXC writes it on every host since v1.9.2607),
 and the bitcode embeds DXC's own identity string (`!llvm.ident`, and the debug
 information's `producer`), so the `HASH` part, the PDB name derived from it, the container's
 size, the MGFX record length and the effect key all follow. The canonical form removes exactly
@@ -63,10 +63,9 @@ disassembler escapes non-ASCII string bytes according to the locale DXC leaves s
 prints them raw where Windows and Linux print `\XX`; the canonical text escapes every such byte.
 Never widen this.
 
-**The one known difference** (measured 2026-10-04) is `DirectX12.Debug/ForwardLighting.fx` on
-macOS: its DXIL lists a split global's debug records in another order (instruction-identical).
-It is not loosened away but pinned in the test's `MacOsDivergences` as macOS's exact expected
-`dxil`/`mgfxNormalized`, which must still differ from the manifest's.
+**There is no known difference on the DXC v1.9.2607 pin.** A measured one would be pinned in the
+test's `MacOsDivergences` as that host's exact expected `dxil`/`mgfxNormalized`, never loosened
+away. Through v1.7.2212 that held `DirectX12.Debug/ForwardLighting.fx` on macOS.
 
 Regenerate exactly as `manifest.json` (below). `SHADOWDUSK_BYTE_IDENTITY_DUMP=<dir>` writes every
 fixture's SPIR-V, DXIL container and DXIL disassembly there; the CI integration lane sets it and
@@ -86,12 +85,9 @@ uploads the directory when the job fails, so a mismatch can be diffed against a 
 
 - **Generated on:** win-x64 (Windows 11), 2026-09-10 (regenerated for the vkd3d 1.17 to 2.1 bump, Phase 56: the DirectX_Vkd3d and FNA hashes moved, OpenGL did not), via the regeneration path below.
 - **Compiler git SHA:** the commit that last touched `manifest.json` — `git log -1 --format=%H -- tests/fixtures/golden/byte-identity/manifest.json`.
-- **Pinned natives the hashes depend on:** DXC 1.7.2212.40 (Vortice.Dxc 3.3.4 on
-  win/linux; our own dylib on macOS, tag `native-dxc-1.7.2212.40`). These are NOT all one
-  commit: the Windows DLL and our macOS dylib are `e043f4a1`, Vortice's linux-x64 `.so` reports
-  `8c9d92be7` (the `v1.7.2212` tag, 28 commits earlier). The OpenGL hashes match on all three
-  hosts anyway, and so do the Vulkan and DirectX 12 entries of `dxc-targets-manifest.json`
-  (measured 2026-10-04, see `project_facts.md`), SPIRV-Cross (Silk.NET.SPIRV.Cross.Native 2.23.0),
+- **Pinned natives the hashes depend on:** DXC v1.9.2607, `0d3ee6b55` (Phase 70: our Windows
+  builds, tag `native-dxc-1.9.2607`; `MonoGame.Tool.Dxc` 1.9.2607.1 on Linux and macOS; the
+  entry-by-entry review of that move is `plan/PHASE-70-appendix/manifest-review.md`), SPIRV-Cross (Silk.NET.SPIRV.Cross.Native 2.23.0),
   vkd3d-shader 2.1 (tag `native-vkd3d-2.1`). Bumping any of these legitimately changes
   the manifest — regenerate and review.
 
