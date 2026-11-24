@@ -1,7 +1,7 @@
 # Phase 70 — DXC pin bump (v1.7.2212 → the DXC MonoGame ships)
 
 **Track:** Pins and natives.
-**Status:** 🚧 **In review, [PR #523](https://github.com/kaltinril/ShadowDusk/pull/523).** Target, natives, language rule, manifests and docs are done on the branch. It closes when the Windows render gate passes on the new pin, the PR merges, this doc moves to `plan/DONE/` and [issue #287](https://github.com/kaltinril/ShadowDusk/issues/287) is closed.
+**Status:** ✅ **Done (2026-11-23), [PR #523](https://github.com/kaltinril/ShadowDusk/pull/523).** Full `dotnet test` green and the full Windows render gate 58/58 on the new pin (the DX12 Apos.Shapes gallery now maxd 0 against the `mgfxc` golden), closing [issue #287](https://github.com/kaltinril/ShadowDusk/issues/287).
 
 ## What was decided and built
 
@@ -16,7 +16,7 @@
 
 The owner's 2026-10-04 decision on #287 was "stay on v1.7.2212; revisit when MonoGame moves to a
 newer DXC". That trigger has fired: MonoGame 3.8.5 bundled DXC 1.8.2505.11, and 3.8.6 bundles
-**`MonoGame.Tool.Dxc` 1.9.2607.1** ([Phase 69 appendix](DONE/PHASE-69-appendix/monogame-3.8.6-source-diff.md)).
+**`MonoGame.Tool.Dxc` 1.9.2607.1** ([Phase 69 appendix](PHASE-69-appendix/monogame-3.8.6-source-diff.md)).
 1.9.2607.1 is past both upstream fixes #287 lists (the `RegisterHandlers` race, fixed in v1.7.2308,
 and the `setlocale` fix in v1.9.2602), and it is what the `mgfxc` `DirectX_12` goldens are built
 with, so the documented DX12 Apos.Shapes `maxd 1` (the DXC pin, `docs/validation-matrix.md` §7)

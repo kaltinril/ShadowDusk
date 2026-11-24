@@ -87,7 +87,7 @@ uploads the directory when the job fails, so a mismatch can be diffed against a 
 - **Compiler git SHA:** the commit that last touched `manifest.json` — `git log -1 --format=%H -- tests/fixtures/golden/byte-identity/manifest.json`.
 - **Pinned natives the hashes depend on:** DXC v1.9.2607, `0d3ee6b55` (Phase 70: our Windows
   builds, tag `native-dxc-1.9.2607`; `MonoGame.Tool.Dxc` 1.9.2607.1 on Linux and macOS; the
-  entry-by-entry review of that move is `plan/PHASE-70-appendix/manifest-review.md`), SPIRV-Cross (Silk.NET.SPIRV.Cross.Native 2.23.0),
+  entry-by-entry review of that move is `plan/DONE/PHASE-70-appendix/manifest-review.md`), SPIRV-Cross (Silk.NET.SPIRV.Cross.Native 2.23.0),
   vkd3d-shader 2.1 (tag `native-vkd3d-2.1`). Bumping any of these legitimately changes
   the manifest — regenerate and review.
 

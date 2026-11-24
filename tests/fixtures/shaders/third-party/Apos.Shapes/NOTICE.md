@@ -214,7 +214,7 @@ pixel-diff claimed or implied.
 | Vulkan | `Apos.Shapes`' own embedded Vulkan effect | **maxd 0**, all 30 cells |
 | DirectX_11 (`vkd3d-shader`) | `Apos.Shapes`' own embedded DX11 effect | **maxd 0**, all 30 cells |
 | DirectX_11 (`d3dcompiler_47` oracle) | the real, locally-generated `mgfxc` golden (`tests/fixtures/golden/DirectX_11/apos-shapes-sm6.mgfx`) | **maxd 0**, all 30 cells |
-| DirectX_12 | the real, locally-generated `mgfxc` golden (`tests/fixtures/golden/DirectX_12/apos-shapes-sm6.mgfx`) | **maxd 1** on 11 pixels of 402,984 — root-caused 2026-07-31 to the **pinned DXC build**, not a ShadowDusk defect (see below) |
+| DirectX_12 | the real, locally-generated `mgfxc` golden (`tests/fixtures/golden/DirectX_12/apos-shapes-sm6.mgfx`) | **maxd 0** since the v1.9.2607 DXC pin (measured 2026-11-23); on the old pin **maxd 1** on 11 pixels of 402,984, root-caused 2026-07-31 to the **pinned DXC build**, not a ShadowDusk defect (see below) |
 | OpenGL | none (candidate-only) | 30/30 shapes visible; no pixel-diff |
 
 **Correction (2026-07-23, same day): the original DX11 "maxd 1 on 14/30 cells" finding was a
@@ -245,8 +245,8 @@ pixel-shader DXIL instruction-for-instruction, and rendering only that swapped p
 only in `fast`-math-licensed rewrites; it reaches a pixel at all only because this shader adds
 ±half an 8-bit LSB of dither immediately before quantization
 (`result.rgb += (DitherNoise(p.Pos.xy) - 0.5) * dither_scale`), so a sub-ULP difference flips
-whichever pixels sit on the rounding boundary. **maxd 1 is the honest tolerance while the pins
-differ**; closing it means bumping DXC, which re-baselines every target.
+whichever pixels sit on the rounding boundary. **maxd 1 was the honest tolerance while the pins
+differed.** Phase 70 moved the pin to v1.9.2607, and the gallery has measured maxd 0 since 2026-11-23.
 
 **Two harness bugs found while root-causing it, both now fixed** (and both had misled the earlier
 readings): the per-cell breakdown used the *untransformed* gallery rectangles under a 1.15x view,
