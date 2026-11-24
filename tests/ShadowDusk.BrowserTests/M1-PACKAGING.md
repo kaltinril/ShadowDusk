@@ -85,7 +85,7 @@ package so it ships as static web assets:
 `tools/restore.ps1` (`Restore-DxcWasm`) and `tools/restore.sh` (`restore_dxc_wasm`) now copy
 the built `.wasm-build/dxc-wasm-out/dxcompiler.wasm` into
 `src/ShadowDusk.Wasm/wwwroot/dxc/dxcompiler.wasm` (size-checked; skips if up to date) before
-build/pack, and accept a pre-populated package copy as sufficient. The 17.4 MB
+build/pack, and accept a pre-populated package copy as sufficient. The ~19 MB
 `dxcompiler.wasm` stays gitignored (`.gitignore` already ignores the package wwwroot copy +
 `.wasm-build/`); the small `shadowdusk-dxc.js` shim and `dxc/dxcompiler.js` loader are
 committed. Documented in `src/ShadowDusk.Wasm/wwwroot/dxc/RESTORE.md`.
@@ -99,7 +99,7 @@ _content/ShadowDusk.Wasm/
 ├── shadowdusk-dxc.js              (7 KB)    faithful [JSImport] shim — product frontend
 ├── dxc/
 │   ├── dxcompiler.js             (54 KB)    emscripten MODULARIZE+ES6 loader (committed)
-│   └── dxcompiler.wasm        (17.4 MB)     faithful pinned DXC→WASM (gitignored, restored)
+│   └── dxcompiler.wasm        (~19 MB)     faithful pinned DXC→WASM (gitignored, restored)
 │   └── RESTORE.md
 ├── shadowdusk-spirv-cross.js     (9 KB)     SPIRV-Cross [JSImport] shim
 └── spirv-cross/

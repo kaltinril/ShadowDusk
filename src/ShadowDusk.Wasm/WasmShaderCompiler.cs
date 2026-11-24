@@ -44,7 +44,7 @@ public sealed class WasmShaderCompiler : IShaderCompiler
     /// <see cref="Compile"/> runs (issue #28 — one implementation, byte-identical
     /// output): it first performs the one-time lazy load of the WASM module(s) the
     /// target needs (DXC for OpenGL/Vulkan, vkd3d-shader for DirectX/FNA — deferred to
-    /// first compile, exactly as before, so the heavy ~17.4 MB DXC download never
+    /// first compile, exactly as before, so the heavy ~19 MB DXC download never
     /// burdens page init), then runs the compile synchronously on the browser thread.
     /// No prior <see cref="InitializeAsync"/> is required on this path.
     /// </remarks>
@@ -156,7 +156,7 @@ public sealed class WasmShaderCompiler : IShaderCompiler
     /// <para>Warms EVERYTHING a subsequent synchronous <see cref="Compile"/> of any
     /// supported target needs: registers the three <c>[JSImport]</c> modules (which
     /// eagerly instantiates SPIRV-Cross) and loads + instantiates both the DXC
-    /// (~17.4 MB, the OpenGL/Vulkan frontend) and vkd3d-shader (432 KB, the DirectX/FNA
+    /// (~19 MB, the OpenGL/Vulkan frontend) and vkd3d-shader (432 KB, the DirectX/FNA
     /// backend) WASM modules. Eager-everything is deliberate (the seamless rule): after
     /// one <c>await compiler.InitializeAsync()</c>, <c>Compile</c> of ANY target just
     /// works — the consumer never has to know which target needs which module. The

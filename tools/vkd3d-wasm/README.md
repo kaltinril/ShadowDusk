@@ -8,8 +8,8 @@ This directory holds the **durable build code** for compiling the pinned
 
 The compiled `vkd3d-shader.{js,wasm}` artifacts are **NOT committed** — they are
 built by `.github/workflows/vkd3d-wasm-build.yml` and hosted on the fixed
-release tag **`native-vkd3d-wasm-1.17`** (same hosting model as
-`native-vkd3d-1.17` / `native-dxc-1.7.2212.40`, Phase 37).
+release tag **`native-vkd3d-wasm-2.1-r2`** (pinned in `tools/restore.*`; same hosting model as
+`native-vkd3d-1.17` / `native-dxc-1.9.2607`, Phase 37).
 
 ## Contents
 

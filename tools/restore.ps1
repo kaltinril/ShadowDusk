@@ -296,7 +296,7 @@ function Restore-DxcWasm {
 
     # M1 (Phase 23) destination: the faithful DXC->WASM module must be present in the
     # ShadowDusk.Wasm package's packaged wwwroot/dxc/ so it ships as a Blazor static
-    # web asset (served at _content/ShadowDusk.Wasm/dxc/). The 17.4 MB .wasm is
+    # web asset (served at _content/ShadowDusk.Wasm/dxc/). The ~19 MB .wasm is
     # gitignored (see .gitignore) and copied here from the built artifact; the small
     # shadowdusk-dxc.js shim + dxc/dxcompiler.js loader are committed.
     $PkgDxcDir   = Join-Path $RepoRoot 'src' 'ShadowDusk.Wasm' 'wwwroot' 'dxc'

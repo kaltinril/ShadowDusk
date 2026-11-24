@@ -268,9 +268,9 @@
       "shadowdusk.compiler": {
         "type": "Project",
         "dependencies": {
-          "ShadowDusk.Core": "[0.26.0, )",
-          "ShadowDusk.GLSL": "[0.26.0, )",
-          "ShadowDusk.HLSL": "[0.26.0, )"
+          "ShadowDusk.Core": "[0.27.0, )",
+          "ShadowDusk.GLSL": "[0.27.0, )",
+          "ShadowDusk.HLSL": "[0.27.0, )"
         }
       },
       "shadowdusk.core": {
@@ -279,14 +279,14 @@
       "shadowdusk.glsl": {
         "type": "Project",
         "dependencies": {
-          "ShadowDusk.Core": "[0.26.0, )",
+          "ShadowDusk.Core": "[0.27.0, )",
           "Silk.NET.SPIRV.Cross.Native": "[2.23.0, )"
         }
       },
       "shadowdusk.hlsl": {
         "type": "Project",
         "dependencies": {
-          "ShadowDusk.Core": "[0.26.0, )",
+          "ShadowDusk.Core": "[0.27.0, )",
           "Vortice.D3DCompiler": "[3.3.4, )",
           "Vortice.Dxc": "[3.3.4, 3.3.4]"
         }
@@ -294,20 +294,20 @@
       "shadowdusk.mgcbplugin": {
         "type": "Project",
         "dependencies": {
-          "ShadowDusk.Compiler": "[0.26.0, )"
+          "ShadowDusk.Compiler": "[0.27.0, )"
         }
       },
       "shadowdusk.shadertoy": {
         "type": "Project",
         "dependencies": {
-          "ShadowDusk.Core": "[0.26.0, )"
+          "ShadowDusk.Core": "[0.27.0, )"
         }
       },
       "shadowdusk.sksl": {
         "type": "Project",
         "dependencies": {
-          "ShadowDusk.Core": "[0.26.0, )",
-          "ShadowDusk.ShaderToy": "[0.26.0, )"
+          "ShadowDusk.Core": "[0.27.0, )",
+          "ShadowDusk.ShaderToy": "[0.27.0, )"
         }
       },
       "Silk.NET.SPIRV.Cross.Native": {
@@ -606,9 +606,9 @@
       "shadowdusk.compiler": {
         "type": "Project",
         "dependencies": {
-          "ShadowDusk.Core": "[0.26.0, )",
-          "ShadowDusk.GLSL": "[0.26.0, )",
-          "ShadowDusk.HLSL": "[0.26.0, )"
+          "ShadowDusk.Core": "[0.27.0, )",
+          "ShadowDusk.GLSL": "[0.27.0, )",
+          "ShadowDusk.HLSL": "[0.27.0, )"
         }
       },
       "shadowdusk.core": {
@@ -617,14 +617,14 @@
       "shadowdusk.glsl": {
         "type": "Project",
         "dependencies": {
-          "ShadowDusk.Core": "[0.26.0, )",
+          "ShadowDusk.Core": "[0.27.0, )",
           "Silk.NET.SPIRV.Cross.Native": "[2.23.0, )"
         }
       },
       "shadowdusk.hlsl": {
         "type": "Project",
         "dependencies": {
-          "ShadowDusk.Core": "[0.26.0, )",
+          "ShadowDusk.Core": "[0.27.0, )",
           "Vortice.D3DCompiler": "[3.3.4, )",
           "Vortice.Dxc": "[3.3.4, 3.3.4]"
         }
@@ -632,20 +632,20 @@
       "shadowdusk.mgcbplugin": {
         "type": "Project",
         "dependencies": {
-          "ShadowDusk.Compiler": "[0.26.0, )"
+          "ShadowDusk.Compiler": "[0.27.0, )"
         }
       },
       "shadowdusk.shadertoy": {
         "type": "Project",
         "dependencies": {
-          "ShadowDusk.Core": "[0.26.0, )"
+          "ShadowDusk.Core": "[0.27.0, )"
         }
       },
       "shadowdusk.sksl": {
         "type": "Project",
         "dependencies": {
-          "ShadowDusk.Core": "[0.26.0, )",
-          "ShadowDusk.ShaderToy": "[0.26.0, )"
+          "ShadowDusk.Core": "[0.27.0, )",
+          "ShadowDusk.ShaderToy": "[0.27.0, )"
         }
       },
       "Silk.NET.SPIRV.Cross.Native": {

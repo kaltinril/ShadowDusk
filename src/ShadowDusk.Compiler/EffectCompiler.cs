@@ -37,7 +37,7 @@ public sealed class EffectCompiler : IShaderCompiler
     /// </summary>
     /// <param name="dxcCompilerFactory">
     /// Optional factory for the HLSL → SPIR-V DXC frontend. Defaults to the bundled
-    /// (Vortice.Dxc) desktop DXC.
+    /// pinned desktop DXC, driven through the Vortice.Dxc wrapper.
     /// </param>
     /// <param name="glslTranspilerFactory">
     /// Optional factory for the SPIR-V → GLSL transpiler. Defaults to the SPIRV-Cross-backed

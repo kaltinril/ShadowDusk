@@ -4229,7 +4229,7 @@ internal sealed class CompilationPipeline
             //
             // The warning is matched to a kept default by POSITION, inside the span from the declared
             // name to the end of its initializer: the SPIR-V path reports the initializer's first
-            // token, the DXIL path the name (measured, DXC 1.7.2212.40), so a brace or '=' on the next
+            // token, the DXIL path the name (measured on DXC 1.7.2212.40), so a brace or '=' on the next
             // line (`float4 C =` / `{ 1, 0, 0, 1 };`) used to leave a stale warning behind when only
             // the name's line was compared. The variable name in the message is no key either: that
             // DXC names the FIRST global with an initializer in every one of these warnings.

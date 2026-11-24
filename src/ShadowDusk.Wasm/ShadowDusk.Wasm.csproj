@@ -34,7 +34,7 @@
   </ItemGroup>
 
   <!--
-    The faithful DXC->WASM module (dxc/dxcompiler.wasm, ~17.4 MB) is gitignored and
+    The faithful DXC->WASM module (dxc/dxcompiler.wasm, ~19 MB) is gitignored and
     restored/copied into wwwroot/dxc/ before build/pack (see wwwroot/dxc/RESTORE.md
     and tools/restore.* Restore-DxcWasm). Fail the build loudly if it is missing so
     a packed .nupkg can never silently ship without the product frontend's wasm.

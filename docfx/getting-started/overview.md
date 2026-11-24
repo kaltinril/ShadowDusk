@@ -63,7 +63,8 @@ Supported targets are tested end-to-end against the reference compiler and rende
 > full test suite runs green on all three in CI.
 >
 > **One carve-out.** A small family of advanced-texture intrinsics
-> (`tex3D`, `tex2Dlod`, `tex2Dgrad`) currently fails to compile on the Linux/macOS DXC builds — see
+> (`tex3D`, `tex2Dlod`, `tex2Dgrad`) failed to compile on the Linux/macOS DXC builds when last measured,
+> on the earlier v1.7.2212 DXC (not yet re-measured on v1.9.2607) — see
 > [Parameters & Caveats](../guides/parameters-and-caveats.md).
 
 ## Next steps

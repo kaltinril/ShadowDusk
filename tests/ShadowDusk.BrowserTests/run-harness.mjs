@@ -53,7 +53,7 @@ const IS_SD = CORPUS === 'sd' || IS_HIDEF;
 // compile via WasmShaderCompiler) over the FULL 10-shader corpus, pixel-comparing
 // each WebGL render against references-sd/ (the desktop DesktopGL render of
 // ShadowDusk's own bytes). Mode-1 (precompiled load) is still validated as a
-// baseline. This is the real proof the 17.4 MB dxcompiler.wasm LOADS + RUNS in a
+// baseline. This is the real proof the ~19 MB dxcompiler.wasm LOADS + RUNS in a
 // browser and the end-to-end faithful pipeline renders correctly.
 const IS_FAITHFUL = CORPUS === 'faithful';
 
@@ -220,7 +220,7 @@ async function main() {
     page.on('console', (m) => { const t = m.text(); consoleLog.push(t);
       if (/gl_FragColor|undeclared|ERROR: 0:|GLSL|shader/i.test(t)) console.log(`  [console] ${t}`); });
     page.on('pageerror', (e) => { consoleLog.push('pageerror: ' + e.message); console.log(`  [pageerror] ${e.message}`); });
-    // The first FAITHFUL in-browser compile lazy-loads + instantiates the 17.4 MB
+    // The first FAITHFUL in-browser compile lazy-loads + instantiates the ~19 MB
     // dxcompiler.wasm under SwiftShader, which can be slow; give page.evaluate room.
     if (IS_FAITHFUL) page.setDefaultTimeout(180000);
 
@@ -394,7 +394,7 @@ async function main() {
             continue;
           }
           // In-browser compile (.fx -> .mgfx) + apply via the FAITHFUL pipeline.
-          // First compile lazy-loads the 17.4 MB dxcompiler.wasm (ensureReady).
+          // First compile lazy-loads the ~19 MB dxcompiler.wasm (ensureReady).
           const cErr = await page.evaluate(
             async (s) => await window.theInstance.invokeMethodAsync('TestCompileAndApply', s),
             src);
@@ -805,7 +805,7 @@ async function writeResults(results) {
     if (f.length === SHADERS.length && fPass === f.length && fCompiled === f.length) {
       lines.push(`**PASS — ${fPass}/${f.length} shaders compiled in-browser via the FAITHFUL DXC→WASM frontend AND rendered pixel-equivalent in real headless KNI WebGL.**`);
       lines.push('');
-      lines.push('This proves the 17.4 MB `dxcompiler.wasm` LOADS + RUNS in a real browser and the end-to-end faithful in-browser pipeline renders correctly — the M3 Definition of Done. **Pixelated** (the roundEven→floor WebGL1 fix) and **Dissolve** (slot-1 sampler) are included and pass.');
+      lines.push('This proves the ~19 MB `dxcompiler.wasm` LOADS + RUNS in a real browser and the end-to-end faithful in-browser pipeline renders correctly — the M3 Definition of Done. **Pixelated** (the roundEven→floor WebGL1 fix) and **Dissolve** (slot-1 sampler) are included and pass.');
     } else {
       lines.push(`**INCOMPLETE — ${fCompiled}/${f.length} compiled in-browser, ${fPass}/${f.length} rendered within tolerance.** Failures:`);
       for (const r of f.filter((x) => !x.verdict.startsWith('PASS'))) {

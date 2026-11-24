@@ -38,6 +38,10 @@ One shape is refused: a **single sampler shared by two textures in the same live
 
 A vertex shader that writes its clip-space position to the legacy **`: POSITION0`** output (`struct VOut { float4 Pos : POSITION0; ... };`, the XNA spelling) is mapped to `SV_Position` on this target, as DirectX 11 does ([issue #446](https://github.com/kaltinril/ShadowDusk/issues/446), fixed 2026-10-31). Before that, DXC's SPIR-V path left it an ordinary output and DesktopVK silently drew nothing (`mgfxc` refuses the same file for Vulkan). Not mapped: `POSITION1` and up, a semantic spelled through a macro, and a struct the vertex shader also takes as input; for those, write `: SV_POSITION`.
 
+## Compiled as HLSL 2021, as `mgfxc` compiles it
+
+Since 0.27.0 this target compiles as HLSL 2021, the language `mgfxc`'s DXC uses for it, so `&&`, `||` and `?:` short-circuit. A `?:` arm with a side effect (`x < y ? acc = w : acc`) runs only when its condition holds, as in `mgfxc`'s build. A shader HLSL 2021 refuses, usually a vector condition in `?:`, `&&` or `||`, is compiled again as HLSL 2018 so it keeps compiling, with the warning [`SD0242`](../diagnostics.md), because `mgfxc` would not compile it for this target; `select()`, `and()` and `or()` remove the warning. One narrow exception: a source whose preprocessed code depends on `__HLSL_VERSION` and that fails at 2021 reports that 2021 error instead of being retried.
+
 ## Additive by policy
 
 Like all backends, targeting Vulkan is **opt-in per compile** (`PlatformTarget.Vulkan` / `/Profile:Vulkan`) and does not change OpenGL/DX11/v10 output for consumers who don't ask for it.

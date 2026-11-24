@@ -22,7 +22,7 @@ The managed reflection + rewrite + writer stages are identical to the desktop on
 
 ## Self-contained packaging
 
-`ShadowDusk.Wasm` ships the WASM modules as **self-registered Blazor static web assets** (`_content/ShadowDusk.Wasm/`). A consumer adds a `ProjectReference`/package reference and wires **nothing** — no `JSHost.ImportAsync`. Each module is lazily downloaded on the first compile that needs it: the ~17 MB `dxcompiler.wasm` (~6 MB compressed) on the first OpenGL compile, the ~1.3 MB `vkd3d-shader.wasm` (~0.4 MB compressed) on the first DirectX/FNA compile. See the [In-Browser guide](../guides/in-browser-kni-blazor.md) and the [ShaderFiddle.Web sample](../samples/shaderfiddle-web.md).
+`ShadowDusk.Wasm` ships the WASM modules as **self-registered Blazor static web assets** (`_content/ShadowDusk.Wasm/`). A consumer adds a `ProjectReference`/package reference and wires **nothing** — no `JSHost.ImportAsync`. Each module is lazily downloaded on the first compile that needs it: the ~19 MB `dxcompiler.wasm` (~6 MB compressed) on the first OpenGL compile, the ~1.3 MB `vkd3d-shader.wasm` (~0.4 MB compressed) on the first DirectX/FNA compile. See the [In-Browser guide](../guides/in-browser-kni-blazor.md) and the [ShaderFiddle.Web sample](../samples/shaderfiddle-web.md).
 
 ## Why it's excluded from the API reference
 

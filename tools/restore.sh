@@ -285,7 +285,7 @@ restore_dxc_wasm() {
     local out_dir="$REPO_ROOT/.wasm-build/dxc-wasm-out"
     # M1 (Phase 23) destination: the faithful DXC->WASM module must be present in the
     # ShadowDusk.Wasm package wwwroot/dxc/ so it ships as a Blazor static web asset
-    # (served at _content/ShadowDusk.Wasm/dxc/). The 17.4 MB .wasm is gitignored and
+    # (served at _content/ShadowDusk.Wasm/dxc/). The ~19 MB .wasm is gitignored and
     # copied here from the built artifact.
     local pkg_dir="$REPO_ROOT/src/ShadowDusk.Wasm/wwwroot/dxc"
     local pkg_wasm="$pkg_dir/dxcompiler.wasm"
