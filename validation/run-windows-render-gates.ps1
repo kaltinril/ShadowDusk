@@ -100,7 +100,9 @@
                                    plus 30 matrix-interpolant packing fixtures whose stages declare
                                    the interpolant differently (column_major and row_major, 3x3 /
                                    4x3 / 3x4 / 2x2). Controls that must diverge: a relabelled
-                                   BINORMAL0 record, two row_major fixtures packed by columns, a split float1x4 in one register.
+                                   BINORMAL0 record, two row_major fixtures packed by columns, a split float1x4 in one register,
+                                   and, on a Mesa or Apple compatibility context, the integer-dialect case with its
+                                   prelude blanked, which must be refused.
                                    The non-square packing cases render and match on every driver,
                                    strict ones (Mesa/Apple/ANGLE) included, since issue #453 holds
                                    their GLSL as zero-padded square matN; a compile that still

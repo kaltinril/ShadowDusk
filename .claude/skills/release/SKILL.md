@@ -49,7 +49,8 @@ history, not just SemVer's letter):
    ```
 
    Other switches the script accepts: `-IncludeVulkan` (accepted as a no-op; Vulkan is default-ON
-   since issue #145), `-SkipRestore`, and `-NewerMonoGameOnly` (only the newer-MonoGame block).
+   since issue #145), `-SkipRestore`, `-NewerMonoGameOnly` (only the newer-MonoGame block), and
+   `-SkipDesktopGL4LinkAbort` (only on an Intel-GL box, never the release run; MonoGame#9612, issue #488).
 
    **`RELEASING.md` → Prerequisites item 5 is the authoritative description** of what these
    gates cover, which switches apply, and why CI cannot replace them — read it there rather
