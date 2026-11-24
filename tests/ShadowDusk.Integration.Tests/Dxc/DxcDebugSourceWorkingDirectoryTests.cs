@@ -55,11 +55,9 @@ public sealed class DxcDebugSourceWorkingDirectoryTests
 
     /// <summary>
     /// SHA-256 of the debug Vulkan <c>.mgfx</c>, measured on win-x64; every host must match it.
-    /// Re-measured 2026-10-03 when the bare <c>sampler s;</c>'s parameter took mgfxc's name
-    /// (<c>s</c>, was <c>s_SDTexture</c> plus a standalone sampler parameter <c>s</c>); the
-    /// SPIR-V is unchanged.
+    /// Re-measured for the DXC v1.9.2607 pin (Phase 70).
     /// </summary>
-    private const string ExpectedVulkanDebugSha256 = "091019E0BE05767FE18A3E4E09A54107318570EAEB4818E923677928D9C452B4";
+    private const string ExpectedVulkanDebugSha256 = "B33C96E9984EE0AD353B2F3FFB4B83DC26AC87926BA7329D86929AB73C2110B6";
 
     private const string Fx = """
         #if OPENGL
@@ -113,12 +111,10 @@ public sealed class DxcDebugSourceWorkingDirectoryTests
 
         // The positive control: the pre-fix compile really reads both decoys where the leaf-name
         // load succeeds, so the assertions above guard against something this host does.
-        bool leafLoadSucceedsAsIs = OperatingSystem.IsWindows() || OperatingSystem.IsMacOS();
+        // Every host now: the pinned Linux build's SONAME is its leaf name, so glibc answers the load too.
         clean["control"].ShouldBe(["none"], "[clean] nothing to read, nothing read");
-        decoy["control"].ShouldBe([leafLoadSucceedsAsIs ? "hlsl+fx" : "none"],
-            leafLoadSucceedsAsIs
-                ? "[decoy] DXC's pre-fix compile did not read hlsl.hlsl and the #line file from the working directory, so this test no longer shows the mechanism it guards"
-                : "[decoy] glibc should find nothing for DXC's leaf-name load, so DXC cannot read any file");
+        decoy["control"].ShouldBe(["hlsl+fx"],
+            "[decoy] DXC's pre-fix compile did not read hlsl.hlsl and the #line file from the working directory, so this test no longer shows the mechanism it guards");
         if (OperatingSystem.IsLinux())
         {
             scenarios[2].Values["control"].ShouldBe(["hlsl+fx"],

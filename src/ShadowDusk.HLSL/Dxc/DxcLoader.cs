@@ -8,12 +8,12 @@ using ShadowDusk.Core;
 namespace ShadowDusk.HLSL.Dxc;
 
 /// <summary>
-/// Makes DXC run as ShadowDusk's own pinned build, and only as that build: commit
-/// <c>e043f4a1286f4e1026222ab1bc94e25de8d0e959</c>, FileVersion 1.7.2212.40 (the same pin as
-/// the DXC-&gt;WASM build), so SPIR-V stays byte-identical across RIDs. The natives come from
-/// the Vortice.Dxc package on Windows and Linux; Vortice.Dxc 3.3.4 ships no macOS or Android
-/// native (the Phase 37 Finding A product gap), so there we load OUR OWN build of the same
-/// commit, never a substitute compiler.
+/// Makes DXC run as ShadowDusk's own pinned build, and only as that build: v1.9.2607, commit
+/// <c>0d3ee6b551b8fa768fbf825300ebab81047ef6a8</c>, the DXC MonoGame 3.8.6 bundles (the same pin
+/// as the DXC-&gt;WASM build), so SPIR-V stays byte-identical across RIDs. The natives ride in
+/// the ShadowDusk.HLSL package (Phase 70): Microsoft's release on win-x64, MonoGame's builds on
+/// Linux and macOS, and OUR OWN build of the same commit on win-arm64 and Android, never a
+/// substitute compiler. Vortice.Dxc supplies only the managed wrapper.
 ///
 /// <para><b>Why Vortice's event and not <c>SetDllImportResolver</c>.</b> The
 /// <c>dxcompiler.dll</c> P/Invokes live in the <b>Vortice.Dxc</b> assembly, whose <c>Dxc</c>
@@ -38,20 +38,16 @@ namespace ShadowDusk.HLSL.Dxc;
 /// path, so Vortice's handler never runs.</para>
 ///
 /// <para><b>Windows, Linux and macOS: the pinned natives, by absolute path, before anything
-/// else.</b> Loading is not left to name-based search. <c>dxcompiler.dll</c> binds its DXIL
-/// validator/signer from its own <c>DllMain</c> with a bare <c>LoadLibrary("dxil.dll")</c>,
-/// and a bare name resolves to an already-loaded module of that name first, then the
-/// application directory, the system directories and finally <c>PATH</c>. ShadowDusk used to
-/// call Vortice's <c>Dxc.LoadDxil()</c> (itself a bare <c>LoadLibrary("dxil.dll")</c>) before
-/// the first DXC P/Invoke; in the normal layout our <c>dxil.dll</c> sits in
-/// <c>runtimes/&lt;rid&gt;/native</c>, not the application directory, so that call loaded
-/// whichever <c>dxil.dll</c> the OS search found on <c>PATH</c> (every VS Developer Command
-/// Prompt puts the Windows SDK's 1.8 one there) and DXC then validated with it: every
-/// DirectX 12 compile failed with "DXIL container mismatch for 'PSVRuntimeInfoSize'", and a
-/// loadable non-validator decoy silently produced UNSIGNED DXIL. <see cref="Register"/> now
-/// locates the pinned natives, loads <c>dxil.dll</c> then <c>dxcompiler.dll</c> by full path
-/// (Linux: <c>libdxcompiler.so</c>; macOS: <c>libdxcompiler.dylib</c>) and verifies that the
-/// <c>dxil.dll</c> a bare-name lookup returns is the pinned build.</para>
+/// else.</b> Loading is not left to name-based search. Through DXC v1.7.2212,
+/// <c>dxcompiler.dll</c> bound its DXIL validator/signer from its own <c>DllMain</c> with a bare
+/// <c>LoadLibrary("dxil.dll")</c>, which took a <c>dxil.dll</c> from <c>PATH</c> (every VS
+/// Developer Command Prompt puts the Windows SDK's there) and failed every DirectX 12 compile.
+/// <see cref="Register"/> therefore locates the pinned natives, loads <c>dxil.dll</c> then
+/// <c>dxcompiler.dll</c> by full path (Linux: <c>libdxcompiler.so</c>; macOS:
+/// <c>libdxcompiler.dylib</c>) and verifies that the <c>dxil.dll</c> a bare-name lookup returns
+/// is the pinned build. <b>The pinned v1.9.2607 library no longer loads a validator at all</b>
+/// (measured, Phase 70): it validates and signs with its internal validator, to the same bytes.
+/// The pair check is kept unchanged for now, as the conservative behavior.</para>
 ///
 /// <para><b>Only the pinned build is ever loaded (issue #270).</b> A directory that holds a
 /// file with the right NAME is not enough: the host application's own directories can carry a
@@ -72,15 +68,10 @@ namespace ShadowDusk.HLSL.Dxc;
 /// DirectX 12) are refused; SPIR-V, <c>-Vd</c> and preprocess requests never call the validator
 /// and proceed (<see cref="CheckBoundValidator"/>). A copy of the pinned <c>dxil.dll</c> from
 /// another directory, or the pinned file reached through a <c>\\?\</c> path, is the same build
-/// and is accepted. Vortice's Linux <c>libdxcompiler.so</c> never opens a <c>libdxil</c>, so
-/// Linux has no validator to bind and ShadowDusk loads none. Our macOS and Android builds do:
-/// DXC's library constructor (<c>DllMain</c> -&gt; <c>InitMaybeFail</c> -&gt;
-/// <c>DxilLibInitialize</c>, <c>tools/clang/tools/dxcompiler</c> at the pinned commit) calls
-/// <c>dlopen("libdxil.dylib")</c> by leaf name ONCE, while <c>libdxcompiler</c> itself is being
-/// loaded, and <c>DxilLibIsEnabled</c> never retries after a miss. We ship no <c>libdxil</c>
-/// and cannot pre-empt a library we do not ship, so on macOS <see cref="Register"/> checks,
-/// right after its own load, whether any <c>libdxil</c> image is in the process and fails
-/// DirectX 12 loudly if so. That one <c>dlopen</c> happens inside <see cref="Register"/>.</para>
+/// and is accepted. Off Windows ShadowDusk ships and loads no <c>libdxil</c>, and the pinned
+/// library does not open one. macOS keeps the check it needed through v1.7.2212, when DXC's
+/// constructor opened <c>libdxil.dylib</c> by leaf name: <see cref="Register"/> fails DirectX 12
+/// loudly if any <c>libdxil</c> image is in the process.</para>
 ///
 /// <para><b>One load DOES happen later, inside a compile (issues #312, #332).</b> DXC's SPIR-V
 /// emitter loads <c>libdxcompiler</c> itself, by LEAF name, from inside every <c>-Zi</c>
@@ -88,18 +79,17 @@ namespace ShadowDusk.HLSL.Dxc;
 /// -&gt; <c>DxcDllSupport::Initialize</c>). It reaches dyld's lock, which is why
 /// <see cref="DxcForkGate"/> never makes a <c>fork()</c> wait for a compile; and a leaf name is
 /// a name search, which this class otherwise never allows. What that search answers is decided
-/// by the dynamic linker, not by us: Windows and dyld from macOS 14 hand back the already-loaded
-/// pinned image (by base name; by its <c>@rpath/</c> install name), glibc and older dyld search
-/// their directories. <see cref="DxcLeafNameLookup"/> asks the linker, without loading anything,
+/// by the dynamic linker, not by us: Windows, glibc and dyld from macOS 14 hand back the
+/// already-loaded pinned image (by base name; by the pinned build's <c>SONAME</c>; by its
+/// <c>@rpath/</c> install name), older dyld searches its directories. <see cref="DxcLeafNameLookup"/> asks the linker, without loading anything,
 /// right after the pinned load, and <see cref="CheckDebugSpirvLookup"/> refuses the debug SPIR-V
 /// compiles (<c>SD0223</c>) when the answer is not the pinned build: never silently a decoy.</para>
 ///
 /// <para><b>Where the natives are found.</b> Windows and Linux:
 /// <see cref="GetPinnedPairDirectories"/>. macOS: <see cref="GetMacCandidates"/>; the dylib
 /// ships packed into the ShadowDusk.HLSL NuGet under <c>runtimes/osx-{x64,arm64}/native</c> and
-/// as a restored artifact under <c>tools/dxc/osx-{x64,arm64}/</c> for repo builds (see
-/// tools/restore.ps1); both arches share one file name, so the copied layout is per-arch,
-/// exactly like vkd3d's. Android (Phase 50): our <c>libdxcompiler.so</c> rides in the APK's
+/// is copied to <c>osx-{x64,arm64}/</c> in repo builds; both arches share one file name, so the
+/// copied layout is per-arch, exactly like vkd3d's. Android (Phase 50): our <c>libdxcompiler.so</c> rides in the APK's
 /// per-ABI <c>lib/&lt;abi&gt;/</c> dir and is loaded by bare SONAME, never by path (Android
 /// W^X, and the APK is not a directory). The Android linker resolves an app's libraries only
 /// inside the app's own namespace, so no search path exists for a foreign build to sit on.
@@ -197,10 +187,10 @@ internal static class DxcLoader
     /// <summary>The operating system families <see cref="Register"/> distinguishes.</summary>
     internal enum DxcHost
     {
-        /// <summary>Windows: the pinned <c>dxil.dll</c> + <c>dxcompiler.dll</c> from Vortice.Dxc 3.3.4.</summary>
+        /// <summary>Windows: the pinned <c>dxil.dll</c> + <c>dxcompiler.dll</c> from ShadowDusk.HLSL.</summary>
         Windows,
 
-        /// <summary>Linux (glibc): the pinned <c>libdxcompiler.so</c> from Vortice.Dxc 3.3.4.</summary>
+        /// <summary>Linux (glibc): the pinned <c>libdxcompiler.so</c> from ShadowDusk.HLSL.</summary>
         Linux,
 
         /// <summary>macOS: our own <c>libdxcompiler.dylib</c>.</summary>
@@ -270,9 +260,8 @@ internal static class DxcLoader
         string version = resolved is null ? "(unknown version)" : $"{resolved.Major}.{resolved.Minor}.{resolved.Build}";
         return LoadError(
             $"This process resolved Vortice.Dxc {version}, but ShadowDusk.HLSL runs only with Vortice.Dxc " +
-            $"{pinned.ToString(3)}: that release ships ShadowDusk's pinned DXC (1.7.2212.40, e043f4a1), " +
-            "and ShadowDusk.HLSL is compiled against its API. Another release is a different DXC and a " +
-            "different API (3.8.3 fails every DXC call with MissingMethodException), so no DXC-backed " +
+            $"{pinned.ToString(3)}: ShadowDusk.HLSL is compiled against that release's API. Another " +
+            "release is a different API (3.8.3 fails every DXC call with MissingMethodException), so no DXC-backed " +
             "compile (DirectX 12, OpenGL, Vulkan) can run. The usual cause is another package raising " +
             "Vortice.Dxc (NuGet warns NU1608 at restore and ShadowDusk warns SD0220 at build): pin " +
             $"Vortice.Dxc to {pinned.ToString(3)} in the application " +
@@ -378,7 +367,7 @@ internal static class DxcLoader
         }
 
         return LoadError(
-            $"ShadowDusk's DXC for Android ({AndroidLibFileName}, DXC 1.7.2212.40) is not in this " +
+            $"ShadowDusk's DXC for Android ({AndroidLibFileName}, DXC {DxcNativeIdentity.PinnedDxcRelease}) is not in this " +
             $"app ({RuntimeInformation.RuntimeIdentifier}), so no DXC-backed compile (DirectX 12, " +
             "OpenGL, Vulkan) can run. It ships in the ShadowDusk.HLSL package for android-arm64 only " +
             "and must be packaged into the APK's lib/<abi>/ directory. DirectX 11 and FNA do not use DXC.");
@@ -409,7 +398,7 @@ internal static class DxcLoader
         if (pinnedCompiler is null)
         {
             return LoadError(
-                $"ShadowDusk bundles no DXC for '{rid}' (it ships the pinned DXC 1.7.2212.40 for " +
+                $"ShadowDusk bundles no DXC for '{rid}' (it ships the pinned DXC {DxcNativeIdentity.PinnedDxcRelease} for " +
                 "win-x64, win-arm64, linux-x64, osx-x64, osx-arm64 and android-arm64), so no " +
                 "DXC-backed compile can run in this process. ShadowDusk will not use a DXC found " +
                 "elsewhere on the machine, which would be a different compiler.");
@@ -456,7 +445,16 @@ internal static class DxcLoader
             // A pinned-version file can still be unloadable here: win-x64 and win-arm64 carry
             // the same version stamp, and the flat directories are probed whatever the RID, so
             // the other architecture's copy can come first. Skip it and keep looking; it is
-            // reported only if no candidate loads.
+            // reported only if no candidate loads. Asked before the load, because an ARM64EC
+            // file would load into an x64 process and crash it (DxcNativeIdentity).
+            if (windows
+                && (!DxcNativeIdentity.IsPeForArchitecture(dxcPath, architecture)
+                    || !DxcNativeIdentity.IsPeForArchitecture(dxilPath!, architecture)))
+            {
+                unloadable.Add($"'{dxcPath}' is not built for this process's architecture ({architecture})");
+                continue;
+            }
+
             try
             {
                 if (dxilPath is not null)
@@ -496,7 +494,7 @@ internal static class DxcLoader
             return null;
         }
 
-        string package = mac ? "the ShadowDusk.HLSL package" : "the Vortice.Dxc 3.3.4 package";
+        const string package = "the ShadowDusk.HLSL package";
         string pinned = $"{natives}, DXC {pinnedCompiler}, from {package}'s runtimes/{rid}/native";
         string searched = " Searched: " + string.Join("; ", candidates.Select(Path.GetDirectoryName).Distinct()) + ".";
         string unloaded = unloadable.Count == 0
@@ -599,7 +597,7 @@ internal static class DxcLoader
             : $"'{image.Value.Path}' (build id {image.Value.BuildId ?? "none"})";
         return LoadError(pinned is null
             ? $"The DXC loaded from {requested} for '{rid}' is {mapped}, and ShadowDusk bundles no DXC " +
-              "for that ABI (it ships its pinned DXC 1.7.2212.40 for android-arm64), so it is not " +
+              $"for that ABI (it ships its pinned DXC {DxcNativeIdentity.PinnedDxcRelease} for android-arm64), so it is not " +
               "ShadowDusk's build and no DXC-backed compile (DirectX 12, OpenGL, Vulkan) can run. " +
               "DirectX 11 and FNA do not use DXC."
             : $"The DXC loaded from {requested} is {mapped}, not ShadowDusk's pinned build for '{rid}' " +

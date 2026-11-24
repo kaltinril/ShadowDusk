@@ -3,13 +3,12 @@
     ShadowDusk.HLSL build-time check (issue #282): warn when the project resolves a Vortice.Dxc
     other than the one release ShadowDusk.HLSL runs with.
 
-    Why it exists. ShadowDusk.HLSL depends on Vortice.Dxc [3.3.4] (an exact range): 3.3.4 ships
-    ShadowDusk's pinned DXC natives (1.7.2212.40, e043f4a1) and ShadowDusk.HLSL is compiled
-    against its managed API. Another package in the application (Evergine.DirectX12 pulls
+    Why it exists. ShadowDusk.HLSL depends on Vortice.Dxc [3.3.4] (an exact range): it is compiled
+    against that release's managed API (the DXC natives ride in ShadowDusk.HLSL itself since
+    Phase 70). Another package in the application (Evergine.DirectX12 pulls
     3.8.3, measured) or a direct / central-package-management reference can raise it. NuGet then
     warns NU1608 but still resolves the higher version, and every DirectX 12 / OpenGL / Vulkan
-    compile fails at RUNTIME with SD0219 (3.8.3 is a different DXC, 1.9.2602.17, and a
-    binary-incompatible API). This warning moves that discovery to build time and names the fix.
+    compile fails at RUNTIME with SD0219 (3.8.3 has a binary-incompatible API). This warning moves that discovery to build time and names the fix.
 
     A WARNING, never an error: DirectX 11 and FNA consumers do not use DXC and must keep
     building. Silence it with <NoWarn>$(NoWarn);SD0220</NoWarn> once the conflict is understood
@@ -23,6 +22,25 @@
   <PropertyGroup>
     <_ShadowDuskPinnedVorticeDxcVersion>3.3.4</_ShadowDuskPinnedVorticeDxcVersion>
   </PropertyGroup>
+
+  <!--
+    Phase 70: ShadowDusk.HLSL carries the pinned DXC natives under the same runtimes/<rid>/native
+    file names Vortice.Dxc's own natives use, and takes none from it (ExcludeAssets="native" on
+    its dependency). A project that ALSO references Vortice.Dxc directly, which is the fix SD0220
+    names, brings Vortice's 1.7 natives back in on that edge, and the SDK then keeps one file per
+    name by file version: Vortice's dxil.dll (101.7.x) beat ours (1.9.0.x), a mixed pair that every
+    DXC-backed compile refuses with SD0219 (measured). Vortice's copies of ShadowDusk's files are
+    dropped before that resolution; anything else it ships (libdxil.so) is left alone.
+  -->
+  <Target Name="_ShadowDuskDropVorticeDxcNatives"
+          AfterTargets="ResolvePackageAssets">
+    <ItemGroup>
+      <_ShadowDuskVorticeNative Include="@(RuntimeTargetsCopyLocalItems);@(NativeCopyLocalItems)"
+                                Condition="('%(NuGetPackageId)' == 'Vortice.Dxc' or '%(NuGetPackageId)' == 'Vortice.Dxc.Native') and ('%(Filename)%(Extension)' == 'dxcompiler.dll' or '%(Filename)%(Extension)' == 'dxil.dll' or '%(Filename)%(Extension)' == 'libdxcompiler.so')" />
+      <RuntimeTargetsCopyLocalItems Remove="@(_ShadowDuskVorticeNative)" />
+      <NativeCopyLocalItems Remove="@(_ShadowDuskVorticeNative)" />
+    </ItemGroup>
+  </Target>
 
   <Target Name="_ShadowDuskCheckVorticeDxcVersion"
           AfterTargets="ResolvePackageAssets">
@@ -38,6 +56,6 @@
 
     <Warning Code="SD0220"
              Condition="'$(_ShadowDuskResolvedVorticeDxcVersion)' != '' and '$(_ShadowDuskResolvedVorticeDxcVersion)' != '$(_ShadowDuskPinnedVorticeDxcVersion)'"
-             Text="This project resolves Vortice.Dxc $(_ShadowDuskResolvedVorticeDxcVersion), but ShadowDusk.HLSL runs only with Vortice.Dxc $(_ShadowDuskPinnedVorticeDxcVersion), the release that ships ShadowDusk's pinned DXC (1.7.2212.40). With any other version every DirectX 12, OpenGL and Vulkan compile fails at runtime with SD0219 (DirectX 11 and FNA do not use DXC and are unaffected). Fix: pin it in this project, &lt;PackageReference Include=&quot;Vortice.Dxc&quot; Version=&quot;$(_ShadowDuskPinnedVorticeDxcVersion)&quot; /&gt; (or the matching PackageVersion under central package management). If a package here requires the newer Vortice.Dxc (NU1608 above names it), ShadowDusk's DXC-backed targets cannot run in this application; compile those shaders at build time instead. Suppress with NoWarn SD0220." />
+             Text="This project resolves Vortice.Dxc $(_ShadowDuskResolvedVorticeDxcVersion), but ShadowDusk.HLSL runs only with Vortice.Dxc $(_ShadowDuskPinnedVorticeDxcVersion), the managed API it is compiled against. With any other version every DirectX 12, OpenGL and Vulkan compile fails at runtime with SD0219 (DirectX 11 and FNA do not use DXC and are unaffected). Fix: pin it in this project, &lt;PackageReference Include=&quot;Vortice.Dxc&quot; Version=&quot;$(_ShadowDuskPinnedVorticeDxcVersion)&quot; /&gt; (or the matching PackageVersion under central package management). If a package here requires the newer Vortice.Dxc (NU1608 above names it), ShadowDusk's DXC-backed targets cannot run in this application; compile those shaders at build time instead. Suppress with NoWarn SD0220." />
   </Target>
 </Project>

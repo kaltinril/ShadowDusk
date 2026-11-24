@@ -23,7 +23,8 @@ var result = await compiler.CompileAsync(hlslSource,
 ```
 
 > [!NOTE]
-> ShadowDusk runs only with **Vortice.Dxc 3.3.4**, the release that carries its pinned DXC. If
+> ShadowDusk runs only with **Vortice.Dxc 3.3.4**, the managed wrapper it is compiled against (the
+> DXC natives ride inside the ShadowDusk packages). If
 > another package in your application raises Vortice.Dxc (Evergine.DirectX12 pulls 3.8.3, for
 > example), your build shows warning `SD0220` next to NuGet's `NU1608`, and DirectX 12, OpenGL and
 > Vulkan compiles fail at runtime with `SD0219`; DirectX 11 and FNA are unaffected. Pin it with

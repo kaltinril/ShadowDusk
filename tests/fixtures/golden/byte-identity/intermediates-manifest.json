@@ -36,12 +36,12 @@
     "spirv": "7b10b27cb2dd3469a59aaf2de6e13b2680999886e7baf90c55c22998c3d18713"
   },
   "OpenGL/Dots.fx": {
-    "glsl": "36cf233eef3a92b66c017ed2d271e80b8a2fe4a7909abba1d3a99a19f5d2e448",
-    "spirv": "5fca23ebec0547f1128d074f0d7b5b064a448efaa0b29f58dabb5038a0ee4a0d"
+    "glsl": "d22ee7717ba84201c727636b207b561f193df9b5ad5934d409330bfecd3f3244",
+    "spirv": "640b118ac9d6b131f7a23b7e4a1a880db2bfedbdf5f1375b8f78804d849ac35b"
   },
   "OpenGL/Fading.fx": {
-    "glsl": "dca04f92d7834443cce42726c26292cae6fbaf2cd95995ee14286541cfbaaae5",
-    "spirv": "a9ac8ab942cf0c418baca457f862b713ced580d0884ba8e3df0a960daa1e8f11"
+    "glsl": "55c48bdee6a56a9e6fdc2f9f5023e5e45e42ad09532579de71d11c4cad69e327",
+    "spirv": "2b1785436d538685adbcc89a9d611b6dbe682800791cfa0bbde612a16ff1836b"
   },
   "OpenGL/FnaMultiPassStates.fx": {
     "glsl": "beb097a61bf90774e0992f87a91ba076ef93bc3997c711a5985b93e8ca05272f",
@@ -52,8 +52,8 @@
     "spirv": "16ab48d75f6b9d0386b64ff12479b29c06235b3dd4780bbce34b78dcc1b73eeb"
   },
   "OpenGL/HalfGlobals.fx": {
-    "glsl": "df68adf8a5531c61a36dfdc7206db5c46cd7c67fe78f2f6385b40bf810a4b4f7",
-    "spirv": "d3f2ea0113f4f929a9553437714deb684e85986dc99493ccb398f1afa7eaa193"
+    "glsl": "ac73d1a96e2a2284055d2d91f237aa6fab97fb47c79e59b5bd5e934c4aa4d319",
+    "spirv": "fb629ca4ab30b50ed9bc6eaebadc14383e94a7d7b74c264b32f61a38caeef015"
   },
   "OpenGL/ImplicitTruncationWarning.fx": {
     "glsl": "ac9e7d56d0ccb9c0bb4389252fa6e61f318f1dd268b4a7b77184c7137a1f3275",
@@ -80,8 +80,8 @@
     "spirv": "be4837b14b7a9dd100df814e621d88a931ef24ef1a0b4918647fda8dc9d665c5"
   },
   "OpenGL/MultiTextureOverlay.fx": {
-    "glsl": "741fee802dd7e3249d31aa2afd996a68b16c6d3789f2cad264ecf3b8888d92e6",
-    "spirv": "2bb11845c5afdfdcbf7dfe85978eb4f38bc39e8fadcd2162a502da7c7c48f58f"
+    "glsl": "eadef847204f755188ad250d28e8a2605acd220afc8635e31a08d3180dcb8758",
+    "spirv": "2e6a283a1f2a556c5ba2dd930456306fe87de8ebf1427f373a3ebe01d3dbc114"
   },
   "OpenGL/Pixelated.fx": {
     "glsl": "48bc82886a1e5d4daf4bb0b0f93971094920d80d3869e2971f3c4d7648ac20ee",

@@ -203,6 +203,6 @@ That's the whole integration. The full working version is
 ## 8. Rebuilding the DXC→WASM module (only if you bump the DXC pin)
 
 You don't need to — the built module is committed. But the full reproducible recipe is
-`.wasm-build/DXC-WASM-BUILD.md` + `Invoke-DxcWasmBuild.ps1` (pinned DXC `e043f4a1` ==
-Vortice.Dxc 3.3.4, emscripten 3.1.34). It's a multi-hour LLVM-fork build and is
+`.wasm-build/DXC-WASM-BUILD.md` + `Invoke-DxcWasmBuild.ps1` (pinned DXC v1.9.2607,
+`0d3ee6b5`, emscripten 3.1.34). It's a multi-hour LLVM-fork build and is
 **Windows/MSVC-only today**; a Linux/macOS rebuild + CI is planned future work.

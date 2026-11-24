@@ -278,7 +278,10 @@ internal sealed class CompilationPipeline
         // macro set can define __KNIFX__ for a KNIFX-targeted compile (KNI's compiler always
         // does — see PlatformMacros.For(target, container)). Same value reused at Seam 5 below.
         EffectContainer effectiveContainer = options.Profile?.Container ?? options.Container;
-        MacroSet macros = PlatformMacros.For(options.Target, effectiveContainer);
+        MacroSet macros = PlatformMacros.For(options.Target, effectiveContainer) with
+        {
+            DxcLanguageVersion = ShadowDusk.HLSL.Dxc.DxcLanguageVersion.For(options.Target),
+        };
         if (options.Defines.Count > 0)
         {
             // mgfxc /Defines: parity (bug-hunt 2026-07-27 M9). User macros ride with the
@@ -408,6 +411,7 @@ internal sealed class CompilationPipeline
                 Macros         = macros.Macros
                     .Select(m => (m.Name, (string?)m.Value.ToString(System.Globalization.CultureInfo.InvariantCulture)))
                     .ToList(),
+                LanguageVersion = macros.DxcLanguageVersion,
             };
 
             Result<string, ShaderError> expandResult =
@@ -2407,6 +2411,7 @@ internal sealed class CompilationPipeline
             Macros         = macros.Macros
                 .Select(m => (m.Name, (string?)m.Value.ToString(System.Globalization.CultureInfo.InvariantCulture)))
                 .ToList(),
+            LanguageVersion = macros.DxcLanguageVersion,
         };
 
         Result<string, ShaderError> result = dxcCompiler.Value.Preprocess(request, cancellationToken);

@@ -492,11 +492,10 @@ public sealed class CrossHostByteIdentityTests
 }
 
 /// <summary>
-/// Availability gate for tests whose pipeline starts at DXC. On Windows/Linux the
-/// native ships inside the Vortice.Dxc NuGet (always present); on macOS it is our own
-/// restored dylib (Phase 37 A, <c>tools/restore</c> → <c>tools/dxc/osx-*/</c>), so the
-/// test skips with a clear reason when it has not been restored — the FnaTestGate
-/// pattern, applied to DXC.
+/// Availability gate for tests whose pipeline starts at DXC. Linux and macOS take the native
+/// from a NuGet package; Windows from <c>tools/restore</c> (<c>tools/dxc/win-*</c>), so the test
+/// skips with a clear reason when it has not been restored: the FnaTestGate pattern, applied
+/// to DXC.
 /// </summary>
 public sealed class DxcFactAttribute : FactAttribute
 {
@@ -512,18 +511,34 @@ public sealed class DxcFactAttribute : FactAttribute
     }
 }
 
+/// <summary>The theory form of <see cref="DxcFactAttribute"/>, with the same gate.</summary>
+public sealed class DxcTheoryAttribute : TheoryAttribute
+{
+    public DxcTheoryAttribute()
+    {
+        if (ShadowDusk.Tests.Shared.NativeRequirement.ShouldSkip(
+                DxcTestGate.DxcAvailable,
+                Environment.GetEnvironmentVariable(ShadowDusk.Tests.Shared.NativeRequirement.DxcEnvVar)))
+            Skip = DxcTestGate.SkipReason;
+    }
+}
+
 /// <summary>macOS-only DXC dylib probe; mirrors <see cref="FnaTestGate"/> / DxcLoader.</summary>
 internal static class DxcTestGate
 {
     internal const string SkipReason =
-        "macOS DXC native (libdxcompiler.dylib) not found (restore it via tools/restore — " +
-        "see plan/DONE/PHASE-37-cross-platform-native-availability.md, finding A).";
+        "DXC native not found beside the test assembly (restore it via tools/restore).";
 
     internal static bool DxcAvailable { get; } = ProbeDxc();
 
     private static bool ProbeDxc()
     {
-        // Vortice.Dxc ships the win-x64/win-arm64/linux-x64 natives transitively.
+        if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
+        {
+            string rid = RuntimeInformation.ProcessArchitecture == Architecture.Arm64 ? "win-arm64" : "win-x64";
+            return File.Exists(Path.Combine(AppContext.BaseDirectory, "runtimes", rid, "native", "dxcompiler.dll"));
+        }
+
         if (!RuntimeInformation.IsOSPlatform(OSPlatform.OSX))
             return true;
 

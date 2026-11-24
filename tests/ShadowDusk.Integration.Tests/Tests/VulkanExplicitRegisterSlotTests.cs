@@ -780,14 +780,15 @@ public sealed class VulkanExplicitRegisterSlotTests
 
     [Theory]
     [InlineData("#if __HLSL_VERSION >= 2018", "TexB")]
-    [InlineData("#if __HLSL_VERSION >= 2021", "TexA")]
+    [InlineData("#if __HLSL_VERSION >= 2021", "TexB")]
+    [InlineData("#if __HLSL_VERSION >= 2022", "TexA")]
     [InlineData("#ifdef __spirv__", "TexB")]
     [InlineData("#if __SHADER_TARGET_STAGE == __SHADER_STAGE_PIXEL", "TexB")]
     [InlineData("#if __SHADER_TARGET_STAGE == __SHADER_STAGE_VERTEX", "TexA")]
     public async Task Vulkan_APairingUnderAConditionalOnAMeasuredPredefine_IsTheOneDxcCompiles(string conditional, string sampled)
     {
         // Each branch reads a different texture: the one bound must be the one DXC compiled, with
-        // the measured value (2018, __spirv__ defined, the PIXEL stage for a pixel shader).
+        // the measured value (2021, __spirv__ defined, the PIXEL stage for a pixel shader).
         string source = $$"""
             Texture2D TexA; Texture2D TexB; SamplerState S;
             float4 MainPS(float4 pos : SV_Position, float2 uv : TEXCOORD0) : SV_Target0 {
@@ -855,7 +856,7 @@ public sealed class VulkanExplicitRegisterSlotTests
     public async Task Vulkan_AFileTestingTheDxcVersion_PairsOverTheWholeFile_AsBefore()
     {
         // __DXC_VERSION_* is the DXC build's own stamp and differs by host for the same pinned DXC
-        // (1.7.2212.40 on Windows, 1.7.0.3759 on Linux, measured 2026-10-31), so it is not seeded
+        // (1.9.0.5402 on Windows, 1.9.0.1 on Linux and macOS), so it is not seeded
         // (DxcSpirvPredefinedMacros): the managed view cannot know it, so it neither drops the '#if 0'
         // line nor reads the calls: every line and every function counts, as in the released rewrite.
         // The dead call comes first and decides SpriteTexture's sampler, so the live one gets an

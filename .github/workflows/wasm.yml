@@ -131,6 +131,13 @@ jobs:
             echo "::error::dxcompiler.wasm is missing from src/ShadowDusk.Wasm/wwwroot/dxc/ after tools/restore.sh. It is copied from the force-committed .wasm-build/dxc-wasm-out/dxcompiler.wasm, so either that blob or restore.sh's Restore-DxcWasm step has regressed."
             exit 1
           fi
+          # The emscripten loader is generated with the .wasm and calls it through a minified import
+          # table, so a rebuilt module with the previous loader traps at startup (Phase 70). restore
+          # copies only the .wasm; the loader is committed in both places and must stay equal.
+          if ! cmp -s .wasm-build/dxc-wasm-out/dxcompiler.js src/ShadowDusk.Wasm/wwwroot/dxc/dxcompiler.js; then
+            echo "::error::src/ShadowDusk.Wasm/wwwroot/dxc/dxcompiler.js is not the loader built with .wasm-build/dxc-wasm-out/dxcompiler.wasm. Copy it."
+            exit 1
+          fi
           echo "present=true" >> "$GITHUB_OUTPUT"
           echo "dxcompiler.wasm present — Wasm build/pack + faithful smoke ENABLED."
 

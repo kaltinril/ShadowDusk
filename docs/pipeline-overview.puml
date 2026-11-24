@@ -193,7 +193,7 @@ O_RAYLIB --> R_RAYLIB : "image-fidelity vs the same .fx\non real MonoGame GL: 15
 
 note as N1
 == Bundled native binaries (the blue boxes - ride inside the NuGet, no fxc / mgfxc / Wine / SDK)
-**DXC** = Vortice.Dxc (desktop) / DXC.wasm / DXC.so (android)   |   **SPIRV-Cross** = Silk.NET P/Invoke / .wasm / .so (android)   |   **vkd3d-shader** (+ d3dcompiler_47, Windows only) = desktop natives / vkd3d.wasm in the browser (DX/FNA, not on the GL/Android path)
+**DXC** = pinned v1.9.2607 natives via the Vortice.Dxc wrapper (desktop) / DXC.wasm / DXC.so (android)   |   **SPIRV-Cross** = Silk.NET P/Invoke / .wasm / .so (android)   |   **vkd3d-shader** (+ d3dcompiler_47, Windows only) = desktop natives / vkd3d.wasm in the browser (DX/FNA, not on the GL/Android path)
 
 == Delivery shapes (one and the same library)
 **Library** IShaderCompiler.CompileAsync(fx) -> bytes  *(the product)*   |   **CLI** ShadowDuskCLI   |   **MGCB plugin** (.mgcb)   |   **Content Builder library** (ShadowDusk.ContentPipeline: the same importer/processor as a lib for MonoGame 3.8.5's C# ContentBuilder)   |   **direct .xnb** (CompiledShader.ToXnb() / an .xnb CLI output path - Content.Load<Effect> ready, MGCB not involved)   |   **WASM** in-browser compile

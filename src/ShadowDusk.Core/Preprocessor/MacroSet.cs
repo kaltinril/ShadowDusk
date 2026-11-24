@@ -19,6 +19,12 @@ public sealed record MacroSet(IReadOnlyList<MacroDefinition> Macros)
     public IReadOnlyList<UserDefine> UserDefines { get; init; } = [];
 
     /// <summary>
+    /// The HLSL language version this target's DXC compiles run at, so a preprocess-only run
+    /// takes the same <c>__HLSL_VERSION</c> branches as the compile. Null means DXC's 2018.
+    /// </summary>
+    internal string? DxcLanguageVersion { get; init; }
+
+    /// <summary>
     /// Renders the macros as a header block of <c>#define</c> lines followed by a
     /// <c>#line 1</c> directive that restores the original file path for diagnostics.
     /// </summary>

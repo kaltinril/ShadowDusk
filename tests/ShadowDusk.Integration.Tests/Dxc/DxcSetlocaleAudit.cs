@@ -38,22 +38,11 @@ namespace ShadowDusk.Integration.Tests.Dxc;
 internal static class DxcSetlocaleAudit
 {
     /// <summary>
-    /// The steps that may change the locale from <c>C</c>: the raw native compile calls, where
-    /// DXC's shims live, and the two primes that exist to make that change under the fork gate.
-    /// Any other step changing it would be a new DXC entry point that calls <c>setlocale</c>,
-    /// to be measured before it is trusted.
+    /// The step that must flip the locale for the measurement to mean anything: this audit's own
+    /// <c>setlocale</c>. DXC itself stopped calling it in v1.9.2602, so it can no longer be the
+    /// control.
     /// </summary>
-    public static readonly IReadOnlySet<string> LocaleChangingSteps = new HashSet<string>(StringComparer.Ordinal)
-    {
-        "signal-isolation-prime",
-        "locale-settle",
-        "compile-native-call",
-        "failing-compile-native-call",
-        "preprocess-native-call",
-    };
-
-    /// <summary>The step that must flip the locale for the measurement to mean anything.</summary>
-    public const string PositiveControl = "compile-native-call";
+    public const string PositiveControl = "detector-control";
 
     private const string Hlsl = """
         cbuffer Params { float4x4 World; float4 Tint; };
@@ -77,6 +66,15 @@ internal static class DxcSetlocaleAudit
             Console.Error.WriteLine("cannot set the C locale: " + ProbeLibc.CurrentLocale());
             return 3;
         }
+
+        Step(PositiveControl, () =>
+        {
+            foreach (string locale in new[] { "C.UTF-8", "C.utf8", "en_US.UTF-8", "en_US.utf8" })
+            {
+                if (ProbeLibc.SetLocale(locale))
+                    return;
+            }
+        });
 
         DxcLoader.Register();
         IDxcCompiler3 compiler = null!;

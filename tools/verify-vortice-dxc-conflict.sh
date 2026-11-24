@@ -8,7 +8,8 @@
 #   2. at RUN time: SD0219 naming the resolved Vortice.Dxc for the DXC-backed target (OpenGL),
 #      never a raw exception or a compile with a different DXC, while DirectX 11 and FNA (no DXC)
 #      keep compiling;
-# and the fix the messages name (pin Vortice.Dxc 3.3.4) must clear both. Exits non-zero on any
+# and the fix the messages name (pin Vortice.Dxc 3.3.4) must clear both, including through a
+# RID-specific publish, where Vortice's own 1.7 natives would collide with ShadowDusk's by name. Exits non-zero on any
 # failure. Used by .github/workflows/pack-consume.yml on all three OSes; runnable locally (bash on
 # Windows: Git Bash) after packing Core/HLSL/GLSL/Compiler into a feed, or with --pack.
 #
@@ -125,6 +126,20 @@ if scenario pinned "$PINNED"; then
     check "pinned: OpenGL compiles" test "$(value "$APP/run-pinned.log" OpenGL)" = OK
     check "pinned: DirectX 11 compiles" test "$(value "$APP/run-pinned.log" DirectX)" = OK
     check "pinned: FNA compiles" test "$(value "$APP/run-pinned.log" Fna)" = OK
+fi
+
+# ---- 2b. the same pin through a RID-specific publish, which flattens every native into one ---
+# directory: the file-name collision between Vortice's natives and ShadowDusk's (Phase 70).
+HOST_RID="$(dotnet --info | sed -n 's/^ *RID: *//p' | head -n1 | tr -d '\r')"
+RID_OUT="$APP/out-pinned-rid"
+if (cd "$APP" && dotnet publish -c Release -r "$HOST_RID" --self-contained false -o "$RID_OUT" \
+        -p:SdVersion="$VERSION" -p:VorticeVersion="$PINNED" --nologo > "$APP/publish-pinned.log" 2>&1); then
+    (cd "$RID_OUT" && dotnet ScratchVorticeConflict.dll) > "$APP/run-pinned-rid.log" 2>&1 || true
+    check "pinned, $HOST_RID publish: OpenGL compiles" test "$(value "$APP/run-pinned-rid.log" OpenGL)" = OK
+else
+    cat "$APP/publish-pinned.log"
+    echo "::error::pinned: the $HOST_RID publish FAILED"
+    fail=1
 fi
 
 # ---- 3. no Vortice.Dxc reference at all: the ordinary consumer sees nothing new -------------

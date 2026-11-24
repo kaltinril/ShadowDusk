@@ -11,7 +11,7 @@ internal static class DxcFlagBuilder
     /// modification time it cannot read, a string literal.
     /// </summary>
     /// <remarks>
-    /// The pinned DXC (Vortice.Dxc 3.3.4's <c>dxcompiler</c>) ends the process with a fail-fast
+    /// The pinned DXC ends the process with a fail-fast
     /// (<c>0xC0000409</c>) whenever its preprocessor EXPANDS the built-in <c>__TIMESTAMP__</c>
     /// (the modification time of the in-memory input, which it cannot stat): in a preprocess-only
     /// run as in a compile, on every target, also when the name is assembled by token pasting
@@ -34,7 +34,8 @@ internal static class DxcFlagBuilder
         ShaderStage stage,
         string entryPoint,
         IReadOnlyList<(string Name, string? Value)> macros,
-        DxcCompileOptions? options = null)
+        DxcCompileOptions? options = null,
+        string? languageVersion = null)
     {
         options ??= new DxcCompileOptions();
 
@@ -169,6 +170,8 @@ internal static class DxcFlagBuilder
 
         args.Add("-T");
         args.Add(profile);
+        args.Add(DxcLanguageVersion.Flag);
+        args.Add(languageVersion ?? DxcLanguageVersion.For(platform));
 
         args.AddRange(platformFlags);
 
@@ -242,9 +245,14 @@ internal static class DxcFlagBuilder
     /// process even in a preprocess-only run).
     /// </summary>
     public static IReadOnlyList<string> BuildPreprocess(
-        IReadOnlyList<(string Name, string? Value)> macros)
+        IReadOnlyList<(string Name, string? Value)> macros,
+        string? languageVersion = null)
     {
-        var args = new List<string> { "-P", NoBuiltinMacroRedefinedWarning, TimestampDefine };
+        var args = new List<string>
+        {
+            "-P", DxcLanguageVersion.Flag, languageVersion ?? DxcLanguageVersion.Legacy,
+            NoBuiltinMacroRedefinedWarning, TimestampDefine,
+        };
 
         foreach ((string name, string? value) in macros)
         {

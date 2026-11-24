@@ -3,8 +3,8 @@
 # push/PR. This is Phase 30 §6, reconciled with the AS-BUILT native strategy:
 #
 #   * SPIRV-Cross (OpenGL path) ships TRANSITIVELY via the Silk.NET.SPIRV.Cross.Native
-#     NuGet, and DXC via Vortice.Dxc — both are restored by `dotnet restore` and live
-#     in the NuGet package cache. There is NO `tools/spirv-cross/` bundling step (the
+#     NuGet. DXC rides in ShadowDusk.HLSL: Linux and macOS from MonoGame.Tool.Dxc (dotnet
+#     restore), Windows and Android from tools/restore. There is NO `tools/spirv-cross/` bundling step (the
 #     doc's §3/§4 manual-bundle + native-versions.json model is OBSOLETE here).
 #   * The DirectX DXBC backend's `vkd3d-shader` native is a RESTORED, non-redistributed
 #     artifact. `tools/restore.*` verifies/recipes it and NO-OPs gracefully when absent
@@ -147,7 +147,7 @@ jobs:
           path: tools/vkd3d
           key: vkd3d-2.1-${{ runner.os }}
 
-      # Same pattern for the pinned macOS DXC dylibs (Phase 37 A).
+      # Same pattern for the DXC natives restored into tools/dxc (Windows and Android, Phase 70).
       - name: Cache DXC macOS natives
         uses: actions/cache@v6
         with:
@@ -166,7 +166,7 @@ jobs:
           key: spirv-cross-android-${{ runner.os }}-${{ hashFiles('tools/restore.sh', 'tools/restore.ps1') }}
 
       # Restore the vkd3d-shader natives (DirectX DXBC backend + the FNA target's
-      # engine) and the macOS DXC dylibs (OpenGL frontend on macOS, Phase 37 A).
+      # engine) and the Windows and Android DXC natives (Phase 70).
       # A failed pinned DOWNLOAD only warns (the script is offline-tolerant by design;
       # vkd3d-dependent tests skip / fail SD0211 loudly) — but the script's own exit
       # code is honored: do NOT wrap it in `|| true` (that once swallowed every restore
@@ -199,8 +199,10 @@ jobs:
             'tools/vkd3d/libvkd3d-shader.so.1' \
             'tools/vkd3d/osx-x64/libvkd3d-shader.1.dylib' \
             'tools/vkd3d/osx-arm64/libvkd3d-shader.1.dylib' \
-            'tools/dxc/osx-x64/libdxcompiler.dylib' \
-            'tools/dxc/osx-arm64/libdxcompiler.dylib' \
+            'tools/dxc/win-x64/dxcompiler.dll' \
+            'tools/dxc/win-x64/dxil.dll' \
+            'tools/dxc/win-arm64/dxcompiler.dll' \
+            'tools/dxc/win-arm64/dxil.dll' \
             'tools/dxc/android-arm64/libdxcompiler.so' \
             'tools/dxc/android-x64/libdxcompiler.so' \
             'tools/spirv-cross/android-arm64/libspirv-cross.so' \

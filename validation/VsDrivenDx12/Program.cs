@@ -502,9 +502,9 @@ int CompareToBaseline(string label, int tolerance)
 // Tolerance 1/255, against the REAL locally-generated mgfxc golden (not the embedded resource,
 // which DX11's investigation showed is a vkd3d-shader artifact, not a valid oracle — see above).
 //
-// ROOT-CAUSED 2026-07-31: the residual 1/255 is the PINNED DXC BUILD, not a ShadowDusk defect.
-// Both sides compile the same HLSL to DXIL, but with different DXC binaries — ours is
-// `dxcoob 1.7.2212.40 (e043f4a12)` (the Vortice.Dxc 3.3.4 pin), the golden's is
+// ROOT-CAUSED 2026-07-31: the residual 1/255 was the PINNED DXC BUILD, not a ShadowDusk defect.
+// Both sides compiled the same HLSL to DXIL, but with different DXC binaries — ours was
+// `dxcoob 1.7.2212.40 (e043f4a12)` (the pin before Phase 70), the golden's is
 // `dxcoob 1.8.2505.32 (b106a961d)` (MonoGame 3.8.5's bundled DXC), both readable in the blobs'
 // own `!llvm.ident` metadata. Evidence chain:
 //   * Feeding ShadowDusk's OWN pre-parsed/flattened HLSL and ShadowDusk's OWN DXC flags to a

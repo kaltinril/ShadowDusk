@@ -2,6 +2,7 @@
 
 using System.Buffers.Binary;
 using System.Diagnostics;
+using System.Runtime.InteropServices;
 using ShadowDusk.Core;
 
 namespace ShadowDusk.HLSL.Dxc;
@@ -34,8 +35,9 @@ internal enum DxcNativeKind
 /// <list type="bullet">
 /// <item>Windows (PE): the four-part FILEVERSION of the version resource plus the build tag
 ///   that follows it in the ProductVersion string (for <c>dxcompiler.dll</c> the source
-///   commit, <c>1.7.2212.40 (e043f4a12)</c>), so a rebuild that reuses the version number
-///   from other sources does not pass.</item>
+///   commit, <c>1.9.0.5402 (0d3ee6b55-dirty)</c>). It tells other DXC versions apart, but not two
+///   builds of this commit: Microsoft's build of the tag carries the same stamp as ours, and
+///   compiles the corpus to the same bytes.</item>
 /// <item>Linux (ELF): the GNU build id note.</item>
 /// <item>macOS (Mach-O): the <c>LC_UUID</c> load command; a universal (fat) file is accepted
 ///   when any slice carries the pinned id.</item>
@@ -48,56 +50,58 @@ internal enum DxcNativeKind
 /// survives all three and still differs for every other DXC build.
 /// </para>
 /// <para>
-/// The pins change only with the Vortice.Dxc package version (Windows, Linux) or our own
-/// macOS DXC build (<c>tools/restore.*</c>); <c>DxcPinnedNativeIdentityTests</c> fails with
+/// The pins change only with the DXC package ShadowDusk.HLSL takes its Linux and macOS natives
+/// from (<c>MonoGame.Tool.Dxc</c>) or our own Windows and Android builds
+/// (<c>tools/restore.*</c>); <c>DxcPinnedNativeIdentityTests</c> fails with
 /// the value to paste here when a shipped file stops matching.
 /// </para>
 /// </remarks>
 internal static class DxcNativeIdentity
 {
+    /// <summary>The pinned DXC release, as diagnostics name it (Phase 70: what MonoGame 3.8.6 bundles).</summary>
+    internal const string PinnedDxcRelease = "v1.9.2607 (0d3ee6b55)";
+
     /// <summary>The pinned DXC, as its Windows file version and source commit.</summary>
-    internal const string WindowsCompilerVersion = "1.7.2212.40 (e043f4a12)";
+    internal const string WindowsCompilerVersion = "1.9.0.5402 (0d3ee6b55-dirty)";
 
-    /// <summary>The <c>dxil.dll</c> Vortice.Dxc 3.3.4 ships beside that DXC, as its file version and build tag.</summary>
-    internal const string WindowsValidatorVersion =
-        "101.7.2212.36 (release/github-release-1.7.2212, ShaderCompiler.dxcbin.0.230301.1+" +
-        "a9f555fbc9e2418fd87996a553e75aab2aa1c0cc-101.7.2212.32.github-release-1.7.2212-4-g0e372b8)";
+    /// <summary>The <c>dxil.dll</c> built with it (<c>.github/workflows/dxc-build.yml</c>), as its file version and build tag.</summary>
+    internal const string WindowsValidatorVersion = "1.9.0.5402 (0d3ee6b55-dirty)";
 
-    /// <summary>GNU build id of Vortice.Dxc 3.3.4's <c>runtimes/linux-x64/native/libdxcompiler.so</c>.</summary>
-    internal const string LinuxX64CompilerBuildId = "65681bf462e07b533a7c7bfa54bda4e23a6c5d9f";
+    /// <summary>GNU build id of <c>MonoGame.Tool.Dxc</c> 1.9.2607.1's <c>binaries/linux-x64/lib/libdxcompiler.so</c>.</summary>
+    internal const string LinuxX64CompilerBuildId = "875c9449d09db6367641dd5cc37cc8c6d47daf7b";
 
-    /// <summary><c>LC_UUID</c> of our <c>osx-x64</c> <c>libdxcompiler.dylib</c> (release tag <c>native-dxc-1.7.2212.40</c>).</summary>
-    internal const string OsxX64CompilerUuid = "1b5513a41646349c89cb814d05326d9a";
+    /// <summary><c>LC_UUID</c> of the x86_64 slice of <c>MonoGame.Tool.Dxc</c> 1.9.2607.1's universal <c>libdxcompiler.dylib</c>.</summary>
+    internal const string OsxX64CompilerUuid = "21971f2aab6c3d999955e295b1f1a451";
 
-    /// <summary><c>LC_UUID</c> of our <c>osx-arm64</c> <c>libdxcompiler.dylib</c> (same release tag).</summary>
-    internal const string OsxArm64CompilerUuid = "9e2d66e9c3a934429f46afaae3fdc480";
+    /// <summary><c>LC_UUID</c> of the arm64 slice of the same universal file.</summary>
+    internal const string OsxArm64CompilerUuid = "71711714044735c8babc650f876515d7";
 
     /// <summary>
     /// GNU build id of our <c>android-arm64</c> <c>libdxcompiler.so</c>, the one ShadowDusk.HLSL
     /// packs: the 16 KB page aligned, byte-reproducible build of <c>.github/workflows/dxc-android-build.yml</c>
     /// (<c>tools/build-dxc-android.sh</c>, the pinned commit), release tag
-    /// <c>native-dxc-android-1.7.2212.40-16k</c>, SHA-256 pinned in <c>tools/restore.*</c>.
+    /// <c>native-dxc-1.9.2607</c>, SHA-256 pinned in <c>tools/restore.*</c>.
     /// Android has no file to read it from (the library is mapped straight out of the APK), so
     /// <see cref="DxcLoader"/> reads it from the MAPPED image instead.
     /// </summary>
-    internal const string AndroidArm64CompilerBuildId = "5882f6181b9e7149c5c5c4dbb2a88ed4e78d3223";
+    internal const string AndroidArm64CompilerBuildId = "e395fd28ed24ab70ba254f653c55a1ef2ac4c3f1";
 
     /// <summary>
     /// GNU build id of the <c>android-x64</c> <c>libdxcompiler.so</c> that the x86_64 emulator
     /// lane of <c>validation/AndroidGl</c> bundles (the same CI build as android-arm64, release
-    /// tag <c>native-dxc-android-1.7.2212.40-16k</c>, SHA-256 pinned in <c>tools/restore.*</c>).
+    /// tag <c>native-dxc-1.9.2607</c>, SHA-256 pinned in <c>tools/restore.*</c>).
     /// No package ships it: it is pinned so
     /// the emulator lane (<c>.github/workflows/android-emulator.yml</c>) runs with the identity
     /// check on. A rebuild of that file gets a new build id and an <c>SD0219</c> naming both,
     /// which is the cue to update this line.
     /// </summary>
-    internal const string AndroidX64CompilerBuildId = "225337e5e08f3850fa4299f5499ae303f636aea0";
+    internal const string AndroidX64CompilerBuildId = "8587fa6685f4e752e4ea4fad9484e1a6e6c35e94";
 
     /// <summary>
-    /// The one Vortice.Dxc release ShadowDusk.HLSL runs with: it ships the pinned DXC natives
-    /// (Windows, Linux), and ShadowDusk.HLSL is compiled against its managed API. Any other
-    /// release ships a different DXC and, measured for 3.8.3, a binary-incompatible API (the first
-    /// DXC call fails with <see cref="MissingMethodException"/>). Must equal the exact range in
+    /// The one Vortice.Dxc release ShadowDusk.HLSL runs with: ShadowDusk.HLSL is compiled against
+    /// its managed API and takes none of its natives. Another release has, measured for 3.8.3, a
+    /// binary-incompatible API (the first DXC call fails with
+    /// <see cref="MissingMethodException"/>). Must equal the exact range in
     /// <c>Directory.Packages.props</c> and the pin in <c>buildTransitive/ShadowDusk.HLSL.targets</c>
     /// (<c>VorticeDxcPinTests</c> fails when they drift).
     /// </summary>
@@ -162,7 +166,7 @@ internal static class DxcNativeIdentity
 
     /// <summary>
     /// A PE file's four-part FILEVERSION followed by the parenthesized build tag of its
-    /// ProductVersion string (<c>1.7.2212.40 (e043f4a12)</c>), the FILEVERSION alone when the
+    /// ProductVersion string (<c>1.9.0.5402 (0d3ee6b55-dirty)</c>), the FILEVERSION alone when the
     /// ProductVersion carries no tag, or <c>null</c> off Windows (only Windows can read a native
     /// PE's resources, and only Windows loads one) or when the file has no version resource.
     /// </summary>
@@ -340,6 +344,96 @@ internal static class DxcNativeIdentity
     }
 
     private static long AlignUp(int value, int alignment) => ((long)value + alignment - 1) & ~((long)alignment - 1);
+
+    /// <summary>
+    /// False when the PE file at <paramref name="path"/> cannot run in a process of
+    /// <paramref name="architecture"/>, read without loading it. The version stamp cannot tell:
+    /// win-x64 and win-arm64 carry the same one. And the loader's own failure cannot either:
+    /// Microsoft's "arm64" v1.9.2607 DLLs are ARM64EC, whose header says x64, so an x64 process
+    /// maps them and crashes on the first call (measured, DXC issue #8934). An unreadable file
+    /// answers true: it is the load that reports it.
+    /// </summary>
+    internal static bool IsPeForArchitecture(string path, Architecture architecture)
+    {
+        try
+        {
+            using FileStream stream = File.OpenRead(path);
+            return IsPeForArchitecture(stream, architecture);
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            return true;
+        }
+    }
+
+    /// <summary>The check of <see cref="IsPeForArchitecture(string, Architecture)"/>, over an open image.</summary>
+    internal static bool IsPeForArchitecture(Stream stream, Architecture architecture)
+    {
+        const ushort MachineX64 = 0x8664, MachineArm64 = 0xAA64, Pe32Plus = 0x20B;
+        const int LoadConfigDirectory = 112 + (10 * 8), ChpeMetadataPointer = 0xC8, SectionSize = 40;
+
+        ushort expected = architecture switch
+        {
+            Architecture.X64 => MachineX64,
+            Architecture.Arm64 => MachineArm64,
+            _ => (ushort)0,
+        };
+        Span<byte> word = stackalloc byte[4];
+        if (expected == 0 || !TryReadAt(stream, 0x3C, word))
+            return true;
+
+        long pe = BinaryPrimitives.ReadUInt32LittleEndian(word);
+        Span<byte> fileHeader = stackalloc byte[24];
+        if (!TryReadAt(stream, pe, fileHeader))
+            return true;
+
+        ushort machine = BinaryPrimitives.ReadUInt16LittleEndian(fileHeader[4..]);
+        if (machine != expected)
+            return false;
+        if (architecture != Architecture.X64)
+            return true;
+
+        // An x64 header with CHPE metadata in its load configuration is ARM64EC.
+        int sections = BinaryPrimitives.ReadUInt16LittleEndian(fileHeader[6..]);
+        int optionalSize = BinaryPrimitives.ReadUInt16LittleEndian(fileHeader[20..]);
+        long optional = pe + 24;
+        Span<byte> magic = stackalloc byte[2];
+        Span<byte> directory = stackalloc byte[8];
+        if (optionalSize < LoadConfigDirectory + 8
+            || !TryReadAt(stream, optional, magic)
+            || BinaryPrimitives.ReadUInt16LittleEndian(magic) != Pe32Plus
+            || !TryReadAt(stream, optional + LoadConfigDirectory, directory))
+        {
+            return true;
+        }
+
+        uint loadConfigRva = BinaryPrimitives.ReadUInt32LittleEndian(directory);
+        if (loadConfigRva == 0)
+            return true;
+
+        Span<byte> section = stackalloc byte[SectionSize];
+        Span<byte> pointer = stackalloc byte[8];
+        for (int i = 0; i < sections; i++)
+        {
+            if (!TryReadAt(stream, optional + optionalSize + ((long)i * SectionSize), section))
+                return true;
+
+            uint virtualSize = BinaryPrimitives.ReadUInt32LittleEndian(section[8..]);
+            uint virtualAddress = BinaryPrimitives.ReadUInt32LittleEndian(section[12..]);
+            uint rawSize = BinaryPrimitives.ReadUInt32LittleEndian(section[16..]);
+            uint rawPointer = BinaryPrimitives.ReadUInt32LittleEndian(section[20..]);
+            if (loadConfigRva < virtualAddress || loadConfigRva - virtualAddress >= Math.Max(virtualSize, rawSize))
+                continue;
+
+            long loadConfig = rawPointer + (long)(loadConfigRva - virtualAddress);
+            return !TryReadAt(stream, loadConfig, word)
+                || BinaryPrimitives.ReadUInt32LittleEndian(word) < ChpeMetadataPointer + 8
+                || !TryReadAt(stream, loadConfig + ChpeMetadataPointer, pointer)
+                || BinaryPrimitives.ReadUInt64LittleEndian(pointer) == 0;
+        }
+
+        return true;
+    }
 
     /// <summary>Fills <paramref name="buffer"/> from <paramref name="offset"/>; false when the file is shorter.</summary>
     private static bool TryReadAt(Stream stream, long offset, Span<byte> buffer)

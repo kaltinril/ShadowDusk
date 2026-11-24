@@ -36,7 +36,7 @@ namespace ShadowDusk.HLSL.Dxc;
 /// (platform <c>wchar_t</c>) and source-buffer encoding (explicit UTF-8 /
 /// <c>DXC_CP_UTF8</c> rather than ANSI / <c>DXC_CP_ACP</c>, which is codepage-dependent
 /// on Windows and therefore non-deterministic for non-ASCII sources). The native DXC
-/// binary is unchanged — same pinned Vortice.Dxc 3.3.4 <c>dxcompiler</c> everywhere.
+/// binary is unchanged: the same pinned <c>dxcompiler</c> everywhere.
 /// </para>
 /// </remarks>
 internal static unsafe class DxcNativeInterop

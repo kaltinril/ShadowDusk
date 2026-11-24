@@ -7,14 +7,14 @@
 #     abi: arm64-v8a and/or x86_64 (default both)
 #
 # Everything that decides the output bytes is pinned here:
-#   * DXC_COMMIT e043f4a1 (DXC 1.7.2212.40, what Vortice.Dxc 3.3.4's Windows dxcompiler.dll
-#     reports; the same commit the macOS and WASM builds use; Vortice's linux-x64 .so is the earlier
-#     v1.7.2212 tag, see project_facts.md) and its three gitlinked submodules, each checked.
+#   * DXC_COMMIT 0d3ee6b5 (the v1.9.2607 tag, the DXC MonoGame 3.8.6 bundles and the one every
+#     desktop RID and the WASM build run, see project_facts.md) and its three gitlinked
+#     submodules, each checked.
 #   * The two CMAKE_CROSSCOMPILING patches the WASM recipe (.wasm-build/build-dxc-wasm.ps1)
 #     applies, so the cross build uses the host tablegen built in stage 0 instead of spawning a
 #     NATIVE sub-build. They change CMake only, never compiled code. The patched files are marked
 #     assume-unchanged so `git describe --dirty` (DXC embeds it in its version string) reads
-#     `e043f4a1`, as the clean macOS build does: "dxc(private) 1.7.0.1 (e043f4a1)".
+#     `0d3ee6b5`, as MonoGame's Linux and macOS builds do: "dxc(private) 1.9.0.1 (0d3ee6b5)".
 #   * NDK_VERSION (checked), ANDROID_API, the CMake flags below.
 #   * 16 KB pages: -z max-page-size / common-page-size = 16384 (Google Play requires 16 KB page
 #     support for apps targeting Android 15+), checked by the workflow.
@@ -23,10 +23,10 @@
 set -euo pipefail
 
 DXC_REPO='https://github.com/microsoft/DirectXShaderCompiler.git'
-DXC_COMMIT='e043f4a1286f4e1026222ab1bc94e25de8d0e959'
-DXC_COMMIT_EPOCH='1677632696'   # 2023-03-01T01:04:56Z, the commit's committer date
-SPIRV_HEADERS_COMMIT='1d31a100405cf8783ca7a31e31cdd727c9fc54c3'
-SPIRV_TOOLS_COMMIT='40f5bf59c6acb4754a0bffd3c53a715732883a12'
+DXC_COMMIT='0d3ee6b551b8fa768fbf825300ebab81047ef6a8'
+DXC_COMMIT_EPOCH='1785260120'   # 2026-07-28T17:35:20Z, the commit's committer date
+SPIRV_HEADERS_COMMIT='29981f65241605e08b0ede4cfeb999fe3b723c6a'
+SPIRV_TOOLS_COMMIT='b707790a898e44038547df54580022fc1cf89c3d'
 DIRECTX_HEADERS_COMMIT='980971e835876dc0cde415e8f9bc646e64667bf7'
 NDK_VERSION='27.2.12479018'      # NDK r27c
 ANDROID_API='24'                 # the API level the hosted DXC has always been built for

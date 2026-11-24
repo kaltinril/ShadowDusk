@@ -12,7 +12,7 @@ namespace ShadowDusk.HLSL.Dxc;
 /// (<c>-spirv -Zi</c>, the OpenGL and Vulkan targets with <c>Debug</c>) a function of the
 /// compiled source alone, never of the files on the host's disk.
 ///
-/// <para>DXC's SPIR-V emitter (pin <c>e043f4a1</c>, <c>EmitVisitor.cpp</c>) fills every
+/// <para>DXC's SPIR-V emitter (<c>EmitVisitor.cpp</c>) fills every
 /// <c>OpSource</c> by READING THE FILE it names (<c>ReadSourceCode</c>:
 /// <c>CreateBlobFromFile</c> through a leaf-name load of <c>libdxcompiler</c>), and falls back
 /// to the in-memory text only when that load or that read fails. It does so for two kinds of

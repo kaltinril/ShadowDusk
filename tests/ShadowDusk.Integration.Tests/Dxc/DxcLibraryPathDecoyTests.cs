@@ -94,14 +94,14 @@ public sealed class DxcLibraryPathDecoyTests
             // What Vortice's bare-name loads ask for: libdxil + libdxcompiler. The libdxcompiler
             // decoy is a working copy of the pinned DXC, so a loader that takes it compiles and
             // only the mapped path can tell. The libdxil decoy only has to be loadable, which is
-            // all Vortice's TryLoad("dxil") asks: Linux uses Vortice's own libdxil.so; macOS ships
-            // none, so it is a library that is not DXC. NOT a second copy of DXC: our macOS
+            // all Vortice's TryLoad("dxil") asks: Linux uses a real foreign validator (DXC 1.9.2602's
+            // libdxil.so); macOS has none, so it is a library that is not DXC. NOT a second copy of DXC: our macOS
             // DXC dlopens "libdxil.dylib" from its own constructor, and two DXC images in one
             // process overflow the stack inside malloc on the first compile (measured on the
             // macOS CI lane).
             File.Copy(pinnedDxc, Path.Combine(decoyDir, "libdxcompiler" + extension));
             File.Copy(
-                mac ? spirvCross : Path.Combine(ForeignDxc.NativeDirectory(rid), "libdxil.so"),
+                mac ? spirvCross : Path.Combine(ForeignDxc.Dxc19Directory(rid), "libdxil.so"),
                 Path.Combine(decoyDir, "libdxil" + extension));
 
             string canary = "libsdcanary" + extension;
@@ -160,19 +160,16 @@ public sealed class DxcLibraryPathDecoyTests
                 .ToList();
             if (mac)
             {
-                // Our macOS DXC dlopens "libdxil.dylib" by leaf name while it loads, so it
-                // reaches the decoy; finding no DxcCreateInstance there, DXC dlcloses it and runs
-                // without a validator. Whether dyld really unmaps it is dyld's business, so the
-                // invariant is the one ShadowDusk owns: a libdxil image in the process refuses
-                // validated DXIL (DirectX 12) loudly, and no such image means DX12 compiles
-                // (unsigned, as every macOS DX12 compile is).
+                // The invariant ShadowDusk owns on macOS: a libdxil image in the process refuses
+                // validated DXIL (DirectX 12) loudly, and no such image means DX12 compiles.
                 report["DirectX12"].ShouldBe(dxilImages.Count > 0 ? ["SD0219"] : ["OK"],
                     $"libdxil images mapped: [{string.Join(", ", dxilImages)}]");
             }
             else
             {
-                // Vortice's Linux DXC never opens a libdxil, and ShadowDusk loads none.
-                dxilImages.ShouldBeEmpty("a libdxil was loaded on Linux, where DXC has no use for one");
+                // A REAL validator sits on LD_LIBRARY_PATH. The pinned DXC validates internally and
+                // must not bind it, and ShadowDusk loads none.
+                dxilImages.ShouldBeEmpty("a libdxil was loaded on Linux, where the pinned DXC has no use for one");
                 report["DirectX12"].ShouldBe(["OK"]);
             }
         }

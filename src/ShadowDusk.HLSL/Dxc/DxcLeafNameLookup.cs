@@ -24,21 +24,18 @@ namespace ShadowDusk.HLSL.Dxc;
 /// <c>#line</c> file) and <c>dlclose</c>. A failed load, or a missing file, falls back to the
 /// in-memory source. What the read returns never reaches the output
 /// (<see cref="DxcDebugSpirvSource"/>, issue #343), but the load still happens. Nothing else DXC does during a compile
-/// loads a library: the validator is bound once while the library itself loads
-/// (<see cref="DxcLoader"/>), and release compiles never reach <c>ReadSourceCode</c>.
+/// loads a library: the pinned DXC validates internally, and release compiles never reach
+/// <c>ReadSourceCode</c>.
 /// </para>
 /// <para>
 /// <b>What the leaf name resolves to, by dynamic linker.</b> Windows returns the module
 /// already loaded under that base name, the first one loaded if there are two. glibc matches
 /// a leaf name against the names each loaded object was found under and its <c>SONAME</c>;
-/// the pinned <c>libdxcompiler.so</c> is loaded by absolute path and its <c>SONAME</c> is
-/// <c>libdxcompiler.so.3.7</c>, so the leaf never matches it, and glibc searches
-/// <c>LD_LIBRARY_PATH</c>, <c>ld.so.cache</c> and the default directories (measured with
-/// <c>LD_DEBUG=libs</c> on the ubuntu lane: <c>LD_LIBRARY_PATH</c>, then
-/// <c>/lib/x86_64-linux-gnu</c>, <c>/usr/lib/x86_64-linux-gnu</c>, <c>/lib</c>, <c>/usr/lib</c>;
-/// the pinned build's <c>RUNPATH</c> <c>$ORIGIN/../lib</c> did not appear), where a different
-/// DXC (the Vulkan SDK's, when its <c>setup-env.sh</c> is sourced) would be loaded and
-/// initialized inside the compile, as a byte copy placed there measurably is.
+/// the pinned <c>libdxcompiler.so</c> has the <c>SONAME</c> <c>libdxcompiler.so</c> (Phase 70), so
+/// the leaf resolves to it before any directory is searched. Through v1.7.2212 the
+/// <c>SONAME</c> was <c>libdxcompiler.so.3.7</c>, the leaf never matched, and glibc loaded
+/// whatever <c>LD_LIBRARY_PATH</c> or the default directories held; the check below still
+/// refuses that shape if a build ever brings it back.
 /// dyld from macOS 14 (dyld-1122) treats a leaf-name <c>dlopen</c> as <c>@rpath/leaf</c> when
 /// an image with that install name is already loaded, and the pinned dylib's install name is
 /// <c>@rpath/libdxcompiler.dylib</c>, so there the leaf resolves to the pinned image before any

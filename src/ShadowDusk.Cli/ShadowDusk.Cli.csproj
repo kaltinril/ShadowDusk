@@ -45,6 +45,25 @@
          referenced — keeping its DLL out of the ShadowDuskCLI tool package. -->
   </ItemGroup>
 
+  <!-- Phase 70: the pinned DXC natives reach this project as content of ShadowDusk.HLSL, every RID
+       of them. A RID-specific publish keeps the published RID's, flat beside the app (where a
+       NuGet native asset would land and DxcLoader probes), and drops the rest. -->
+  <Target Name="_ShadowDuskSelectDxcNativesForRid"
+          AfterTargets="_HandleFileConflictsForPublish"
+          Condition="'$(RuntimeIdentifier)' != ''">
+    <ItemGroup>
+      <_ShadowDuskDxcNative Include="@(ResolvedFileToPublish)"
+                            Condition="'%(Filename)%(Extension)' == 'dxcompiler.dll' or '%(Filename)%(Extension)' == 'dxil.dll' or '%(Filename)%(Extension)' == 'libdxcompiler.so' or '%(Filename)%(Extension)' == 'libdxcompiler.dylib'" />
+      <_ShadowDuskDxcNativeKept Include="@(_ShadowDuskDxcNative)"
+                                Condition="$([System.String]::Copy('%(RelativePath)').Replace('\','/').StartsWith('runtimes/$(RuntimeIdentifier)/native/')) or $([System.String]::Copy('%(RelativePath)').Replace('\','/').StartsWith('$(RuntimeIdentifier)/'))" />
+      <ResolvedFileToPublish Remove="@(_ShadowDuskDxcNative)" />
+      <ResolvedFileToPublish Include="@(_ShadowDuskDxcNativeKept)">
+        <RelativePath>%(Filename)%(Extension)</RelativePath>
+        <AssetType>native</AssetType>
+      </ResolvedFileToPublish>
+    </ItemGroup>
+  </Target>
+
   <!-- .NET SDK 11 single-file publish leaves "unknown" files (not .dll/.exe/.pdb, no AssetType)
        beside the apphost instead of bundling them; earlier SDKs bundled them. vkd3d-shader's
        libvkd3d-shader.so.1 is one (a None item, and ".1" is not a native extension), so the

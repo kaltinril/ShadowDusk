@@ -57,16 +57,21 @@ internal static class ForeignDxc
     /// </summary>
     public static void PlaceWorkingForeignBuild(string pinnedLibrary)
     {
+        // The macOS file is universal: one identity per slice, and the running slice is the one
+        // the loader checks.
         IReadOnlyList<string> identities = DxcNativeIdentity.Read(pinnedLibrary);
-        identities.Count.ShouldBe(1, $"{pinnedLibrary} carries no single build id to restamp");
+        string identity = identities.Count == 1
+            ? identities[0]
+            : DxcNativeIdentity.Expected(Rid, DxcNativeKind.Compiler).ShouldNotBeNull();
+        identities.ShouldContain(identity, $"{pinnedLibrary} does not carry the build id to restamp");
 
         byte[] image = File.ReadAllBytes(pinnedLibrary);
-        int at = image.AsSpan().IndexOf(Convert.FromHexString(identities[0]));
-        at.ShouldBeGreaterThanOrEqualTo(0, $"build id {identities[0]} not found in {pinnedLibrary}");
+        int at = image.AsSpan().IndexOf(Convert.FromHexString(identity));
+        at.ShouldBeGreaterThanOrEqualTo(0, $"build id {identity} not found in {pinnedLibrary}");
         image[at] ^= 0xFF;
         File.WriteAllBytes(pinnedLibrary, image);
 
-        DxcNativeIdentity.Read(pinnedLibrary).ShouldNotContain(identities[0],
+        DxcNativeIdentity.Read(pinnedLibrary).ShouldNotContain(identity,
             "the restamped copy still reads as the pinned build, so it is not a foreign DXC");
     }
 

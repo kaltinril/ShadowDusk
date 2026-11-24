@@ -114,7 +114,7 @@ public sealed class DxcConcurrencyStressTests
     [UnixSignalFact]
     [Trait("Platform", "OpenGL")]
     [Trait("Platform", "DirectX")]
-    public async Task SetlocaleCalls_HappenOnlyInTheNativeCompileCalls_AndNeverOnceTheLocaleHasSettled()
+    public async Task ThePinnedDxc_NeverChangesTheProcessLocale()
     {
         string output = await RunProbeAsync(
             "DXC setlocale audit", TestBudget.Compile, DxcConcurrencyProbe.SetlocaleProbeArgument);
@@ -126,21 +126,21 @@ public sealed class DxcConcurrencyStressTests
 
         steps.ContainsKey("compiler-dispose").ShouldBeTrue("the audit did not run to the end:\n" + output);
         steps[DxcSetlocaleAudit.PositiveControl].ShouldBeTrue(
-            "the raw compile did not leave DXC's UTF-8 locale behind, so this detector cannot see " +
-            "setlocale on this host (DXC fixed its restore bug, or the en_US UTF-8 locale is not " +
-            "installed). Rework the detector before trusting the rest:\n" + output);
+            "the audit's own setlocale did not register, so this detector cannot see a locale " +
+            "change on this host (no UTF-8 locale installed?). Rework it before trusting the rest:\n" + output);
 
+        // DXC v1.9.2602 removed its setlocale calls. A step that changes the locale again is a new
+        // path to measure against fork() (DxcForkGate exists for it).
         string[] unexpected = steps
-            .Where(s => s.Value && !DxcSetlocaleAudit.LocaleChangingSteps.Contains(s.Key))
+            .Where(s => s.Value && s.Key != DxcSetlocaleAudit.PositiveControl)
             .Select(s => s.Key)
             .ToArray();
         unexpected.ShouldBeEmpty(
-            "these DXC calls change the process locale although they are not native compile calls; " +
-            "a new setlocale path in DXC must be measured against fork() before it is trusted:\n" + output);
+            "these DXC calls change the process locale, which the pinned DXC is measured not to do:\n" + output);
 
         string settled = output.Split('\n')
             .Single(l => l.StartsWith("SETTLED ", StringComparison.Ordinal)).Trim()["SETTLED ".Length..];
-        settled.ShouldNotBe("C", "the settle step did not change the locale, so the steady-state half measures nothing:\n" + output);
+        settled.ShouldBe("C", "DXC changed the process locale while settling:\n" + output);
 
         string[] changedAfterSettling = output.Split('\n')
             .Where(l => l.StartsWith("STEADY ", StringComparison.Ordinal))

@@ -51,7 +51,7 @@ updates:
     # Deliberate pins. Each is explained at its entry in Directory.Packages.props; a bump is
     # planned work (re-pinned native hashes or a re-run render proof), never a routine PR.
     ignore:
-      # DxcLoader runs only the DXC natives Vortice.Dxc 3.3.4 ships (exact range, SD0219).
+      # ShadowDusk.HLSL is compiled against Vortice.Dxc 3.3.4's managed API (exact range, SD0219).
       # The other Vortice packages move with it as one family.
       - dependency-name: "Vortice.*"
       # SpvcLoader checks the SHA-256 of each native file (issue #350).

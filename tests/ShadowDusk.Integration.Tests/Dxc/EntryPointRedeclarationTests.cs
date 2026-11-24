@@ -306,26 +306,23 @@ public sealed class EntryPointRedeclarationTests
     }
 
     /// <summary>
-    /// The positive control: the same pinned DXC, handed the plain prototype-then-definition
-    /// source with the OpenGL SPIR-V arguments and no input preparation, must still crash, so
-    /// the theory above proves the fix rather than a DXC that stopped faulting. When a DXC bump
-    /// fixes the fault upstream, this turns red, and the workaround (and SD0236) can be retired.
-    /// Windows only: the crash was measured on win-x64. The Linux and macOS builds of the pinned
-    /// DXC are not known to fault the same way (the browser build does not: it fails the compile
-    /// instead), and the theory above must pass there whatever they do.
+    /// Records that DXC v1.9.2607 fixed the fault: handed the plain prototype-then-definition
+    /// source with the OpenGL SPIR-V arguments and no input preparation, it compiles. Through
+    /// v1.7.2212 this process died, which is why the prototype blanking and <c>SD0236</c> exist.
+    /// They stay until every RID's DXC (Android and the browser build included) is proven on the
+    /// new pin. Windows only, where the crash was measured.
     /// </summary>
     [WindowsOnlyFact]
     [Trait("Platform", "OpenGL")]
-    public async Task RawDxc_StillCrashesOnAnEntryPrototype_ProvingTheProbeCanDetectIt()
+    public async Task RawDxc_CompilesAnEntryPrototype_OnThePinnedDxc()
     {
         (int exitCode, string output) = await RunProbeAsync("raw-dxc");
 
         output.ShouldContain(EntryPointRedeclarationProbe.VerdictPrefix + "RAW START", Case.Sensitive);
         output.ShouldNotContain(EntryPointRedeclarationProbe.VerdictPrefix + "RAW NODXC", Case.Sensitive);
-        output.ShouldNotContain(EntryPointRedeclarationProbe.VerdictPrefix + "RAW RETURNED", Case.Sensitive,
-            "the pinned DXC compiled an entry point with a prototype to SPIR-V without crashing: the fault is gone, so the " +
-            "prototype blanking and SD0236 are no longer needed\n" + output);
-        exitCode.ShouldNotBe(0, output);
+        output.ShouldContain(EntryPointRedeclarationProbe.VerdictPrefix + "RAW RETURNED status=0x00000000", Case.Sensitive,
+            customMessage: output);
+        exitCode.ShouldBe(0, output);
     }
 
     private static string Verdict(string output, string name)

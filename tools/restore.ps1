@@ -116,29 +116,18 @@ function Restore-Vkd3dShader {
 Restore-Vkd3dShader
 
 # ---------------------------------------------------------------------------
-# DXC macOS natives (libdxcompiler.dylib, Phase 37 A)
+# DXC natives built by this project (win-arm64, Android)
 # ---------------------------------------------------------------------------
-# Vortice.Dxc 3.3.4 ships NO macOS native (win-x64/win-arm64/linux-x64 only), so
-# every CompileAsync on a Mac dies with DllNotFoundException — the Finding A
-# product gap. The fix is OUR OWN libdxcompiler.dylib built from the EXACT pinned
-# DXC commit the Vortice native reports (e043f4a1286f4e1026222ab1bc94e25de8d0e959,
-# FileVersion 1.7.2212.40 — the same pin Restore-DxcWasm below uses; same compiler,
-# never a substitute), by .github/workflows/dxc-build.yml (osx-arm64 on macos-14,
-# osx-x64 on macos-15-intel; MACOSX_DEPLOYMENT_TARGET 11.0/10.15; otool gate =
-# system-only linkage). Both arches share one file name, so the restored layout is
-# per-arch (tools/dxc/osx-{x64,arm64}/), exactly like vkd3d's. Every host restores
-# both RIDs (pack-ready pattern; ShadowDusk.HLSL.csproj packs them under
-# runtimes/osx-{x64,arm64}/native). Mirrors Restore-Vkd3dShader.
-#
-# Pins enforced since 2026-06-11: dylibs built by dxc-build.yml run 27327330108
-# (green on both RIDs, otool gate + ps_6_0 -spirv smoke passed) and hosted on the
-# fixed tag below. Same pin-discipline as vkd3d: hash mismatch -> re-download;
-# offline -> non-fatal warning.
-$DxcReleaseUrl = 'https://github.com/kaltinril/ShadowDusk/releases/download/native-dxc-1.7.2212.40'
-$DxcOsxX64Sha256   = '9e61d5c1993d2cd5a5ea6701011d0a86e8c8dd89c995ef0c4d03ff3b83dbbc17'
-$DxcOsxArm64Sha256 = '4f29ef90af61426a39037a2e9d7215a48c7c746328a38a20028e456c1ee3d811'
-
-function Restore-DxcFile([string]$Asset, [string]$DestRel, [string]$Sha256, [string]$Url = $DxcReleaseUrl) {
+# linux-x64 and macOS DXC are restored by NuGet: ShadowDusk.HLSL.csproj takes them from
+# MonoGame.Tool.Dxc by PackageDownload (Phase 70). Windows is built here from the same tag
+# (.github/workflows/dxc-build.yml): ShadowDusk redistributes no binary from Microsoft's DXC
+# release, which carries LICENSE-MS.txt, and its arm64 DLLs are ARM64EC anyway (DXC issue #8934).
+$DxcNativeReleaseUrl = 'https://github.com/kaltinril/ShadowDusk/releases/download/native-dxc-1.9.2607'
+$DxcWinX64CompilerSha256 = '7e42055d58d7bdbc992117a51a5b74f0e69f01fcde5089d670ac471e035a33c7'
+$DxcWinX64ValidatorSha256 = 'f820b394bad55b4c2cc5ea4d5579cbe6d79c9f35e4cdd4e11d4f7f96dc49715f'
+$DxcWinArm64CompilerSha256 = 'b234c8d78f1f641fc9aba8b08ca47ab86dcea67e84488fa015808f3ad4175e92'
+$DxcWinArm64ValidatorSha256 = '2fdbebddefe7b99fc0bcb6bd99381dc2b342ef251b5d96f31a7914d1cc71ee37'
+function Restore-DxcFile([string]$Asset, [string]$DestRel, [string]$Sha256, [string]$Url) {
     $DxcDir = Join-Path $RepoRoot 'tools' 'dxc'
     $Dest = Join-Path $DxcDir $DestRel
 
@@ -181,21 +170,12 @@ function Restore-DxcFile([string]$Asset, [string]$DestRel, [string]$Sha256, [str
     Write-Host "restore.ps1: DXC native ($DestRel) downloaded, hash OK"
 }
 
-function Restore-DxcMacos {
-    Restore-DxcFile 'libdxcompiler.osx-x64.dylib' (Join-Path 'osx-x64' 'libdxcompiler.dylib') `
-        $DxcOsxX64Sha256
-    Restore-DxcFile 'libdxcompiler.osx-arm64.dylib' (Join-Path 'osx-arm64' 'libdxcompiler.dylib') `
-        $DxcOsxArm64Sha256
-}
-
-Restore-DxcMacos
-
 # ---------------------------------------------------------------------------
 # Android natives (Phase 50): on-device DXC + SPIRV-Cross for arm64-v8a
 # ---------------------------------------------------------------------------
 # For an ON-DEVICE Android compile (Phase 50 — additive reach; build-time precompile is the
 # default and needs none of this) the OpenGL pipeline's two natives must exist for
-# android-arm64: OUR OWN libdxcompiler.so (the pinned DXC e043f4a1, an NDK port of the
+# android-arm64: OUR OWN libdxcompiler.so (the pinned DXC 0d3ee6b5, an NDK port of the
 # .wasm-build cross-compile recipe) and libspirv-cross.so (NDK CMake from the pinned
 # SPIRV-Cross — Silk.NET.SPIRV.Cross.Native ships desktop RIDs only). Both are RESTORED
 # artifacts, Exists()-gated in the csprojs: ShadowDusk.HLSL packs
@@ -204,20 +184,20 @@ Restore-DxcMacos
 # bare SONAME from the APK's lib/arm64-v8a/ (Android W^X-safe).
 #
 # Pins: the Android DXC + SPIRV-Cross .so are hosted on their own release tags
-# (native-dxc-android-1.7.2212.40-16k and native-spirv-cross-android-d8e3e2b1, below) and
+# (native-dxc-1.9.2607 and native-spirv-cross-android-d8e3e2b1, below) and
 # SHA-256-verified below. Restore-Android provisions them so ShadowDusk.HLSL packs
 # runtimes/android-arm64/native/libdxcompiler.so and ShadowDusk.GLSL packs the spirv-cross .so —
 # an on-device Android compile is then self-contained. Same pin-discipline as the macOS dylibs:
 # hash mismatch -> re-download; offline -> non-fatal warning. Re-running dxc-android-build.yml /
 # spirv-cross-android-build.yml re-pins the SHA-256s here.
 # DXC for Android (both ABIs) since the 16 KB fix: built by .github/workflows/dxc-android-build.yml
-# (tools/build-dxc-android.sh: DXC e043f4a1, NDK r27c, API 24, 16 KB pages, -g0, stripped;
+# (tools/build-dxc-android.sh: DXC 0d3ee6b5, NDK r27c, API 24, 16 KB pages, -g0, stripped;
 # byte-reproducible, two independent builds compared, and required to equal these pins) and hosted
 # on their own tag below. Their GNU build ids are DxcNativeIdentity.AndroidArm64CompilerBuildId /
 # AndroidX64CompilerBuildId. The earlier hand-built Android DXC assets on native-dxc-1.7.2212.40
 # (not 16 KB aligned, XA0141) stay on that tag, unused.
-$DxcAndroidReleaseUrl = 'https://github.com/kaltinril/ShadowDusk/releases/download/native-dxc-android-1.7.2212.40-16k'
-$DxcAndroidArm64Sha256  = 'fa8c9515cf97ea6274cb6d4098f55df84914bea99b65eed7b153f481eb578b6a'
+$DxcAndroidReleaseUrl = 'https://github.com/kaltinril/ShadowDusk/releases/download/native-dxc-1.9.2607'
+$DxcAndroidArm64Sha256  = '46c62b2d1c5329fd4b67d9e775b0664c1ab52ccaf8f0bd679254f396ea612f8b'
 # SPIRV-Cross for Android (both ABIs) since the issue #304 follow-up: built by
 # .github/workflows/spirv-cross-android-build.yml (tools/build-spirv-cross-android.sh: SPIRV-Cross
 # d8e3e2b1, the commit the desktop Silk.NET.SPIRV.Cross.Native 2.23.0 natives are built from;
@@ -232,7 +212,7 @@ $SpvcAndroidArm64Sha256 = '0e0f1b9ba6cb47881109bbffe87b1dcac2a53142b81dd16fa63ff
 # a local NDK build. Both are the reproducible CI builds described above (their own tags).
 # Their GNU
 # build ids are the android-x64 pins in DxcNativeIdentity / SpvcLoader.
-$DxcAndroidX64Sha256  = 'eb2fda8a4c48ce0c0b6cc8fe8325e5850fe6f92f3764ce12e342b2f37af1e249'
+$DxcAndroidX64Sha256  = '70ae828e409432d3f8197885753506a2e6731f84268aa3ecc3bd495b43dbc5ce'
 $SpvcAndroidX64Sha256 = 'dc0397473bfab0f0e6f1e0b6cdda37a932726bf58aad2603e3b119eef2920233'
 
 function Restore-SpvcAndroidFile([string]$Asset, [string]$DestRel, [string]$Sha256) {
@@ -288,13 +268,22 @@ function Restore-Android {
         $SpvcAndroidX64Sha256
 }
 
+Restore-DxcFile 'dxcompiler.win-x64.dll' (Join-Path 'win-x64' 'dxcompiler.dll') `
+    $DxcWinX64CompilerSha256 $DxcNativeReleaseUrl
+Restore-DxcFile 'dxil.win-x64.dll' (Join-Path 'win-x64' 'dxil.dll') `
+    $DxcWinX64ValidatorSha256 $DxcNativeReleaseUrl
+Restore-DxcFile 'dxcompiler.win-arm64.dll' (Join-Path 'win-arm64' 'dxcompiler.dll') `
+    $DxcWinArm64CompilerSha256 $DxcNativeReleaseUrl
+Restore-DxcFile 'dxil.win-arm64.dll' (Join-Path 'win-arm64' 'dxil.dll') `
+    $DxcWinArm64ValidatorSha256 $DxcNativeReleaseUrl
+
 Restore-Android
 
 # ---------------------------------------------------------------------------
 # DXC -> WASM (faithful in-browser HLSL -> SPIR-V frontend, Phase 23 M0)
 # ---------------------------------------------------------------------------
 # The faithful in-browser frontend is the SAME DirectXShaderCompiler the desktop
-# pipeline uses (Vortice.Dxc 3.3.4), compiled to WebAssembly so its SPIR-V is
+# pipeline uses (v1.9.2607), compiled to WebAssembly so its SPIR-V is
 # byte-identical to the desktop CLI (Option A — NO substitute compiler; Slang is
 # sample-only). dxcompiler.{js,wasm} is a RESTORED/BUILT artifact, NOT checked into
 # the repo (large). This step verifies presence and documents the build recipe; the
@@ -345,20 +334,19 @@ DXC->WASM module not found at:
 Build recipe (faithful pinned DXC -> WebAssembly, emscripten 3.1.34 — the .NET 8 pin):
 
   PINNED SOURCE — microsoft/DirectXShaderCompiler @ commit
-    e043f4a1286f4e1026222ab1bc94e25de8d0e959
-  This is the EXACT commit Vortice.Dxc 3.3.4's dxcompiler.dll reports (FileVersion
-  1.7.2212.40, ProductVersion '1.7.2212.40 (e043f4a12)') — the December-2022 DXC
-  release branch (release-1.7.2212). Byte-identity requires this exact commit AND
+    0d3ee6b551b8fa768fbf825300ebab81047ef6a8
+  This is the v1.9.2607 tag, the DXC MonoGame 3.8.6 bundles and every other RID runs.
+  Byte-identity requires this exact commit AND
   its gitlinked SPIR-V submodules:
-    external/SPIRV-Headers  @ 1d31a100405cf8783ca7a31e31cdd727c9fc54c3
-    external/SPIRV-Tools    @ 40f5bf59c6acb4754a0bffd3c53a715732883a12
+    external/SPIRV-Headers  @ 29981f65241605e08b0ede4cfeb999fe3b723c6a
+    external/SPIRV-Tools    @ b707790a898e44038547df54580022fc1cf89c3d
     external/DirectX-Headers@ 980971e835876dc0cde415e8f9bc646e64667bf7
 
   1. Clone the pinned source with submodules into .wasm-build/dxc-src:
         git init .wasm-build/dxc-src
         cd .wasm-build/dxc-src
         git remote add origin https://github.com/microsoft/DirectXShaderCompiler.git
-        git fetch --depth 1 origin e043f4a1286f4e1026222ab1bc94e25de8d0e959
+        git fetch --depth 1 origin 0d3ee6b551b8fa768fbf825300ebab81047ef6a8
         git checkout FETCH_HEAD
         git -c advice.detachedHead=false submodule update --init --recursive --depth 1 ``
             external/SPIRV-Headers external/SPIRV-Tools external/DirectX-Headers
@@ -411,7 +399,7 @@ Restore-DxcWasm
 # (tests/ShadowDusk.BrowserTests/node-test-vkd3d-wasm.mjs). vkd3d-shader.{js,wasm}
 # are RESTORED artifacts placed into the ShadowDusk.Wasm package wwwroot/vkd3d/ so
 # they ship as Blazor static web assets (served at _content/ShadowDusk.Wasm/vkd3d/).
-# Mirrors Restore-DxcWasm (local-build copy) + Restore-DxcMacos (pinned download with
+# Mirrors Restore-DxcWasm (local-build copy) + Restore-DxcFile (pinned download with
 # the PENDING-FIRST-HOSTED-BUILD placeholder pattern). Runs unconditionally.
 #
 # Pins: SHA-256 of the assets hosted on the native-vkd3d-wasm-2.1-r2 prerelease (built
