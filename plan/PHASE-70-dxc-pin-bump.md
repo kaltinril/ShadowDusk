@@ -9,6 +9,7 @@
 - **Natives:** win-x64 and win-arm64 are our builds (`dxc-build.yml`), android-arm64/x64 are our builds (`tools/build-dxc-android.sh`), WASM is our build, Linux and macOS are `MonoGame.Tool.Dxc`. No binary from Microsoft's release ships (`LICENSE-MS.txt`, owner 2026-11-22). All hosted natives are on release `native-dxc-1.9.2607`.
 - **Language:** DirectX 12 and Vulkan at HLSL 2021 with a retry at 2018; OpenGL and the DirectX 11 reflection companion at 2018.
 - **Manifests:** re-baselined, reviewed entry by entry in [`PHASE-70-appendix/manifest-review.md`](PHASE-70-appendix/manifest-review.md).
+- **Also fixes [issue #528](https://github.com/kaltinril/ShadowDusk/issues/528):** the Linux exit abort was DXC v1.7.2212's `llvm_shutdown` use-after-free (DXC #5119), gone on v1.9.2607 (measured in `project_facts.md`).
 - **Follow-ups left out on purpose:** the pinned DXC no longer needs `dxil.dll`, `DxcForkGate`, or the entry-prototype blanking. Each can be retired in its own change.
 
 ## Why now
