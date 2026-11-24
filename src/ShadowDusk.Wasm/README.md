@@ -52,7 +52,7 @@ The same `CompileAsync` also accepts `PlatformTarget.DirectX` (DX11 SM5 DXBC `.m
 
 - **Target framework:** `net8.0-browser` (Blazor WebAssembly / KNI web).
 - **Self-contained:** the WASM native modules are inside the package; first use downloads them with your app's `_framework`/`_content` assets.
-- **Lazy, per-target download:** each module is fetched by the first compile that needs it — `dxcompiler.wasm` (~17 MB raw, ~6 MB compressed) for OpenGL/WebGL, `vkd3d-shader.wasm` (~1.3 MB raw, ~0.4 MB compressed) for DirectX/FNA. Serve with HTTP compression.
+- **Lazy, per-target download:** each module is fetched by the first compile that needs it — `dxcompiler.wasm` (~19 MB raw, ~6 MB compressed) for OpenGL/WebGL, `vkd3d-shader.wasm` (~1.3 MB raw, ~0.4 MB compressed) for DirectX/FNA. Serve with HTTP compression.
 - **KNI HiDef / WebGL2:** a single `.mgfx` loads in both KNI Reach (WebGL1) and HiDef (WebGL2 / GLSL ES 3.00) — no flag, no separate build.
 - **Output container:** the default **MGFX v10** loads on every MonoGame/KNI runtime; the same opt-in newer containers as the desktop library are available via `CompilerOptions` (`MgfxVersion = 11` for MonoGame 3.8.5+, `Container = EffectContainer.Knifx` for KNI v4.02+).
 - **Output parity:** byte-identical to the desktop/CLI compiler for the same source + target (machine-verified in a real browser over the full byte-identity corpus).

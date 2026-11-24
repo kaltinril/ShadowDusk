@@ -31,7 +31,7 @@ internal sealed class JsDxcShaderCompiler : IDxcShaderCompiler
         {
             // One-time load of registration (both the shadowdusk-dxc and
             // shadowdusk-spirv-cross [JSImport] modules — zero consumer wiring) + the
-            // heavy ~17.4 MB DXC WASM. Awaited HERE, lazily, so the download is never
+            // heavy ~19 MB DXC WASM. Awaited HERE, lazily, so the download is never
             // forced at page init (keeping the mode-1 boot instant). Idempotent. This is
             // the ONLY genuinely-async step; the compile itself is the synchronous core
             // below (issue #28) — so async and sync output is identical by construction.
@@ -259,7 +259,7 @@ internal static partial class DxcInterop
     /// DXC→WASM). The host must <c>await</c> this once before the first
     /// <see cref="CompileToSpirv"/>; it is idempotent and resolves immediately once
     /// loaded. Awaiting it here (rather than blocking the module's evaluation) keeps the
-    /// ~17.4 MB WASM off the page-init critical path so the mode-1 render boots instantly.
+    /// ~19 MB WASM off the page-init critical path so the mode-1 render boots instantly.
     /// JS contract: <c>ensureReady(): Promise&lt;void&gt;</c> (rejects on load failure).
     /// </summary>
     [JSImport("ensureReady", "shadowdusk-dxc")]

@@ -502,6 +502,9 @@ int CompareToBaseline(string label, int tolerance)
 // Tolerance 1/255, against the REAL locally-generated mgfxc golden (not the embedded resource,
 // which DX11's investigation showed is a vkd3d-shader artifact, not a valid oracle — see above).
 //
+// Since the v1.9.2607 DXC pin (Phase 70) the gallery measures maxd 0 against this golden; the tolerance
+// stays 1. The record below is the old pin's.
+//
 // ROOT-CAUSED 2026-07-31: the residual 1/255 was the PINNED DXC BUILD, not a ShadowDusk defect.
 // Both sides compiled the same HLSL to DXIL, but with different DXC binaries — ours was
 // `dxcoob 1.7.2212.40 (e043f4a12)` (the pin before Phase 70), the golden's is

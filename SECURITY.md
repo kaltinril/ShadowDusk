@@ -62,7 +62,7 @@ distributes** (you trust our package). Those are version-pinned and integrity-ch
   job additionally hard-gates on the restored modules being present, but does not re-hash them; it
   packs nothing that ships.)
 - **Committed-in-repository WASM frontend modules** — `dxcompiler.wasm` (the in-browser
-  HLSL → SPIR-V DXC frontend, ~17 MB) and `spirv-cross.wasm` (SPIR-V → GLSL). These are built
+  HLSL → SPIR-V DXC frontend, ~19 MB) and `spirv-cross.wasm` (SPIR-V → GLSL). These are built
   out-of-band (recipes in `tools/`) and **committed to the repository** rather than downloaded at
   restore time, so their integrity rests on **git version control plus pull-request review** — the
   same basis as any source file we ship — not on a download-time SHA-256 pin. The build copies them

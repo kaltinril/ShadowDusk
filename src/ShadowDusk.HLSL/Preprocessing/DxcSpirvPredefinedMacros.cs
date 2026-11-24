@@ -19,7 +19,7 @@ namespace ShadowDusk.HLSL.Preprocessing;
 /// <c>__HLSL_VERSION</c> is the version the compile starts at; a source whose view depends on it
 /// is never retried at another (<see cref="DxcLanguageVersion.MayRetryAsLegacy"/>).</para>
 /// <para><b>Deliberately left out:</b> <c>__DXC_VERSION_MAJOR/MINOR/RELEASE/COMMITS</c>. They are
-/// the DXC build's own version stamp and differ by host for the SAME pinned DXC (Microsoft's
+/// the DXC build's own version stamp and differ by host for the SAME pinned DXC (our
 /// Windows build and MonoGame's Linux and macOS builds stamp differently). A conditional on one keeps the view
 /// untrusted, so the pairing falls back to the whole file (the released behavior, with
 /// <c>SD0235</c> where it aliases), never a guess. <c>__LINE__</c>, <c>__COUNTER__</c>,

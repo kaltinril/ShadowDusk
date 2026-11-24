@@ -43,7 +43,7 @@ tools/vkd3d/**/*.dylib
 #                the report (DXC-WASM-BUILD.md), byte-identity gates
 #                (node-test-dxc-{wasm,shim}.mjs), the desktop SPIR-V oracle
 #                (corpus-spirv/, dxc-corpus-probe/), AND the built module
-#                dxc-wasm-out/dxcompiler.{js,wasm} (~17.4 MB).
+#                dxc-wasm-out/dxcompiler.{js,wasm} (~19 MB).
 #   SPIRV-Cross: build script (build-spirv-cross-wasm.ps1), gate
 #                (node-test-spirv-cross.mjs) + its fixtures (fixtures/*.spv,
 #                fixtures/*.desktop-glsl.txt).
@@ -58,7 +58,7 @@ tools/vkd3d/**/*.dylib
 # (no prebuilt exists and it's only ~2.1 MB).
 samples/ShaderFiddle.Web/wwwroot/slang/slang-wasm.wasm
 
-# The FAITHFUL pinned DXC->WASM module (~17.4 MB) — the PRODUCT in-browser
+# The FAITHFUL pinned DXC->WASM module (~19 MB) — the PRODUCT in-browser
 # HLSL->SPIR-V frontend (Phase 23, Option A). Only THIS package-wwwroot COPY is
 # ignored: it is restored before build/pack by copying the committed source-of-truth
 # at .wasm-build/dxc-wasm-out/dxcompiler.wasm (see src/ShadowDusk.Wasm/wwwroot/dxc/RESTORE.md

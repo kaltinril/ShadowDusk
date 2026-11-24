@@ -88,7 +88,7 @@ copyFileSync(spvShim, path.join(contentRoot, 'shadowdusk-spirv-cross.js'));
 copyFileSync(spvJs, path.join(contentRoot, 'spirv-cross', 'spirv-cross.js'));
 copyFileSync(spvWasm, path.join(contentRoot, 'spirv-cross', 'spirv-cross.wasm'));
 console.log('  served _content/ShadowDusk.Wasm/shadowdusk-dxc.js       = FAITHFUL shim');
-console.log('  served _content/ShadowDusk.Wasm/dxc/dxcompiler.{js,wasm} = faithful DXC->WASM (17.4 MB)');
+console.log('  served _content/ShadowDusk.Wasm/dxc/dxcompiler.{js,wasm} = faithful DXC->WASM (~19 MB)');
 console.log('  served _content/ShadowDusk.Wasm/shadowdusk-spirv-cross.js + spirv-cross/ = SPIRV-Cross WASM');
 
 // 3. Overwrite served OpenGL .mgfx with ShadowDusk's OWN bytes (mode-1 baseline +

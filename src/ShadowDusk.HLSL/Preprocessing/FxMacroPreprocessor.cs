@@ -959,9 +959,9 @@ internal sealed partial class FxMacroPreprocessor
     ///   0.22.1 shipped, kept as it was).</description></item>
     ///   <item><description>Only when <paramref name="dxcPredefines"/> (the Vulkan register
     ///   pairing's <see cref="SkippedLines"/>, which must know every line DXC may compile): the
-    ///   rest of what the pinned DXC (<c>dxcoob 1.7.2212.40</c>) was measured to define with
+    ///   rest of what DXC v1.7.2212 (<c>dxcoob 1.7.2212.40</c>) was measured to define with
     ///   <c>-P</c> over a probe of every candidate name, with the OpenGL and Vulkan argument sets
-    ///   (2026-10-29): <c>__llvm__</c>, <c>__GNUC__</c>, <c>__GNUC_MINOR__</c>,
+    ///   (2026-10-29; not re-measured on the v1.9.2607 pin): <c>__llvm__</c>, <c>__GNUC__</c>, <c>__GNUC_MINOR__</c>,
     ///   <c>__GNUC_PATCHLEVEL__</c>, <c>__GXX_ABI_VERSION</c>, <c>__ORDER_LITTLE_ENDIAN__</c> /
     ///   <c>_BIG_</c> / <c>_PDP_</c>, <c>__BYTE_ORDER__</c>, <c>__LITTLE_ENDIAN__</c>, the
     ///   <c>__FLT_*</c> and <c>__DBL_*</c> families, <c>__DECIMAL_DIG__</c> and

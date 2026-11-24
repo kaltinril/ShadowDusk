@@ -39,7 +39,7 @@ internal static class WasmCompilerInitialization
     /// <summary>
     /// One-time load of everything an OpenGL/Vulkan compile needs: registration of the
     /// DXC + SPIRV-Cross modules (which eagerly instantiates SPIRV-Cross) + the
-    /// ~17.4 MB DXC WASM. Idempotent; resolves immediately once loaded. A load failure
+    /// ~19 MB DXC WASM. Idempotent; resolves immediately once loaded. A load failure
     /// throws (JSException) — the caller maps it to a loud ShaderError or rethrows with
     /// context. Registers ONLY this path's modules (Phase 27 — never pull vkd3d in
     /// here, so a vkd3d failure can never be mis-headlined as a DXC one).

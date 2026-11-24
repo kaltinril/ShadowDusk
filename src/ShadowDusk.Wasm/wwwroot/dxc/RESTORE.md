@@ -53,6 +53,6 @@ M1 wired this into `ShadowDusk.Wasm`'s packaged static web assets:
 - `tools/restore.*` (`Restore-DxcWasm` / `restore_dxc_wasm`) copies the built
   `.wasm-build/dxc-wasm-out/dxcompiler.wasm` into this directory before build/pack;
   the csproj's `VerifyDxcWasmPresent` target fails the build loudly if it is missing.
-  This 17.4 MB `.wasm` stays gitignored.
+  This ~19 MB `.wasm` stays gitignored.
 
 The restore step must run before `pack` so the `.wasm` is present to be packaged.

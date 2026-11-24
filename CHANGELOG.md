@@ -14,6 +14,14 @@ that loads and renders identically to `mgfxc`'s in the real MonoGame/KNI runtime
 
 ### Added
 
+### Changed
+
+### Fixed
+
+## [0.27.0] - 2026-11-23
+
+### Added
+
 - FNA: new warning `SD0306` when a column-major matrix has a non-symmetric initializer default, which FNA reads as its transpose. It tells the developer to call `SetValue(Matrix)`. The compiled `.fxb` does not change and stays equal to `fxc`'s.
 - Docs: a guide section on using HLSL annotations as shader UI metadata, with a suggested `UIName` / `UIGroup` / `UIMin` / `UIMax` / `UIStep` / `UIWidget` convention and what each target reports (issue #414).
 
@@ -4313,7 +4321,8 @@ WASM-capable build — the same pipeline on every host, with no substitute compi
 - **The MGCB content-processor plugin** is a scaffold; the PATH-based `mgfxc` override is the
   shipping MGCB integration path.
 
-[Unreleased]: https://github.com/kaltinril/ShadowDusk/compare/v0.26.0...HEAD
+[Unreleased]: https://github.com/kaltinril/ShadowDusk/compare/v0.27.0...HEAD
+[0.27.0]: https://github.com/kaltinril/ShadowDusk/compare/v0.26.0...v0.27.0
 [0.26.0]: https://github.com/kaltinril/ShadowDusk/compare/v0.25.1...v0.26.0
 [0.25.1]: https://github.com/kaltinril/ShadowDusk/compare/v0.25.0...v0.25.1
 [0.25.0]: https://github.com/kaltinril/ShadowDusk/compare/v0.24.0...v0.25.0

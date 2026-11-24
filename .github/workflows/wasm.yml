@@ -25,7 +25,7 @@
 #                       GPU/xvfb, headless Chromium byte-identity vs the manifest.
 #
 # ── NATIVE WASM ARTIFACTS ─────────────────────────────────────────────────────
-#   * The faithful DXC->WASM module (dxcompiler.{js,wasm}, ~17.4 MB) is an out-of-band
+#   * The faithful DXC->WASM module (dxcompiler.{js,wasm}, ~19 MB) is an out-of-band
 #     emscripten build that CI cannot reconstruct from source (it needs the multi-GB
 #     DXC/LLVM build), so the built artifact is FORCE-COMMITTED at
 #     .wasm-build/dxc-wasm-out/ and tools/restore.sh copies it into the package

@@ -28,11 +28,11 @@ The restore script provisions native artifacts that are **not committed to the r
 .\tools\restore.ps1       # Windows
 ```
 
-The script is **download-tolerant, not failure-silent**: every artifact is downloaded from a fixed, SHA-256-pinned GitHub release, and an offline/failed download prints a warning and continues (the affected backends then fail loudly at compile time — SD0211 for the desktop vkd3d native, SD1902 for the browser module). A genuine script error exits non-zero. CI runs the same script and then **hard-gates** on the result: post-restore existence checks in the CI/release workflows fail red when a pinned asset is missing, and the release pack gates verify the vkd3d natives (all four RIDs), **both macOS DXC dylibs**, and the browser vkd3d module are inside the packages before anything publishes. (See the [Contributing Guide](../contributing/index.md).)
+The script is **download-tolerant, not failure-silent**: every artifact is downloaded from a fixed, SHA-256-pinned GitHub release, and an offline/failed download prints a warning and continues (the affected backends then fail loudly at compile time — SD0211 for the desktop vkd3d native, SD1902 for the browser module). A genuine script error exits non-zero. CI runs the same script and then **hard-gates** on the result: post-restore existence checks in the CI/release workflows fail red when a pinned asset is missing, and the release pack gates verify the vkd3d natives (all four RIDs), **the pinned DXC for every RID** (win-x64, win-arm64, linux-x64, both macOS, android-arm64), and the browser vkd3d module are inside the packages before anything publishes. (See the [Contributing Guide](../contributing/index.md).)
 
 ## What lands where
 
-- `tools/dxc/win-{x64,arm64}/` and `tools/dxc/android-{arm64,x64}/` — ShadowDusk's own builds of the pinned DXC v1.9.2607, packed into the NuGet (Linux and macOS DXC comes from the `MonoGame.Tool.Dxc` package at build time).
+- `tools/dxc/win-{x64,arm64}/` and `tools/dxc/android-{arm64,x64}/` — ShadowDusk's own builds of the pinned DXC v1.9.2607, packed into the NuGet except android-x64, which is the emulator lane's copy and is never packed (Linux and macOS DXC comes from the `MonoGame.Tool.Dxc` package at build time).
 - `tools/spirv-cross/` — optional; the SPIRV-Cross native normally ships transitively via the `Silk.NET.SPIRV.Cross.Native` NuGet, so this stays empty unless you deliberately provide a local copy.
 - `tools/vkd3d/` — the `vkd3d-shader` native for the cross-platform DXBC backend (headers kept for binding reference; only the binary is git-ignored).
 

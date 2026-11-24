@@ -200,5 +200,5 @@ plugin), so you can build both and compare.
 - **Macro-defined techniques on the OpenGL target** fail with `SD0010 "Effect source contains no
   techniques"`. That is a compiler-library gap, not a plugin one — the same shaders fail identically
   through the CLI. It affects MonoGame's own `BasicEffect`-family stock effects and Penumbra's.
-- **The package is large (~81 MB)** because it carries the pinned DXC for every RID. That is what
+- **The package is large (~94 MB)** because it carries the pinned DXC for every RID. That is what
   "add the package and point at it" costs; nothing has to be installed separately.

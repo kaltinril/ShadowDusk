@@ -51,7 +51,7 @@ copy into `wwwroot`.
 
 If you're building against a source checkout ahead of the published version, pack a local
 NuGet feed from this repo. The faithful
-DXC→WASM module (`dxcompiler.wasm`, ~17 MB) is gitignored in the package `wwwroot`, but
+DXC→WASM module (`dxcompiler.wasm`, ~19 MB) is gitignored in the package `wwwroot`, but
 its source-of-truth is committed at `.wasm-build/dxc-wasm-out/`, so `restore` just
 **copies** it (no rebuild); the same script also downloads the pinned
 `vkd3d-shader.{js,wasm}` module (SHA-256-verified) into the package `wwwroot`:
@@ -122,7 +122,7 @@ using Microsoft.Xna.Framework.Graphics;
 private readonly IShaderCompiler _compiler = new WasmShaderCompiler();
 
 // Call this when the user wants to (re)compile. First call lazily downloads the
-// ~17 MB dxcompiler.wasm, so show a "compiling…" state.
+// ~19 MB dxcompiler.wasm, so show a "compiling…" state.
 public async Task<Effect?> CompileEffectAsync(string fxSource)
 {
     var options = new CompilerOptions
@@ -179,7 +179,7 @@ That's the whole integration. The full working version is
   `../_content/ShadowDusk.Wasm/<file>` — so it works whether your app is hosted at the
   site root or a sub-path, with no consumer wiring.
 - Each WASM module is **lazy-loaded by the first `CompileAsync` that needs it**, not at
-  page boot — so app startup stays fast: the ~17 MB `dxcompiler.wasm` on the first
+  page boot — so app startup stays fast: the ~19 MB `dxcompiler.wasm` on the first
   OpenGL compile, the ~1.3 MB `vkd3d-shader.wasm` on the first DirectX/FNA compile.
   Serve your site with **HTTP compression** (brotli/gzip): on the wire they compress to
   ~6 MB and ~0.4 MB respectively.
@@ -194,7 +194,7 @@ That's the whole integration. The full working version is
 | `SD1902` on a DirectX/FNA compile | The `vkd3d-shader.{js,wasm}` module couldn't be loaded (e.g. not restored in a source build, or not served). Run `tools/restore.ps1`/`.sh` and check the browser fetched `_content/ShadowDusk.Wasm/vkd3d/vkd3d-shader.wasm`. |
 | Restore can't find `ShadowDusk.Compiler` etc. | You only packed `Wasm` — pack **all five** projects (§3) into the local feed. |
 | `new Effect(...)` throws on load | You're not on KNI (MonoGame proper has no v10 WebGL reader), or the `.mgfx` is for the wrong target. Use KNI + `PlatformTarget.OpenGL`. |
-| First compile hangs/slow | That's the one-time ~17 MB `dxcompiler.wasm` download. Show a loading state; enable server compression. |
+| First compile hangs/slow | That's the one-time ~19 MB `dxcompiler.wasm` download. Show a loading state; enable server compression. |
 | Effect renders wrong only in the browser | Check sampler-slot state for multi-texture shaders (§5 note); compare against the desktop render of the *same* bytes. |
 | `[JSImport]`/unsafe build error | Add `<AllowUnsafeBlocks>true</AllowUnsafeBlocks>` and target `net8.0-browser`. |
 

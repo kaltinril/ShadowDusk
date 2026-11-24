@@ -36,7 +36,7 @@ CLI — the in-browser SPIR-V is **byte-identical to desktop DXC**. The compiler
 inside the `ShadowDusk.Wasm` NuGet package as self-registered Blazor static web
 assets (`_content/ShadowDusk.Wasm/`); this sample adds only a `ProjectReference` and
 **wires nothing** (no `JSHost.ImportAsync` — see `Pages/Index.razor.cs`). The first
-*Compile & Apply* lazily downloads the ~17 MB `dxcompiler.wasm` once.
+*Compile & Apply* lazily downloads the ~19 MB `dxcompiler.wasm` once.
 
 > The old Slang-wasm files under `wwwroot/` (`shadowdusk-dxc.js`, `slang/`) are
 > **dead reference only** — never registered, never run. The faithful DXC→WASM

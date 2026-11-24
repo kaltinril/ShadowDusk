@@ -17,7 +17,7 @@ WebGL, Pixelated + Dissolve included). No blocker.**
 **Location (the PRODUCT home, where M1 will package it):**
 - `src/ShadowDusk.Wasm/wwwroot/shadowdusk-dxc.js` — the faithful `[JSImport]` shim (committed, ~7 KB).
 - `src/ShadowDusk.Wasm/wwwroot/dxc/dxcompiler.js` — the emscripten loader (committed, ~54 KB).
-- `src/ShadowDusk.Wasm/wwwroot/dxc/dxcompiler.wasm` — the faithful DXC build (**gitignored**, ~17.4 MB; restored — see `src/ShadowDusk.Wasm/wwwroot/dxc/RESTORE.md`).
+- `src/ShadowDusk.Wasm/wwwroot/dxc/dxcompiler.wasm` — the faithful DXC build (**gitignored**, ~19 MB; restored — see `src/ShadowDusk.Wasm/wwwroot/dxc/RESTORE.md`).
 
 The shim satisfies the existing `[JSImport]` contract for module **`shadowdusk-dxc`**
 (`src/ShadowDusk.Wasm/JsShaderBackends.cs`) **unchanged** — no C# change was needed:
@@ -29,7 +29,7 @@ The shim satisfies the existing `[JSImport]` contract for module **`shadowdusk-d
 
 - **`ensureReady()`** — lazily `import('./dxc/dxcompiler.js')`, `await createDxcModule()`,
   caches the instance; idempotent (two calls load once); surfaces a sticky load error.
-  Deferred (no top-level await) so the 17.4 MB `.wasm` is **not** downloaded at page
+  Deferred (no top-level await) so the ~19 MB `.wasm` is **not** downloaded at page
   init — `JsDxcShaderCompiler.CompileAsync` awaits it once before the first compile,
   keeping the mode-1 boot instant. (Same lazy contract the Slang shim used.)
 - **`compileToSpirv(hlslSource, args)`** — synchronous; calls
@@ -138,7 +138,7 @@ ShadowDusk's own bytes).
 in-browser `WasmShaderCompiler.CompileAsync(.fx)` → faithful DXC→WASM → SPIR-V →
 SPIRV-Cross WASM → `SpirvReflector` + MGFX writer → `.mgfx` → `new Effect(gd, bytes)`
 in KNI WebGL → render → pixel-compare vs `references-sd/`. (The first compile
-lazy-loads + instantiates the 17.4 MB `dxcompiler.wasm` in the browser.)
+lazy-loads + instantiates the ~19 MB `dxcompiler.wasm` in the browser.)
 
 ```
 [harness] FAITHFUL mode-2 — compiling all 10 corpus shaders in-browser via DXC->WASM…
@@ -172,7 +172,7 @@ risk Phase 24 isolated.
 - **Dissolve** passes — the slot-1 sampler fix holds (max-delta 128 over 0.145% of pixels, the documented localized discard-band drift, within the 0.5% pixel budget).
 
 **G2 = 10/10 compiled in-browser via the FAITHFUL frontend + 10/10 rendered. The
-17.4 MB `dxcompiler.wasm` loads and runs in a real browser; the end-to-end faithful
+~19 MB `dxcompiler.wasm` loads and runs in a real browser; the end-to-end faithful
 in-browser pipeline renders correctly.** This is the M3 Definition of Done.
 
 Artifacts: `RESULTS-FAITHFUL.md`, `captures-faithful/*.png` (WebGL readbacks),
@@ -216,7 +216,7 @@ them. M1's remaining work (from the Phase 23 plan):
 3. `ShadowDusk.Wasm` **self-registers** both `[JSImport]` modules via `JSHost.ImportAsync`
    against its own `_content/ShadowDusk.Wasm/` base path; delete the consumer-side
    registration the sample does today.
-4. Ensure the restore step (RESTORE.md) runs before `pack` so the 17.4 MB `.wasm` is
+4. Ensure the restore step (RESTORE.md) runs before `pack` so the ~19 MB `.wasm` is
    present to be packaged.
 5. Verify with a scratch consumer **outside the repo**: `PackageReference` only,
    `net8.0-browser`, compile a `.fx` with no manual asset wiring.

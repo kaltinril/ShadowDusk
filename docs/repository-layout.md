@@ -26,6 +26,8 @@ ShadowDusk/
 │   │                             #   (SpirvReflector, CtabReader), FNA fx_2_0 writer (Fx2EffectWriter)
 │   ├── ShadowDusk.HLSL/          # FX9 pre-parser, preprocessor, DXC integration, reflection,
 │   │                             #   vkd3d-shader + d3dcompiler_47 DXBC backends
+│   │                             #   licenses/dxc/: the DXC source licences, packed beside the
+│   │                             #   DXC natives into the HLSL, CLI, MGCB and WASM packages (Phase 70)
 │   ├── ShadowDusk.GLSL/          # SPIR-V → GLSL via SPIRV-Cross + MonoGameGlslRewriter (MojoShader dialect)
 │   ├── ShadowDusk.Metal/         # SPIR-V → MSL via SPIRV-Cross — STUB, not yet implemented
 │   ├── ShadowDusk.Compiler/      # EffectCompiler : IShaderCompiler + pipeline orchestration —

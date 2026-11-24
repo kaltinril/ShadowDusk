@@ -33,7 +33,7 @@
 // dxc-dlopen-stub.js), so this shim needs no extra files.
 //
 // The [JSImport] compileToSpirv is SYNCHRONOUS (returns byte[], not a Task). The
-// 17.4 MB dxcompiler.wasm must NOT be downloaded at page init (JSHost.ImportAsync
+// ~19 MB dxcompiler.wasm must NOT be downloaded at page init (JSHost.ImportAsync
 // awaits this module's evaluation during boot, which also drives the mode-1 render).
 // So we DEFER loading: this module evaluates instantly (no top-level await), exposes
 // an async ensureReady() the host awaits ONCE before the first compile
@@ -79,7 +79,7 @@ export function ensureReady() {
         loadPromise = loadDxc().catch((e) => {
             initError = e instanceof Error ? e : new Error(String(e));
             // Reset so a LATER ensureReady() retries the download instead of the
-            // session staying bricked on a transient fetch failure of the 17 MB
+            // session staying bricked on a transient fetch failure of the ~19 MB
             // module — mirrors the shadowdusk-vkd3d shim and
             // WasmModuleRegistration.RegisterOnceAsync's reset-on-failure. initError
             // stays set between the failure and the next attempt so a stray

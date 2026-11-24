@@ -7,7 +7,7 @@ using static Vortice.Dxc.Dxc;
 namespace ShadowDusk.HLSL.Dxc;
 
 /// <summary>
-/// Compiles preprocessed HLSL to SPIR-V or DXBC via Vortice.Dxc.
+/// Compiles preprocessed HLSL to SPIR-V or DXIL with the pinned DXC, through the Vortice.Dxc wrapper.
 /// NOT thread-safe: do not share across concurrent compilations.
 /// Create one instance per parallel worker or serialize via a lock/channel.
 /// </summary>

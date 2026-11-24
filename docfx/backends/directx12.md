@@ -32,6 +32,10 @@ An **array of samplers** (`SamplerState S[N]`) is refused by `mgfxc` on every pr
 
 A vertex shader that writes its clip-space position to the legacy **`: POSITION0`** output (`struct VOut { float4 Pos : POSITION0; ... };`, the XNA spelling) is mapped to `SV_Position` on this target, as DirectX 11 does ([issue #446](https://github.com/kaltinril/ShadowDusk/issues/446), fixed 2026-10-31). Before that, DXC's SM6 path left it an ordinary output and MonoGame threw `SEHException` (HRESULT 80070057) at draw time; `mgfxc`'s own DirectX 12 build of such a file still throws. Not mapped: `POSITION1` and up, a semantic spelled through a macro, and a struct the vertex shader also takes as input; for those, write `: SV_POSITION`.
 
+## Compiled as HLSL 2021, as `mgfxc` compiles it
+
+Since 0.27.0 this target compiles as HLSL 2021, the language `mgfxc`'s DXC uses for it, so `&&`, `||` and `?:` short-circuit. A `?:` arm with a side effect (`x < y ? acc = w : acc`) runs only when its condition holds, as in `mgfxc`'s build. A shader HLSL 2021 refuses, usually a vector condition in `?:`, `&&` or `||`, is compiled again as HLSL 2018 so it keeps compiling, with the warning [`SD0242`](../diagnostics.md), because `mgfxc` would not compile it for this target; `select()`, `and()` and `or()` remove the warning.
+
 ## Additive by policy
 
 Like all backends, targeting DirectX 12 is **opt-in per compile** (`PlatformTarget.DirectX12`) and does not change OpenGL/DX11/v10 output for consumers who don't ask for it.

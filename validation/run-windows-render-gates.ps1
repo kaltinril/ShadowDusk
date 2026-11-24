@@ -59,8 +59,8 @@
                                    MonoGame 3.8.5 WindowsDX12, maxd 0).
     * DirectX12 VS-driven + Apos.Shapes gallery - validation/VsDrivenDx12 (+ `-- apos`): the VS rig
                                    vs the real mgfxc DirectX_12 golden (maxd 0); the gallery vs the
-                                   same local golden at tol 1 (11 pixels of 402,984 at 1/255,
-                                   root-caused 2026-07-31 to the then-pinned DXC - ours was
+                                   same local golden at tol 1 (maxd 0 since the v1.9.2607 DXC pin;
+                                   on the old pin 11 pixels of 402,984 at 1/255, root-caused 2026-07-31 to the then-pinned DXC - ours was
                                    dxcoob 1.7.2212.40, the golden's is MonoGame 3.8.5's bundled
                                    dxcoob 1.8.2505.32 - NOT a ShadowDusk defect; see
                                    docs/validation-matrix.md section 7).
